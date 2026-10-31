@@ -5,3 +5,6 @@ android/**/build/
 android/local.properties
 android/app/src/main/assets/
 android/capacitor-cordova-android-plugins/
+android/app/capacitor.build.gradle
+android/capacitor.settings.gradle
+android/app/src/main/res/xml/config.xml
