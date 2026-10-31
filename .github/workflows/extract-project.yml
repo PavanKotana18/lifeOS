@@ -6,27 +6,112 @@ on:
 
 permissions:
   contents: write
-  workflows: write
 
 jobs:
   extract:
+    name: Extract and Commit LifeOS
     runs-on: ubuntu-latest
+
     steps:
+      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
+          token: ${{ secrets.EXTRACT_TOKEN }}
 
-      - name: Extract ZIP
+      # Step 2: Verify ZIP file
+      - name: Verify ZIP archive
         run: |
           set -euo pipefail
-          mkdir -p /tmp/lifeos-extract
-          unzip -q LifeOS-Android-Capacitor_New.zip -d /tmp/lifeos-extract
-          cp -a /tmp/lifeos-extract/LifeOS-Android-Capacitor_New/. .
+
+          ZIP_FILE="LifeOS-Android-Capacitor_New.zip"
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "::error::ZIP file not found: $ZIP_FILE"
+            exit 1
+          fi
+
+          echo "ZIP archive found."
+          ls -lh "$ZIP_FILE"
+
+      # Step 3: Extract project
+      - name: Extract project files
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE="LifeOS-Android-Capacitor_New.zip"
+          TEMP_DIR=$(mktemp -d)
+
+          echo "Extracting project archive..."
+
+          unzip -q "$ZIP_FILE" -d "$TEMP_DIR"
+
+          # Detect whether ZIP contains a root folder
+          ROOT_COUNT=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 | wc -l)
+
+          if [ "$ROOT_COUNT" -eq 1 ] && \
+             [ -d "$TEMP_DIR/LifeOS-Android-Capacitor_New" ]; then
+            SRC_DIR="$TEMP_DIR/LifeOS-Android-Capacitor_New"
+          else
+            SRC_DIR="$TEMP_DIR"
+          fi
+
+          echo "Copying project files and subfolders..."
+
+          cp -a "$SRC_DIR"/. .
+
+          rm -rf "$TEMP_DIR"
+
+          echo "Extraction completed."
+          echo "Extracted project structure:"
+          find . -maxdepth 3 -type f \
+            ! -path "./.git/*" \
+            | sort | head -200
+
+      # Step 4: Validate important project files
+      - name: Validate project structure
+        run: |
+          set -euo pipefail
+
+          REQUIRED_FILES=(
+            "package.json"
+            "capacitor.config.ts"
+            "vite.config.ts"
+            "android/app/build.gradle"
+            "android/app/src/main/AndroidManifest.xml"
+            "src/App.tsx"
+            "src/main.tsx"
+          )
+
+          for FILE in "${REQUIRED_FILES[@]}"; do
+            if [ ! -f "$FILE" ]; then
+              echo "::error::Required project file missing: $FILE"
+              exit 1
+            fi
+          done
+
+          echo "All required project files are present."
+
+      # Step 5: Configure Git
+      - name: Configure Git
+        run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Step 6: Commit and push
+      - name: Commit and push extracted project
+        run: |
+          set -euo pipefail
+
           git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "Extract LifeOS Android project"
+
+          if git diff --cached --quiet; then
+            echo "No changes detected."
+          else
+            git commit -m "Extract LifeOS Android project from ZIP"
             git push origin HEAD:main
+            echo "Project successfully pushed to main."
           fi
