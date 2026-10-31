@@ -54,6 +54,9 @@ jobs:
       - name: Run Automated LifeOS Verification Tests
         run: npm test
 
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+
       - name: Build Web Application
         run: npm run build
 

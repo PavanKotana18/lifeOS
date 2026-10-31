@@ -26,9 +26,9 @@ function calculateStreaks(habitLogs, targetHabitId, todayStr) {
   let prevDate = null;
 
   for (const dStr of sortedDates) {
-    const curDate = new Date(dStr + 'T00:00:00');
+      const curDate = new Date(`${dStr}T00:00:00`);
     if (prevDate) {
-      const diffDays = Math.round((curDate - prevDate) / (1000 * 60 * 60 * 24));
+      const diffDays = dateOrdinal(dStr) - dateOrdinal(formatLocalDate(prevDate));
       if (diffDays === 1) {
         tempStreak += 1;
       } else if (diffDays > 1) {
@@ -65,6 +65,89 @@ function calculateStreaks(habitLogs, targetHabitId, todayStr) {
   }
 
   return { currentStreak, longestStreak, completedToday };
+}
+
+function dateOrdinal(dateStr) {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+}
+
+function formatLocalDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function formatLocalDateTime(date) {
+  return `${formatLocalDate(date)}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function parseLocalDateTime(dateStr, timeStr = '00:00', endOfDay = false) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr || '')) return null;
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hour, minute] = (timeStr || '00:00').split(':').map(Number);
+  const date = new Date(year, month - 1, day, endOfDay ? 23 : hour, endOfDay ? 59 : minute, endOfDay ? 59 : 0, endOfDay ? 999 : 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
+}
+
+function getTaskDeadline(task) {
+  return parseLocalDateTime(task.dueDate, task.dueTime || '00:00', !task.dueTime);
+}
+
+function getTaskStatus(task, now = new Date()) {
+  if (task.completed) return 'Completed';
+  const deadline = getTaskDeadline(task);
+  return deadline && now.getTime() > deadline.getTime() ? 'Overdue' : 'Pending';
+}
+
+function sortTasksByDeadline(tasks, now = new Date()) {
+  const rank = { Overdue: 0, Pending: 1, Completed: 2 };
+  return [...tasks].sort((a, b) => {
+    const statusDiff = rank[getTaskStatus(a, now)] - rank[getTaskStatus(b, now)];
+    if (statusDiff) return statusDiff;
+    return (getTaskDeadline(a)?.getTime() ?? Infinity) - (getTaskDeadline(b)?.getTime() ?? Infinity);
+  });
+}
+
+function getGoalProgress(current, target) {
+  const currentValue = Number(current) || 0;
+  const targetValue = Number(target) || 0;
+  if (targetValue <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round(currentValue / targetValue * 100)));
+}
+
+function calculateWeeklyHabitRate(logs, habitId, today = new Date()) {
+  let completed = 0;
+  for (let offset = 0; offset < 7; offset++) {
+    const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
+    const key = formatLocalDate(day);
+    if (logs.some(log => log.habitId === habitId && log.date === key && log.completed)) completed++;
+  }
+  return { completed, rate: Math.round(completed / 7 * 100) };
+}
+
+function buildTaskNotificationPlan(task, preferences, now = new Date()) {
+  if (task.completed) return [];
+  const plan = [];
+  const deadline = getTaskDeadline(task);
+  const add = (kind, at) => { if (at && at.getTime() > now.getTime()) plan.push({ kind, at }); };
+  if (preferences.taskReminders && task.reminderAt) {
+    const reminder = new Date(task.reminderAt);
+    if (!Number.isNaN(reminder.getTime())) add('taskReminders', reminder);
+  }
+  if (deadline && preferences.upcomingDeadlines) {
+    const upcoming = task.dueTime
+      ? new Date(deadline.getTime() - 60 * 60 * 1000)
+      : parseLocalDateTime(task.dueDate, '09:00');
+    add('upcomingDeadlines', upcoming);
+  }
+  if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 60 * 1000));
+  return plan;
+}
+
+function buildFinanceEntry(localDateTime, savedAt = new Date()) {
+  const parsed = new Date(localDateTime);
+  if (Number.isNaN(parsed.getTime())) throw new Error('Invalid local transaction date/time');
+  return { date: formatLocalDate(parsed), occurredAt: parsed.toISOString(), createdAt: savedAt.toISOString() };
 }
 
 // Financial Analytics Engine
@@ -115,5 +198,15 @@ function calculateFinanceMetrics(transactions, budgets, currentMonthStr) {
 // Export for node testing
 module.exports = {
   calculateStreaks,
-  calculateFinanceMetrics
+  calculateFinanceMetrics,
+  formatLocalDate,
+  formatLocalDateTime,
+  parseLocalDateTime,
+  getTaskDeadline,
+  getTaskStatus,
+  sortTasksByDeadline,
+  getGoalProgress,
+  calculateWeeklyHabitRate,
+  buildTaskNotificationPlan,
+  buildFinanceEntry
 };

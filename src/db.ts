@@ -106,7 +106,7 @@ export interface IDataStorage {
   };
   backup: {
     exportData(): Promise<string>;
-    importData(jsonData: string): Promise<{ success: boolean; counts: Record<string, number> }>;
+    importData(jsonData: string, options?: { replaceExisting?: boolean }): Promise<{ success: boolean; counts: Record<string, number> }>;
     clearAll(): Promise<void>;
     seedDemoData(): Promise<void>;
   };
@@ -122,7 +122,8 @@ export const StorageService: IDataStorage = {
     },
     async add(tx) {
       const id = 'tx_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-      const record: Transaction = { ...tx, id, createdAt: new Date().toISOString() };
+      const createdAt = new Date().toISOString();
+      const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
       await db.transactions.add(record);
       return record;
     },
@@ -331,13 +332,13 @@ export const StorageService: IDataStorage = {
       return db.tasks.toArray();
     },
     async add(task) {
-      const id = 't_' + Date.now();
+      const id = 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
       const record: Task = { ...task, id, createdAt: new Date().toISOString() };
       await db.tasks.add(record);
       return record;
     },
     async update(id, updates) {
-      await db.tasks.update(id, updates);
+      await db.tasks.update(id, { ...updates, updatedAt: new Date().toISOString() });
     },
     async delete(id) {
       await db.tasks.delete(id);
@@ -352,19 +353,27 @@ export const StorageService: IDataStorage = {
 
       // Handle recurrence auto-generation
       if (completed && task.recurring && task.recurring !== 'None') {
-        const nextDate = new Date(task.dueDate || new Date());
+        const [year, month, day] = (task.dueDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
+        const nextDate = new Date(year, month - 1, day);
         if (task.recurring === 'Daily') nextDate.setDate(nextDate.getDate() + 1);
         else if (task.recurring === 'Weekly') nextDate.setDate(nextDate.getDate() + 7);
-        else if (task.recurring === 'Monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+        else if (task.recurring === 'Monthly') {
+          const originalDay = nextDate.getDate();
+          nextDate.setDate(1);
+          nextDate.setMonth(nextDate.getMonth() + 1);
+          nextDate.setDate(Math.min(originalDay, new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate()));
+        }
 
         const yyyy = nextDate.getFullYear();
         const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
         const dd = String(nextDate.getDate()).padStart(2, '0');
 
         await db.tasks.add({
-          id: 't_' + Date.now() + '_rec',
+          id: 't_' + Date.now() + '_rec_' + Math.random().toString(36).slice(2, 6),
           title: task.title,
+          description: task.description,
           dueDate: `${yyyy}-${mm}-${dd}`,
+          dueTime: task.dueTime,
           priority: task.priority,
           category: task.category,
           notes: task.notes,
@@ -406,7 +415,7 @@ export const StorageService: IDataStorage = {
       };
       return JSON.stringify(exportObj, null, 2);
     },
-    async importData(jsonData: string) {
+    async importData(jsonData: string, options: { replaceExisting?: boolean } = {}) {
       let parsed: any;
       try {
         parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
@@ -419,6 +428,29 @@ export const StorageService: IDataStorage = {
       }
 
       const tablesData = parsed.tables || parsed.data;
+      const tableNames = ['transactions', 'categories', 'budgets', 'savingsGoals', 'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings'];
+      if (!tablesData || typeof tablesData !== 'object' || Array.isArray(tablesData)) throw new Error('Invalid backup tables object');
+      for (const name of tableNames) {
+        if (!Array.isArray(tablesData[name])) throw new Error(`Invalid backup: ${name} must be an array`);
+        for (const row of tablesData[name]) {
+          const key = name === 'settings' ? row?.key : row?.id;
+          if (!row || typeof row !== 'object' || typeof key !== 'string' || !key) throw new Error(`Invalid backup record in ${name}`);
+        }
+      }
+      const transactions = tablesData.transactions as Transaction[];
+      if (transactions.some(tx => !['income', 'expense'].includes(tx.type) || !Number.isFinite(Number(tx.amount)) || !/^\d{4}-\d{2}-\d{2}$/.test(tx.date))) {
+        throw new Error('Invalid transaction record in backup');
+      }
+      const tasks = tablesData.tasks as Task[];
+      if (tasks.some(task => typeof task.title !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || ''))) throw new Error('Invalid task record in backup');
+
+      const existingCounts = await Promise.all([
+        db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(),
+        db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(), db.settings.count()
+      ]);
+      if (existingCounts.some(count => count > 0) && !options.replaceExisting) {
+        throw new Error('Existing LifeOS data was found. Confirm replacement before restoring this backup.');
+      }
       const counts: Record<string, number> = {};
 
       await db.transaction('rw', [
@@ -434,15 +466,11 @@ export const StorageService: IDataStorage = {
         db.tasks,
         db.settings
       ], async () => {
-        for (const [table, records] of Object.entries(tablesData)) {
-          const t = (db as any)[table];
-          if (t && Array.isArray(records)) {
-            await t.clear();
-            for (const r of records) {
-              await t.put(r);
-            }
-            counts[table] = records.length;
-          }
+        for (const table of tableNames) {
+          const records = tablesData[table] as any[];
+          await (db as any)[table].clear();
+          if (records.length) await (db as any)[table].bulkPut(records);
+          counts[table] = records.length;
         }
       });
       return { success: true, counts };

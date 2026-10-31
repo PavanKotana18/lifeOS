@@ -9,7 +9,19 @@
  * 6. Backup & Restore (JSON export, validation, import, integrity check)
  */
 
-const { calculateStreaks, calculateFinanceMetrics } = require('./src_core_logic.js');
+process.env.TZ = 'America/New_York';
+const {
+  calculateStreaks,
+  calculateFinanceMetrics,
+  formatLocalDate,
+  formatLocalDateTime,
+  getTaskStatus,
+  sortTasksByDeadline,
+  getGoalProgress,
+  calculateWeeklyHabitRate,
+  buildTaskNotificationPlan,
+  buildFinanceEntry
+} = require('./src_core_logic.js');
 
 // Mock in-memory database abstraction layer matching Dexie API
 class MockLifeOSDatabase {
@@ -319,6 +331,31 @@ async function runTestSuite() {
   await db.update('tasks', taskId, { completed: true, completedAt: new Date().toISOString() });
   task = await db.get('tasks', taskId);
   assert(task.completed === true, 'Mark task completed and verify persistent state');
+
+  // --- 4B. LOCAL DATE/TIME, STATUS, PROGRESS AND NOTIFICATION PLAN TESTS ---
+  console.log('\n--- 4B. Testing local deadlines and scheduling logic ---');
+  const dayEndTask = { dueDate: '2026-03-08', completed: false };
+  assert(getTaskStatus(dayEndTask, new Date(2026, 2, 8, 23, 59, 59, 999)) === 'Pending', 'Task without a time remains pending through the end of its local due day');
+  assert(getTaskStatus(dayEndTask, new Date(2026, 2, 9, 0, 0, 0, 1)) === 'Overdue', 'Task without a time becomes overdue after its local due day ends');
+  assert(getTaskStatus({ dueDate: '2026-03-08', dueTime: '09:30' }, new Date(2026, 2, 8, 9, 31)) === 'Overdue', 'Task with a due time becomes overdue after that local time');
+  assert(getTaskStatus({ dueDate: '2026-03-07', completed: true }, new Date(2026, 2, 9)) === 'Completed', 'Completed tasks never become overdue');
+  const orderedTasks = sortTasksByDeadline([
+    { id: 'later', dueDate: '2026-03-10' },
+    { id: 'overdue', dueDate: '2026-03-07' },
+    { id: 'done', dueDate: '2026-03-06', completed: true }
+  ], new Date(2026, 2, 8, 12));
+  assert(orderedTasks.map(task => task.id).join(',') === 'overdue,later,done', 'Task sorting places overdue items first and completed items last');
+  const dstLogs = ['2026-03-07', '2026-03-08', '2026-03-09'].map(date => ({ habitId: 'dst', date, completed: true }));
+  assert(calculateStreaks(dstLogs, 'dst', '2026-03-09').currentStreak === 3, 'Habit streak remains continuous across the daylight-saving transition');
+  assert(calculateWeeklyHabitRate(dstLogs, 'dst', new Date(2026, 2, 9)).rate === 43, 'Weekly completion rate uses local calendar days');
+  assert(getGoalProgress(125, 100) === 100 && getGoalProgress(-2, 100) === 0, 'Goal progress is bounded between zero and one hundred percent');
+  const localNow = new Date(2026, 6, 4, 8, 5, 6, 7);
+  const entry = buildFinanceEntry(formatLocalDateTime(localNow), localNow);
+  assert(entry.date === '2026-07-04' && entry.occurredAt === new Date('2026-07-04T08:05').toISOString(), 'Finance date/time converts from device-local input to a stable instant');
+  assert(entry.createdAt === localNow.toISOString(), 'Finance entry keeps the exact save timestamp');
+  const taskPlan = buildTaskNotificationPlan({ dueDate: '2026-07-06', dueTime: '10:00', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4));
+  assert(taskPlan.length === 3 && taskPlan[0].at.getHours() === 9 && taskPlan[0].at.getMinutes() === 15, 'Task notification planning includes custom reminder, upcoming deadline and overdue alert times');
+  assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', completed: true }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4)).length === 0, 'Completed task notifications are not scheduled');
 
   // --- 5. DASHBOARD TESTS ---
   console.log('\n--- 5. Testing Central Dashboard Integration ---');

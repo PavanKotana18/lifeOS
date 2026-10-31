@@ -10,6 +10,7 @@ export interface Transaction {
   paymentMethod: string;
   notes?: string;
   isRecurring?: boolean;
+  occurredAt?: string; // ISO instant represented by the user-selected local date/time
   createdAt: string;
   updatedAt?: string;
 }
@@ -61,6 +62,8 @@ export interface Habit {
   icon?: string;
   color: string;
   targetPerDay?: number;
+  reminderTime?: string; // HH:mm local time
+  reminderWeekday?: number; // Capacitor weekday value, Sunday=1 through Saturday=7
   createdAt: string;
   archived?: boolean;
 }
@@ -107,7 +110,10 @@ export type RecurrenceType = 'None' | 'Daily' | 'Weekly' | 'Monthly';
 export interface Task {
   id: string;
   title: string;
+  description?: string;
   dueDate: string; // YYYY-MM-DD
+  dueTime?: string; // HH:mm local time
+  reminderAt?: string; // ISO instant
   priority: PriorityLevel;
   category?: string;
   notes?: string;
@@ -115,9 +121,19 @@ export interface Task {
   completed: boolean;
   completedAt?: string;
   createdAt: string;
+  updatedAt?: string;
+}
+
+export interface NotificationPreferences {
+  taskReminders: boolean;
+  upcomingDeadlines: boolean;
+  overdueAlerts: boolean;
+  habitReminders: boolean;
+  milestoneReminders: boolean;
 }
 
 export interface AppSettings {
+  displayName?: string;
   theme: 'dark' | 'light';
   currency: string;
   currencySymbol: string;
@@ -125,4 +141,5 @@ export interface AppSettings {
   monthlyBudget: number;
   biometricLockEnabled: boolean;
   lockTimeoutMinutes: number;
+  notifications?: NotificationPreferences;
 }
