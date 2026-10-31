@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import packageInfo from '../package.json';
 import { Activity, CalendarDays, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { StorageService, db } from './db';
@@ -1150,7 +1151,7 @@ export default function App() {
             </div>
 
             <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-2">
-              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-slate-400">Version 1.0.0 · Package com.lifeos.personal</p><p className="text-[11px] text-slate-500">Offline-first personal management. Your records are stored in the local app database.</p>
+              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-slate-400">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-slate-500">Offline-first personal management. Your records are stored in the local app database.</p>
               <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-10 rounded-xl border border-slate-700 px-3 text-xs font-medium">Restart onboarding</button>
             </section>
 
