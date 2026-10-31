@@ -173,6 +173,46 @@ function shouldAnimateNavigation(prefersReducedMotion) {
   return !prefersReducedMotion;
 }
 
+function resolveBackAction(state, hasPreviousTab) {
+  if (!state.appReady || state.onboarding || state.locked) return 'ignore';
+  if (state.dialogOpen) return 'dismiss-dialog';
+  if (state.exitDialogOpen) return 'dismiss-exit-dialog';
+  if (state.taskDetailsOpen) return 'close-task-details';
+  if (state.childViewOpen) return 'close-child-view';
+  if (hasPreviousTab) return 'previous-tab';
+  if (state.tab !== 'dashboard') return 'home';
+  return 'confirm-exit';
+}
+
+function getMonthCalendarDays(year, monthIndex, weekStartsOnMonday = true) {
+  const first = new Date(year, monthIndex, 1);
+  const offset = weekStartsOnMonday ? (first.getDay() + 6) % 7 : first.getDay();
+  const count = Math.ceil((offset + new Date(year, monthIndex + 1, 0).getDate()) / 7) * 7;
+  const start = new Date(year, monthIndex, 1 - offset);
+  return Array.from({ length: count }, (_, index) => formatLocalDate(new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)));
+}
+
+function getTasksForDate(tasks, date) {
+  return tasks.filter(task => task.dueDate === date);
+}
+
+function greetingForHour(hour, name) {
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const cleanName = String(name || '').trim();
+  return cleanName ? `${greeting}, ${cleanName}.` : `${greeting}.`;
+}
+
+function watchSystemTheme(media, onTheme) {
+  const update = () => onTheme(media.matches ? 'dark' : 'light');
+  update();
+  if (media.addEventListener) media.addEventListener('change', update);
+  else if (media.addListener) media.addListener(update);
+  return () => {
+    if (media.removeEventListener) media.removeEventListener('change', update);
+    else if (media.removeListener) media.removeListener(update);
+  };
+}
+
 function stableNotificationId(key) {
   let hash = 2166136261;
   for (let index = 0; index < key.length; index++) { hash ^= key.charCodeAt(index); hash = Math.imul(hash, 16777619); }
@@ -243,5 +283,10 @@ module.exports = {
   resolveAppearance,
   normalizeNotificationPermission,
   shouldAnimateNavigation,
-  stableNotificationId
+  stableNotificationId,
+  getMonthCalendarDays,
+  getTasksForDate,
+  greetingForHour,
+  watchSystemTheme,
+  resolveBackAction
 };
