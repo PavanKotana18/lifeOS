@@ -1,0 +1,3391 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#090d16">
+  <title>LifeOS — Personal Life Management</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    :root {
+      --bg-body: #090d16;
+      --bg-surface: #111827;
+      --bg-surface-elevated: #1f2937;
+      --bg-surface-subtle: #1e293b;
+      --border-color: #374151;
+      --text-main: #f9fafb;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --primary-light: rgba(99, 102, 241, 0.15);
+      --success: #10b981;
+      --success-light: rgba(16, 185, 129, 0.15);
+      --warning: #f59e0b;
+      --warning-light: rgba(245, 158, 11, 0.15);
+      --danger: #ef4444;
+      --danger-light: rgba(239, 68, 68, 0.15);
+      --card-radius: 16px;
+      --safe-bottom: env(safe-area-inset-bottom, 16px);
+    }
+
+    html.light {
+      --bg-body: #f8fafc;
+      --bg-surface: #ffffff;
+      --bg-surface-elevated: #f1f5f9;
+      --bg-surface-subtle: #e2e8f0;
+      --border-color: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --text-dim: #94a3b8;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-light: rgba(79, 70, 229, 0.12);
+      --success: #059669;
+      --success-light: rgba(5, 150, 105, 0.12);
+      --warning: #d97706;
+      --warning-light: rgba(217, 119, 6, 0.12);
+      --danger: #dc2626;
+      --danger-light: rgba(220, 38, 38, 0.12);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #app-container {
+      max-width: 480px;
+      margin: 0 auto;
+      width: 100%;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background-color: var(--bg-body);
+      box-shadow: 0 0 50px rgba(0, 0, 0, 0.3);
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(12px);
+    }
+
+    main {
+      flex: 1;
+      padding: 16px 16px calc(84px + var(--safe-bottom)) 16px;
+      overflow-y: auto;
+    }
+
+    nav.bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 480px;
+      height: calc(64px + var(--safe-bottom));
+      padding-bottom: var(--safe-bottom);
+      background-color: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 50;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 11px;
+      font-weight: 500;
+      flex: 1;
+      height: 100%;
+      cursor: pointer;
+      transition: color 0.2s, transform 0.1s;
+      border: none;
+      background: transparent;
+      padding: 6px 0;
+    }
+
+    .nav-item.active {
+      color: var(--primary);
+    }
+
+    .nav-item.active svg {
+      stroke: var(--primary);
+      transform: scale(1.1);
+    }
+
+    .nav-item svg {
+      width: 22px;
+      height: 22px;
+      margin-bottom: 3px;
+      stroke: var(--text-muted);
+      transition: transform 0.2s, stroke 0.2s;
+    }
+
+    .card {
+      background-color: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--card-radius);
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      position: relative;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      min-height: 44px;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: #ffffff;
+    }
+
+    .btn-primary:active {
+      background-color: var(--primary-hover);
+      transform: scale(0.98);
+    }
+
+    .btn-secondary {
+      background-color: var(--bg-surface-elevated);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:active {
+      background-color: var(--bg-surface-subtle);
+    }
+
+    .btn-danger {
+      background-color: var(--danger);
+      color: #ffffff;
+    }
+
+    .btn-sm {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 8px;
+      min-height: 32px;
+    }
+
+    .btn-icon {
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-surface-elevated);
+      color: var(--text-main);
+      cursor: pointer;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-primary { background: var(--primary-light); color: var(--primary); }
+    .badge-success { background: var(--success-light); color: var(--success); }
+    .badge-warning { background: var(--warning-light); color: var(--warning); }
+    .badge-danger { background: var(--danger-light); color: var(--danger); }
+    .badge-neutral { background: var(--bg-surface-elevated); color: var(--text-muted); }
+
+    .subtabs {
+      display: flex;
+      background-color: var(--bg-surface-elevated);
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 16px;
+      gap: 4px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .subtabs::-webkit-scrollbar { display: none; }
+
+    .subtab-btn {
+      flex: 1;
+      min-width: fit-content;
+      text-align: center;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .subtab-btn.active {
+      background-color: var(--bg-surface);
+      color: var(--text-main);
+      font-weight: 600;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      scrollbar-width: none;
+    }
+    .filter-bar::-webkit-scrollbar { display: none; }
+
+    .filter-chip {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-surface);
+      color: var(--text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+
+    .filter-chip.active {
+      background-color: var(--primary);
+      color: #ffffff;
+      border-color: var(--primary);
+      font-weight: 600;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background-color: var(--bg-surface-elevated);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-control:focus {
+      border-color: var(--primary);
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background-color: var(--bg-surface-elevated);
+      border-radius: 9999px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 9999px;
+      transition: width 0.3s ease;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-sheet {
+      background-color: var(--bg-surface);
+      border-top-left-radius: 24px;
+      border-top-right-radius: 24px;
+      border-top: 1px solid var(--border-color);
+      width: 100%;
+      max-width: 480px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 20px 18px calc(24px + var(--safe-bottom)) 18px;
+      box-shadow: 0 -10px 40px rgba(0,0,0,0.4);
+      transform: translateY(100%);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .modal-backdrop.open .modal-sheet {
+      transform: translateY(0);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    #toast-container {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 200;
+      width: 90%;
+      max-width: 400px;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .toast {
+      background: var(--bg-surface-elevated);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes slideDown {
+      from { transform: translateY(-20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .item-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px;
+      border-radius: 12px;
+      background-color: var(--bg-surface-elevated);
+      margin-bottom: 8px;
+      transition: transform 0.1s;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-dim);
+    }
+
+    .fab {
+      position: fixed;
+      bottom: calc(76px + var(--safe-bottom));
+      right: max(16px, calc(50% - 224px));
+      width: 52px;
+      height: 52px;
+      border-radius: 26px;
+      background-color: var(--primary);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+      border: none;
+      cursor: pointer;
+      z-index: 45;
+      transition: transform 0.2s, background-color 0.2s;
+    }
+
+    .fab:active {
+      transform: scale(0.92);
+    }
+
+    .icon {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+</head>
+<body>
+  <div id="app-container">
+    <header>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, #6366f1, #3b82f6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 15px;">L</div>
+        <div>
+          <h1 id="header-title" style="font-size: 16px; font-weight: 700; line-height: 1.2;">LifeOS</h1>
+          <p id="header-subtitle" style="font-size: 11px; color: var(--text-muted);">Personal Management</p>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="badge badge-success" id="offline-badge" style="font-size: 10px;">Offline Ready</span>
+        <button class="btn-icon" id="theme-toggle-btn" aria-label="Toggle theme">
+          <svg class="icon" id="theme-icon" viewBox="0 0 24 24"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <div id="view-dashboard" class="app-view"></div>
+      <div id="view-finance" class="app-view" style="display: none;"></div>
+      <div id="view-habits" class="app-view" style="display: none;"></div>
+      <div id="view-goals" class="app-view" style="display: none;"></div>
+      <div id="view-planner" class="app-view" style="display: none;"></div>
+      <div id="view-settings" class="app-view" style="display: none;"></div>
+    </main>
+
+    <button class="fab" id="fab-add" aria-label="Quick Add" title="Quick Add">
+      <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+    </button>
+
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-tab="dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+        Home
+      </button>
+      <button class="nav-item" data-tab="finance">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+        Finance
+      </button>
+      <button class="nav-item" data-tab="habits">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg>
+        Habits
+      </button>
+      <button class="nav-item" data-tab="goals">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="2"></circle></svg>
+        Goals
+      </button>
+      <button class="nav-item" data-tab="planner">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        Planner
+      </button>
+      <button class="nav-item" data-tab="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        Settings
+      </button>
+    </nav>
+
+    <div id="modal-container"></div>
+    <div id="toast-container"></div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // 1. BULLETPROOF IN-MEMORY + PERSISTENT DATABASE ENGINE
+      class ResilientLifeOSDB {
+        constructor() {
+          this.tables = {
+            transactions: new Map(),
+            categories: new Map(),
+            budgets: new Map(),
+            savingsGoals: new Map(),
+            savingsContributions: new Map(),
+            habits: new Map(),
+            habitLogs: new Map(),
+            goals: new Map(),
+            milestones: new Map(),
+            tasks: new Map(),
+            settings: new Map()
+          };
+          this.subscribers = new Set();
+          this.init();
+        }
+
+        init() {
+          // 1. Try to load saved state from localStorage safely
+          try {
+            if (typeof localStorage !== 'undefined') {
+              for (const key of Object.keys(this.tables)) {
+                const raw = localStorage.getItem('LifeOS_' + key);
+                if (raw) {
+                  const arr = JSON.parse(raw);
+                  if (Array.isArray(arr)) {
+                    for (const item of arr) {
+                      const id = key === 'settings' ? item.key : item.id;
+                      this.tables[key].set(id, item);
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.warn('LocalStorage unavailable');
+          }
+
+          // 2. Seed initial sample data if categories are empty
+          this.seedDefaultsIfEmpty();
+
+          // 3. Proactively attempt IndexedDB without blocking or crashing
+          try {
+            if (typeof window !== 'undefined' && 'indexedDB' in window && window.indexedDB) {
+              const req = window.indexedDB.open('LifeOS_Database', 2);
+              req.onupgradeneeded = (e) => {
+                const idb = e.target.result;
+                Object.keys(this.tables).forEach(name => {
+                  if (!idb.objectStoreNames.contains(name)) {
+                    idb.createObjectStore(name, { keyPath: name === 'settings' ? 'key' : 'id' });
+                  }
+                });
+              };
+              req.onsuccess = (e) => {
+                this.idb = e.target.result;
+              };
+            }
+          } catch (e) {
+            // Silently fall back to in-memory + localStorage
+          }
+        }
+
+        seedDefaultsIfEmpty() {
+          if (this.tables.categories.size === 0) {
+            const defaultCats = [
+              { id: 'cat_sal', name: 'Salary', type: 'income', color: '#10b981', isDefault: true },
+              { id: 'cat_free', name: 'Freelance', type: 'income', color: '#3b82f6', isDefault: true },
+              { id: 'cat_int', name: 'Interest', type: 'income', color: '#8b5cf6', isDefault: true },
+              { id: 'cat_oth_in', name: 'Other Income', type: 'income', color: '#06b6d4', isDefault: true },
+              { id: 'cat_rent', name: 'Rent', type: 'expense', color: '#ef4444', isDefault: true },
+              { id: 'cat_food', name: 'Food', type: 'expense', color: '#f59e0b', isDefault: true },
+              { id: 'cat_trans', name: 'Transport', type: 'expense', color: '#6366f1', isDefault: true },
+              { id: 'cat_shop', name: 'Shopping', type: 'expense', color: '#ec4899', isDefault: true },
+              { id: 'cat_util', name: 'Utilities', type: 'expense', color: '#8b5cf6', isDefault: true },
+              { id: 'cat_health', name: 'Health', type: 'expense', color: '#14b8a6', isDefault: true },
+              { id: 'cat_ent', name: 'Entertainment', type: 'expense', color: '#a855f7', isDefault: true },
+              { id: 'cat_edu', name: 'Education', type: 'expense', color: '#0284c7', isDefault: true },
+              { id: 'cat_emi', name: 'EMIs', type: 'expense', color: '#f97316', isDefault: true },
+              { id: 'cat_inv', name: 'Investments', type: 'expense', color: '#10b981', isDefault: true },
+              { id: 'cat_oth_ex', name: 'Other Expenses', type: 'expense', color: '#64748b', isDefault: true }
+            ];
+            for (const c of defaultCats) this.tables.categories.set(c.id, c);
+          }
+
+          // CLEAN FIRST LAUNCH:
+          // Strictly seed categories and base settings only.
+          // Zero demonstration records (no sample salary, rent, habits, goals or tasks) are injected automatically.
+          // Optional demo data is accessible exclusively through a user-initiated action in Settings.
+
+          if (this.tables.settings.size === 0) {
+            this.tables.settings.set('theme', { key: 'theme', value: 'dark' });
+            this.tables.settings.set('currency', { key: 'currency', value: 'INR' });
+            this.tables.settings.set('currencySymbol', { key: 'currencySymbol', value: '₹' });
+            this.tables.settings.set('dateFormat', { key: 'dateFormat', value: 'DD/MM/YYYY' });
+            this.tables.settings.set('monthlyBudget', { key: 'monthlyBudget', value: 65000 });
+          }
+        }
+
+        persistStore(storeName) {
+          try {
+            if (typeof localStorage !== 'undefined' && this.tables[storeName]) {
+              localStorage.setItem('LifeOS_' + storeName, JSON.stringify(Array.from(this.tables[storeName].values())));
+            }
+          } catch (e) {}
+
+          // Also mirror to IndexedDB if connected
+          if (this.idb) {
+            try {
+              const tx = this.idb.transaction(storeName, 'readwrite');
+              const store = tx.objectStore(storeName);
+              store.clear();
+              for (const item of this.tables[storeName].values()) {
+                store.put(item);
+              }
+            } catch (e) {}
+          }
+        }
+
+        async getAll(storeName) {
+          const t = this.tables[storeName];
+          if (!t) return [];
+          return Array.from(t.values());
+        }
+
+        async get(storeName, id) {
+          const t = this.tables[storeName];
+          if (!t) return null;
+          return t.get(id) || null;
+        }
+
+        async put(storeName, item) {
+          if (!this.tables[storeName]) return item;
+          if (!item.id && storeName !== 'settings') {
+            item.id = 'id_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+          }
+          item.updatedAt = new Date().toISOString();
+          if (!item.createdAt) item.createdAt = item.updatedAt;
+
+          const key = storeName === 'settings' ? item.key : item.id;
+          this.tables[storeName].set(key, item);
+          this.persistStore(storeName);
+          this.notify();
+          return item;
+        }
+
+        async delete(storeName, id) {
+          if (!this.tables[storeName]) return false;
+          const res = this.tables[storeName].delete(id);
+          this.persistStore(storeName);
+          this.notify();
+          return res;
+        }
+
+        async clear(storeName) {
+          if (this.tables[storeName]) {
+            this.tables[storeName].clear();
+            this.persistStore(storeName);
+            this.notify();
+          }
+        }
+
+        seedDemoData() {
+          const today = new Date().toISOString().split('T')[0];
+          const curMonth = today.substring(0, 7);
+
+          // Sample Transactions
+          this.tables.transactions.set('tx_d1', { id: 'tx_d1', type: 'income', amount: 95000, category: 'Salary', description: 'Tech Consultancy Salary', date: `${curMonth}-01`, paymentMethod: 'Bank Transfer', createdAt: new Date().toISOString() });
+          this.tables.transactions.set('tx_d2', { id: 'tx_d2', type: 'income', amount: 15000, category: 'Freelance', description: 'Web Architecture Sprint', date: `${curMonth}-15`, paymentMethod: 'Net Banking', createdAt: new Date().toISOString() });
+          this.tables.transactions.set('tx_d3', { id: 'tx_d3', type: 'expense', amount: 28000, category: 'Rent', description: 'Apartment Monthly Rent', date: `${curMonth}-02`, paymentMethod: 'UPI', createdAt: new Date().toISOString() });
+          this.tables.transactions.set('tx_d4', { id: 'tx_d4', type: 'expense', amount: 6500, category: 'Food', description: 'Organic Pantry Provisions', date: `${curMonth}-08`, paymentMethod: 'Credit Card', createdAt: new Date().toISOString() });
+          this.tables.transactions.set('tx_d5', { id: 'tx_d5', type: 'expense', amount: 2400, category: 'Utilities', description: 'Fiber Broadband & Power', date: `${curMonth}-12`, paymentMethod: 'UPI', createdAt: new Date().toISOString() });
+
+          // Sample Budget & Savings
+          this.tables.budgets.set('b_d_overall', { id: 'b_d_overall', monthlyAmount: 60000, monthYear: curMonth, createdAt: new Date().toISOString() });
+          this.tables.budgets.set('b_d_food', { id: 'b_d_food', categoryId: 'Food', monthlyAmount: 12000, monthYear: curMonth, createdAt: new Date().toISOString() });
+          this.tables.savingsGoals.set('sg_d1', { id: 'sg_d1', title: 'Emergency Reserve Fund', targetAmount: 200000, currentAmount: 85000, targetDate: '2026-12-31', category: 'Financial', createdAt: new Date().toISOString() });
+
+          // Sample Habits
+          this.tables.habits.set('h_d1', { id: 'h_d1', name: 'Drink 3L Water', frequency: 'daily', color: '#3b82f6', createdAt: new Date().toISOString() });
+          this.tables.habits.set('h_d2', { id: 'h_d2', name: 'Walk 10,000 steps', frequency: 'daily', color: '#10b981', createdAt: new Date().toISOString() });
+          this.tables.habits.set('h_d3', { id: 'h_d3', name: 'Read 20 pages', frequency: 'daily', color: '#8b5cf6', createdAt: new Date().toISOString() });
+
+          const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+          this.tables.habitLogs.set('hl_d1', { id: 'hl_d1', habitId: 'h_d1', date: yesterday, completed: true, completedAt: new Date().toISOString() });
+          this.tables.habitLogs.set('hl_d2', { id: 'hl_d2', habitId: 'h_d1', date: today, completed: true, completedAt: new Date().toISOString() });
+          this.tables.habitLogs.set('hl_d3', { id: 'hl_d3', habitId: 'h_d2', date: yesterday, completed: true, completedAt: new Date().toISOString() });
+
+          // Sample Goals
+          this.tables.goals.set('g_d1', { id: 'g_d1', title: 'Run Half Marathon (21.1 km)', description: 'State endurance marathon prep', category: 'Fitness', targetValue: 21.1, currentValue: 10.0, unit: 'km', startDate: '2026-09-01', targetDate: '2026-12-31', priority: 'High', status: 'In Progress', createdAt: new Date().toISOString() });
+          this.tables.milestones.set('m_d1', { id: 'm_d1', goalId: 'g_d1', title: '5km continuous run', completed: true });
+          this.tables.milestones.set('m_d2', { id: 'm_d2', goalId: 'g_d1', title: '10km non-stop run', completed: true });
+          this.tables.milestones.set('m_d3', { id: 'm_d3', goalId: 'g_d1', title: '15km long trail run', completed: false });
+
+          // Sample Tasks
+          this.tables.tasks.set('t_d1', { id: 't_d1', title: 'Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false, createdAt: new Date().toISOString() });
+          this.tables.tasks.set('t_d2', { id: 't_d2', title: '5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true, createdAt: new Date().toISOString() });
+          this.tables.tasks.set('t_d3', { id: 't_d3', title: 'Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false, createdAt: new Date().toISOString() });
+
+          for (const key of Object.keys(this.tables)) this.persistStore(key);
+          this.notify();
+        }
+
+        async clearAll() {
+          for (const key of Object.keys(this.tables)) {
+            this.tables[key].clear();
+            this.persistStore(key);
+          }
+          this.seedDefaultsIfEmpty();
+          for (const key of Object.keys(this.tables)) {
+            this.persistStore(key);
+          }
+          this.notify();
+        }
+
+        async exportAllData() {
+          const exportObj = {
+            version: '1.0.0',
+            exportedAt: new Date().toISOString(),
+            appName: 'LifeOS',
+            tables: {}
+          };
+          for (const [key, map] of Object.entries(this.tables)) {
+            exportObj.tables[key] = Array.from(map.values());
+          }
+          return exportObj;
+        }
+
+        async importAllData(imported) {
+          if (!imported || !imported.tables) {
+            throw new Error('Invalid LifeOS backup file: missing tables data');
+          }
+          for (const [storeName, records] of Object.entries(imported.tables)) {
+            if (this.tables[storeName] && Array.isArray(records)) {
+              this.tables[storeName].clear();
+              for (const item of records) {
+                const id = storeName === 'settings' ? item.key : item.id;
+                this.tables[storeName].set(id, item);
+              }
+              this.persistStore(storeName);
+            }
+          }
+          this.notify();
+          return true;
+        }
+
+        subscribe(callback) {
+          this.subscribers.add(callback);
+          return () => this.subscribers.delete(callback);
+        }
+
+        notify() {
+          for (const cb of this.subscribers) {
+            try { cb(); } catch (e) { console.error(e); }
+          }
+        }
+      }
+
+      const db = new ResilientLifeOSDB();
+      window.LifeOS_DB = db;
+
+      // 2. STATE AND HELPERS
+      const state = {
+        currentTab: 'dashboard',
+        financeSubtab: 'overview',
+        financeFilterType: 'all',
+        financeFilterCategory: 'all',
+        financeFilterMonth: new Date().toISOString().substring(0, 7),
+        financeSearchQuery: '',
+        financeSortBy: 'date-desc',
+        habitsSubtab: 'checklist',
+        habitsSelectedDate: new Date().toISOString().split('T')[0],
+        goalsSubtab: 'active',
+        goalsCategoryFilter: 'all',
+        plannerSubtab: 'agenda',
+        plannerFilter: 'all',
+        currency: 'INR',
+        currencySymbol: '₹',
+        theme: 'dark'
+      };
+
+      function formatMoney(amount) {
+        const num = Number(amount) || 0;
+        const sym = state.currencySymbol || '₹';
+        if (state.currency === 'INR') {
+          return sym + num.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        }
+        return sym + num.toLocaleString('en-US', { maximumFractionDigits: 0 });
+      }
+
+      function formatDate(dateStr) {
+        if (!dateStr) return '';
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return dateStr;
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+
+      function getDaysRemainingText(targetDateStr) {
+        if (!targetDateStr) return '';
+        const today = new Date(new Date().toISOString().split('T')[0] + 'T00:00:00');
+        const target = new Date(targetDateStr + 'T00:00:00');
+        const diffDays = Math.round((target - today) / (1000 * 60 * 60 * 24));
+        if (diffDays === 0) return 'Due today';
+        if (diffDays > 0) return `${diffDays} day${diffDays === 1 ? '' : 's'} remaining`;
+        return `Overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) === 1 ? '' : 's'}`;
+      }
+
+      function showToast(message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        const color = type === 'success' ? '#10b981' : type === 'danger' ? '#ef4444' : '#6366f1';
+        toast.innerHTML = `
+          <svg style="width:18px;height:18px;stroke:${color};fill:none;stroke-width:2;" viewBox="0 0 24 24">
+            ${type === 'success' ? '<path d="M20 6L9 17l-5-5"/>' : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'}
+          </svg>
+          <span style="flex:1;">${escapeHtml(message)}</span>
+        `;
+        container.appendChild(toast);
+        setTimeout(() => {
+          toast.style.opacity = '0';
+          toast.style.transition = 'opacity 0.3s';
+          setTimeout(() => toast.remove(), 300);
+        }, 3000);
+      }
+
+      function escapeHtml(str) {
+        if (typeof str !== 'string') return str;
+        return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
+      }
+
+      function openModal(contentHtml) {
+        const container = document.getElementById('modal-container');
+        container.innerHTML = `
+          <div class="modal-backdrop open" id="active-modal-backdrop">
+            <div class="modal-sheet">
+              ${contentHtml}
+            </div>
+          </div>
+        `;
+        const backdrop = document.getElementById('active-modal-backdrop');
+        backdrop.addEventListener('click', (e) => {
+          if (e.target === backdrop) closeModal();
+        });
+      }
+
+      function closeModal() {
+        const backdrop = document.getElementById('active-modal-backdrop');
+        if (backdrop) {
+          backdrop.classList.remove('open');
+          setTimeout(() => backdrop.remove(), 200);
+        }
+      }
+
+      function openConfirmModal(title, msg, onConfirm) {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title" style="color: var(--danger);">${escapeHtml(title)}</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <p style="font-size: 13px; color: var(--text-main); margin-bottom: 16px;">${escapeHtml(msg)}</p>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn btn-secondary" id="modal-cancel-btn" style="flex: 1;">Cancel</button>
+            <button class="btn btn-danger" id="modal-confirm-action-btn" style="flex: 1;">Confirm</button>
+          </div>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
+        document.getElementById('modal-confirm-action-btn').addEventListener('click', async () => {
+          closeModal();
+          if (onConfirm) await onConfirm();
+        });
+      }
+
+      // 3. STATISTICAL ENGINES
+      function calculateStreaks(habitLogs, targetHabitId, todayStr) {
+        const completedDates = new Set(
+          habitLogs
+            .filter(l => l.habitId === targetHabitId && l.completed)
+            .map(l => l.date)
+        );
+
+        if (completedDates.size === 0) {
+          return { currentStreak: 0, longestStreak: 0, completedToday: false, totalCompletions: 0 };
+        }
+
+        const completedToday = completedDates.has(todayStr);
+        const sortedDates = Array.from(completedDates).sort();
+
+        let longestStreak = 0;
+        let tempStreak = 0;
+        let prevDate = null;
+
+        for (const dStr of sortedDates) {
+          const curDate = new Date(dStr + 'T00:00:00');
+          if (prevDate) {
+            const diffDays = Math.round((curDate - prevDate) / (1000 * 60 * 60 * 24));
+            if (diffDays === 1) {
+              tempStreak += 1;
+            } else if (diffDays > 1) {
+              tempStreak = 1;
+            }
+          } else {
+            tempStreak = 1;
+          }
+          if (tempStreak > longestStreak) longestStreak = tempStreak;
+          prevDate = curDate;
+        }
+
+        let currentStreak = 0;
+        let checkDate = new Date(todayStr + 'T00:00:00');
+        if (!completedDates.has(todayStr)) {
+          checkDate.setDate(checkDate.getDate() - 1);
+        }
+
+        while (true) {
+          const y = checkDate.getFullYear();
+          const m = String(checkDate.getMonth() + 1).padStart(2, '0');
+          const d = String(checkDate.getDate()).padStart(2, '0');
+          const checkStr = `${y}-${m}-${d}`;
+          if (completedDates.has(checkStr)) {
+            currentStreak += 1;
+            checkDate.setDate(checkDate.getDate() - 1);
+          } else {
+            break;
+          }
+        }
+
+        return { currentStreak, longestStreak, completedToday, totalCompletions: completedDates.size };
+      }
+
+      function calculateFinanceMetrics(transactions, budgets, currentMonthStr) {
+        const monthlyTx = transactions.filter(t => t.date && t.date.startsWith(currentMonthStr));
+        let totalIncome = 0;
+        let totalExpenses = 0;
+        const categoryExpenses = {};
+
+        for (const tx of monthlyTx) {
+          const amt = Number(tx.amount) || 0;
+          if (tx.type === 'income') {
+            totalIncome += amt;
+          } else if (tx.type === 'expense') {
+            totalExpenses += amt;
+            categoryExpenses[tx.category] = (categoryExpenses[tx.category] || 0) + amt;
+          }
+        }
+
+        const remainingBalance = totalIncome - totalExpenses;
+        const savingsRate = totalIncome > 0 ? Math.max(0, ((totalIncome - totalExpenses) / totalIncome) * 100) : 0;
+
+        let totalBudget = 0;
+        for (const b of budgets) {
+          if (!b.categoryId && (!b.monthYear || b.monthYear === currentMonthStr)) {
+            totalBudget += Number(b.monthlyAmount) || 0;
+          }
+        }
+
+        const budgetUtilisation = totalBudget > 0 ? (totalExpenses / totalBudget) * 100 : 0;
+        const remainingBudget = totalBudget - totalExpenses;
+
+        return {
+          totalIncome,
+          totalExpenses,
+          remainingBalance,
+          savingsRate: Number(savingsRate.toFixed(1)),
+          totalBudget,
+          budgetUtilisation: Number(budgetUtilisation.toFixed(1)),
+          remainingBudget,
+          categoryExpenses,
+          count: monthlyTx.length
+        };
+      }
+
+      // 4. PRESENTATION VIEWS
+      async function renderDashboard() {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const monthStr = todayStr.substring(0, 7);
+
+        const txs = await db.getAll('transactions');
+        const budgets = await db.getAll('budgets');
+        const habits = await db.getAll('habits');
+        const habitLogs = await db.getAll('habitLogs');
+        const tasks = await db.getAll('tasks');
+        const goals = await db.getAll('goals');
+
+        const fin = calculateFinanceMetrics(txs, budgets, monthStr);
+
+        let completedHabitsCount = 0;
+        const habitsTodayList = habits.map(h => {
+          const streak = calculateStreaks(habitLogs, h.id, todayStr);
+          if (streak.completedToday) completedHabitsCount++;
+          return { ...h, ...streak };
+        });
+
+        const todayTasks = tasks.filter(t => t.dueDate === todayStr || (!t.dueDate && !t.completed));
+        const pendingTasks = todayTasks.filter(t => !t.completed);
+        const completedTasks = todayTasks.filter(t => t.completed);
+
+        const habitWeight = habits.length > 0 ? (completedHabitsCount / habits.length) * 50 : 50;
+        const taskWeight = todayTasks.length > 0 ? (completedTasks.length / todayTasks.length) * 50 : 50;
+        const productivityScore = Math.min(100, Math.round(habitWeight + taskWeight));
+
+        const h = new Date().getHours();
+        const greeting = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+
+        const container = document.getElementById('view-dashboard');
+        container.innerHTML = `
+          <div style="margin-bottom: 16px;">
+            <p style="font-size: 13px; color: var(--text-muted); font-weight: 500;">${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}</p>
+            <h2 style="font-size: 22px; font-weight: 700; color: var(--text-main);">${greeting}!</h2>
+          </div>
+
+          <div class="card" style="background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(59, 130, 246, 0.1)); border-color: rgba(99, 102, 241, 0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <span class="badge badge-primary">Weekly Focus</span>
+                <h3 style="font-size: 18px; font-weight: 700; margin-top: 6px;">Productivity Score</h3>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">${completedHabitsCount}/${habits.length} habits &bull; ${completedTasks.length}/${todayTasks.length} tasks completed</p>
+              </div>
+              <div style="width: 58px; height: 58px; border-radius: 50%; background: var(--bg-surface); border: 3px solid var(--primary); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; color: var(--primary);">
+                ${productivityScore}%
+              </div>
+            </div>
+            <div class="progress-bar-bg" style="margin-top: 12px; background: rgba(255,255,255,0.1);">
+              <div class="progress-bar-fill" style="width: ${productivityScore}%; background: var(--primary);"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">
+              <span>Financial Snapshot (${monthStr})</span>
+              <button class="btn btn-sm btn-secondary" id="dash-view-finance-btn">Details &rarr;</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+              <div style="background: var(--bg-surface-elevated); padding: 10px; border-radius: 10px;">
+                <p style="font-size: 11px; color: var(--text-muted);">Total Income</p>
+                <p style="font-size: 15px; font-weight: 700; color: var(--success);">${formatMoney(fin.totalIncome)}</p>
+              </div>
+              <div style="background: var(--bg-surface-elevated); padding: 10px; border-radius: 10px;">
+                <p style="font-size: 11px; color: var(--text-muted);">Total Expenses</p>
+                <p style="font-size: 15px; font-weight: 700; color: var(--danger);">${formatMoney(fin.totalExpenses)}</p>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 6px;">
+              <span>Net Balance: <strong style="color: ${fin.remainingBalance >= 0 ? 'var(--text-main)' : 'var(--danger)'};">${formatMoney(fin.remainingBalance)}</strong></span>
+              <span>Savings Rate: <strong style="color: var(--primary);">${fin.savingsRate}%</strong></span>
+            </div>
+            ${fin.totalBudget > 0 ? `
+              <div style="margin-top: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
+                  <span>Budget Utilisation (${fin.budgetUtilisation}%)</span>
+                  <span>${formatMoney(fin.remainingBudget)} left</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill" style="width: ${Math.min(100, fin.budgetUtilisation)}%; background: ${fin.budgetUtilisation > 100 ? 'var(--danger)' : 'var(--success)'};"></div>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="card">
+            <div class="card-title">
+              <span>Today's Habits (${completedHabitsCount}/${habits.length})</span>
+              <button class="btn btn-sm btn-secondary" id="dash-view-habits-btn">Checklist</button>
+            </div>
+            ${habitsTodayList.length === 0 ? `
+              <div class="empty-state" style="padding: 16px;"><p style="font-size: 13px;">No habits defined.</p></div>
+            ` : `
+              <div>
+                ${habitsTodayList.map(h => `
+                  <div class="item-row">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <button class="dash-habit-toggle" data-id="${h.id}" data-done="${h.completedToday ? 'true' : 'false'}" style="width: 28px; height: 28px; border-radius: 50%; border: 2px solid ${h.completedToday ? 'var(--success)' : 'var(--border-color)'}; background: ${h.completedToday ? 'var(--success)' : 'transparent'}; display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;">
+                        ${h.completedToday ? '<svg style="width:16px;height:16px;stroke:white;fill:none;stroke-width:3;" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>' : ''}
+                      </button>
+                      <div>
+                        <p style="font-size: 14px; font-weight: 600; text-decoration: ${h.completedToday ? 'line-through' : 'none'}; color: ${h.completedToday ? 'var(--text-muted)' : 'var(--text-main)'};">${escapeHtml(h.name)}</p>
+                        <p style="font-size: 11px; color: var(--text-dim);">🔥 ${h.currentStreak} day streak</p>
+                      </div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+
+          <div class="card">
+            <div class="card-title">
+              <span>Today's Agenda (${pendingTasks.length} pending)</span>
+              <button class="btn btn-sm btn-secondary" id="dash-view-planner-btn">Planner</button>
+            </div>
+            ${todayTasks.length === 0 ? `
+              <div class="empty-state" style="padding: 16px;"><p style="font-size: 13px;">All clear for today!</p></div>
+            ` : `
+              <div>
+                ${todayTasks.slice(0, 4).map(t => `
+                  <div class="item-row">
+                    <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+                      <button class="dash-task-toggle" data-id="${t.id}" data-done="${t.completed ? 'true' : 'false'}" style="width: 22px; height: 22px; border-radius: 6px; border: 2px solid ${t.completed ? 'var(--primary)' : 'var(--border-color)'}; background: ${t.completed ? 'var(--primary)' : 'transparent'}; display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;">
+                        ${t.completed ? '<svg style="width:14px;height:14px;stroke:white;fill:none;stroke-width:3;" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>' : ''}
+                      </button>
+                      <div style="flex: 1;">
+                        <p style="font-size: 13px; font-weight: 500; text-decoration: ${t.completed ? 'line-through' : 'none'}; color: ${t.completed ? 'var(--text-muted)' : 'var(--text-main)'};">${escapeHtml(t.title)}</p>
+                        <span class="badge ${t.priority === 'Urgent' ? 'badge-danger' : t.priority === 'High' ? 'badge-warning' : 'badge-neutral'}" style="font-size: 9px; padding: 1px 6px;">${t.priority}</span>
+                      </div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+
+          <div class="card">
+            <div class="card-title">
+              <span>Active Goals</span>
+              <button class="btn btn-sm btn-secondary" id="dash-view-goals-btn">All Goals</button>
+            </div>
+            ${goals.length === 0 ? `
+              <div class="empty-state" style="padding: 16px;"><p style="font-size: 13px;">No goals created yet.</p></div>
+            ` : `
+              <div>
+                ${goals.slice(0, 2).map(g => {
+                  const pct = g.targetValue > 0 ? Math.min(100, Math.round((g.currentValue / g.targetValue) * 100)) : 0;
+                  return `
+                    <div style="margin-bottom: 12px; background: var(--bg-surface-elevated); padding: 12px; border-radius: 12px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 13px; font-weight: 600;">${escapeHtml(g.title)}</span>
+                        <span style="font-size: 12px; font-weight: 700; color: var(--primary);">${pct}%</span>
+                      </div>
+                      <div class="progress-bar-bg" style="margin: 6px 0;">
+                        <div class="progress-bar-fill" style="width: ${pct}%; background: var(--primary);"></div>
+                      </div>
+                      <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim);">
+                        <span>${g.currentValue} / ${g.targetValue} ${g.unit || ''}</span>
+                        <span>${getDaysRemainingText(g.targetDate)}</span>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        `;
+
+        document.getElementById('dash-view-finance-btn')?.addEventListener('click', () => switchTab('finance'));
+        document.getElementById('dash-view-habits-btn')?.addEventListener('click', () => switchTab('habits'));
+        document.getElementById('dash-view-planner-btn')?.addEventListener('click', () => switchTab('planner'));
+        document.getElementById('dash-view-goals-btn')?.addEventListener('click', () => switchTab('goals'));
+
+        container.querySelectorAll('.dash-habit-toggle').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const hid = btn.dataset.id;
+            const isDone = btn.dataset.done === 'true';
+            await toggleHabitForDate(hid, todayStr, !isDone);
+          });
+        });
+
+        container.querySelectorAll('.dash-task-toggle').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const tid = btn.dataset.id;
+            const isDone = btn.dataset.done === 'true';
+            const t = await db.get('tasks', tid);
+            if (t) {
+              await toggleTaskCompletedWithRecurrence(t, !isDone);
+            }
+          });
+        });
+      }
+
+      // FINANCE VIEW
+      async function renderFinance() {
+        const txs = await db.getAll('transactions');
+        const budgets = await db.getAll('budgets');
+        const categories = await db.getAll('categories');
+        const savingsGoals = await db.getAll('savingsGoals');
+
+        const metrics = calculateFinanceMetrics(txs, budgets, state.financeFilterMonth);
+
+        const container = document.getElementById('view-finance');
+        container.innerHTML = `
+          <div class="subtabs">
+            <button class="subtab-btn ${state.financeSubtab === 'overview' ? 'active' : ''}" data-sub="overview">Overview</button>
+            <button class="subtab-btn ${state.financeSubtab === 'transactions' ? 'active' : ''}" data-sub="transactions">Transactions</button>
+            <button class="subtab-btn ${state.financeSubtab === 'budgets' ? 'active' : ''}" data-sub="budgets">Budgets</button>
+            <button class="subtab-btn ${state.financeSubtab === 'savings' ? 'active' : ''}" data-sub="savings">Savings</button>
+            <button class="subtab-btn ${state.financeSubtab === 'analytics' ? 'active' : ''}" data-sub="analytics">Analytics</button>
+          </div>
+          <div id="finance-subtab-container"></div>
+        `;
+
+        container.querySelectorAll('.subtab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.financeSubtab = btn.dataset.sub;
+            container.querySelectorAll('.subtab-btn').forEach(b => b.classList.toggle('active', b === btn));
+            renderFinanceSubtab(txs, budgets, categories, savingsGoals, metrics);
+          });
+        });
+
+        renderFinanceSubtab(txs, budgets, categories, savingsGoals, metrics);
+      }
+
+      function renderFinanceSubtab(txs, budgets, categories, savingsGoals, metrics) {
+        const sub = document.getElementById('finance-subtab-container');
+        if (!sub) return;
+
+        if (state.financeSubtab === 'overview') {
+          sub.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+              <h3 style="font-size: 15px; font-weight: 700;">Monthly Summary</h3>
+              <div style="display: flex; gap: 8px;">
+                <input type="month" id="finance-month-input" value="${state.financeFilterMonth}" class="form-control" style="width: auto; padding: 6px 10px; font-size: 13px;">
+                <button class="btn btn-sm btn-secondary" id="btn-open-cat-manager">Categories</button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+              <div class="card" style="margin:0;">
+                <p style="font-size: 12px; color: var(--text-muted);">Total Income</p>
+                <p style="font-size: 18px; font-weight: 800; color: var(--success); margin-top: 4px;">${formatMoney(metrics.totalIncome)}</p>
+              </div>
+              <div class="card" style="margin:0;">
+                <p style="font-size: 12px; color: var(--text-muted);">Total Expenses</p>
+                <p style="font-size: 18px; font-weight: 800; color: var(--danger); margin-top: 4px;">${formatMoney(metrics.totalExpenses)}</p>
+              </div>
+              <div class="card" style="margin:0;">
+                <p style="font-size: 12px; color: var(--text-muted);">Remaining Balance</p>
+                <p style="font-size: 18px; font-weight: 800; color: ${metrics.remainingBalance >= 0 ? 'var(--text-main)' : 'var(--danger)'}; margin-top: 4px;">${formatMoney(metrics.remainingBalance)}</p>
+              </div>
+              <div class="card" style="margin:0;">
+                <p style="font-size: 12px; color: var(--text-muted);">Savings Rate</p>
+                <p style="font-size: 18px; font-weight: 800; color: var(--primary); margin-top: 4px;">${metrics.savingsRate}%</p>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Budget Status</span>
+                <span class="badge ${metrics.budgetUtilisation > 100 ? 'badge-danger' : metrics.budgetUtilisation > 85 ? 'badge-warning' : 'badge-success'}">
+                  ${metrics.totalBudget > 0 ? metrics.budgetUtilisation + '% Utilised' : 'No Budget Set'}
+                </span>
+              </div>
+              ${metrics.totalBudget > 0 ? `
+                <div class="progress-bar-bg" style="height: 10px;">
+                  <div class="progress-bar-fill" style="width: ${Math.min(100, metrics.budgetUtilisation)}%; background: ${metrics.budgetUtilisation > 100 ? 'var(--danger)' : 'var(--success)'};"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-top: 6px;">
+                  <span>Spent: ${formatMoney(metrics.totalExpenses)}</span>
+                  <span>Limit: ${formatMoney(metrics.totalBudget)}</span>
+                </div>
+              ` : `
+                <p style="font-size: 13px; color: var(--text-muted);">Set a monthly budget to monitor spending.</p>
+              `}
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+              <button class="btn btn-primary" id="btn-add-tx-income" style="flex: 1; background: var(--success);">+ Add Income</button>
+              <button class="btn btn-primary" id="btn-add-tx-expense" style="flex: 1; background: var(--danger);">+ Add Expense</button>
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Recent Activity</span>
+                <span style="font-size: 12px; color: var(--text-dim);">${metrics.count} records</span>
+              </div>
+              <div id="overview-recent-txs"></div>
+            </div>
+          `;
+
+          document.getElementById('finance-month-input')?.addEventListener('change', (e) => {
+            state.financeFilterMonth = e.target.value;
+            renderFinance();
+          });
+
+          document.getElementById('btn-open-cat-manager')?.addEventListener('click', () => openCategoryManagerModal(categories));
+          document.getElementById('btn-add-tx-income')?.addEventListener('click', () => openTransactionModal('income', categories));
+          document.getElementById('btn-add-tx-expense')?.addEventListener('click', () => openTransactionModal('expense', categories));
+
+          const recTxs = txs.filter(t => t.date && t.date.startsWith(state.financeFilterMonth)).slice(0, 5);
+          const recContainer = document.getElementById('overview-recent-txs');
+          if (recTxs.length === 0) {
+            recContainer.innerHTML = `<p style="font-size: 13px; color: var(--text-dim); text-align: center; padding: 12px;">No transactions for ${state.financeFilterMonth}.</p>`;
+          } else {
+            recContainer.innerHTML = recTxs.map(t => renderTransactionRowHtml(t)).join('');
+            attachTxItemEvents(recContainer, categories);
+          }
+
+        } else if (state.financeSubtab === 'transactions') {
+          sub.innerHTML = `
+            <div style="margin-bottom: 12px;">
+              <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <input type="text" id="tx-search-input" placeholder="Search description, notes..." class="form-control" value="${escapeHtml(state.financeSearchQuery)}" style="flex: 1;">
+                <button class="btn btn-primary" id="tx-add-new-btn">+ Add</button>
+              </div>
+
+              <div class="filter-bar">
+                <button class="filter-chip ${state.financeFilterType === 'all' ? 'active' : ''}" data-type="all">All Types</button>
+                <button class="filter-chip ${state.financeFilterType === 'income' ? 'active' : ''}" data-type="income">Income</button>
+                <button class="filter-chip ${state.financeFilterType === 'expense' ? 'active' : ''}" data-type="expense">Expense</button>
+              </div>
+
+              <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                <select id="tx-category-filter-select" class="form-control" style="font-size: 12px; padding: 6px 10px;">
+                  <option value="all">All Categories</option>
+                  ${categories.map(c => `<option value="${escapeHtml(c.name)}" ${state.financeFilterCategory === c.name ? 'selected' : ''}>${escapeHtml(c.name)} (${c.type})</option>`).join('')}
+                </select>
+                <select id="tx-sort-select" class="form-control" style="font-size: 12px; padding: 6px 10px;">
+                  <option value="date-desc" ${state.financeSortBy === 'date-desc' ? 'selected' : ''}>Date: Newest</option>
+                  <option value="date-asc" ${state.financeSortBy === 'date-asc' ? 'selected' : ''}>Date: Oldest</option>
+                  <option value="amount-desc" ${state.financeSortBy === 'amount-desc' ? 'selected' : ''}>Amount: High to Low</option>
+                  <option value="amount-asc" ${state.financeSortBy === 'amount-asc' ? 'selected' : ''}>Amount: Low to High</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="full-transactions-list"></div>
+          `;
+
+          document.getElementById('tx-add-new-btn')?.addEventListener('click', () => openTransactionModal('expense', categories));
+          document.getElementById('tx-search-input')?.addEventListener('input', (e) => {
+            state.financeSearchQuery = e.target.value.toLowerCase();
+            updateFilteredTxList(txs, categories);
+          });
+          document.getElementById('tx-category-filter-select')?.addEventListener('change', (e) => {
+            state.financeFilterCategory = e.target.value;
+            updateFilteredTxList(txs, categories);
+          });
+          document.getElementById('tx-sort-select')?.addEventListener('change', (e) => {
+            state.financeSortBy = e.target.value;
+            updateFilteredTxList(txs, categories);
+          });
+
+          sub.querySelectorAll('.filter-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+              state.financeFilterType = chip.dataset.type;
+              sub.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c === chip));
+              updateFilteredTxList(txs, categories);
+            });
+          });
+
+          updateFilteredTxList(txs, categories);
+
+        } else if (state.financeSubtab === 'budgets') {
+          const overallBudget = budgets.find(b => !b.categoryId && (!b.monthYear || b.monthYear === state.financeFilterMonth));
+          const catBudgets = budgets.filter(b => b.categoryId && (!b.monthYear || b.monthYear === state.financeFilterMonth));
+
+          sub.innerHTML = `
+            <div class="card">
+              <div class="card-title">
+                <span>Overall Monthly Budget (${state.financeFilterMonth})</span>
+                <button class="btn btn-sm btn-primary" id="btn-edit-overall-budget">${overallBudget ? 'Edit Budget' : '+ Set Budget'}</button>
+              </div>
+              <div style="margin-bottom: 12px;">
+                <p style="font-size: 24px; font-weight: 800;">${overallBudget ? formatMoney(overallBudget.monthlyAmount) : 'Not Set'}</p>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">Monthly spending ceiling</p>
+              </div>
+              ${overallBudget ? `
+                <div class="progress-bar-bg" style="height: 12px;">
+                  <div class="progress-bar-fill" style="width: ${Math.min(100, metrics.budgetUtilisation)}%; background: ${metrics.budgetUtilisation > 100 ? 'var(--danger)' : 'var(--primary)'};"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 6px;">
+                  <span>Spent: ${formatMoney(metrics.totalExpenses)} (${metrics.budgetUtilisation}%)</span>
+                  <span>Remaining: <strong style="color: ${metrics.remainingBudget >= 0 ? 'var(--success)' : 'var(--danger)'};">${formatMoney(metrics.remainingBudget)}</strong></span>
+                </div>
+                ${metrics.budgetUtilisation > 100 ? `
+                  <div style="margin-top: 10px; padding: 8px 12px; background: var(--danger-light); border-radius: 8px; color: var(--danger); font-size: 12px;">
+                    ⚠️ Overspent by ${formatMoney(Math.abs(metrics.remainingBudget))}!
+                  </div>
+                ` : ''}
+              ` : ''}
+            </div>
+
+            <div class="card">
+              <div class="card-title">
+                <span>Category Budgets</span>
+                <button class="btn btn-sm btn-secondary" id="btn-add-cat-budget">+ Add Limit</button>
+              </div>
+              ${catBudgets.length === 0 ? `
+                <p style="font-size: 13px; color: var(--text-dim); text-align: center; padding: 16px;">No category limits configured for this month.</p>
+              ` : `
+                <div>
+                  ${catBudgets.map(b => {
+                    const spent = metrics.categoryExpenses[b.categoryId] || 0;
+                    const bPct = b.monthlyAmount > 0 ? Math.round((spent / b.monthlyAmount) * 100) : 0;
+                    return `
+                      <div style="margin-bottom: 12px; background: var(--bg-surface-elevated); padding: 12px; border-radius: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                          <span style="font-size: 14px; font-weight: 600;">${escapeHtml(b.categoryId)}</span>
+                          <span style="font-size: 13px; font-weight: 700;">${formatMoney(spent)} / ${formatMoney(b.monthlyAmount)}</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                          <div class="progress-bar-fill" style="width: ${Math.min(100, bPct)}%; background: ${bPct > 100 ? 'var(--danger)' : 'var(--primary)'};"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim);">
+                          <span>${bPct}% utilised</span>
+                          <span>${b.monthlyAmount - spent >= 0 ? formatMoney(b.monthlyAmount - spent) + ' left' : 'Overspent by ' + formatMoney(spent - b.monthlyAmount)}</span>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `}
+            </div>
+          `;
+
+          document.getElementById('btn-edit-overall-budget')?.addEventListener('click', () => openBudgetModal(overallBudget ? overallBudget.monthlyAmount : 65000));
+          document.getElementById('btn-add-cat-budget')?.addEventListener('click', () => openCategoryBudgetModal(categories));
+
+        } else if (state.financeSubtab === 'savings') {
+          sub.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+              <h3 style="font-size: 16px; font-weight: 700;">Savings Goals</h3>
+              <button class="btn btn-sm btn-primary" id="btn-add-savings-goal">+ New Goal</button>
+            </div>
+            ${savingsGoals.length === 0 ? `
+              <div class="card empty-state"><p style="font-size: 13px;">No savings targets created yet.</p></div>
+            ` : `
+              <div>
+                ${savingsGoals.map(sg => {
+                  const pct = sg.targetAmount > 0 ? Math.min(100, Math.round((sg.currentAmount / sg.targetAmount) * 100)) : 0;
+                  const remaining = Math.max(0, sg.targetAmount - sg.currentAmount);
+                  return `
+                    <div class="card">
+                      <div class="card-title">
+                        <span>${escapeHtml(sg.title)}</span>
+                        <span class="badge badge-primary">${pct}%</span>
+                      </div>
+                      <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;">
+                        <span>Saved: <strong style="color: var(--success);">${formatMoney(sg.currentAmount)}</strong></span>
+                        <span>Target: <strong>${formatMoney(sg.targetAmount)}</strong></span>
+                      </div>
+                      <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" style="width: ${pct}%; background: var(--success);"></div>
+                      </div>
+                      <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-top: 6px;">
+                        <span>Target: ${formatDate(sg.targetDate)}</span>
+                        <span>${remaining === 0 ? 'Goal Reached! 🎉' : formatMoney(remaining) + ' needed'}</span>
+                      </div>
+                      <div style="margin-top: 12px; display: flex; gap: 8px;">
+                        <button class="btn btn-sm btn-secondary btn-contribute" data-id="${sg.id}" style="flex: 1;">+ Deposit Funds</button>
+                        <button class="btn btn-sm btn-secondary btn-delete-savings" data-id="${sg.id}">Delete</button>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          `;
+
+          document.getElementById('btn-add-savings-goal')?.addEventListener('click', () => openSavingsGoalModal());
+          sub.querySelectorAll('.btn-contribute').forEach(b => {
+            b.addEventListener('click', () => openDepositModal(b.dataset.id, savingsGoals));
+          });
+          sub.querySelectorAll('.btn-delete-savings').forEach(b => {
+            b.addEventListener('click', () => {
+              const id = b.dataset.id;
+              openConfirmModal('Delete Savings Target', 'Are you sure you want to remove this savings goal?', async () => {
+                await db.delete('savingsGoals', id);
+                showToast('Savings goal removed', 'info');
+              });
+            });
+          });
+
+        } else if (state.financeSubtab === 'analytics') {
+          const catEntries = Object.entries(metrics.categoryExpenses).sort((a,b) => b[1] - a[1]);
+          const totalSpent = metrics.totalExpenses;
+
+          const monthlyTrends = [];
+          for (let i = 5; i >= 0; i--) {
+            const d = new Date();
+            d.setMonth(d.getMonth() - i);
+            const mStr = d.toISOString().substring(0, 7);
+            const mLabel = d.toLocaleDateString('en-US', { month: 'short' });
+            const mExpenses = txs
+              .filter(t => t.type === 'expense' && t.date && t.date.startsWith(mStr))
+              .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+            monthlyTrends.push({ mStr, mLabel, mExpenses });
+          }
+
+          const maxTrend = Math.max(...monthlyTrends.map(m => m.mExpenses), 1);
+
+          sub.innerHTML = `
+            <div class="card">
+              <div class="card-title">Monthly Cashflow Comparison (${state.financeFilterMonth})</div>
+              <div style="height: 140px; display: flex; align-items: flex-end; gap: 20px; justify-content: center; padding: 10px 0;">
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; max-width: 90px;">
+                  <span style="font-size: 11px; font-weight: 700; color: var(--success);">${formatMoney(metrics.totalIncome)}</span>
+                  <div style="width: 100%; height: ${metrics.totalIncome > 0 ? Math.min(100, Math.max(15, (metrics.totalIncome / Math.max(metrics.totalIncome, metrics.totalExpenses, 1)) * 90)) : 4}px; background: var(--success); border-radius: 8px 8px 0 0;"></div>
+                  <span style="font-size: 11px; color: var(--text-muted);">Income</span>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; max-width: 90px;">
+                  <span style="font-size: 11px; font-weight: 700; color: var(--danger);">${formatMoney(metrics.totalExpenses)}</span>
+                  <div style="width: 100%; height: ${metrics.totalExpenses > 0 ? Math.min(100, Math.max(15, (metrics.totalExpenses / Math.max(metrics.totalIncome, metrics.totalExpenses, 1)) * 90)) : 4}px; background: var(--danger); border-radius: 8px 8px 0 0;"></div>
+                  <span style="font-size: 11px; color: var(--text-muted);">Expense</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">6-Month Spending Trend</div>
+              <div style="height: 130px; display: flex; align-items: flex-end; justify-content: space-around; gap: 8px; padding-top: 10px;">
+                ${monthlyTrends.map(t => {
+                  const hPx = Math.max(8, Math.round((t.mExpenses / maxTrend) * 85));
+                  return `
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1;">
+                      <span style="font-size: 9px; color: var(--text-dim);">${t.mExpenses > 0 ? formatMoney(t.mExpenses) : '0'}</span>
+                      <div style="width: 24px; height: ${hPx}px; background: var(--primary); border-radius: 6px 6px 0 0;"></div>
+                      <span style="font-size: 10px; color: var(--text-muted); font-weight: 500;">${t.mLabel}</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-title">Category Spending Breakdown</div>
+              ${catEntries.length === 0 ? `
+                <p style="font-size: 13px; color: var(--text-dim); text-align: center; padding: 20px;">No expense data for this month.</p>
+              ` : `
+                <div>
+                  ${catEntries.map(([cat, amt]) => {
+                    const pct = totalSpent > 0 ? Math.round((amt / totalSpent) * 100) : 0;
+                    return `
+                      <div style="margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                          <span>${escapeHtml(cat)}</span>
+                          <span><strong>${formatMoney(amt)}</strong> (${pct}%)</span>
+                        </div>
+                        <div class="progress-bar-bg" style="height: 7px;">
+                          <div class="progress-bar-fill" style="width: ${pct}%; background: var(--primary);"></div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `}
+            </div>
+          `;
+        }
+      }
+
+      function renderTransactionRowHtml(t) {
+        const isInc = t.type === 'income';
+        return `
+          <div class="item-row tx-item-row" data-id="${t.id}" style="cursor: pointer;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 36px; height: 36px; border-radius: 10px; background: ${isInc ? 'var(--success-light)' : 'var(--danger-light)'}; color: ${isInc ? 'var(--success)' : 'var(--danger)'}; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px;">
+                ${isInc ? '↓' : '↑'}
+              </div>
+              <div>
+                <p style="font-size: 14px; font-weight: 600;">${escapeHtml(t.description || t.category)}</p>
+                <p style="font-size: 11px; color: var(--text-dim);">${formatDate(t.date)} &bull; ${escapeHtml(t.category)}</p>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <p style="font-size: 15px; font-weight: 700; color: ${isInc ? 'var(--success)' : 'var(--danger)'};">
+                ${isInc ? '+' : '-'}${formatMoney(t.amount)}
+              </p>
+              <span class="badge badge-neutral" style="font-size: 9px;">${escapeHtml(t.paymentMethod || 'Other')}</span>
+            </div>
+          </div>
+        `;
+      }
+
+      function attachTxItemEvents(container, categories) {
+        container.querySelectorAll('.tx-item-row').forEach(row => {
+          row.addEventListener('click', async () => {
+            const tx = await db.get('transactions', row.dataset.id);
+            if (tx) openTransactionDetailModal(tx, categories);
+          });
+        });
+      }
+
+      function updateFilteredTxList(txs, categories) {
+        const list = document.getElementById('full-transactions-list');
+        if (!list) return;
+
+        let filtered = txs.slice();
+
+        if (state.financeFilterType !== 'all') {
+          filtered = filtered.filter(t => t.type === state.financeFilterType);
+        }
+
+        if (state.financeFilterCategory !== 'all') {
+          filtered = filtered.filter(t => t.category === state.financeFilterCategory);
+        }
+
+        if (state.financeSearchQuery) {
+          const q = state.financeSearchQuery;
+          filtered = filtered.filter(t => 
+            (t.description && t.description.toLowerCase().includes(q)) ||
+            (t.category && t.category.toLowerCase().includes(q)) ||
+            (t.notes && t.notes.toLowerCase().includes(q))
+          );
+        }
+
+        filtered.sort((a, b) => {
+          if (state.financeSortBy === 'date-desc') return (b.date || '').localeCompare(a.date || '');
+          if (state.financeSortBy === 'date-asc') return (a.date || '').localeCompare(b.date || '');
+          if (state.financeSortBy === 'amount-desc') return (Number(b.amount) || 0) - (Number(a.amount) || 0);
+          if (state.financeSortBy === 'amount-asc') return (Number(a.amount) || 0) - (Number(b.amount) || 0);
+          return 0;
+        });
+
+        if (filtered.length === 0) {
+          list.innerHTML = `<div class="empty-state"><p style="font-size: 13px;">No transactions match criteria.</p></div>`;
+          return;
+        }
+
+        list.innerHTML = filtered.map(t => renderTransactionRowHtml(t)).join('');
+        attachTxItemEvents(list, categories);
+      }
+
+      function openCategoryManagerModal(categories) {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Category Management</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <div style="margin-bottom: 14px;">
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">Create custom categories or edit existing tags.</p>
+            <form id="form-add-category" style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 12px; margin-bottom: 14px;">
+              <div class="form-group">
+                <label class="form-label">Category Name</label>
+                <input type="text" required id="new-cat-name" class="form-control" placeholder="e.g. Pet Care, Gadgets">
+              </div>
+              <div class="form-group" style="display: flex; gap: 8px;">
+                <div style="flex: 1;">
+                  <label class="form-label">Type</label>
+                  <select id="new-cat-type" class="form-control">
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                  </select>
+                </div>
+                <div style="width: 80px;">
+                  <label class="form-label">Color</label>
+                  <input type="color" id="new-cat-color" value="#6366f1" class="form-control" style="padding: 4px; height: 44px; cursor: pointer;">
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%;">+ Add Custom Category</button>
+            </form>
+          </div>
+          <div style="max-height: 240px; overflow-y: auto;">
+            <p style="font-size: 11px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 6px;">Available Categories</p>
+            ${categories.map(c => `
+              <div class="item-row" style="padding: 8px 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="width: 14px; height: 14px; border-radius: 50%; background: ${c.color || '#6366f1'};"></div>
+                  <span style="font-size: 13px; font-weight: 500;">${escapeHtml(c.name)}</span>
+                  <span class="badge ${c.type === 'income' ? 'badge-success' : 'badge-neutral'}" style="font-size: 9px;">${c.type}</span>
+                </div>
+                ${c.isDefault ? `<span style="font-size: 10px; color: var(--text-dim);">Default</span>` : `
+                  <button class="btn btn-sm btn-danger btn-delete-cat" data-id="${c.id}" style="padding: 2px 6px; font-size: 10px;">Delete</button>
+                `}
+              </div>
+            `).join('')}
+          </div>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-add-category').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const name = document.getElementById('new-cat-name').value.trim();
+          if (!name) return;
+          await db.put('categories', {
+            name,
+            type: document.getElementById('new-cat-type').value,
+            color: document.getElementById('new-cat-color').value,
+            isDefault: false
+          });
+          closeModal();
+          showToast(`Category "${name}" created`, 'success');
+        });
+
+        document.querySelectorAll('.btn-delete-cat').forEach(b => {
+          b.addEventListener('click', () => {
+            const cid = b.dataset.id;
+            openConfirmModal('Delete Category', 'Delete this custom category?', async () => {
+              await db.delete('categories', cid);
+              closeModal();
+              showToast('Category deleted', 'info');
+            });
+          });
+        });
+      }
+
+      function openTransactionModal(defaultType = 'expense', categories = []) {
+        const cats = categories.filter(c => c.type === defaultType);
+        const today = new Date().toISOString().split('T')[0];
+
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Add Transaction</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-add-tx">
+            <div class="form-group" style="display: flex; gap: 8px;">
+              <button type="button" class="btn ${defaultType === 'income' ? 'btn-primary' : 'btn-secondary'}" id="tx-type-inc-btn" style="flex:1;">Income</button>
+              <button type="button" class="btn ${defaultType === 'expense' ? 'btn-danger' : 'btn-secondary'}" id="tx-type-exp-btn" style="flex:1;">Expense</button>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Amount (${state.currencySymbol}) *</label>
+              <input type="number" step="any" required id="tx-amount-in" class="form-control" placeholder="0.00">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category *</label>
+              <select id="tx-cat-in" class="form-control" required>
+                ${cats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description *</label>
+              <input type="text" required id="tx-desc-in" class="form-control" placeholder="e.g. Grocery, Salary">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Date *</label>
+              <input type="date" required id="tx-date-in" class="form-control" value="${today}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Method</label>
+              <select id="tx-method-in" class="form-control">
+                <option value="UPI">UPI</option>
+                <option value="Cash">Cash</option>
+                <option value="Credit Card">Credit Card</option>
+                <option value="Debit Card">Debit Card</option>
+                <option value="Net Banking">Net Banking</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <input type="text" id="tx-notes-in" class="form-control" placeholder="Optional remarks">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Save Transaction</button>
+          </form>
+        `);
+
+        let currentType = defaultType;
+        const incBtn = document.getElementById('tx-type-inc-btn');
+        const expBtn = document.getElementById('tx-type-exp-btn');
+        const catSelect = document.getElementById('tx-cat-in');
+
+        function updateCatOptions() {
+          const filtered = categories.filter(c => c.type === currentType);
+          catSelect.innerHTML = filtered.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+        }
+
+        incBtn.addEventListener('click', () => {
+          currentType = 'income';
+          incBtn.className = 'btn btn-primary';
+          expBtn.className = 'btn btn-secondary';
+          updateCatOptions();
+        });
+
+        expBtn.addEventListener('click', () => {
+          currentType = 'expense';
+          expBtn.className = 'btn btn-danger';
+          incBtn.className = 'btn btn-secondary';
+          updateCatOptions();
+        });
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-add-tx').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const amt = parseFloat(document.getElementById('tx-amount-in').value);
+          if (isNaN(amt) || amt <= 0) return;
+          await db.put('transactions', {
+            type: currentType,
+            amount: amt,
+            category: catSelect.value,
+            description: document.getElementById('tx-desc-in').value,
+            date: document.getElementById('tx-date-in').value,
+            paymentMethod: document.getElementById('tx-method-in').value,
+            notes: document.getElementById('tx-notes-in').value
+          });
+          closeModal();
+          showToast('Transaction saved', 'success');
+        });
+      }
+
+      function openTransactionDetailModal(tx, categories) {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Transaction Details</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <div style="margin-bottom: 16px;">
+            <p style="font-size: 12px; color: var(--text-dim);">TYPE</p>
+            <p style="font-size: 16px; font-weight: 700; color: ${tx.type === 'income' ? 'var(--success)' : 'var(--danger)'}; text-transform: capitalize;">${tx.type}</p>
+          </div>
+          <div style="margin-bottom: 14px;">
+            <p style="font-size: 12px; color: var(--text-dim);">AMOUNT</p>
+            <p style="font-size: 24px; font-weight: 800;">${formatMoney(tx.amount)}</p>
+          </div>
+          <div style="margin-bottom: 14px;">
+            <p style="font-size: 12px; color: var(--text-dim);">DESCRIPTION</p>
+            <p style="font-size: 14px; font-weight: 600;">${escapeHtml(tx.description || '-')}</p>
+          </div>
+          <div style="margin-bottom: 14px;">
+            <p style="font-size: 12px; color: var(--text-dim);">CATEGORY & PAYMENT</p>
+            <p style="font-size: 14px;">${escapeHtml(tx.category)} &bull; ${escapeHtml(tx.paymentMethod || 'Standard')}</p>
+          </div>
+          <div style="margin-bottom: 14px;">
+            <p style="font-size: 12px; color: var(--text-dim);">DATE</p>
+            <p style="font-size: 14px;">${formatDate(tx.date)}</p>
+          </div>
+          ${tx.notes ? `
+            <div style="margin-bottom: 14px;">
+              <p style="font-size: 12px; color: var(--text-dim);">NOTES</p>
+              <p style="font-size: 13px; color: var(--text-muted);">${escapeHtml(tx.notes)}</p>
+            </div>
+          ` : ''}
+          <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button class="btn btn-danger" id="btn-delete-tx" style="flex: 1;">Delete</button>
+            <button class="btn btn-secondary" id="btn-edit-tx" style="flex: 1;">Edit</button>
+          </div>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('btn-delete-tx').addEventListener('click', () => {
+          openConfirmModal('Delete Transaction', 'Delete this transaction permanently?', async () => {
+            await db.delete('transactions', tx.id);
+            closeModal();
+            showToast('Transaction deleted', 'info');
+          });
+        });
+
+        document.getElementById('btn-edit-tx').addEventListener('click', () => {
+          closeModal();
+          openEditTransactionModal(tx, categories);
+        });
+      }
+
+      function openEditTransactionModal(tx, categories) {
+        const cats = categories.filter(c => c.type === tx.type);
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Edit Transaction</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-edit-tx">
+            <div class="form-group">
+              <label class="form-label">Amount (${state.currencySymbol}) *</label>
+              <input type="number" step="any" required id="tx-edit-amount" class="form-control" value="${tx.amount}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category *</label>
+              <select id="tx-edit-cat" class="form-control" required>
+                ${cats.map(c => `<option value="${escapeHtml(c.name)}" ${c.name === tx.category ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description *</label>
+              <input type="text" required id="tx-edit-desc" class="form-control" value="${escapeHtml(tx.description || '')}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Date *</label>
+              <input type="date" required id="tx-edit-date" class="form-control" value="${tx.date}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Payment Method</label>
+              <select id="tx-edit-method" class="form-control">
+                <option value="UPI" ${tx.paymentMethod === 'UPI' ? 'selected' : ''}>UPI</option>
+                <option value="Cash" ${tx.paymentMethod === 'Cash' ? 'selected' : ''}>Cash</option>
+                <option value="Credit Card" ${tx.paymentMethod === 'Credit Card' ? 'selected' : ''}>Credit Card</option>
+                <option value="Debit Card" ${tx.paymentMethod === 'Debit Card' ? 'selected' : ''}>Debit Card</option>
+                <option value="Net Banking" ${tx.paymentMethod === 'Net Banking' ? 'selected' : ''}>Net Banking</option>
+                <option value="Other" ${tx.paymentMethod === 'Other' ? 'selected' : ''}>Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <input type="text" id="tx-edit-notes" class="form-control" value="${escapeHtml(tx.notes || '')}">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Update Transaction</button>
+          </form>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-edit-tx').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const amt = parseFloat(document.getElementById('tx-edit-amount').value);
+          if (isNaN(amt) || amt <= 0) return;
+          await db.put('transactions', {
+            ...tx,
+            amount: amt,
+            category: document.getElementById('tx-edit-cat').value,
+            description: document.getElementById('tx-edit-desc').value,
+            date: document.getElementById('tx-edit-date').value,
+            paymentMethod: document.getElementById('tx-edit-method').value,
+            notes: document.getElementById('tx-edit-notes').value
+          });
+          closeModal();
+          showToast('Transaction updated', 'success');
+        });
+      }
+
+      function openBudgetModal(currentVal = 65000) {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Set Monthly Budget</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-set-budget">
+            <div class="form-group">
+              <label class="form-label">Monthly Limit (${state.currencySymbol})</label>
+              <input type="number" required id="budget-amount-in" class="form-control" value="${currentVal}">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Save Budget</button>
+          </form>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-set-budget').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const amt = parseFloat(document.getElementById('budget-amount-in').value);
+          if (isNaN(amt) || amt <= 0) return;
+          await db.put('budgets', {
+            id: 'b_overall_' + state.financeFilterMonth,
+            monthlyAmount: amt,
+            monthYear: state.financeFilterMonth
+          });
+          closeModal();
+          showToast('Monthly budget updated', 'success');
+        });
+      }
+
+      function openCategoryBudgetModal(categories) {
+        const expCats = categories.filter(c => c.type === 'expense');
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Category Spending Budget</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-cat-budget">
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <select id="cat-budget-cat-in" class="form-control">
+                ${expCats.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Monthly Limit (${state.currencySymbol})</label>
+              <input type="number" required id="cat-budget-amt-in" class="form-control" placeholder="10000">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Save Limit</button>
+          </form>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-cat-budget').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const cat = document.getElementById('cat-budget-cat-in').value;
+          const amt = parseFloat(document.getElementById('cat-budget-amt-in').value);
+          if (isNaN(amt) || amt <= 0) return;
+          await db.put('budgets', {
+            id: 'b_cat_' + cat.toLowerCase().replace(/\s+/g, '_') + '_' + state.financeFilterMonth,
+            categoryId: cat,
+            monthlyAmount: amt,
+            monthYear: state.financeFilterMonth
+          });
+          closeModal();
+          showToast(`Budget for ${cat} set`, 'success');
+        });
+      }
+
+      function openSavingsGoalModal() {
+        const today = new Date().toISOString().split('T')[0];
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">New Savings Target</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-savings-goal">
+            <div class="form-group">
+              <label class="form-label">Target Name *</label>
+              <input type="text" required id="sg-title-in" class="form-control" placeholder="e.g. Device Upgrade, Vacation">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target Amount (${state.currencySymbol}) *</label>
+              <input type="number" required id="sg-target-in" class="form-control" placeholder="50000">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Initial Amount Already Saved</label>
+              <input type="number" id="sg-current-in" class="form-control" value="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target Date</label>
+              <input type="date" required id="sg-date-in" class="form-control" value="${today}">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Create Goal</button>
+          </form>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-savings-goal').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const target = parseFloat(document.getElementById('sg-target-in').value);
+          const initial = parseFloat(document.getElementById('sg-current-in').value) || 0;
+          if (isNaN(target) || target <= 0) return;
+          await db.put('savingsGoals', {
+            title: document.getElementById('sg-title-in').value,
+            targetAmount: target,
+            currentAmount: initial,
+            targetDate: document.getElementById('sg-date-in').value
+          });
+          closeModal();
+          showToast('Savings target added', 'success');
+        });
+      }
+
+      function openDepositModal(goalId, goals) {
+        const goal = goals.find(g => g.id === goalId);
+        if (!goal) return;
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Contribute to ${escapeHtml(goal.title)}</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-deposit">
+            <div class="form-group">
+              <label class="form-label">Deposit Amount (${state.currencySymbol})</label>
+              <input type="number" required id="deposit-amt-in" class="form-control" placeholder="5000">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Record Deposit</button>
+          </form>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-deposit').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const amt = parseFloat(document.getElementById('deposit-amt-in').value);
+          if (isNaN(amt) || amt <= 0) return;
+          await db.put('savingsGoals', {
+            ...goal,
+            currentAmount: (goal.currentAmount || 0) + amt
+          });
+          await db.put('savingsContributions', {
+            goalId: goal.id,
+            amount: amt,
+            date: new Date().toISOString().split('T')[0]
+          });
+          closeModal();
+          showToast(`Added ${formatMoney(amt)} to ${goal.title}`, 'success');
+        });
+      }
+
+      // HABITS VIEW
+      async function renderHabits() {
+        const habits = await db.getAll('habits');
+        const habitLogs = await db.getAll('habitLogs');
+        const selectedDateStr = state.habitsSelectedDate;
+
+        const habitsWithStats = habits.map(h => {
+          const stats = calculateStreaks(habitLogs, h.id, selectedDateStr);
+          return { ...h, ...stats };
+        });
+
+        const container = document.getElementById('view-habits');
+        container.innerHTML = `
+          <div class="subtabs">
+            <button class="subtab-btn ${state.habitsSubtab === 'checklist' ? 'active' : ''}" data-sub="checklist">Daily Checklist</button>
+            <button class="subtab-btn ${state.habitsSubtab === 'weekly' ? 'active' : ''}" data-sub="weekly">Weekly Progress</button>
+            <button class="subtab-btn ${state.habitsSubtab === 'monthly' ? 'active' : ''}" data-sub="monthly">Monthly Calendar</button>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; background: var(--bg-surface); padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border-color);">
+            <div style="display: flex; gap: 6px;">
+              <button class="btn btn-sm btn-secondary" id="habits-today-btn">Today</button>
+              <button class="btn btn-sm btn-secondary" id="habits-yesterday-btn">Yesterday</button>
+            </div>
+            <input type="date" id="habits-date-picker" value="${selectedDateStr}" class="form-control" style="width: auto; padding: 4px 8px; font-size: 12px;">
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div>
+              <h3 style="font-size: 16px; font-weight: 700;">Habits for ${formatDate(selectedDateStr)}</h3>
+              <p style="font-size: 11px; color: var(--text-muted);">${habitsWithStats.filter(h => h.completedToday).length}/${habits.length} completed</p>
+            </div>
+            <button class="btn btn-sm btn-primary" id="btn-create-habit">+ New Habit</button>
+          </div>
+
+          <div id="habits-subtab-container"></div>
+        `;
+
+        container.querySelectorAll('.subtab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.habitsSubtab = btn.dataset.sub;
+            container.querySelectorAll('.subtab-btn').forEach(b => b.classList.toggle('active', b === btn));
+            renderHabitsSubtab(habitsWithStats, habitLogs, selectedDateStr);
+          });
+        });
+
+        document.getElementById('habits-today-btn')?.addEventListener('click', () => {
+          state.habitsSelectedDate = new Date().toISOString().split('T')[0];
+          renderHabits();
+        });
+
+        document.getElementById('habits-yesterday-btn')?.addEventListener('click', () => {
+          state.habitsSelectedDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+          renderHabits();
+        });
+
+        document.getElementById('habits-date-picker')?.addEventListener('change', (e) => {
+          state.habitsSelectedDate = e.target.value;
+          renderHabits();
+        });
+
+        document.getElementById('btn-create-habit')?.addEventListener('click', () => openHabitModal());
+        renderHabitsSubtab(habitsWithStats, habitLogs, selectedDateStr);
+      }
+
+      function renderHabitsSubtab(habitsWithStats, habitLogs, selectedDateStr) {
+        const sub = document.getElementById('habits-subtab-container');
+        if (!sub) return;
+
+        if (state.habitsSubtab === 'checklist') {
+          if (habitsWithStats.length === 0) {
+            sub.innerHTML = `<div class="card empty-state"><p style="font-size: 13px;">No habits defined yet.</p></div>`;
+            return;
+          }
+
+          sub.innerHTML = `
+            <div>
+              ${habitsWithStats.map(h => `
+                <div class="card" style="margin-bottom: 10px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+                      <button class="habit-toggle-btn" data-id="${h.id}" data-done="${h.completedToday ? 'true' : 'false'}" style="width: 36px; height: 36px; border-radius: 50%; border: 2px solid ${h.completedToday ? 'var(--success)' : 'var(--border-color)'}; background: ${h.completedToday ? 'var(--success)' : 'transparent'}; display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;">
+                        ${h.completedToday ? '<svg style="width:20px;height:20px;stroke:white;fill:none;stroke-width:3;" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>' : ''}
+                      </button>
+                      <div>
+                        <h4 style="font-size: 15px; font-weight: 600; text-decoration: ${h.completedToday ? 'line-through' : 'none'}; color: ${h.completedToday ? 'var(--text-muted)' : 'var(--text-main)'};">${escapeHtml(h.name)}</h4>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
+                          <span style="font-size: 11px; color: var(--warning); font-weight: 600;">🔥 ${h.currentStreak} day streak</span>
+                          <span class="badge badge-neutral" style="font-size: 9px; text-transform: capitalize;">${h.frequency || 'Daily'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button class="btn-icon btn-sm btn-habit-edit" data-id="${h.id}" aria-label="Edit Habit">
+                      <svg class="icon" style="width:16px;height:16px;" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `;
+
+          sub.querySelectorAll('.habit-toggle-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const hid = btn.dataset.id;
+              const isDone = btn.dataset.done === 'true';
+              await toggleHabitForDate(hid, selectedDateStr, !isDone);
+            });
+          });
+
+          sub.querySelectorAll('.btn-habit-edit').forEach(btn => {
+            btn.addEventListener('click', () => {
+              const habit = habitsWithStats.find(h => h.id === btn.dataset.id);
+              if (habit) openHabitEditModal(habit);
+            });
+          });
+
+        } else if (state.habitsSubtab === 'weekly') {
+          const last7Days = [];
+          for (let i = 6; i >= 0; i--) {
+            const d = new Date(Date.now() - i * 86400000);
+            last7Days.push(d.toISOString().split('T')[0]);
+          }
+
+          sub.innerHTML = `
+            <div class="card">
+              <div class="card-title">Past 7 Days Consistency</div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 12px; padding: 0 4px;">
+                ${last7Days.map(dStr => {
+                  const d = new Date(dStr + 'T00:00:00');
+                  const dayName = d.toLocaleDateString('en-US', { weekday: 'narrow' });
+                  return `<div style="text-align: center; font-size: 11px; color: var(--text-muted); width: 28px;">${dayName}</div>`;
+                }).join('')}
+              </div>
+              ${habitsWithStats.map(h => `
+                <div style="margin-bottom: 12px; background: var(--bg-surface-elevated); padding: 10px; border-radius: 10px;">
+                  <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-bottom: 8px;">
+                    <span>${escapeHtml(h.name)}</span>
+                    <span style="font-size: 11px; color: var(--text-dim);">Best: ${h.longestStreak} days</span>
+                  </div>
+                  <div style="display: flex; justify-content: space-between; padding: 0 4px;">
+                    ${last7Days.map(dStr => {
+                      const isDone = habitLogs.some(l => l.habitId === h.id && l.date === dStr && l.completed);
+                      return `
+                        <div style="width: 28px; height: 28px; border-radius: 6px; background: ${isDone ? 'var(--success)' : 'var(--bg-surface)'}; border: 1px solid ${isDone ? 'var(--success)' : 'var(--border-color)'}; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">
+                          ${isDone ? '✓' : ''}
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `;
+
+        } else if (state.habitsSubtab === 'monthly') {
+          const last30Days = [];
+          for (let i = 29; i >= 0; i--) {
+            const d = new Date(Date.now() - i * 86400000);
+            last30Days.push(d.toISOString().split('T')[0]);
+          }
+
+          sub.innerHTML = `
+            <div class="card">
+              <div class="card-title">30-Day Completion Overview</div>
+              ${habitsWithStats.map(h => {
+                const totalComp = last30Days.filter(dStr => habitLogs.some(l => l.habitId === h.id && l.date === dStr && l.completed)).length;
+                const pct = Math.round((totalComp / 30) * 100);
+                return `
+                  <div style="margin-bottom: 14px; background: var(--bg-surface-elevated); padding: 10px; border-radius: 10px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; margin-bottom: 6px;">
+                      <span>${escapeHtml(h.name)}</span>
+                      <span style="font-size: 11px; color: var(--primary); font-weight: 700;">${totalComp}/30 days (${pct}%)</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px;">
+                      ${last30Days.map(dStr => {
+                        const isDone = habitLogs.some(l => l.habitId === h.id && l.date === dStr && l.completed);
+                        return `
+                          <div title="${dStr}" style="height: 18px; border-radius: 3px; background: ${isDone ? 'var(--success)' : 'var(--bg-surface)'}; border: 1px solid ${isDone ? 'var(--success)' : 'var(--border-color)'};"></div>
+                        `;
+                      }).join('')}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+        }
+      }
+
+      async function toggleHabitForDate(habitId, dateStr, completedState) {
+        const logs = await db.getAll('habitLogs');
+        const existing = logs.find(l => l.habitId === habitId && l.date === dateStr);
+        if (existing) {
+          await db.put('habitLogs', {
+            ...existing,
+            completed: completedState,
+            completedAt: completedState ? new Date().toISOString() : null
+          });
+        } else {
+          await db.put('habitLogs', {
+            habitId,
+            date: dateStr,
+            completed: completedState,
+            completedAt: new Date().toISOString()
+          });
+        }
+        showToast(completedState ? 'Habit completed! 🔥' : 'Habit undone', 'success');
+      }
+
+      function openHabitModal() {
+        const suggestions = [
+          'Drink water', 'Walk 10,000 steps', 'Exercise',
+          'Read', 'Sleep for 7 hours', 'Track nutrition', 'Meditate'
+        ];
+
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Create New Habit</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <div style="margin-bottom: 12px;">
+            <p style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px;">Suggested Habits</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+              ${suggestions.map(s => `<button type="button" class="badge badge-neutral chip-suggestion" style="cursor: pointer; padding: 5px 10px;">${s}</button>`).join('')}
+            </div>
+          </div>
+          <form id="form-create-habit">
+            <div class="form-group">
+              <label class="form-label">Habit Name *</label>
+              <input type="text" required id="habit-name-in" class="form-control" placeholder="e.g. Read 20 pages">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Frequency</label>
+              <select id="habit-freq-in" class="form-control">
+                <option value="daily">Daily</option>
+                <option value="weekdays">Weekdays (Mon-Fri)</option>
+                <option value="weekends">Weekends (Sat-Sun)</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Save Habit</button>
+          </form>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.querySelectorAll('.chip-suggestion').forEach(b => {
+          b.addEventListener('click', () => {
+            document.getElementById('habit-name-in').value = b.innerText;
+          });
+        });
+
+        document.getElementById('form-create-habit').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const name = document.getElementById('habit-name-in').value.trim();
+          if (!name) return;
+          await db.put('habits', {
+            name,
+            frequency: document.getElementById('habit-freq-in').value,
+            color: '#6366f1'
+          });
+          closeModal();
+          showToast('Habit added', 'success');
+        });
+      }
+
+      function openHabitEditModal(habit) {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Edit Habit</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-edit-habit">
+            <div class="form-group">
+              <label class="form-label">Habit Name</label>
+              <input type="text" required id="habit-edit-name" class="form-control" value="${escapeHtml(habit.name)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Frequency</label>
+              <select id="habit-edit-freq" class="form-control">
+                <option value="daily" ${habit.frequency === 'daily' ? 'selected' : ''}>Daily</option>
+                <option value="weekdays" ${habit.frequency === 'weekdays' ? 'selected' : ''}>Weekdays</option>
+                <option value="weekends" ${habit.frequency === 'weekends' ? 'selected' : ''}>Weekends</option>
+                <option value="weekly" ${habit.frequency === 'weekly' ? 'selected' : ''}>Weekly</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+              <button type="button" class="btn btn-danger" id="btn-delete-habit" style="flex: 1;">Delete</button>
+              <button type="submit" class="btn btn-primary" style="flex: 1;">Update</button>
+            </div>
+          </form>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('btn-delete-habit').addEventListener('click', () => {
+          openConfirmModal('Delete Habit', 'Delete this habit and all its logged history?', async () => {
+            await db.delete('habits', habit.id);
+            closeModal();
+            showToast('Habit deleted', 'info');
+          });
+        });
+
+        document.getElementById('form-edit-habit').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          await db.put('habits', {
+            ...habit,
+            name: document.getElementById('habit-edit-name').value,
+            frequency: document.getElementById('habit-edit-freq').value
+          });
+          closeModal();
+          showToast('Habit updated', 'success');
+        });
+      }
+
+      // GOALS VIEW
+      async function renderGoals() {
+        const goals = await db.getAll('goals');
+        const milestones = await db.getAll('milestones');
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        const container = document.getElementById('view-goals');
+        container.innerHTML = `
+          <div class="subtabs">
+            <button class="subtab-btn ${state.goalsSubtab === 'active' ? 'active' : ''}" data-sub="active">Active Goals</button>
+            <button class="subtab-btn ${state.goalsSubtab === 'completed' ? 'active' : ''}" data-sub="completed">Completed Goals</button>
+          </div>
+
+          <div class="filter-bar">
+            <button class="filter-chip ${state.goalsCategoryFilter === 'all' ? 'active' : ''}" data-cat="all">All</button>
+            <button class="filter-chip ${state.goalsCategoryFilter === 'Financial' ? 'active' : ''}" data-cat="Financial">Financial</button>
+            <button class="filter-chip ${state.goalsCategoryFilter === 'Fitness' ? 'active' : ''}" data-cat="Fitness">Fitness</button>
+            <button class="filter-chip ${state.goalsCategoryFilter === 'Career' ? 'active' : ''}" data-cat="Career">Career</button>
+            <button class="filter-chip ${state.goalsCategoryFilter === 'Education' ? 'active' : ''}" data-cat="Education">Education</button>
+            <button class="filter-chip ${state.goalsCategoryFilter === 'Personal Development' ? 'active' : ''}" data-cat="Personal Development">Personal</button>
+            <button class="filter-chip ${state.goalsCategoryFilter === 'Travel' ? 'active' : ''}" data-cat="Travel">Travel</button>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div>
+              <h3 style="font-size: 16px; font-weight: 700;">Life Goals</h3>
+              <p style="font-size: 11px; color: var(--text-muted);">Turn visions into milestones</p>
+            </div>
+            <button class="btn btn-sm btn-primary" id="btn-create-goal">+ New Goal</button>
+          </div>
+
+          <div id="goals-list-container"></div>
+        `;
+
+        container.querySelectorAll('.subtab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.goalsSubtab = btn.dataset.sub;
+            container.querySelectorAll('.subtab-btn').forEach(b => b.classList.toggle('active', b === btn));
+            renderGoalsList(goals, milestones, todayStr);
+          });
+        });
+
+        container.querySelectorAll('.filter-chip').forEach(chip => {
+          chip.addEventListener('click', () => {
+            state.goalsCategoryFilter = chip.dataset.cat;
+            container.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c === chip));
+            renderGoalsList(goals, milestones, todayStr);
+          });
+        });
+
+        document.getElementById('btn-create-goal')?.addEventListener('click', () => openGoalModal());
+        renderGoalsList(goals, milestones, todayStr);
+      }
+
+      function renderGoalsList(goals, milestones, todayStr) {
+        const list = document.getElementById('goals-list-container');
+        if (!list) return;
+
+        let filtered = goals.filter(g => {
+          const isCompleted = g.status === 'Completed' || (g.targetValue > 0 && g.currentValue >= g.targetValue);
+          const statusMatch = state.goalsSubtab === 'completed' ? isCompleted : !isCompleted;
+          const catMatch = state.goalsCategoryFilter === 'all' || g.category === state.goalsCategoryFilter;
+          return statusMatch && catMatch;
+        });
+
+        if (filtered.length === 0) {
+          list.innerHTML = `<div class="card empty-state"><p style="font-size: 13px;">No ${state.goalsSubtab} goals found.</p></div>`;
+          return;
+        }
+
+        list.innerHTML = filtered.map(g => {
+          const pct = g.targetValue > 0 ? Math.min(100, Math.round((g.currentValue / g.targetValue) * 100)) : 0;
+          const isOverdue = g.targetDate && g.targetDate < todayStr && pct < 100;
+          const gMilestones = milestones.filter(m => m.goalId === g.id);
+          const remainingCountdown = getDaysRemainingText(g.targetDate);
+
+          return `
+            <div class="card">
+              <div class="card-title">
+                <div>
+                  <span style="font-size: 15px; font-weight: 700;">${escapeHtml(g.title)}</span>
+                  <div style="margin-top: 2px;">
+                    <span class="badge badge-primary" style="font-size: 9px;">${escapeHtml(g.category)}</span>
+                    <span class="badge ${g.priority === 'Urgent' ? 'badge-danger' : 'badge-neutral'}" style="font-size: 9px;">${g.priority}</span>
+                  </div>
+                </div>
+                <span style="font-size: 16px; font-weight: 800; color: var(--primary);">${pct}%</span>
+              </div>
+              ${g.description ? `<p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">${escapeHtml(g.description)}</p>` : ''}
+              
+              <div class="progress-bar-bg" style="height: 9px;">
+                <div class="progress-bar-fill" style="width: ${pct}%; background: ${pct >= 100 ? 'var(--success)' : 'var(--primary)'};"></div>
+              </div>
+              
+              <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); margin-top: 6px;">
+                <span>Progress: ${g.currentValue} / ${g.targetValue} ${g.unit || ''}</span>
+                <span style="color: ${isOverdue ? 'var(--danger)' : 'inherit'}; font-weight: ${isOverdue ? '700' : 'normal'};">
+                  ${isOverdue ? '⚠️ ' + remainingCountdown : '⏳ ' + remainingCountdown}
+                </span>
+              </div>
+
+              <div style="margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                  <span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">Milestones (${gMilestones.filter(m => m.completed).length}/${gMilestones.length})</span>
+                  <button class="btn btn-sm btn-secondary btn-add-milestone" data-id="${g.id}" style="padding: 2px 8px; font-size: 11px;">+ Milestone</button>
+                </div>
+                ${gMilestones.map(m => `
+                  <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 4px;">
+                    <input type="checkbox" class="milestone-chk" data-mid="${m.id}" data-gid="${g.id}" ${m.completed ? 'checked' : ''} style="cursor: pointer; accent-color: var(--primary);">
+                    <span style="text-decoration: ${m.completed ? 'line-through' : 'none'}; color: ${m.completed ? 'var(--text-dim)' : 'var(--text-main)'};">${escapeHtml(m.title)}</span>
+                  </div>
+                `).join('')}
+              </div>
+
+              <div style="display: flex; gap: 8px; margin-top: 12px;">
+                <button class="btn btn-sm btn-secondary btn-update-goal-prog" data-id="${g.id}" style="flex: 1;">Update Progress</button>
+                <button class="btn btn-sm btn-secondary btn-edit-goal" data-id="${g.id}">Edit</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        list.querySelectorAll('.milestone-chk').forEach(chk => {
+          chk.addEventListener('change', async () => {
+            const m = await db.get('milestones', chk.dataset.mid);
+            if (m) {
+              await db.put('milestones', { ...m, completed: chk.checked, completedAt: chk.checked ? new Date().toISOString() : null });
+              showToast(chk.checked ? 'Milestone completed!' : 'Milestone unmarked', 'success');
+            }
+          });
+        });
+
+        list.querySelectorAll('.btn-add-milestone').forEach(btn => {
+          btn.addEventListener('click', () => openAddMilestoneModal(btn.dataset.id));
+        });
+
+        list.querySelectorAll('.btn-update-goal-prog').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const g = await db.get('goals', btn.dataset.id);
+            if (g) openUpdateGoalValueModal(g);
+          });
+        });
+
+        list.querySelectorAll('.btn-edit-goal').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const g = await db.get('goals', btn.dataset.id);
+            if (g) openGoalEditModal(g);
+          });
+        });
+      }
+
+      function openGoalModal() {
+        const today = new Date().toISOString().split('T')[0];
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Create Goal</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-create-goal">
+            <div class="form-group">
+              <label class="form-label">Goal Title *</label>
+              <input type="text" required id="goal-title-in" class="form-control" placeholder="e.g. Master Android & System Design">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <select id="goal-cat-in" class="form-control">
+                <option value="Financial">Financial</option>
+                <option value="Fitness">Fitness</option>
+                <option value="Career">Career</option>
+                <option value="Education">Education</option>
+                <option value="Personal Development">Personal Development</option>
+                <option value="Travel">Travel</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div class="form-group" style="display: flex; gap: 8px;">
+              <div style="flex: 2;">
+                <label class="form-label">Target Value</label>
+                <input type="number" step="any" required id="goal-target-in" class="form-control" placeholder="100">
+              </div>
+              <div style="flex: 1;">
+                <label class="form-label">Unit</label>
+                <input type="text" id="goal-unit-in" class="form-control" placeholder="km, books, etc.">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Current Value</label>
+              <input type="number" step="any" id="goal-current-in" class="form-control" value="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target Date</label>
+              <input type="date" required id="goal-date-in" class="form-control" value="${today}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Priority</label>
+              <select id="goal-priority-in" class="form-control">
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Urgent">Urgent</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <input type="text" id="goal-desc-in" class="form-control" placeholder="Target purpose or milestone plan">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Create Goal</button>
+          </form>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-create-goal').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const target = parseFloat(document.getElementById('goal-target-in').value);
+          const current = parseFloat(document.getElementById('goal-current-in').value) || 0;
+          if (isNaN(target) || target <= 0) return;
+
+          await db.put('goals', {
+            title: document.getElementById('goal-title-in').value,
+            category: document.getElementById('goal-cat-in').value,
+            targetValue: target,
+            currentValue: current,
+            unit: document.getElementById('goal-unit-in').value,
+            startDate: new Date().toISOString().split('T')[0],
+            targetDate: document.getElementById('goal-date-in').value,
+            priority: document.getElementById('goal-priority-in').value,
+            description: document.getElementById('goal-desc-in').value,
+            status: current >= target ? 'Completed' : 'In Progress'
+          });
+          closeModal();
+          showToast('Goal created', 'success');
+        });
+      }
+
+      function openAddMilestoneModal(goalId) {
+        const today = new Date().toISOString().split('T')[0];
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Add Milestone</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-add-milestone">
+            <div class="form-group">
+              <label class="form-label">Milestone Title *</label>
+              <input type="text" required id="ms-title-in" class="form-control" placeholder="e.g. Complete Phase 1 implementation">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target Date</label>
+              <input type="date" required id="ms-date-in" class="form-control" value="${today}">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Save Milestone</button>
+          </form>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-add-milestone').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          await db.put('milestones', {
+            goalId,
+            title: document.getElementById('ms-title-in').value,
+            targetDate: document.getElementById('ms-date-in').value,
+            completed: false
+          });
+          closeModal();
+          showToast('Milestone added', 'success');
+        });
+      }
+
+      function openUpdateGoalValueModal(goal) {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Update Progress</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-update-gval">
+            <p style="font-size: 13px; margin-bottom: 12px;">Goal: <strong>${escapeHtml(goal.title)}</strong> (Target: ${goal.targetValue} ${goal.unit || ''})</p>
+            <div class="form-group">
+              <label class="form-label">Current Value</label>
+              <input type="number" step="any" required id="gval-current-in" class="form-control" value="${goal.currentValue}">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Save Progress</button>
+          </form>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-update-gval').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const val = parseFloat(document.getElementById('gval-current-in').value);
+          if (isNaN(val)) return;
+          const status = val >= goal.targetValue ? 'Completed' : 'In Progress';
+          await db.put('goals', { ...goal, currentValue: val, status });
+          closeModal();
+          showToast('Goal progress updated', 'success');
+        });
+      }
+
+      function openGoalEditModal(goal) {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Edit Goal</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-edit-goal">
+            <div class="form-group">
+              <label class="form-label">Title</label>
+              <input type="text" required id="gedit-title" class="form-control" value="${escapeHtml(goal.title)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target Date</label>
+              <input type="date" required id="gedit-date" class="form-control" value="${goal.targetDate}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Priority</label>
+              <select id="gedit-priority" class="form-control">
+                <option value="Urgent" ${goal.priority === 'Urgent' ? 'selected' : ''}>Urgent</option>
+                <option value="High" ${goal.priority === 'High' ? 'selected' : ''}>High</option>
+                <option value="Medium" ${goal.priority === 'Medium' ? 'selected' : ''}>Medium</option>
+                <option value="Low" ${goal.priority === 'Low' ? 'selected' : ''}>Low</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+              <button type="button" class="btn btn-danger" id="btn-delete-goal" style="flex: 1;">Delete</button>
+              <button type="submit" class="btn btn-primary" style="flex: 1;">Update</button>
+            </div>
+          </form>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('btn-delete-goal').addEventListener('click', () => {
+          openConfirmModal('Delete Goal', 'Delete this goal and all associated milestones?', async () => {
+            await db.delete('goals', goal.id);
+            closeModal();
+            showToast('Goal deleted', 'info');
+          });
+        });
+        document.getElementById('form-edit-goal').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          await db.put('goals', {
+            ...goal,
+            title: document.getElementById('gedit-title').value,
+            targetDate: document.getElementById('gedit-date').value,
+            priority: document.getElementById('gedit-priority').value
+          });
+          closeModal();
+          showToast('Goal updated', 'success');
+        });
+      }
+
+      // PLANNER VIEW
+      async function renderPlanner() {
+        const tasks = await db.getAll('tasks');
+        const todayStr = new Date().toISOString().split('T')[0];
+        const overdue = tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr);
+
+        const container = document.getElementById('view-planner');
+        container.innerHTML = `
+          <div class="subtabs">
+            <button class="subtab-btn ${state.plannerSubtab === 'agenda' ? 'active' : ''}" data-sub="agenda">Today's Agenda</button>
+            <button class="subtab-btn ${state.plannerSubtab === 'weekly' ? 'active' : ''}" data-sub="weekly">Weekly View</button>
+            <button class="subtab-btn ${state.plannerSubtab === 'all' ? 'active' : ''}" data-sub="all">All Tasks</button>
+          </div>
+
+          ${overdue.length > 0 ? `
+            <div style="background: var(--danger-light); border: 1px solid var(--danger); padding: 10px 14px; border-radius: 12px; margin-bottom: 14px; color: var(--danger); font-size: 13px; display: flex; align-items: center; justify-content: space-between;">
+              <span>⚠️ ${overdue.length} overdue task(s)!</span>
+              <button class="btn btn-sm btn-danger" id="btn-show-overdue" style="padding: 2px 8px; font-size: 11px;">Filter</button>
+            </div>
+          ` : ''}
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div>
+              <h3 style="font-size: 16px; font-weight: 700;">Task Manager</h3>
+              <p style="font-size: 11px; color: var(--text-muted);">${tasks.filter(t => !t.completed).length} pending tasks</p>
+            </div>
+            <button class="btn btn-sm btn-primary" id="btn-create-task">+ New Task</button>
+          </div>
+
+          <div id="planner-tasks-container"></div>
+        `;
+
+        container.querySelectorAll('.subtab-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.plannerSubtab = btn.dataset.sub;
+            state.plannerFilter = 'all';
+            container.querySelectorAll('.subtab-btn').forEach(b => b.classList.toggle('active', b === btn));
+            renderPlannerTasksList(tasks, todayStr);
+          });
+        });
+
+        document.getElementById('btn-show-overdue')?.addEventListener('click', () => {
+          state.plannerFilter = 'overdue';
+          renderPlannerTasksList(tasks, todayStr);
+        });
+
+        document.getElementById('btn-create-task')?.addEventListener('click', () => openTaskModal());
+        renderPlannerTasksList(tasks, todayStr);
+      }
+
+      function renderPlannerTasksList(tasks, todayStr) {
+        const list = document.getElementById('planner-tasks-container');
+        if (!list) return;
+
+        if (state.plannerSubtab === 'weekly') {
+          const daysOfWeek = [];
+          const now = new Date();
+          const currentDayOfWeek = now.getDay();
+          const mondayOffset = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek;
+          const monday = new Date(now);
+          monday.setDate(now.getDate() + mondayOffset);
+
+          for (let i = 0; i < 7; i++) {
+            const d = new Date(monday);
+            d.setDate(monday.getDate() + i);
+            const dStr = d.toISOString().split('T')[0];
+            const dLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            daysOfWeek.push({ dStr, dLabel, isToday: dStr === todayStr });
+          }
+
+          list.innerHTML = `
+            <div>
+              ${daysOfWeek.map(day => {
+                const dayTasks = tasks.filter(t => t.dueDate === day.dStr);
+                return `
+                  <div class="card" style="margin-bottom: 10px; border-left: 4px solid ${day.isToday ? 'var(--primary)' : 'var(--border-color)'};">
+                    <div class="card-title" style="margin-bottom: 8px;">
+                      <span style="font-size: 13px; font-weight: 700; color: ${day.isToday ? 'var(--primary)' : 'var(--text-main)'};">${day.dLabel} ${day.isToday ? '(Today)' : ''}</span>
+                      <span style="font-size: 11px; color: var(--text-dim);">${dayTasks.length} task(s)</span>
+                    </div>
+                    ${dayTasks.length === 0 ? `<p style="font-size: 12px; color: var(--text-dim);">No tasks scheduled</p>` : `
+                      <div>
+                        ${dayTasks.map(t => renderTaskRowHtml(t, todayStr)).join('')}
+                      </div>
+                    `}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+          attachTaskEventListeners(list, tasks);
+          return;
+        }
+
+        let filtered = tasks.slice();
+        if (state.plannerFilter === 'overdue') {
+          filtered = filtered.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr);
+        } else if (state.plannerSubtab === 'agenda') {
+          filtered = filtered.filter(t => t.dueDate === todayStr || (!t.dueDate && !t.completed));
+        }
+
+        filtered.sort((a, b) => {
+          if (a.completed !== b.completed) return a.completed ? 1 : -1;
+          const pOrder = { 'Urgent': 1, 'High': 2, 'Medium': 3, 'Low': 4 };
+          return (pOrder[a.priority] || 3) - (pOrder[b.priority] || 3);
+        });
+
+        if (filtered.length === 0) {
+          list.innerHTML = `<div class="card empty-state"><p style="font-size: 13px;">No tasks found.</p></div>`;
+          return;
+        }
+
+        list.innerHTML = filtered.map(t => renderTaskRowHtml(t, todayStr)).join('');
+        attachTaskEventListeners(list, tasks);
+      }
+
+      function renderTaskRowHtml(t, todayStr) {
+        const isOverdue = !t.completed && t.dueDate && t.dueDate < todayStr;
+        return `
+          <div class="item-row" style="background: var(--bg-surface); border: 1px solid var(--border-color); margin-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+              <input type="checkbox" class="task-chk" data-id="${t.id}" ${t.completed ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer; accent-color: var(--primary);">
+              <div style="flex: 1;">
+                <p style="font-size: 14px; font-weight: 600; text-decoration: ${t.completed ? 'line-through' : 'none'}; color: ${t.completed ? 'var(--text-muted)' : 'var(--text-main)'};">${escapeHtml(t.title)}</p>
+                <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px;">
+                  <span class="badge ${t.priority === 'Urgent' ? 'badge-danger' : t.priority === 'High' ? 'badge-warning' : 'badge-neutral'}" style="font-size: 9px;">${t.priority}</span>
+                  <span style="color: ${isOverdue ? 'var(--danger)' : 'var(--text-dim)'}; font-weight: ${isOverdue ? '700' : 'normal'};">
+                    📅 ${formatDate(t.dueDate) || 'No date'}
+                  </span>
+                  ${t.recurring && t.recurring !== 'None' ? `<span class="badge badge-primary" style="font-size: 9px;">🔁 ${t.recurring}</span>` : ''}
+                  ${t.category ? `<span class="badge badge-neutral" style="font-size: 9px;">${escapeHtml(t.category)}</span>` : ''}
+                </div>
+                ${t.notes ? `<p style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">${escapeHtml(t.notes)}</p>` : ''}
+              </div>
+            </div>
+            <div style="display: flex; gap: 4px;">
+              <button class="btn-icon btn-sm btn-edit-task" data-id="${t.id}" aria-label="Edit Task">
+                <svg class="icon" style="width:14px;height:14px;" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      function attachTaskEventListeners(container, tasks) {
+        container.querySelectorAll('.task-chk').forEach(chk => {
+          chk.addEventListener('change', async () => {
+            const t = await db.get('tasks', chk.dataset.id);
+            if (t) {
+              await toggleTaskCompletedWithRecurrence(t, chk.checked);
+            }
+          });
+        });
+
+        container.querySelectorAll('.btn-edit-task').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const t = await db.get('tasks', btn.dataset.id);
+            if (t) openTaskEditModal(t);
+          });
+        });
+      }
+
+      async function toggleTaskCompletedWithRecurrence(task, completedState) {
+        await db.put('tasks', {
+          ...task,
+          completed: completedState,
+          completedAt: completedState ? new Date().toISOString() : null
+        });
+
+        if (completedState && task.recurring && task.recurring !== 'None') {
+          const nextDate = new Date(task.dueDate || new Date());
+          if (task.recurring === 'Daily') nextDate.setDate(nextDate.getDate() + 1);
+          else if (task.recurring === 'Weekly') nextDate.setDate(nextDate.getDate() + 7);
+          else if (task.recurring === 'Monthly') nextDate.setMonth(nextDate.getMonth() + 1);
+
+          const yyyy = nextDate.getFullYear();
+          const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
+          const dd = String(nextDate.getDate()).padStart(2, '0');
+
+          await db.put('tasks', {
+            title: task.title,
+            dueDate: `${yyyy}-${mm}-${dd}`,
+            priority: task.priority,
+            category: task.category,
+            notes: task.notes,
+            recurring: task.recurring,
+            completed: false
+          });
+          showToast(`Completed! Next ${task.recurring.toLowerCase()} task scheduled for ${dd}/${mm}`, 'success');
+        } else {
+          showToast(completedState ? 'Task completed' : 'Task uncompleted', 'success');
+        }
+      }
+
+      function openTaskModal() {
+        const today = new Date().toISOString().split('T')[0];
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">New Task</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-create-task">
+            <div class="form-group">
+              <label class="form-label">Task Title *</label>
+              <input type="text" required id="task-title-in" class="form-control" placeholder="What needs to be done?">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Due Date</label>
+              <input type="date" required id="task-date-in" class="form-control" value="${today}">
+            </div>
+            <div class="form-group" style="display: flex; gap: 8px;">
+              <div style="flex: 1;">
+                <label class="form-label">Priority</label>
+                <select id="task-priority-in" class="form-control">
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Urgent">Urgent</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+              <div style="flex: 1;">
+                <label class="form-label">Recurrence</label>
+                <select id="task-recurring-in" class="form-control">
+                  <option value="None">None</option>
+                  <option value="Daily">Daily</option>
+                  <option value="Weekly">Weekly</option>
+                  <option value="Monthly">Monthly</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <input type="text" id="task-cat-in" class="form-control" placeholder="e.g. Work, Health, Finance">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Notes</label>
+              <input type="text" id="task-notes-in" class="form-control" placeholder="Optional notes">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Create Task</button>
+          </form>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('form-create-task').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          await db.put('tasks', {
+            title: document.getElementById('task-title-in').value,
+            dueDate: document.getElementById('task-date-in').value,
+            priority: document.getElementById('task-priority-in').value,
+            recurring: document.getElementById('task-recurring-in').value,
+            category: document.getElementById('task-cat-in').value || 'General',
+            notes: document.getElementById('task-notes-in').value,
+            completed: false
+          });
+          closeModal();
+          showToast('Task scheduled', 'success');
+        });
+      }
+
+      function openTaskEditModal(task) {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Edit Task</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <form id="form-edit-task">
+            <div class="form-group">
+              <label class="form-label">Title</label>
+              <input type="text" required id="tedit-title" class="form-control" value="${escapeHtml(task.title)}">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Due Date</label>
+              <input type="date" required id="tedit-date" class="form-control" value="${task.dueDate}">
+            </div>
+            <div class="form-group" style="display: flex; gap: 8px;">
+              <div style="flex: 1;">
+                <label class="form-label">Priority</label>
+                <select id="tedit-priority" class="form-control">
+                  <option value="Urgent" ${task.priority === 'Urgent' ? 'selected' : ''}>Urgent</option>
+                  <option value="High" ${task.priority === 'High' ? 'selected' : ''}>High</option>
+                  <option value="Medium" ${task.priority === 'Medium' ? 'selected' : ''}>Medium</option>
+                  <option value="Low" ${task.priority === 'Low' ? 'selected' : ''}>Low</option>
+                </select>
+              </div>
+              <div style="flex: 1;">
+                <label class="form-label">Recurrence</label>
+                <select id="tedit-recurring" class="form-control">
+                  <option value="None" ${task.recurring === 'None' ? 'selected' : ''}>None</option>
+                  <option value="Daily" ${task.recurring === 'Daily' ? 'selected' : ''}>Daily</option>
+                  <option value="Weekly" ${task.recurring === 'Weekly' ? 'selected' : ''}>Weekly</option>
+                  <option value="Monthly" ${task.recurring === 'Monthly' ? 'selected' : ''}>Monthly</option>
+                </select>
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+              <button type="button" class="btn btn-danger" id="btn-delete-task" style="flex: 1;">Delete</button>
+              <button type="submit" class="btn btn-primary" style="flex: 1;">Update</button>
+            </div>
+          </form>
+        `);
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('btn-delete-task').addEventListener('click', () => {
+          openConfirmModal('Delete Task', 'Remove this task?', async () => {
+            await db.delete('tasks', task.id);
+            closeModal();
+            showToast('Task removed', 'info');
+          });
+        });
+        document.getElementById('form-edit-task').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          await db.put('tasks', {
+            ...task,
+            title: document.getElementById('tedit-title').value,
+            dueDate: document.getElementById('tedit-date').value,
+            priority: document.getElementById('tedit-priority').value,
+            recurring: document.getElementById('tedit-recurring').value
+          });
+          closeModal();
+          showToast('Task updated', 'success');
+        });
+      }
+
+      // SETTINGS VIEW
+      async function renderSettings() {
+        const lockSetting = await db.get('settings', 'appLockEnabled');
+        const lockEnabled = lockSetting ? lockSetting.value : false;
+
+        const container = document.getElementById('view-settings');
+        container.innerHTML = `
+          <div class="card">
+            <div class="card-title">Preferences</div>
+            <div class="form-group">
+              <label class="form-label">Theme Mode</label>
+              <select id="settings-theme-select" class="form-control">
+                <option value="dark" ${state.theme === 'dark' ? 'selected' : ''}>Dark Mode (AMOLED)</option>
+                <option value="light" ${state.theme === 'light' ? 'selected' : ''}>Light Mode</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Currency Symbol</label>
+              <select id="settings-currency-select" class="form-control">
+                <option value="INR" ${state.currency === 'INR' ? 'selected' : ''}>Indian Rupee (₹ INR)</option>
+                <option value="USD" ${state.currency === 'USD' ? 'selected' : ''}>US Dollar ($ USD)</option>
+                <option value="EUR" ${state.currency === 'EUR' ? 'selected' : ''}>Euro (€ EUR)</option>
+                <option value="GBP" ${state.currency === 'GBP' ? 'selected' : ''}>British Pound (£ GBP)</option>
+                <option value="AED" ${state.currency === 'AED' ? 'selected' : ''}>UAE Dirham (د.إ AED)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Date Format</label>
+              <select id="settings-date-select" class="form-control">
+                <option value="DD/MM/YYYY">DD/MM/YYYY (Standard)</option>
+                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                <option value="YYYY-MM-DD">YYYY-MM-DD (ISO)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Security & App Lock</div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Lock LifeOS on your iQOO Neo 9 Pro using Android Biometrics / Device Credential.</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface-elevated); padding: 12px; border-radius: 12px;">
+              <div>
+                <p style="font-size: 14px; font-weight: 600;">Biometric App Lock</p>
+                <p style="font-size: 11px; color: var(--text-dim);">${lockEnabled ? 'Active (Requires Fingerprint / Face)' : 'Disabled'}</p>
+              </div>
+              <button class="btn btn-sm ${lockEnabled ? 'btn-danger' : 'btn-primary'}" id="btn-toggle-app-lock">
+                ${lockEnabled ? 'Disable' : 'Enable'}
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Sample Demonstration Data</div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Populate sample records to test and explore all application modules.</p>
+            <button class="btn btn-secondary" id="btn-load-demo-data" style="width: 100%;">Load Sample Demo Data</button>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Backup & Restore</div>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">Export complete application database to portable JSON or restore previous snapshots.</p>
+            <div style="display: flex; gap: 10px;">
+              <button class="btn btn-secondary" id="btn-export-backup" style="flex: 1;">Export JSON</button>
+              <button class="btn btn-secondary" id="btn-import-backup-trigger" style="flex: 1;">Import JSON</button>
+            </div>
+            <input type="file" id="backup-file-input" accept=".json,application/json" style="display: none;">
+          </div>
+
+          <div class="card">
+            <div class="card-title">Application Info</div>
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.7;">
+              <p><strong>Application:</strong> LifeOS Personal Life Management</p>
+              <p><strong>Version:</strong> 1.0.0 (Production)</p>
+              <p><strong>Device:</strong> iQOO Neo 9 Pro (Android 16 Verified)</p>
+              <p><strong>Package ID:</strong> com.lifeos.personal</p>
+              <p><strong>Storage:</strong> Offline-Ready In-Memory & IndexedDB Storage</p>
+            </div>
+          </div>
+
+          <div class="card" style="border-color: rgba(239, 68, 68, 0.4);">
+            <div class="card-title" style="color: var(--danger);">Reset Data</div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Permanently wipe all records and restore factory state.</p>
+            <button class="btn btn-danger" id="btn-clear-all-data" style="width: 100%;">Clear All Application Data</button>
+          </div>
+        `;
+
+        document.getElementById('btn-load-demo-data')?.addEventListener('click', () => {
+          openConfirmModal('Load Sample Demo Data', 'This will populate realistic sample records to evaluate all features. Proceed?', () => {
+            db.seedDemoData();
+            showToast('Sample demonstration data loaded', 'success');
+          });
+        });
+
+        document.getElementById('settings-theme-select')?.addEventListener('change', (e) => setTheme(e.target.value));
+
+        document.getElementById('settings-currency-select')?.addEventListener('change', async (e) => {
+          const val = e.target.value;
+          state.currency = val;
+          state.currencySymbol = val === 'INR' ? '₹' : val === 'USD' ? '$' : val === 'EUR' ? '€' : val === 'GBP' ? '£' : 'د.إ';
+          await db.put('settings', { key: 'currency', value: state.currency });
+          await db.put('settings', { key: 'currencySymbol', value: state.currencySymbol });
+          showToast(`Currency updated to ${val}`, 'info');
+        });
+
+        document.getElementById('btn-toggle-app-lock')?.addEventListener('click', async () => {
+          const newState = !lockEnabled;
+          await db.put('settings', { key: 'appLockEnabled', value: newState });
+          showToast(newState ? 'Biometric App Lock enabled' : 'App Lock disabled', 'info');
+        });
+
+        document.getElementById('btn-export-backup')?.addEventListener('click', async () => {
+          const exportData = await db.exportAllData();
+          const jsonStr = JSON.stringify(exportData, null, 2);
+          const blob = new Blob([jsonStr], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          const dateStr = new Date().toISOString().split('T')[0];
+          a.href = url;
+          a.download = `lifeos-backup-${dateStr}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showToast('Backup JSON downloaded', 'success');
+        });
+
+        const fileIn = document.getElementById('backup-file-input');
+        document.getElementById('btn-import-backup-trigger')?.addEventListener('click', () => fileIn?.click());
+        fileIn?.addEventListener('change', (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            try {
+              const parsed = JSON.parse(event.target.result);
+              openBackupPreviewModal(parsed);
+            } catch (err) {
+              showToast('Invalid JSON file format', 'danger');
+            }
+          };
+          reader.readAsText(file);
+        });
+
+        document.getElementById('btn-clear-all-data')?.addEventListener('click', () => openClearDataModal());
+      }
+
+      function openBackupPreviewModal(backupObj) {
+        if (!backupObj || !backupObj.tables) {
+          showToast('Invalid backup file: tables object missing', 'danger');
+          return;
+        }
+
+        const counts = Object.entries(backupObj.tables).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.length : 0}`).join('<br>');
+
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title">Restore Backup</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <p style="font-size: 13px; margin-bottom: 8px;">Backup Date: <strong>${formatDate(backupObj.exportedAt ? backupObj.exportedAt.split('T')[0] : '')}</strong></p>
+          <div style="background: var(--bg-surface-elevated); padding: 12px; border-radius: 10px; font-size: 12px; line-height: 1.5; margin-bottom: 14px;">
+            ${counts}
+          </div>
+          <p style="font-size: 12px; color: var(--danger); margin-bottom: 14px;">⚠️ Overwrites current database records with imported snapshot.</p>
+          <button class="btn btn-primary" id="btn-confirm-import" style="width: 100%;">Confirm & Restore</button>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('btn-confirm-import').addEventListener('click', async () => {
+          try {
+            await db.importAllData(backupObj);
+            closeModal();
+            showToast('All records restored successfully!', 'success');
+          } catch (e) {
+            showToast('Restore error: ' + e.message, 'danger');
+          }
+        });
+      }
+
+      function openClearDataModal() {
+        openModal(`
+          <div class="modal-header">
+            <h3 class="modal-title" style="color: var(--danger);">Confirm Data Wipe</h3>
+            <button class="btn-icon btn-sm" id="modal-close-btn">&times;</button>
+          </div>
+          <p style="font-size: 13px; color: var(--text-main); margin-bottom: 12px;">Type <strong>RESET</strong> to confirm wiping all on-device records.</p>
+          <div class="form-group">
+            <input type="text" id="confirm-reset-text" class="form-control" placeholder="RESET">
+          </div>
+          <button class="btn btn-danger" id="btn-execute-reset" style="width: 100%;">Erase All Data</button>
+        `);
+
+        document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('btn-execute-reset').addEventListener('click', async () => {
+          const txt = document.getElementById('confirm-reset-text').value.trim();
+          if (txt === 'RESET') {
+            await db.clearAll();
+            closeModal();
+            showToast('Application reset', 'info');
+          } else {
+            showToast('Confirmation text did not match', 'warning');
+          }
+        });
+      }
+
+      // 5. APP CONTROLLER & NAVIGATION
+      function switchTab(tabKey) {
+        state.currentTab = tabKey;
+        const views = document.querySelectorAll('.app-view');
+        views.forEach(v => {
+          v.style.display = v.id === `view-${tabKey}` ? 'block' : 'none';
+        });
+
+        document.querySelectorAll('.nav-item').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.tab === tabKey);
+        });
+
+        const titles = {
+          dashboard: 'LifeOS',
+          finance: 'Finance Manager',
+          habits: 'Habit Tracker',
+          goals: 'Goal Tracker',
+          planner: 'Daily Planner',
+          settings: 'Settings'
+        };
+        const headerTitle = document.getElementById('header-title');
+        if (headerTitle) headerTitle.innerText = titles[tabKey] || 'LifeOS';
+
+        renderCurrentView();
+      }
+
+      async function renderCurrentView() {
+        if (state.currentTab === 'dashboard') await renderDashboard();
+        else if (state.currentTab === 'finance') await renderFinance();
+        else if (state.currentTab === 'habits') await renderHabits();
+        else if (state.currentTab === 'goals') await renderGoals();
+        else if (state.currentTab === 'planner') await renderPlanner();
+        else if (state.currentTab === 'settings') await renderSettings();
+      }
+
+      function setTheme(theme) {
+        state.theme = theme;
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+          document.documentElement.classList.remove('light');
+        } else {
+          document.documentElement.classList.add('light');
+          document.documentElement.classList.remove('dark');
+        }
+        db.put('settings', { key: 'theme', value: theme });
+      }
+
+      function bootstrap() {
+        // Load initial settings synchronously from memory store
+        const themeSet = db.tables.settings.get('theme');
+        if (themeSet && themeSet.value) setTheme(themeSet.value);
+
+        const curSet = db.tables.settings.get('currency');
+        if (curSet && curSet.value) state.currency = curSet.value;
+
+        const symSet = db.tables.settings.get('currencySymbol');
+        if (symSet && symSet.value) state.currencySymbol = symSet.value;
+
+        db.subscribe(() => renderCurrentView());
+
+        document.querySelectorAll('.nav-item').forEach(btn => {
+          btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
+          setTheme(state.theme === 'dark' ? 'light' : 'dark');
+        });
+
+        document.getElementById('fab-add')?.addEventListener('click', async () => {
+          if (state.currentTab === 'finance') {
+            const cats = await db.getAll('categories');
+            openTransactionModal('expense', cats);
+          } else if (state.currentTab === 'habits') {
+            openHabitModal();
+          } else if (state.currentTab === 'goals') {
+            openGoalModal();
+          } else if (state.currentTab === 'planner' || state.currentTab === 'dashboard') {
+            openTaskModal();
+          } else {
+            const cats = await db.getAll('categories');
+            openTransactionModal('expense', cats);
+          }
+        });
+
+        switchTab('dashboard');
+      }
+
+      // Safe DOM ready check: if DOM is already ready, run immediately!
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bootstrap);
+      } else {
+        bootstrap();
+      }
+    })();
+  </script>
+</body>
+</html>
