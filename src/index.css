@@ -35,6 +35,25 @@ button {
   touch-action: manipulation;
 }
 
+.tab-transition, .onboarding-step {
+  animation: lifeos-enter 220ms cubic-bezier(.2,.75,.25,1) both;
+}
+
+.onboarding-complete {
+  animation: lifeos-complete 300ms cubic-bezier(.2,.75,.25,1) both;
+}
+
+@keyframes lifeos-enter {
+  from { opacity: 0; transform: translate3d(0, 5px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes lifeos-complete {
+  0% { opacity: 0; transform: scale(.97); }
+  70% { opacity: 1; transform: scale(1.01); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
 :focus-visible {
   outline: 2px solid #818cf8;
   outline-offset: 3px;
@@ -42,6 +61,15 @@ button {
 
 ::selection {
   background: rgb(99 102 241 / 35%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 html:not(.dark) {

@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Activity, CalendarDays, CheckCircle2, CircleDollarSign, Goal as GoalIcon, Home, Settings as SettingsIcon } from 'lucide-react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { Activity, CalendarDays, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { StorageService, db } from './db';
 import { BiometricService } from './services/biometricService';
-import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService } from './services/notificationService';
+import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getTaskStatus, sortTasksByDeadline } from './services/domainUtils';
+import Onboarding, { type AppearancePreference } from './components/Onboarding';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getTaskStatus, profileInitial, resolveAppearance, shouldShowOnboarding, sortTasksByDeadline } from './services/domainUtils';
 
 const notificationLabels: Record<keyof NotificationPreferences, string> = {
   taskReminders: 'Task reminders',
@@ -29,17 +30,26 @@ import {
 export default function App() {
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings'>('dashboard');
+  const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [appearance, setAppearancePreference] = useState<AppearancePreference>('dark');
   const [currency, setCurrency] = useState<string>('INR');
   const [currencySymbol, setCurrencySymbol] = useState<string>('₹');
   const [displayName, setDisplayName] = useState('');
   const [clockNow, setClockNow] = useState(() => new Date());
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', channel: 'unknown', pendingCount: 0, lastError: '' });
+  const [biometricVerified, setBiometricVerified] = useState(false);
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
+  const [onboardingRequired, setOnboardingRequired] = useState(false);
+  const [appReady, setAppReady] = useState(false);
 
   // Biometric Lock State
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
+  const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
 
   // Core Data Collections
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -87,7 +97,7 @@ export default function App() {
     CapacitorApp.addListener('appStateChange', async state => {
       if (!state.isActive) {
         const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-        if (isBio) setIsLocked(true);
+        if (isBio) { setIsLocked(true); setBiometricVerified(false); }
         return;
       }
       setClockNow(new Date());
@@ -95,7 +105,9 @@ export default function App() {
       if (isBio) triggerBiometricAuth();
       const records = await reloadAllData();
       const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
-      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, prefs);
+      const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
+      await refreshNotificationDiagnostics();
     }).then(listener => { appStateListener = listener; });
     return () => {
       window.clearInterval(timer);
@@ -113,15 +125,34 @@ export default function App() {
     return () => { listener?.remove(); };
   }, [activeTab, createKind]);
 
+  useEffect(() => {
+    if (appearance !== 'system') return;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = () => {
+      const resolved = resolveAppearance('system', media.matches);
+      setTheme(resolved); document.documentElement.classList.toggle('dark', resolved === 'dark');
+    };
+    update(); media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
+  }, [appearance]);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    const previous = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    window.scrollTo(0, scrollPositions.current[activeTab] || 0);
+    root.style.scrollBehavior = previous;
+    return () => { scrollPositions.current[activeTab] = window.scrollY; };
+  }, [activeTab]);
+
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3200);
   };
 
   const initApp = async () => {
-    const savedTheme = await StorageService.settings.get<'dark' | 'light'>('theme', 'dark');
-    setTheme(savedTheme);
-    document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+    const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'dark');
+    await applyAppearance(savedTheme);
 
     const savedCur = await StorageService.settings.get<string>('currency', 'INR');
     setCurrency(savedCur);
@@ -129,20 +160,74 @@ export default function App() {
     setDisplayName(await StorageService.settings.get<string>('displayName', ''));
     const savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
     const hasRequestedNotifications = await StorageService.settings.get<boolean>('notificationPermissionRequested', false);
+    const savedNotificationsEnabled = await StorageService.settings.get<boolean | undefined>('notificationsEnabled', undefined);
+    const notificationsOn = savedNotificationsEnabled ?? Object.values(savedNotificationPreferences).some(Boolean);
+    setNotificationsEnabled(notificationsOn);
     setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences });
     setNotificationPermissionRequested(hasRequestedNotifications);
 
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
     setBiometricEnabled(lockSetting);
+    setIsLocked(lockSetting);
+    const availability = await BiometricService.isAvailable();
+    setBiometricAvailability(availability.isAvailable ? 'Available' : availability.code === 'NOT_ENROLLED' ? 'Supported, but no device credential is enrolled' : 'Unavailable on this device');
 
-    if (lockSetting) {
-      setIsLocked(true);
-      triggerBiometricAuth();
-    }
+    const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
+    const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
+    const settingsCount = await db.settings.count();
+    const dataCounts = await Promise.all([db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(), db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count()]);
+    const legacyState = settingsCount > 0 || dataCounts.some(count => count > 0);
+    const needsOnboarding = shouldShowOnboarding(completed, legacyState, started);
+    setOnboardingRequired(needsOnboarding);
+    setOnboardingComplete(completed || !needsOnboarding);
+    if (!completed && !needsOnboarding) await StorageService.settings.set('onboardingCompleted', true);
+    if (needsOnboarding && !started) await StorageService.settings.set('onboardingStarted', true);
 
     const records = await reloadAllData();
-    await NotificationService.ensureChannel();
-    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, { ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences });
+    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences }, notificationsOn));
+    await refreshNotificationDiagnostics();
+    setAppReady(true);
+  };
+
+  const effectiveNotificationPreferences = (preferences: NotificationPreferences, master = notificationsEnabled): NotificationPreferences => master ? preferences : DEFAULT_NOTIFICATION_PREFERENCES;
+
+  const applyAppearance = async (preference: AppearancePreference) => {
+    setAppearancePreference(preference);
+    const resolved = resolveAppearance(preference, window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true);
+    setTheme(resolved);
+    document.documentElement.classList.toggle('dark', resolved === 'dark');
+    await StorageService.settings.set('theme', preference);
+  };
+
+  const refreshNotificationDiagnostics = async () => {
+    const diagnostics = await NotificationService.getDiagnostics();
+    setNotificationDiagnostics(diagnostics);
+  };
+
+  const askNotificationPermission = async () => {
+    try {
+      if (!NotificationService.isSupported()) return { granted: false, status: 'unsupported', message: 'Install the updated Android build to enable local notifications.' };
+      let status = await NotificationService.checkPermission();
+      if (status === 'granted') return { granted: true, status };
+      if (notificationPermissionRequested) return { granted: false, status, message: 'Permission was previously declined. Open Android notification settings to allow it.' };
+      setNotificationPermissionRequested(true);
+      await StorageService.settings.set('notificationPermissionRequested', true);
+      status = await NotificationService.requestPermission();
+      return status === 'granted'
+        ? { granted: true, status }
+        : { granted: false, status, message: 'Android did not grant notification permission. You can continue and enable it later in Profile.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Android notification permission could not be checked.';
+      return { granted: false, status: 'error', message };
+    }
+  };
+
+  const saveNotificationSelection = async (preferences: NotificationPreferences) => {
+    setNotificationPreferences(preferences);
+    const enabled = Object.values(preferences).some(Boolean);
+    setNotificationsEnabled(enabled);
+    await StorageService.settings.set('notificationPreferences', preferences);
+    await StorageService.settings.set('notificationsEnabled', enabled);
   };
 
   const syncNotificationSchedules = async (taskRows: Task[], habitRows: Habit[], goalRows: Goal[], milestoneRows: Milestone[], preferences = notificationPreferences) => {
@@ -151,7 +236,12 @@ export default function App() {
       NotificationService.syncHabits(habitRows, preferences),
       NotificationService.syncMilestones(goalRows, milestoneRows, preferences),
     ]);
-    if (results.some(result => result.status === 'rejected')) console.warn('One or more local notification schedules could not be updated.');
+    if (results.some(result => result.status === 'rejected')) {
+      console.warn('One or more local notification schedules could not be updated.', results.filter(result => result.status === 'rejected'));
+      await refreshNotificationDiagnostics();
+      return;
+    }
+    await refreshNotificationDiagnostics();
   };
 
   const updateDisplayName = async (name: string) => {
@@ -162,30 +252,50 @@ export default function App() {
   const toggleNotificationCategory = async (key: keyof NotificationPreferences) => {
     const enabled = !notificationPreferences[key];
     if (enabled) {
-      if (!NotificationService.isSupported()) {
-        showToast('Local notifications are available in the Android app after installing the updated build.', 'danger');
-        return;
-      }
-      let permission = await NotificationService.checkPermission();
-      if (permission !== 'granted') {
-        if (notificationPermissionRequested) {
-          showToast('Notifications are blocked in Android settings. Enable them there to continue.', 'danger');
-          return;
-        }
-        setNotificationPermissionRequested(true);
-        await StorageService.settings.set('notificationPermissionRequested', true);
-        permission = await NotificationService.requestPermission();
-      }
-      if (permission !== 'granted') {
-        showToast('Notification permission was not granted. Your preferences were not changed.', 'danger');
-        return;
-      }
+      const permission = await askNotificationPermission();
+      if (!permission.granted) { showToast(permission.message || `Notification permission: ${permission.status}`, 'danger'); return; }
     }
     const next = { ...notificationPreferences, [key]: enabled };
     setNotificationPreferences(next);
+    const master = enabled || (notificationsEnabled && Object.entries(next).some(([category, value]) => category !== key && value));
+    setNotificationsEnabled(master);
     await StorageService.settings.set('notificationPreferences', next);
-    await syncNotificationSchedules(tasks, habits, goals, milestones, next);
+    await StorageService.settings.set('notificationsEnabled', master);
+    await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(next, master));
     showToast(`${enabled ? 'Enabled' : 'Disabled'} ${notificationLabels[key].toLowerCase()}`, 'success');
+  };
+
+  const setNotificationsMaster = async (enabled: boolean) => {
+    if (enabled) {
+      const permission = await askNotificationPermission();
+      if (!permission.granted) { showToast(permission.message || `Notification permission: ${permission.status}`, 'danger'); return; }
+    }
+    setNotificationsEnabled(enabled);
+    await StorageService.settings.set('notificationsEnabled', enabled);
+    await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(notificationPreferences, enabled));
+    await refreshNotificationDiagnostics();
+    showToast(enabled ? 'Notifications enabled' : 'Notifications paused', 'success');
+  };
+
+  const openNotificationSettings = async () => {
+    try { await NotificationService.openSettings(); }
+    catch (error) { showToast(error instanceof Error ? error.message : 'Could not open Android notification settings', 'danger'); }
+  };
+
+  const handleEnableBiometric = async () => {
+    const availability = await BiometricService.isAvailable();
+    if (!availability.isAvailable) return { success: false, message: availability.code === 'NOT_ENROLLED' ? 'No fingerprint or device screen lock is enrolled. Set one up in Android settings, then try again.' : 'Device authentication is not available on this device.' };
+    const result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
+    if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
+    setBiometricEnabled(true); setBiometricVerified(true);
+    await StorageService.settings.set('biometricLockEnabled', true);
+    return { success: true };
+  };
+
+  const finishOnboarding = async () => {
+    await StorageService.settings.set('onboardingCompleted', true);
+    await StorageService.settings.set('onboardingStarted', false);
+    setOnboardingComplete(true); setOnboardingRequired(false); setActiveTab('dashboard');
   };
 
   const importBackupFile = async (file?: File) => {
@@ -200,8 +310,10 @@ export default function App() {
       await StorageService.backup.importData(text, { replaceExisting: true });
       const records = await reloadAllData();
       const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+      const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
       setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...prefs });
-      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, prefs);
+      setNotificationsEnabled(master);
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
       showToast('Backup restored successfully', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not restore this backup', 'danger');
@@ -212,6 +324,7 @@ export default function App() {
     const res = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your fingerprint to access your personal data');
     if (res.success) {
       setIsLocked(false);
+      setBiometricVerified(true);
       showToast('Welcome back!', 'success');
     } else {
       showToast(res.message || 'Authentication required', 'danger');
@@ -246,6 +359,7 @@ export default function App() {
   const toggleTheme = async () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
+    setAppearancePreference(next);
     document.documentElement.classList.toggle('dark', next === 'dark');
     await StorageService.settings.set('theme', next);
   };
@@ -291,7 +405,17 @@ export default function App() {
     event.preventDefault();
     if (!createKind) return;
     const value = (key: string) => (createDraft[key] || '').trim();
+    let reminderCouldNotEnable = false;
     try {
+      if (createKind === 'task' && value('reminderAt') && (!notificationsEnabled || !notificationPreferences.taskReminders)) {
+        const permission = await askNotificationPermission();
+        if (permission.granted) {
+          const nextPreferences = { ...notificationPreferences, taskReminders: true };
+          setNotificationPreferences(nextPreferences); setNotificationsEnabled(true);
+          await StorageService.settings.set('notificationPreferences', nextPreferences);
+          await StorageService.settings.set('notificationsEnabled', true);
+        } else reminderCouldNotEnable = true;
+      }
       if (createKind === 'transaction') {
         const amount = Number(value('amount'));
         if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
@@ -349,13 +473,15 @@ export default function App() {
         else await StorageService.tasks.add({ ...taskUpdates, title: taskUpdates.title!, dueDate: taskUpdates.dueDate!, priority: taskUpdates.priority!, recurring: taskUpdates.recurring!, completed: false });
       }
       const records = await reloadAllData();
-      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+      const reminderOptedIn = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable;
+      const schedulePreferences = { ...notificationPreferences, taskReminders: reminderOptedIn || notificationPreferences.taskReminders };
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(schedulePreferences, notificationsEnabled || reminderOptedIn));
       setCreateKind(null);
       const wasEditingTask = editingTaskId;
       const wasEditingHabit = editingHabitId;
       setEditingTaskId(null);
       setEditingHabitId(null);
-      showToast(wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, 'success');
+      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable ? 'danger' : 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not save this item', 'danger');
     }
@@ -487,6 +613,28 @@ export default function App() {
     : financeSort === 'amount-desc' ? b.amount - a.amount : (b.date || '').localeCompare(a.date || '')),
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
 
+  if (!appReady) return <div className="fixed inset-0 flex items-center justify-center bg-[#090d16] text-white" aria-label="Loading LifeOS"><div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-400" /></div>;
+
+  if (onboardingRequired && !onboardingComplete) return <Onboarding
+    initialName={displayName}
+    preferences={notificationPreferences}
+    appearance={appearance}
+    onSaveName={updateDisplayName}
+    onEnableBiometric={handleEnableBiometric}
+    onSkipBiometric={() => {}}
+    onAppearance={applyAppearance}
+    onEnableNotifications={async selected => {
+      const permission = await askNotificationPermission();
+      if (!permission.granted) return { granted: false, status: permission.status, message: permission.message };
+      await saveNotificationSelection(selected);
+      await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(selected, true));
+      return { granted: true, status: 'granted' };
+    }}
+    onSkipNotifications={async () => { if (!notificationsEnabled) await saveNotificationSelection(DEFAULT_NOTIFICATION_PREFERENCES); }}
+    onOpenNotificationSettings={openNotificationSettings}
+    onFinish={finishOnboarding}
+  />;
+
   // If App is Biometrically Locked, render Lock Screen Overlay
   if (isLocked) {
     return (
@@ -512,30 +660,23 @@ export default function App() {
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} style={{ paddingBottom: 'calc(6.25rem + env(safe-area-inset-bottom))' }}>
       {/* Top Mobile Header */}
-      <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 flex justify-between items-center max-w-md mx-auto">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 to-blue-500 flex items-center justify-center text-white font-black text-sm">L</div>
-          <div>
-            <h1 className="text-base font-bold leading-tight">LifeOS</h1>
-            <p className="text-[10px] text-slate-400">Offline Personal Management</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Offline Active</span>
-          <button onClick={toggleTheme} className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm">
-            {theme === 'dark' ? '🌙' : '☀️'}
-          </button>
+      <header className="sticky top-0 z-40 mx-auto flex max-w-md items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/90 px-4 py-2.5 backdrop-blur-md">
+        <div className="flex min-w-0 items-center gap-2.5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white">L</div><div className="min-w-0"><h1 className="text-sm font-bold leading-tight">LifeOS</h1><p className="truncate text-[11px] text-slate-400">Welcome back, {displayName.trim() || 'there'}!</p></div></div>
+        <div className="flex shrink-0 items-center gap-2">
+          {biometricEnabled && <span className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-semibold ${biometricVerified ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : 'border-amber-500/20 bg-amber-500/10 text-amber-200'}`}><ShieldCheck size={12} />{biometricVerified ? 'Biometric verified' : 'Protected'}</span>}
+          <button onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}</button>
         </div>
       </header>
 
       {/* Main Container */}
       <main className="max-w-md mx-auto p-4 space-y-4">
         {/* VIEW 1: DASHBOARD */}
+        <div key={activeTab} className="tab-transition">
         {activeTab === 'dashboard' && (
           <div className="space-y-4">
             <div>
               <p className="text-xs text-slate-400">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}</p>
-              <h2 className="text-xl font-bold mt-0.5">{displayName.trim() ? `Welcome back, ${displayName.trim()}!` : 'Welcome back!'}</h2>
+              <h2 className="text-xl font-bold mt-0.5">Your day at a glance</h2>
             </div>
 
             {/* Productivity Score Card */}
@@ -841,7 +982,7 @@ export default function App() {
 
             <div className="space-y-2">
               {habits.length === 0 ? (
-                <div className="text-center py-10 text-xs text-slate-500">No habits added. Tap demo data in Settings or create custom habits.</div>
+                <div className="text-center py-10 text-xs text-slate-500">No habits added. Tap demo data in Profile or create custom habits.</div>
               ) : (
                 habits.map(h => {
                   const todayStr = habitsSelectedDate;
@@ -928,46 +1069,37 @@ export default function App() {
         {/* VIEW 6: SETTINGS */}
         {activeTab === 'settings' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold">Settings & System</h2>
+            <h2 className="text-lg font-bold">Your Profile</h2>
 
             <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Profile</h3>
+              <div className="flex items-center gap-3"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-lg font-bold text-white">{profileInitial(displayName) || <UserRound size={21} />}</div><div><h3 className="text-sm font-semibold">Personal details</h3><p className="text-[11px] text-slate-400">Stored privately on this device</p></div></div>
               <label className="block text-xs text-slate-300">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <p className="text-[11px] text-slate-500">Your name is stored on this device and appears on your dashboard.</p>
-              <div className="flex items-center justify-between"><span className="text-xs font-medium">Appearance</span><button onClick={async () => { const next = theme === 'dark' ? 'light' : 'dark'; setTheme(next); document.documentElement.classList.toggle('dark', next === 'dark'); await StorageService.settings.set('theme', next); }} className="min-h-10 rounded-xl bg-slate-800 px-4 text-xs font-semibold">Switch to {theme === 'dark' ? 'light' : 'dark'} theme</button></div>
+              <p className="text-[11px] text-slate-500">Your name appears in the dashboard greeting and Profile avatar.</p>
+            </section>
+
+            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
+              <h3 className="text-sm font-semibold">Security</h3>
+              <p className="text-xs text-slate-400">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-800/60 p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-slate-400">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-10 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
+              {biometricEnabled && <p className={`flex items-center gap-1 text-[11px] ${biometricVerified ? 'text-emerald-300' : 'text-amber-300'}`}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
+            </section>
+
+            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
+              <h3 className="text-sm font-semibold">Appearance</h3><p className="text-xs text-slate-400">Choose a theme or follow Android's system setting.</p>
+              <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`flex min-h-12 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'border-indigo-400 bg-indigo-500/10 text-indigo-200' : 'border-slate-700 bg-slate-800 text-slate-300'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
 
             <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
               <h3 className="text-sm font-semibold">Local notifications</h3>
-              <p className="text-xs text-slate-400">Notifications are scheduled on this device. Android may deliver them approximately unless exact alarm access is granted; LifeOS does not request that special access.</p>
-              {!NotificationService.isSupported() && <p className="text-[11px] text-amber-300">Install the updated Android build to use local notifications.</p>}
+              <p className="text-xs text-slate-400">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
+              <div className="flex min-h-11 items-center justify-between rounded-xl bg-slate-800/60 px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
+              <p className="text-[11px] text-slate-400">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
+              {!notificationDiagnostics.supported && <p className="text-[11px] text-amber-300">The native notification plugin is not available in this runtime.</p>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-slate-800 pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
+              <div className="space-y-1 rounded-xl border border-slate-800 p-3 text-[10px] text-slate-400"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-rose-300' : 'text-emerald-300'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
+              <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Test notification scheduled for ${at.toLocaleTimeString()}`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="min-h-11 rounded-xl bg-indigo-600 px-3 text-xs font-semibold text-white">Test notification · 10 sec</button><button onClick={() => void openNotificationSettings()} className="min-h-11 rounded-xl bg-slate-800 px-3 text-xs font-semibold">Android settings</button></div>
+              <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-10 w-full rounded-xl border border-slate-700 text-xs font-medium text-slate-300">Refresh diagnostics</button>
             </section>
-
-            {/* Biometric Security */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
-              <h3 className="text-sm font-semibold">Biometric Security</h3>
-              <p className="text-xs text-slate-400">Protects LifeOS using Android 16 BiometricPrompt (fingerprint or device PIN).</p>
-              <div className="flex justify-between items-center pt-2">
-                <span className="text-xs font-medium">Biometric Lock</span>
-                <button
-                  onClick={async () => {
-                    const avail = await BiometricService.isAvailable();
-                    if (!biometricEnabled && !avail.isAvailable) {
-                      showToast('Biometrics not enrolled or supported on this device', 'danger');
-                      return;
-                    }
-                    const next = !biometricEnabled;
-                    setBiometricEnabled(next);
-                    await StorageService.settings.set('biometricLockEnabled', next);
-                    showToast(next ? 'Biometric Lock enabled' : 'Biometric Lock disabled', 'info');
-                  }}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold ${biometricEnabled ? 'bg-rose-600 text-white' : 'bg-indigo-600 text-white'}`}
-                >
-                  {biometricEnabled ? 'Disable' : 'Enable'}
-                </button>
-              </div>
-            </div>
 
             {/* Demo Data Trigger */}
             <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
@@ -1017,6 +1149,11 @@ export default function App() {
               }} className="w-full rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white">Export transactions CSV</button>
             </div>
 
+            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-2">
+              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-slate-400">Version 1.0.0 · Package com.lifeos.personal</p><p className="text-[11px] text-slate-500">Offline-first personal management. Your records are stored in the local app database.</p>
+              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-10 rounded-xl border border-slate-700 px-3 text-xs font-medium">Restart onboarding</button>
+            </section>
+
             {/* Danger Zone */}
             <div className="p-4 rounded-xl bg-slate-900 border border-rose-900/50 space-y-3">
               <h3 className="text-sm font-semibold text-rose-400">Data Reset</h3>
@@ -1036,6 +1173,7 @@ export default function App() {
             </div>
           </div>
         )}
+        </div>
       </main>
 
       {createKind && (
@@ -1098,17 +1236,17 @@ export default function App() {
       {/* Floating Bottom Nav */}
       <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-6 border-t border-slate-800 bg-slate-900/95 px-1 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
         {(['dashboard', 'finance', 'habits', 'goals', 'planner', 'settings'] as const).map(tab => {
-          const Icon = ({ dashboard: Home, finance: CircleDollarSign, habits: Activity, goals: GoalIcon, planner: CalendarDays, settings: SettingsIcon })[tab];
-          const label = ({ dashboard: 'Home', finance: 'Finance', habits: 'Habits', goals: 'Goals', planner: 'Planner', settings: 'Settings' })[tab];
+          const Icon = ({ dashboard: Home, finance: CircleDollarSign, habits: Activity, goals: GoalIcon, planner: CalendarDays, settings: UserRound })[tab];
+          const label = ({ dashboard: 'Home', finance: 'Finance', habits: 'Habits', goals: 'Goals', planner: 'Planner', settings: 'Profile' })[tab];
           return (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             aria-label={label}
             aria-current={activeTab === tab ? 'page' : undefined}
-            className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[9px] leading-none font-medium ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-300 font-bold' : 'text-slate-400'}`}
+            className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[9px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-300 font-bold' : 'text-slate-400'}`}
           >
-            <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />
+            {tab === 'settings' ? <span className={`flex h-[21px] w-[21px] items-center justify-center rounded-full text-[10px] font-bold ${displayName.trim() ? 'bg-indigo-500 text-white' : activeTab === tab ? 'bg-indigo-500/20 text-indigo-200' : 'bg-slate-700 text-slate-300'}`} aria-hidden="true">{profileInitial(displayName) || <Icon size={14} />}</span> : <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />}
             <span>{label}</span>
           </button>
           );

@@ -134,7 +134,7 @@ export interface NotificationPreferences {
 
 export interface AppSettings {
   displayName?: string;
-  theme: 'dark' | 'light';
+  theme: 'dark' | 'light' | 'system';
   currency: string;
   currencySymbol: string;
   dateFormat: string;

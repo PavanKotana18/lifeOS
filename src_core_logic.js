@@ -150,6 +150,35 @@ function buildFinanceEntry(localDateTime, savedAt = new Date()) {
   return { date: formatLocalDate(parsed), occurredAt: parsed.toISOString(), createdAt: savedAt.toISOString() };
 }
 
+function shouldShowOnboarding(completed, hasLegacyData, started = false) {
+  return started ? !completed : !completed && !hasLegacyData;
+}
+
+function profileInitial(name) {
+  return String(name || '').trim().charAt(0).toLocaleUpperCase();
+}
+
+function resolveAppearance(preference, systemDark) {
+  return preference === 'system' ? (systemDark ? 'dark' : 'light') : preference;
+}
+
+function normalizeNotificationPermission(status, wasRequested) {
+  return status === 'granted' ? 'Granted'
+    : status === 'denied' && wasRequested ? 'Denied · open Android settings'
+      : status === 'denied' ? 'Denied'
+        : status === 'prompt' || status === 'prompt-with-rationale' ? 'Not requested' : status;
+}
+
+function shouldAnimateNavigation(prefersReducedMotion) {
+  return !prefersReducedMotion;
+}
+
+function stableNotificationId(key) {
+  let hash = 2166136261;
+  for (let index = 0; index < key.length; index++) { hash ^= key.charCodeAt(index); hash = Math.imul(hash, 16777619); }
+  return (hash >>> 0) % 2147483646 + 1;
+}
+
 // Financial Analytics Engine
 function calculateFinanceMetrics(transactions, budgets, currentMonthStr) {
   // currentMonthStr: 'YYYY-MM'
@@ -208,5 +237,11 @@ module.exports = {
   getGoalProgress,
   calculateWeeklyHabitRate,
   buildTaskNotificationPlan,
-  buildFinanceEntry
+  buildFinanceEntry,
+  shouldShowOnboarding,
+  profileInitial,
+  resolveAppearance,
+  normalizeNotificationPermission,
+  shouldAnimateNavigation,
+  stableNotificationId
 };

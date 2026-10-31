@@ -1,4 +1,16 @@
 import type { NotificationPreferences, Task } from '../types';
+export type AppearancePreference = 'dark' | 'light' | 'system';
+
+export const profileInitial = (name: string) => name.trim().charAt(0).toLocaleUpperCase() || '';
+export const resolveAppearance = (preference: AppearancePreference, systemDark: boolean) => preference === 'system' ? (systemDark ? 'dark' : 'light') : preference;
+export const shouldShowOnboarding = (completed: boolean, hasLegacyData: boolean, started = false) => started ? !completed : !completed && !hasLegacyData;
+export const shouldAnimateNavigation = (prefersReducedMotion: boolean) => !prefersReducedMotion;
+export const normalizeNotificationPermission = (status: string, wasRequested: boolean) => status === 'granted' ? 'Granted' : status === 'denied' && wasRequested ? 'Denied · open Android settings' : status === 'denied' ? 'Denied' : status === 'prompt' || status === 'prompt-with-rationale' ? 'Not requested' : status;
+export const stableNotificationId = (key: string) => {
+  let hash = 2166136261;
+  for (let index = 0; index < key.length; index++) { hash ^= key.charCodeAt(index); hash = Math.imul(hash, 16777619); }
+  return (hash >>> 0) % 2147483646 + 1;
+};
 
 export const formatLocalDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 export const formatLocalDateTime = (date: Date) => `${formatLocalDate(date)}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;

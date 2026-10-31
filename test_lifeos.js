@@ -20,7 +20,13 @@ const {
   getGoalProgress,
   calculateWeeklyHabitRate,
   buildTaskNotificationPlan,
-  buildFinanceEntry
+  buildFinanceEntry,
+  shouldShowOnboarding,
+  profileInitial,
+  resolveAppearance,
+  normalizeNotificationPermission,
+  shouldAnimateNavigation,
+  stableNotificationId
 } = require('./src_core_logic.js');
 
 // Mock in-memory database abstraction layer matching Dexie API
@@ -356,6 +362,19 @@ async function runTestSuite() {
   const taskPlan = buildTaskNotificationPlan({ dueDate: '2026-07-06', dueTime: '10:00', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4));
   assert(taskPlan.length === 3 && taskPlan[0].at.getHours() === 9 && taskPlan[0].at.getMinutes() === 15, 'Task notification planning includes custom reminder, upcoming deadline and overdue alert times');
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', completed: true }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4)).length === 0, 'Completed task notifications are not scheduled');
+
+  console.log('\n--- 4C. Testing onboarding, profile and notification diagnostics ---');
+  assert(shouldShowOnboarding(false, false) && !shouldShowOnboarding(false, true), 'First launch onboards while existing legacy data migrates past onboarding');
+  assert(shouldShowOnboarding(false, true, true) && !shouldShowOnboarding(true, true, true), 'Interrupted onboarding resumes, completed onboarding stays complete');
+  assert(profileInitial(' Pavan Kotana ') === 'P' && profileInitial('') === '', 'Profile avatar uses the uppercase first letter and handles an empty name');
+  assert(resolveAppearance('dark', false) === 'dark' && resolveAppearance('light', true) === 'light' && resolveAppearance('system', true) === 'dark' && resolveAppearance('system', false) === 'light', 'Dark, light and system appearance preferences resolve correctly');
+  assert(normalizeNotificationPermission('granted', true) === 'Granted' && normalizeNotificationPermission('denied', true).includes('settings') && normalizeNotificationPermission('prompt', false) === 'Not requested', 'Notification permission states distinguish granted, denied and not-yet-requested');
+  assert(shouldAnimateNavigation(false) && !shouldAnimateNavigation(true), 'Navigation transition respects reduced-motion preference');
+  assert(stableNotificationId('task:abc:taskReminders') === stableNotificationId('task:abc:taskReminders') && stableNotificationId('task:abc:taskReminders') !== stableNotificationId('task:def:taskReminders'), 'Notification IDs remain stable per task and distinct across tasks');
+  const reminderPrefs = { taskReminders: true, upcomingDeadlines: false, overdueAlerts: false };
+  assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 1, 'An explicitly selected future task reminder is planned when its category is enabled');
+  assert(buildTaskNotificationPlan({ dueDate: '2026-07-06' }, reminderPrefs, new Date(2026, 6, 4)).length === 0, 'Tasks without a selected reminder do not create task reminder notifications');
+  assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 3, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 0, 'Past task reminders are skipped instead of scheduled');
 
   // --- 5. DASHBOARD TESTS ---
   console.log('\n--- 5. Testing Central Dashboard Integration ---');
