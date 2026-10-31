@@ -106,3 +106,20 @@ export function buildTaskNotificationPlan(task: Task, preferences: NotificationP
   if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 60_000));
   return plan;
 }
+
+export interface SessionAuthorizationState {
+  biometricEnabled: boolean;
+  biometricAuthenticated: boolean;
+  coordinatorAuthenticated: boolean;
+  sessionGeneration: number;
+  captureGeneration: number;
+}
+
+export function isSessionAuthorized(state: SessionAuthorizationState): boolean {
+  if (!state.biometricEnabled) return true;
+  return (
+    state.biometricAuthenticated &&
+    state.coordinatorAuthenticated &&
+    state.sessionGeneration === state.captureGeneration
+  );
+}
