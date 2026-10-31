@@ -13,11 +13,12 @@ const categoryOptions: Array<[CategoryKey, string]> = [
 
 interface Props {
   initialName: string;
+  initialGender: 'male' | 'female' | 'unspecified' | '';
   preferences: NotificationPreferences;
   appearance: AppearancePreference;
   initialStep: number;
   onStepChange: (step: number) => Promise<void>;
-  onSaveName: (name: string) => Promise<void>;
+  onSaveIdentity: (name: string, gender: 'male' | 'female' | 'unspecified' | '') => Promise<void>;
   onEnableBiometric: () => Promise<{ success: boolean; message?: string }>;
   onSkipBiometric: () => void;
   onAppearance: (preference: AppearancePreference) => Promise<void>;
@@ -30,6 +31,7 @@ interface Props {
 export default function Onboarding(props: Props) {
   const [step, setStep] = useState(Math.max(0, Math.min(4, props.initialStep)));
   const [name, setName] = useState(props.initialName);
+  const [gender, setGender] = useState(props.initialGender);
   const [selected, setSelected] = useState(props.preferences);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -47,8 +49,9 @@ export default function Onboarding(props: Props) {
       <div key={step} className="onboarding-step">
         {step === 0 && <section>
           <p className="mb-2 text-xs font-semibold uppercase tracking-[.18em] text-indigo-300">A personal start</p><h1 className="text-3xl font-bold tracking-tight">Hey, what shall I call you?</h1><p className="mt-3 text-sm leading-6 text-slate-400">Your name stays on this device and helps make LifeOS feel like yours.</p>
-          <label className="mt-8 block text-xs font-medium text-slate-300">Your name<input autoFocus value={name} maxLength={48} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && name.trim()) void advance(() => props.onSaveName(name.trim()), 1); }} placeholder="Type your name" className="mt-2 min-h-12 w-full rounded-xl border border-slate-700 bg-slate-900 px-4 text-base text-white outline-none focus:border-indigo-400" /></label>
-          <button disabled={!name.trim() || busy} onClick={() => void advance(() => props.onSaveName(name.trim()), 1)} className="mt-5 min-h-12 w-full rounded-xl bg-indigo-600 px-4 text-sm font-semibold disabled:opacity-40">Continue</button>
+          <label className="mt-8 block text-xs font-medium text-slate-300">Your name<input autoFocus value={name} maxLength={48} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && name.trim()) void advance(() => props.onSaveIdentity(name.trim(), gender), 1); }} placeholder="Type your name" className="mt-2 min-h-12 w-full rounded-xl border border-slate-700 bg-slate-900 px-4 text-base text-white outline-none focus:border-indigo-400" /></label>
+          <label className="mt-5 block text-xs font-medium text-slate-300">Gender <span className="text-slate-500">· optional</span><select value={gender} onChange={event => setGender(event.target.value as typeof gender)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-700 bg-slate-900 px-4 text-base text-white"><option value="">Skip for now</option><option value="male">Male</option><option value="female">Female</option><option value="unspecified">Prefer not to say</option></select></label>
+          <button disabled={!name.trim() || busy} onClick={() => void advance(() => props.onSaveIdentity(name.trim(), gender), 1)} className="mt-5 min-h-12 w-full rounded-xl bg-indigo-600 px-4 text-sm font-semibold disabled:opacity-40">Continue</button>
         </section>}
         {step === 1 && <section>
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/15 text-indigo-300"><Fingerprint /></div><h1 className="text-3xl font-bold tracking-tight">Let's secure your LifeOS.</h1><p className="mt-3 text-sm leading-6 text-slate-400">LifeOS can use Android fingerprint or your device screen lock when you choose to protect the app. Your biometric data never enters LifeOS.</p>

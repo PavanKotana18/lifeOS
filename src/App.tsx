@@ -4,6 +4,7 @@ import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Go
 import { App as CapacitorApp } from '@capacitor/app';
 import { StorageService, db } from './db';
 import { BiometricService } from './services/biometricService';
+import { createAuthCoordinator } from './services/authCoordinator';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
@@ -52,7 +53,10 @@ export default function App() {
   const [currency, setCurrency] = useState<string>('INR');
   const [currencySymbol, setCurrencySymbol] = useState<string>('₹');
   const [displayName, setDisplayName] = useState('');
+  const [gender, setGender] = useState<'male' | 'female' | 'unspecified' | ''>('');
   const [clockNow, setClockNow] = useState(() => new Date());
+  const [logoPhase, setLogoPhase] = useState<'brand' | 'portrait' | 'rest'>('brand');
+  const logoIntroPlayed = useRef(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -68,6 +72,15 @@ export default function App() {
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
   const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
+  const [biometricMessage, setBiometricMessage] = useState('');
+  const biometricAuthInFlight = useRef<Promise<boolean> | null>(null);
+  const biometricAuthenticated = useRef(false);
+  const startupComplete = useRef(false);
+  const authCoordinator = useRef(createAuthCoordinator(async () => {
+    const result = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your identity to access your personal data');
+    if (!result.success) setBiometricMessage(result.message || 'Authentication was not completed. Retry when you are ready.');
+    return result.success;
+  })).current;
 
   // Core Data Collections
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -158,12 +171,12 @@ export default function App() {
     CapacitorApp.addListener('appStateChange', async state => {
       if (!state.isActive) {
         const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-        if (isBio) { setIsLocked(true); setBiometricVerified(false); }
+        if (isBio) { biometricAuthenticated.current = false; authCoordinator.resetForBackground(); setIsLocked(true); setBiometricVerified(false); setBiometricMessage(''); }
         return;
       }
       setClockNow(new Date());
       const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-      if (isBio) triggerBiometricAuth();
+      if (isBio && startupComplete.current && !biometricAuthenticated.current) void triggerBiometricAuth();
       const records = await reloadAllData();
       const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
       const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
@@ -188,6 +201,15 @@ export default function App() {
     return watchSystemTheme(media, resolved => { setTheme(resolved); applyDomTheme(resolved); });
   }, [appearance]);
 
+  useEffect(() => {
+    if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
+    logoIntroPlayed.current = true;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setLogoPhase('rest'); return; }
+    const toPortrait = window.setTimeout(() => setLogoPhase('portrait'), 240);
+    const toRest = window.setTimeout(() => setLogoPhase('rest'), 640);
+    return () => { window.clearTimeout(toPortrait); window.clearTimeout(toRest); };
+  }, [appReady, isLocked, onboardingRequired, onboardingComplete]);
+
   useLayoutEffect(() => {
     const root = document.documentElement;
     const previous = root.style.scrollBehavior;
@@ -208,11 +230,13 @@ export default function App() {
     const resolvedTheme = resolveAppearance(savedTheme, systemDarkPreference());
     setTheme(resolvedTheme);
     applyDomTheme(resolvedTheme);
+    localStorage.setItem('lifeos-appearance', savedTheme);
 
     const savedCur = await StorageService.settings.get<string>('currency', 'INR');
     setCurrency(savedCur);
     setCurrencySymbol(savedCur === 'INR' ? '₹' : savedCur === 'USD' ? '$' : savedCur === 'EUR' ? '€' : savedCur === 'GBP' ? '£' : 'د.إ');
     setDisplayName(await StorageService.settings.get<string>('displayName', ''));
+    setGender(await StorageService.settings.get<'male' | 'female' | 'unspecified' | ''>('gender', ''));
     const savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
     const hasRequestedNotifications = await StorageService.settings.get<boolean>('notificationPermissionRequested', false);
     const savedNotificationsEnabled = await StorageService.settings.get<boolean | undefined>('notificationsEnabled', undefined);
@@ -242,9 +266,14 @@ export default function App() {
     if (!completed && !needsOnboarding) await StorageService.settings.set('onboardingCompleted', true);
     if (needsOnboarding && !started) await StorageService.settings.set('onboardingStarted', true);
 
+    // A fresh process does not necessarily receive an appStateChange resume event.
+    // Authenticate as part of bootstrap before appReady can expose protected UI.
+    if (lockSetting) await triggerBiometricAuth();
+
     const records = await reloadAllData();
     await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences }, notificationsOn));
     await refreshNotificationDiagnostics();
+    startupComplete.current = true;
     setAppReady(true);
   };
 
@@ -256,6 +285,7 @@ export default function App() {
     setTheme(resolved);
     applyDomTheme(resolved);
     await StorageService.settings.set('theme', preference);
+    localStorage.setItem('lifeos-appearance', preference);
   };
 
   const refreshNotificationDiagnostics = async () => {
@@ -308,6 +338,11 @@ export default function App() {
     await StorageService.settings.set('displayName', name.slice(0, 48).trim());
   };
 
+  const updateGender = async (value: 'male' | 'female' | 'unspecified' | '') => {
+    setGender(value);
+    await StorageService.settings.set('gender', value);
+  };
+
   const toggleNotificationCategory = async (key: keyof NotificationPreferences) => {
     const enabled = !notificationPreferences[key];
     if (enabled) {
@@ -347,6 +382,8 @@ export default function App() {
     const result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
     if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
     setBiometricEnabled(true); setBiometricVerified(true);
+    biometricAuthenticated.current = true;
+    authCoordinator.markAuthenticated();
     await StorageService.settings.set('biometricLockEnabled', true);
     return { success: true };
   };
@@ -382,14 +419,37 @@ export default function App() {
   };
 
   const triggerBiometricAuth = async () => {
-    const res = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your fingerprint to access your personal data');
-    if (res.success) {
-      setIsLocked(false);
-      setBiometricVerified(true);
-      showToast('Welcome back!', 'success');
-    } else {
-      showToast(res.message || 'Authentication required', 'danger');
-    }
+    if (biometricAuthInFlight.current) return biometricAuthInFlight.current;
+    if (biometricAuthenticated.current) return true;
+    const attempt = (async () => {
+      setIsLocked(true);
+      setBiometricMessage('Confirm your identity to open LifeOS.');
+      const availability = await BiometricService.isAvailable();
+      if (!availability.isAvailable) {
+        const message = availability.code === 'NOT_ENROLLED'
+          ? 'No biometric or device screen lock is enrolled. Set one up in Android settings, then retry.'
+          : 'Device authentication is unavailable. Your data remains locked until authentication is available.';
+        setBiometricMessage(message);
+        setBiometricAvailability(message);
+        return false;
+      }
+      const success = await authCoordinator.authenticate();
+      if (success) {
+        biometricAuthenticated.current = true;
+        setIsLocked(false);
+        setBiometricVerified(true);
+        setBiometricMessage('');
+        return true;
+      }
+      return false;
+    })().catch(error => {
+      const message = error instanceof Error ? error.message : 'Device authentication failed. Your data remains locked.';
+      setBiometricMessage(message);
+      console.error('LifeOS biometric startup authentication failed.', error);
+      return false;
+    }).finally(() => { biometricAuthInFlight.current = null; });
+    biometricAuthInFlight.current = attempt;
+    return attempt;
   };
 
   const reloadAllData = async () => {
@@ -423,6 +483,7 @@ export default function App() {
     setAppearancePreference(next);
     applyDomTheme(next);
     await StorageService.settings.set('theme', next);
+    localStorage.setItem('lifeos-appearance', next);
   };
 
   const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string) => {
@@ -691,13 +752,14 @@ export default function App() {
 
   if (!appReady) return <div className={`fixed inset-0 flex items-center justify-center px-6 ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-slate-300">{startupError}</p><button className="mt-5 min-h-11 rounded-xl bg-indigo-600 px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-400" />}</div>;
 
-  if (onboardingRequired && !onboardingComplete) return <Onboarding
+  if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
+    initialGender={gender}
     preferences={notificationPreferences}
     appearance={appearance}
     initialStep={onboardingStep}
     onStepChange={async step => { await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', step); setOnboardingStep(step); }}
-    onSaveName={updateDisplayName}
+    onSaveIdentity={async (name, selectedGender) => { await updateDisplayName(name); await updateGender(selectedGender); }}
     onEnableBiometric={handleEnableBiometric}
     onSkipBiometric={() => {}}
     onAppearance={applyAppearance}
@@ -729,8 +791,9 @@ export default function App() {
           onClick={triggerBiometricAuth}
           className="w-full max-w-xs py-3.5 px-6 rounded-xl bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-600/30 active:scale-95 transition"
         >
-          Verify Biometrics
+          {biometricMessage ? 'Try again' : 'Verify Biometrics'}
         </button>
+        {biometricMessage && <p role="status" className="mt-4 max-w-xs text-sm text-amber-300">{biometricMessage}</p>}
       </div>
     );
   }
@@ -740,10 +803,11 @@ export default function App() {
       {/* Top Mobile Header */}
       <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
         <div className="flex min-w-0 items-center gap-3">
-          <div className="lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white" aria-hidden="true">L</div>
+          <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white logo-${logoPhase}`} aria-hidden="true">
+            {logoPhase === 'portrait' && gender === 'male' ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-6 w-6"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.5-3.5 2.8-5.5 6.5-5.5s6 2 6.5 5.5M9 13.8l3 2 3-2"/></svg> : logoPhase === 'portrait' && gender === 'female' ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-6 w-6"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.5-3.5 2.8-5.5 6.5-5.5s6 2 6.5 5.5M8 10.5l-1 4.5m9-4.5 1 4.5"/></svg> : <span>L</span>}
+          </div>
           <div className="min-w-0">
-            <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[.14em] text-indigo-300">LifeOS</div>
-            <h1 className="header-greeting text-[clamp(1rem,4vw,1.3rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
+            <h1 className="header-greeting text-[clamp(1.05rem,4.2vw,1.35rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
             <p className="mt-0.5 truncate text-xs text-slate-400">{activeTab === 'dashboard' ? "Here's your day at a glance." : `Your ${({ finance: 'finances', habits: 'habits', goals: 'goals', planner: 'planner', settings: 'profile' } as Record<string, string>)[activeTab] || 'day'}, thoughtfully organized.`}</p>
           </div>
         </div>
@@ -755,11 +819,11 @@ export default function App() {
         {/* VIEW 1: DASHBOARD */}
         <div key={activeTab} className="tab-transition">
         {activeTab === 'dashboard' && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div><p className="text-sm font-medium text-slate-500">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
 
             {/* Productivity Score Card */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/40 to-blue-950/30 border border-indigo-800/40">
+            <div className="dashboard-score p-4 rounded-2xl bg-slate-900 border border-slate-800">
               <div className="flex justify-between items-center">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Daily Performance</span>
@@ -776,7 +840,7 @@ export default function App() {
             </div>
 
             {/* Active Goals Summary */}
-            <section className="rounded-2xl border border-violet-800/40 bg-gradient-to-br from-violet-950/35 to-indigo-950/25 p-4">
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-[10px] font-bold uppercase tracking-wider text-violet-300">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
                 <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold text-violet-300" aria-label="Open Goals">View all →</button>
@@ -1173,24 +1237,25 @@ export default function App() {
 
         {/* VIEW 6: SETTINGS */}
         {activeTab === 'settings' && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold">Your Profile</h2>
+          <div className="profile-page space-y-5">
+            <div><p className="text-xs font-semibold tracking-wide text-indigo-400">PROFILE & PREFERENCES</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Your Profile</h2><p className="mt-1 text-sm text-slate-400">Personalize how LifeOS works for you.</p></div>
 
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-              <div className="flex items-center gap-3"><div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-lg font-bold text-white">{profileInitial(displayName) || <UserRound size={21} />}</div><div><h3 className="text-sm font-semibold">Personal details</h3><p className="text-[11px] text-slate-400">Stored privately on this device</p></div></div>
+            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+              <div className="flex items-center gap-3"><div className="profile-avatar flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-xl font-bold text-white">{profileInitial(displayName) || <UserRound size={21} />}</div><div><p className="text-xs text-slate-400">Your LifeOS profile</p><h3 className="mt-0.5 text-lg font-semibold">{displayName.trim() || 'Personal details'}</h3></div></div>
               <label className="block text-xs text-slate-300">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <p className="text-[11px] text-slate-500">Your name appears in the dashboard greeting and Profile avatar.</p>
+              <label className="block text-xs text-slate-300">Gender <span className="text-slate-500">· optional</span><select value={gender} onChange={event => void updateGender(event.target.value as typeof gender)} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="">Not set</option><option value="male">Male</option><option value="female">Female</option><option value="unspecified">Prefer not to say</option></select></label>
+              <p className="text-xs text-slate-500">Your name appears in the greeting and Profile avatar. Gender is optional and only affects the brief logo introduction.</p>
             </section>
 
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Security</h3>
+            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
+              <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-slate-400">Device-level authentication for the app.</p></div>
               <p className="text-xs text-slate-400">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
               <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-800/60 p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-slate-400">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-10 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className={`flex items-center gap-1 text-[11px] ${biometricVerified ? 'text-emerald-300' : 'text-amber-300'}`}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
             </section>
 
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Appearance</h3><p className="text-xs text-slate-400">Choose a theme or follow Android's system setting.</p>
+            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
+              <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-slate-400">Choose a theme or follow Android's system setting.</p>
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`flex min-h-12 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'border-indigo-400 bg-indigo-500/10 text-indigo-200' : 'border-slate-700 bg-slate-800 text-slate-300'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
 

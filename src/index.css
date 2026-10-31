@@ -22,6 +22,7 @@ html, body, #root {
   margin: 0;
   width: 100%;
 }
+html:not([data-theme-ready="true"]) #root { visibility: hidden; }
 
 html {
   min-height: 100vh;
@@ -65,6 +66,13 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
   backdrop-filter: blur(14px);
 }
 .lifeos-mark { box-shadow: 0 2px 8px rgb(0 0 0 / 18%); }
+.logo-brand { animation: lifeos-logo-in 220ms ease-out both; }
+.logo-portrait { animation: lifeos-logo-shift 360ms ease-in-out both; }
+.logo-rest { animation: lifeos-logo-settle 220ms ease-out both; }
+.profile-page > section, .profile-panel { box-shadow: 0 1px 2px rgb(15 23 42 / 5%); }
+.profile-page > section, .profile-page > button { transition: border-color 160ms ease, background-color 160ms ease; }
+.dashboard-score { border-color: #29354a; }
+.dashboard-score > div:first-child > div:last-child { background-color: #151e2e; }
 .app-icon-button { border-color: #334155; }
 .header-greeting { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 
@@ -86,6 +94,10 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
   70% { opacity: 1; transform: scale(1.01); }
   100% { opacity: 1; transform: scale(1); }
 }
+
+@keyframes lifeos-logo-in { from { opacity: .5; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+@keyframes lifeos-logo-shift { 0% { opacity: 0; transform: scale(.92); } 35% { opacity: 1; transform: scale(1); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes lifeos-logo-settle { from { opacity: .75; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
 
 :focus-visible {
   outline: 2px solid #818cf8;
@@ -121,6 +133,10 @@ html:not(.dark) {
 html:not(.dark) body { background: var(--page); color: var(--ink); }
 html:not(.dark) .app-header { border-color: #d8e0eb; background: rgb(255 255 255 / 95%); }
 html:not(.dark) .app-icon-button { border-color: #cbd5e1; background: #eef2f7; color: #334155; }
+html:not(.dark) .profile-panel { border-color: #d5deea; background: #fff; box-shadow: 0 1px 3px rgb(15 23 42 / 7%); }
+html:not(.dark) .profile-avatar { background: #4338ca; }
+html:not(.dark) .dashboard-score { border-color: #d5deea; background: #fff; }
+html:not(.dark) .dashboard-score > div:first-child > div:last-child { background-color: #f1f5f9; }
 html:not(.dark) nav[aria-label="Main navigation"] { border-color: #d5deea; background: rgb(255 255 255 / 97%); }
 html:not(.dark) nav button[aria-current="page"] { background-color: #e0e7ff; color: #3730a3; }
 html:not(.dark) nav button:not([aria-current="page"]) { color: #475569; }

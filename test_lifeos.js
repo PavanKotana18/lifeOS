@@ -10,6 +10,13 @@
  */
 
 process.env.TZ = 'America/New_York';
+const fs = require('fs');
+const vm = require('vm');
+const ts = require('typescript');
+const authModule = { exports: {} };
+const authSource = fs.readFileSync('./src/services/authCoordinator.ts', 'utf8');
+vm.runInNewContext(ts.transpileModule(authSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: authModule, exports: authModule.exports, Promise });
+const { createAuthCoordinator } = authModule.exports;
 const {
   calculateStreaks,
   calculateFinanceMetrics,
@@ -374,10 +381,27 @@ async function runTestSuite() {
   assert(shouldShowOnboarding(false, false, true), 'Skipping optional biometric setup does not prevent unfinished onboarding from resuming');
   assert(profileInitial(' Pavan Kotana ') === 'P' && profileInitial('') === '', 'Profile avatar uses the uppercase first letter and handles an empty name');
   assert(resolveAppearance('dark', false) === 'dark' && resolveAppearance('light', true) === 'light' && resolveAppearance('system', true) === 'dark' && resolveAppearance('system', false) === 'light', 'Dark, light and system appearance preferences resolve correctly');
+  assert(resolveAppearance('system', false) === 'light' && resolveAppearance('system', true) === 'dark' && resolveAppearance('light', true) === 'light' && resolveAppearance('dark', false) === 'dark' && resolveAppearance('system', false) === 'light', 'System follows current appearance after switching back from either explicit theme and persisted System survives restart');
   let themeListener; let systemDark = true; const appliedThemes = [];
   const unwatchTheme = watchSystemTheme({ get matches() { return systemDark; }, addEventListener: (_, listener) => { themeListener = listener; }, removeEventListener: () => { themeListener = undefined; } }, theme => appliedThemes.push(theme));
   systemDark = false; themeListener(); systemDark = true; themeListener(); unwatchTheme();
   assert(appliedThemes.join(',') === 'dark,light,dark' && !themeListener, 'System appearance updates while running and removes its listener on cleanup');
+  let authCalls = 0; let finishAuth;
+  const gate = createAuthCoordinator(() => { authCalls++; return new Promise(resolve => { finishAuth = resolve; }); });
+  const firstPrompt = gate.authenticate(); const duplicatePrompt = gate.authenticate();
+  assert(firstPrompt === duplicatePrompt && authCalls === 0, 'Cold launch authentication coalesces duplicate lifecycle requests into one prompt');
+  await Promise.resolve();
+  finishAuth(false);
+  assert(await firstPrompt === false && !gate.isAuthenticated(), 'Cancelled/failed authentication leaves protected state locked');
+  const retryPrompt = gate.authenticate(); await Promise.resolve(); finishAuth(true);
+  assert(await retryPrompt && gate.isAuthenticated() && authCalls === 2, 'Authentication failure supports a controlled retry and successful authentication unlocks');
+  gate.resetForBackground();
+  const resumePrompt = gate.authenticate(); await Promise.resolve(); finishAuth(true);
+  assert(await resumePrompt && authCalls === 3, 'Backgrounding relocks and a resumed session requires authentication again');
+  let finishStaleAuth;
+  const staleGate = createAuthCoordinator(() => new Promise(resolve => { finishStaleAuth = resolve; }));
+  const stalePrompt = staleGate.authenticate(); await Promise.resolve(); staleGate.resetForBackground(); finishStaleAuth(true);
+  assert(await stalePrompt === false && !staleGate.isAuthenticated(), 'Authentication completing after backgrounding cannot unlock the app');
   const febLeapDays = getMonthCalendarDays(2024, 1);
   const janDays = getMonthCalendarDays(2021, 0);
   assert(febLeapDays.filter(day => day.startsWith('2024-02-')).length === 29 && febLeapDays.includes('2024-03-03'), 'Monthly planner grid covers leap days and adjacent month boundaries');
