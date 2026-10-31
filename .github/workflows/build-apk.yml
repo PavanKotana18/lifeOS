@@ -50,7 +50,7 @@ jobs:
           gradle-version: "8.2.1"
 
       - name: Install Node Dependencies
-        run: npm ci
+        run: npm install
 
       - name: Run Automated LifeOS Verification Tests
         run: npm test
