@@ -18,6 +18,7 @@ const testId = notificationId('lifeos:test-notification');
 const isNative = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('LocalNotifications');
 const NativeNotificationSettings = registerPlugin<{ open(): Promise<void> }>('NotificationSettings');
 const diagnosticKey = 'lifeos.notificationDiagnostics';
+const lastSyncKey = 'lifeos.notificationLastSync';
 let ensureChannelPromise: Promise<void> | null = null;
 
 export interface NotificationDiagnostics {
@@ -26,6 +27,9 @@ export interface NotificationDiagnostics {
   channel: string;
   pendingCount: number;
   lastError: string;
+  lastSyncTime: string;
+  exactAlarmStatus: string;
+  scheduledItems?: Array<{ id: number; timestamp?: string; kind: string }>;
 }
 
 function readLastError() {
@@ -33,6 +37,12 @@ function readLastError() {
 }
 function writeLastError(error: string) {
   try { if (error) localStorage.setItem(diagnosticKey, error); else localStorage.removeItem(diagnosticKey); } catch { /* Diagnostics are best-effort when storage is unavailable. */ }
+}
+function readLastSync() {
+  try { return localStorage.getItem(lastSyncKey) || ''; } catch { return ''; }
+}
+function writeLastSync(iso = new Date().toISOString()) {
+  try { localStorage.setItem(lastSyncKey, iso); } catch { /* best-effort */ }
 }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
@@ -88,7 +98,7 @@ export const NotificationService = {
       const now = new Date();
       const notifications = tasks.flatMap(task => buildTaskNotificationPlan(task, preferences, now).map(plan => ({
         id: taskNotificationId(task, plan.kind), title: labels[plan.kind] || 'LifeOS reminder', body: task.title,
-        schedule: { at: plan.at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+        schedule: { at: plan.at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: plan.kind, taskId: task.id },
       })));
       if (isAuthorized && !isAuthorized()) return;
@@ -100,6 +110,7 @@ export const NotificationService = {
         }
       }
       writeLastError('');
+      writeLastSync();
     } catch (error) {
       writeLastError(errorMessage(error));
       console.error('LifeOS task notification scheduling failed:', error);
@@ -131,7 +142,7 @@ export const NotificationService = {
     const habitNotifications = entries.map(({ habit, hour, minute, weekday }) => ({
       id: notificationId(`habit:${habit.id}:${weekday}`),
       title: 'Habit reminder', body: `Time for: ${habit.name}`,
-      schedule: { on: { weekday, hour, minute }, allowWhileIdle: false },
+      schedule: { on: { weekday, hour, minute }, allowWhileIdle: true },
       channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
       extra: { kind: 'habitReminder', habitId: habit.id },
     }));
@@ -142,6 +153,7 @@ export const NotificationService = {
         return;
       }
     }
+    writeLastSync();
     } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS habit notification scheduling failed:', error); throw error; }
   },
 
@@ -171,7 +183,7 @@ export const NotificationService = {
       return [{
         id: notificationId(`milestone:${milestone.id}`),
         title: 'Goal milestone', body: `${milestone.title}${goal ? ` · ${goal.title}` : ''}`,
-        schedule: { at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+        schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: 'milestoneReminder', milestoneId: milestone.id },
       }];
     });
@@ -183,12 +195,41 @@ export const NotificationService = {
         return;
       }
     }
+    writeLastSync();
     } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS milestone notification scheduling failed:', error); throw error; }
   },
 
   async cancelMilestones(milestones: Milestone[]) {
     try { await cancelIds(milestones.map(milestone => notificationId(`milestone:${milestone.id}`))); }
     catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS milestone notification cancellation failed:', error); throw error; }
+  },
+
+  async sanitizePendingNotifications() {
+    if (!isNative()) return;
+    try {
+      const pending = await LocalNotifications.getPending();
+      const sensitiveKinds = new Set([
+        'taskReminders', 'taskReminder',
+        'upcomingDeadlines', 'upcomingDeadline',
+        'overdueAlerts', 'overdueAlert',
+        'habitReminders', 'habitReminder',
+        'milestoneReminders', 'milestoneReminder'
+      ]);
+      const toSanitize = pending.notifications.filter(item => sensitiveKinds.has(String(item.extra?.kind || '')));
+      if (toSanitize.length) {
+        // Redact titles and descriptions to ensure privacy on lock
+        const sanitized = toSanitize.map(item => ({
+          ...item,
+          title: 'LifeOS reminder',
+          body: 'You have a scheduled reminder (unlock to view details)',
+          schedule: item.schedule ? { ...item.schedule, allowWhileIdle: true } : undefined,
+        }));
+        await schedule(sanitized as LocalNotificationSchema[]);
+      }
+    } catch (error) {
+      writeLastError(errorMessage(error));
+      console.warn('LifeOS could not sanitize pending notifications on lock:', error);
+    }
   },
 
   async cancelPendingNotifications() {
@@ -222,19 +263,50 @@ export const NotificationService = {
   },
 
   async getDiagnostics(): Promise<NotificationDiagnostics> {
-    if (!isNative()) return { supported: false, permission: 'unsupported', channel: 'unavailable', pendingCount: 0, lastError: readLastError() };
+    if (!isNative()) {
+      return {
+        supported: false,
+        permission: 'unsupported',
+        channel: 'unavailable',
+        pendingCount: 0,
+        lastError: readLastError(),
+        lastSyncTime: readLastSync(),
+        exactAlarmStatus: 'unavailable',
+        scheduledItems: [],
+      };
+    }
     try {
       const permission = await this.checkPermission();
       const [channels, pending] = await Promise.all([LocalNotifications.listChannels(), LocalNotifications.getPending()]);
       const channel = channels.channels.find(item => item.id === 'lifeos-reminders');
+      // Redact sensitive task content: only record id, timestamp, kind
+      const scheduledItems = pending.notifications.map(item => ({
+        id: item.id,
+        kind: String(item.extra?.kind || 'unknown'),
+        timestamp: item.schedule?.at ? new Date(item.schedule.at).toISOString() : undefined,
+      }));
       return {
-        supported: true, permission,
+        supported: true,
+        permission,
         channel: channel ? Number(channel.importance) === 0 ? 'blocked (importance 0)' : `available (importance ${channel.importance ?? 'unknown'})` : 'not created',
-        pendingCount: pending.notifications.length, lastError: readLastError(),
+        pendingCount: pending.notifications.length,
+        lastError: readLastError(),
+        lastSyncTime: readLastSync(),
+        exactAlarmStatus: 'managed via Android SCHEDULE_EXACT_ALARM',
+        scheduledItems,
       };
     } catch (error) {
       writeLastError(errorMessage(error));
-      return { supported: true, permission: 'error', channel: 'unavailable', pendingCount: 0, lastError: errorMessage(error) };
+      return {
+        supported: true,
+        permission: 'error',
+        channel: 'unavailable',
+        pendingCount: 0,
+        lastError: errorMessage(error),
+        lastSyncTime: readLastSync(),
+        exactAlarmStatus: 'error',
+        scheduledItems: [],
+      };
     }
   },
 
@@ -246,7 +318,7 @@ export const NotificationService = {
       await this.ensureChannel();
       await cancelIds([testId]);
       const at = new Date(Date.now() + 10_000);
-      await schedule([{ id: testId, title: 'LifeOS test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent', extra: { kind: 'test' } }]);
+      await schedule([{ id: testId, title: 'LifeOS test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent', extra: { kind: 'test' } }]);
       writeLastError('');
       return at;
     } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS test notification failed:', error); throw error; }

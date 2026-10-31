@@ -20,7 +20,7 @@ function loadTsModule(path) {
   return loadedModule.exports;
 }
 const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
-const { isSessionAuthorized } = loadTsModule('./src/services/domainUtils.ts');
+const { isSessionAuthorized, normalizeSingleLine, normalizeMultiLine, isInputBlank, isFormDirty } = loadTsModule('./src/services/domainUtils.ts');
 const userPreferenceUtils = loadTsModule('./src/services/userPreferences.ts');
 const { buildFinanceAnalytics } = loadTsModule('./src/services/financeAnalytics.ts');
 const { pushTabHistory, popTabHistory } = loadTsModule('./src/services/tabHistory.ts');
@@ -364,6 +364,16 @@ async function runTestSuite() {
   assert(getTaskStatus(dayEndTask, new Date(2026, 2, 9, 0, 0, 0, 1)) === 'Overdue', 'Task without a time becomes overdue after its local due day ends');
   assert(getTaskStatus({ dueDate: '2026-03-08', dueTime: '09:30' }, new Date(2026, 2, 8, 9, 31)) === 'Overdue', 'Task with a due time becomes overdue after that local time');
   assert(getTaskStatus({ dueDate: '2026-03-07', completed: true }, new Date(2026, 2, 9)) === 'Completed', 'Completed tasks never become overdue');
+
+  // Physical-device task deadline boundary tests (due at 5:01 PM)
+  const taskAt501 = { dueDate: '2026-10-31', dueTime: '17:01', completed: false };
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 0, 59, 999)) === 'Pending', 'Task due at 5:01 PM is Pending at 5:00:59.999 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 0, 0)) === 'Pending', 'Task due at 5:01 PM is Pending at exactly 5:01:00.000 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 0, 1)) === 'Pending', 'Task due at 5:01 PM is Pending at 5:01:00.001 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 1, 0)) === 'Pending', 'Task due at 5:01 PM is Pending at 5:01:01.000 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 59, 999)) === 'Pending', 'Task due at 5:01 PM remains Pending through end of minute at 5:01:59.999 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 2, 0, 0)) === 'Overdue', 'Task due at 5:01 PM transitions to Overdue at 5:02:00.000 PM');
+  assert(getTaskStatus({ ...taskAt501, completed: true }, new Date(2026, 9, 31, 17, 2, 0, 0)) === 'Completed', 'Completed task due at 5:01 PM is Completed regardless of deadline');
   const orderedTasks = sortTasksByDeadline([
     { id: 'later', dueDate: '2026-03-10' },
     { id: 'overdue', dueDate: '2026-03-07' },
@@ -381,6 +391,14 @@ async function runTestSuite() {
   const taskPlan = buildTaskNotificationPlan({ dueDate: '2026-07-06', dueTime: '10:00', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4));
   assert(taskPlan.length === 3 && taskPlan[0].at.getHours() === 9 && taskPlan[0].at.getMinutes() === 15, 'Task notification planning includes custom reminder, upcoming deadline and overdue alert times');
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', completed: true }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4)).length === 0, 'Completed task notifications are not scheduled');
+
+  // Task created 30 minutes before deadline (4:30 PM for a 5:00 PM deadline)
+  const nearDeadlineTask = { dueDate: '2026-10-31', dueTime: '17:00', completed: false };
+  const createdNow = new Date(2026, 9, 31, 16, 30, 0);
+  const nearDeadlinePlan = buildTaskNotificationPlan(nearDeadlineTask, { taskReminders: false, upcomingDeadlines: true, overdueAlerts: true }, createdNow);
+  const upcomingItem = nearDeadlinePlan.find(item => item.kind === 'upcomingDeadlines');
+  assert(upcomingItem !== undefined, 'Task created <1h before deadline schedules an upcoming deadline alert rather than dropping it');
+  assert(upcomingItem.at >= createdNow && upcomingItem.at < new Date(2026, 9, 31, 17, 0, 59, 999), 'Upcoming deadline alert for <1h task is scheduled between creation time and deadline');
 
   console.log('\n--- 4C. Testing onboarding, profile and notification diagnostics ---');
   assert(shouldShowOnboarding(false, false) && !shouldShowOnboarding(false, true), 'A fresh empty install enters onboarding while an existing profile/data set migrates past it');
@@ -411,6 +429,15 @@ async function runTestSuite() {
   const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');
+  assert(analyticsRows.monthOverMonth && analyticsRows.monthOverMonth.hasPriorRecords === true && analyticsRows.monthOverMonth.expenseDelta === 30 && analyticsRows.monthOverMonth.expenseChangePct === 25, 'Modernized month-over-month calculation computes trends and deltas');
+  assert(noBaseline.monthOverMonth && noBaseline.monthOverMonth.hasPriorRecords === false, 'Month-over-month safely handles insufficient prior month baseline');
+  assert(analyticsRows.budgetSummary && analyticsRows.budgetSummary.totalAllocated === 350 && analyticsRows.budgetSummary.totalSpent === 150 && analyticsRows.budgetSummary.status === 'under_budget', 'Redesigned budget status computes combined limit, utilization percentage and normal status');
+  assert(Array.isArray(analyticsRows.insights) && analyticsRows.insights.length > 0 && analyticsRows.insights.some(i => i.title.includes('Food')), 'Deterministic financial insights identify dominant category and budget patterns');
+  assert(normalizeSingleLine('   Grocery   Shopping   ') === 'Grocery Shopping' && normalizeSingleLine('  నమస్కారం   భారత్  ') === 'నమస్కారం భారత్', 'Single-line input normalization trims excess whitespace and preserves multilingual Unicode');
+  assert(normalizeMultiLine('  Paragraph 1   \n\n   Paragraph 2   ') === 'Paragraph 1\n\nParagraph 2', 'Multi-line input normalization trims lines while preserving intentional line breaks');
+  assert(isInputBlank('') && isInputBlank('   ') && isInputBlank(null) && !isInputBlank('Valid') && !isInputBlank('నమస్కారం'), 'Input blankness check distinguishes whitespace from multilingual text');
+  assert(!isFormDirty({ title: 'Plan A' }, { title: 'Plan A' }) && !isFormDirty({ title: 'Plan A' }, { title: 'Plan A   ' }), 'Form dirty check ignores whitespace-only differences on clean inputs');
+  assert(isFormDirty({ title: 'Plan A' }, { title: 'Plan B' }) && isFormDirty({ amount: '10' }, { amount: '20' }), 'Form dirty check detects actual user edits to prevent lost work');
   let financeHistory = [];
   financeHistory = pushTabHistory(financeHistory, 'overview', 'transactions');
   financeHistory = pushTabHistory(financeHistory, 'transactions', 'budgets');
