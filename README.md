@@ -18,13 +18,13 @@ You do **not** need Android Studio or a computer to compile and install LifeOS. 
 ### Step 2: Automatic Cloud Compilation
 1. In your GitHub repository, tap the **Actions** tab.
 2. The **Build LifeOS Android APK** workflow will trigger automatically.
-3. It installs Node 18, executes the automated LifeOS test suite (34 verification checks), compiles the React/TypeScript frontend, syncs Capacitor assets, and invokes Gradle 8.2 to build the Android debug APK.
-4. Total build duration is ~2 to 3 minutes.
+3. It installs Node 20, runs the automated LifeOS test suite (34 verification checks), builds the React/TypeScript frontend, syncs Capacitor assets, and invokes Gradle 8.2 to build both Debug and Release APKs.
+4. The workflow uploads separate `LifeOS-debug-apk` and `LifeOS-release-apk` artifacts. The Debug APK can be installed directly. The Release APK is currently unsigned because no signing credentials are configured.
 
 ### Step 3: Download & Install on iQOO Neo 9 Pro
 1. When the run finishes with a green checkmark ✅, tap on the completed workflow run.
 2. Scroll to the **Artifacts** section at the bottom of the summary screen.
-3. Tap **LifeOS-debug-apk** to download `app-debug.apk` directly to your phone.
+3. Tap **LifeOS-debug-apk** to download `app-debug.apk` directly to your phone. The Release artifact is intended for a future signed distribution build.
 4. Open the downloaded file from your Android notification bar or Files app and tap **Install**.
    *(If prompted by Android 16 to allow installs from your browser/files app, toggle 'Allow from this source')*.
 5. Launch **LifeOS** from your phone's launcher!
