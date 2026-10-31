@@ -37,7 +37,7 @@ jobs:
             echo "::error::Android sdkmanager not found."
             exit 1
           fi
-          yes | "$SDKMANAGER" --licenses >/dev/null
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-34" \
