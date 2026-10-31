@@ -1,0 +1,31 @@
+
+name: Extract LifeOS project
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Extract ZIP
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/lifeos-extract
+          unzip -q LifeOS-Android-Capacitor_New.zip -d /tmp/lifeos-extract
+          cp -a /tmp/lifeos-extract/LifeOS-Android-Capacitor_New/. .
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Extract LifeOS Android project"
+            git push origin HEAD:main
+          fi
