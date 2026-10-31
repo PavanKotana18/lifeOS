@@ -97,7 +97,7 @@ function getTaskDeadline(task) {
     const parts = (task.dueTime || '').split(':').map(Number);
     if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
     const [hour, minute] = parts;
-    const date = new Date(year, month - 1, day, hour, minute, 59, 999);
+    const date = new Date(year, month - 1, day, hour, minute, 0, 0);
     if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
     return date;
   }
@@ -164,7 +164,7 @@ function buildTaskNotificationPlan(task, preferences, now = new Date()) {
       add('upcomingDeadlines', parseLocalDateTime(task.dueDate, '09:00'));
     }
   }
-  if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 60 * 1000));
+  if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 1000));
   return plan;
 }
 

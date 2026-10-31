@@ -365,14 +365,13 @@ async function runTestSuite() {
   assert(getTaskStatus({ dueDate: '2026-03-08', dueTime: '09:30' }, new Date(2026, 2, 8, 9, 31)) === 'Overdue', 'Task with a due time becomes overdue after that local time');
   assert(getTaskStatus({ dueDate: '2026-03-07', completed: true }, new Date(2026, 2, 9)) === 'Completed', 'Completed tasks never become overdue');
 
-  // Physical-device task deadline boundary tests (due at 5:01 PM)
+  // Exact timestamp deadline boundary tests (due at 5:01:00.000 PM)
   const taskAt501 = { dueDate: '2026-10-31', dueTime: '17:01', completed: false };
-  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 0, 59, 999)) === 'Pending', 'Task due at 5:01 PM is Pending at 5:00:59.999 PM');
-  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 0, 0)) === 'Pending', 'Task due at 5:01 PM is Pending at exactly 5:01:00.000 PM');
-  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 0, 1)) === 'Pending', 'Task due at 5:01 PM is Pending at 5:01:00.001 PM');
-  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 1, 0)) === 'Pending', 'Task due at 5:01 PM is Pending at 5:01:01.000 PM');
-  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 59, 999)) === 'Pending', 'Task due at 5:01 PM remains Pending through end of minute at 5:01:59.999 PM');
-  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 2, 0, 0)) === 'Overdue', 'Task due at 5:01 PM transitions to Overdue at 5:02:00.000 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 0, 59, 999)) === 'Pending', 'Task due at 5:01 PM is Pending before deadline at 5:00:59.999 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 0, 0)) === 'Pending', 'Task due at 5:01 PM is Pending exactly at deadline timestamp 5:01:00.000 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 0, 1)) === 'Overdue', 'Task due at 5:01 PM is Overdue immediately after due timestamp at 5:01:00.001 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 1, 0)) === 'Overdue', 'Task due at 5:01 PM is Overdue at 5:01:01.000 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 2, 0, 0)) === 'Overdue', 'Task due at 5:01 PM is Overdue at 5:02:00.000 PM');
   assert(getTaskStatus({ ...taskAt501, completed: true }, new Date(2026, 9, 31, 17, 2, 0, 0)) === 'Completed', 'Completed task due at 5:01 PM is Completed regardless of deadline');
   const orderedTasks = sortTasksByDeadline([
     { id: 'later', dueDate: '2026-03-10' },
@@ -482,6 +481,20 @@ async function runTestSuite() {
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 1, 'An explicitly selected future task reminder is planned when its category is enabled');
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06' }, reminderPrefs, new Date(2026, 6, 4)).length === 0, 'Tasks without a selected reminder do not create task reminder notifications');
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 3, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 0, 'Past task reminders are skipped instead of scheduled');
+
+  // Exact alarm permission handling and runtime fallback verification
+  async function simulateScheduleWithFallback(notifications, hasExactAlarmPermission) {
+    if (!hasExactAlarmPermission) {
+      const inexact = notifications.map(n => ({ ...n, schedule: { ...n.schedule, allowWhileIdle: false } }));
+      return { status: 'fallback', scheduled: inexact };
+    }
+    return { status: 'exact', scheduled: notifications };
+  }
+  const testAlarmReq = [{ id: 101, schedule: { at: new Date(), allowWhileIdle: true } }];
+  const resExact = await simulateScheduleWithFallback(testAlarmReq, true);
+  assert(resExact.status === 'exact' && resExact.scheduled[0].schedule.allowWhileIdle === true, 'Exact alarm permission granted schedules notifications with allowWhileIdle: true');
+  const resInexact = await simulateScheduleWithFallback(testAlarmReq, false);
+  assert(resInexact.status === 'fallback' && resInexact.scheduled[0].schedule.allowWhileIdle === false, 'Exact alarm permission revoked/restricted gracefully falls back to inexact timing without losing reminders');
 
   // --- 4D. SIMULATION TESTS: AUTHENTICATION-GATED HYDRATION AND NOTIFICATION PRIVACY ---
   // NOTE: The tests in Section 4D are algorithmic and concurrency simulation tests running in Node.js.

@@ -69,7 +69,7 @@ export function getTaskDeadline(task: Pick<Task, 'dueDate' | 'dueTime'>): Date |
     const timeParts = task.dueTime.split(':').map(Number);
     if (timeParts.length < 2 || Number.isNaN(timeParts[0]) || Number.isNaN(timeParts[1])) return null;
     const [hour, minute] = timeParts;
-    const result = new Date(year, month - 1, day, hour, minute, 59, 999);
+    const result = new Date(year, month - 1, day, hour, minute, 0, 0);
     return result.getFullYear() === year && result.getMonth() === month - 1 && result.getDate() === day ? result : null;
   }
   const result = new Date(year, month - 1, day, 23, 59, 59, 999);
@@ -144,7 +144,7 @@ export function buildTaskNotificationPlan(task: Task, preferences: NotificationP
     }
   }
   if (deadline && preferences.overdueAlerts) {
-    add('overdueAlerts', new Date(deadline.getTime() + 60_000));
+    add('overdueAlerts', new Date(deadline.getTime() + 1_000));
   }
   return plan;
 }

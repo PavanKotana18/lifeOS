@@ -60,7 +60,24 @@ async function cancelIds(ids: number[]) {
 
 async function schedule(notifications: LocalNotificationSchema[]) {
   if (!isNative() || !notifications.length) return;
-  await LocalNotifications.schedule({ notifications });
+  try {
+    await LocalNotifications.schedule({ notifications });
+  } catch (error) {
+    const msg = errorMessage(error).toLowerCase();
+    // Handle devices/users where exact alarm permission (SCHEDULE_EXACT_ALARM)
+    // is restricted or revoked in Android settings: fallback to inexact timing
+    if (msg.includes('exact') || msg.includes('alarm') || msg.includes('security')) {
+      console.warn('Exact alarm scheduling disallowed; falling back to battery-saving inexact timing:', error);
+      const fallback = notifications.map(n => ({
+        ...n,
+        schedule: n.schedule ? { ...n.schedule, allowWhileIdle: false } : undefined,
+      }));
+      await LocalNotifications.schedule({ notifications: fallback });
+      writeLastError('Exact alarm access revoked/restricted; notifications scheduled with inexact timing.');
+      return;
+    }
+    throw error;
+  }
 }
 
 export const NotificationService = {
@@ -285,14 +302,28 @@ export const NotificationService = {
         kind: String(item.extra?.kind || 'unknown'),
         timestamp: item.schedule?.at ? new Date(item.schedule.at).toISOString() : undefined,
       }));
+      const lastErr = readLastError();
+      let exactAlarmStatus = 'unavailable';
+      if (permission === 'granted') {
+        if (lastErr && lastErr.toLowerCase().includes('exact alarm')) {
+          exactAlarmStatus = 'restricted (inexact fallback active)';
+        } else {
+          exactAlarmStatus = 'granted (exact alarms enabled)';
+        }
+      } else if (permission === 'denied') {
+        exactAlarmStatus = 'blocked (notification permission denied)';
+      } else {
+        exactAlarmStatus = `pending (${permission})`;
+      }
+
       return {
         supported: true,
         permission,
         channel: channel ? Number(channel.importance) === 0 ? 'blocked (importance 0)' : `available (importance ${channel.importance ?? 'unknown'})` : 'not created',
         pendingCount: pending.notifications.length,
-        lastError: readLastError(),
+        lastError: lastErr,
         lastSyncTime: readLastSync(),
-        exactAlarmStatus: 'managed via Android SCHEDULE_EXACT_ALARM',
+        exactAlarmStatus,
         scheduledItems,
       };
     } catch (error) {
