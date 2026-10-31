@@ -1,9 +1,13 @@
+
 name: Build LifeOS Android APK
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -17,60 +21,64 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
+          cache: npm
 
       - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install Android SDK components
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android sdkmanager not found."
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
 
-      - name: Setup Gradle Runner
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.2.1"
 
       - name: Install Node Dependencies
-        run: |
-          npm install
+        run: npm ci
 
       - name: Run Automated LifeOS Verification Tests
-        run: |
-          npm test
+        run: npm test
 
       - name: Build Web Application
-        run: |
-          npm run build || true
-          mkdir -p dist
+        run: npm run build
 
       - name: Sync Capacitor Android
-        run: |
-          npx cap sync android
+        run: npx cap sync android
 
-      - name: Generate Wrapper & Build Debug APK
-        run: |
-          cd android
-          gradle wrapper --gradle-version 8.2.1 || true
-          chmod +x gradlew || true
-          ./gradlew assembleDebug --stacktrace || gradle assembleDebug --stacktrace
+      - name: Build Debug APK
+        run: gradle -p android assembleDebug --stacktrace
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: LifeOS-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
           retention-days: 30
 
-      - name: Build Release APK (Optional)
-        run: |
-          cd android
-          ./gradlew assembleRelease --stacktrace || gradle assembleRelease --stacktrace || true
+      - name: Build Release APK
+        run: gradle -p android assembleRelease --stacktrace
 
       - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: LifeOS-release-apk
           path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
           retention-days: 30
