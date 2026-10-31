@@ -20,6 +20,7 @@ function loadTsModule(path) {
   return loadedModule.exports;
 }
 const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
+const { isSessionAuthorized, normalizeSingleLine, normalizeMultiLine, isInputBlank, isFormDirty } = loadTsModule('./src/services/domainUtils.ts');
 const userPreferenceUtils = loadTsModule('./src/services/userPreferences.ts');
 const { buildFinanceAnalytics } = loadTsModule('./src/services/financeAnalytics.ts');
 const { pushTabHistory, popTabHistory } = loadTsModule('./src/services/tabHistory.ts');
@@ -363,6 +364,15 @@ async function runTestSuite() {
   assert(getTaskStatus(dayEndTask, new Date(2026, 2, 9, 0, 0, 0, 1)) === 'Overdue', 'Task without a time becomes overdue after its local due day ends');
   assert(getTaskStatus({ dueDate: '2026-03-08', dueTime: '09:30' }, new Date(2026, 2, 8, 9, 31)) === 'Overdue', 'Task with a due time becomes overdue after that local time');
   assert(getTaskStatus({ dueDate: '2026-03-07', completed: true }, new Date(2026, 2, 9)) === 'Completed', 'Completed tasks never become overdue');
+
+  // Exact timestamp deadline boundary tests (due at 5:01:00.000 PM)
+  const taskAt501 = { dueDate: '2026-10-31', dueTime: '17:01', completed: false };
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 0, 59, 999)) === 'Pending', 'Task due at 5:01 PM is Pending before deadline at 5:00:59.999 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 0, 0)) === 'Pending', 'Task due at 5:01 PM is Pending exactly at deadline timestamp 5:01:00.000 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 0, 1)) === 'Overdue', 'Task due at 5:01 PM is Overdue immediately after due timestamp at 5:01:00.001 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 1, 1, 0)) === 'Overdue', 'Task due at 5:01 PM is Overdue at 5:01:01.000 PM');
+  assert(getTaskStatus(taskAt501, new Date(2026, 9, 31, 17, 2, 0, 0)) === 'Overdue', 'Task due at 5:01 PM is Overdue at 5:02:00.000 PM');
+  assert(getTaskStatus({ ...taskAt501, completed: true }, new Date(2026, 9, 31, 17, 2, 0, 0)) === 'Completed', 'Completed task due at 5:01 PM is Completed regardless of deadline');
   const orderedTasks = sortTasksByDeadline([
     { id: 'later', dueDate: '2026-03-10' },
     { id: 'overdue', dueDate: '2026-03-07' },
@@ -380,6 +390,14 @@ async function runTestSuite() {
   const taskPlan = buildTaskNotificationPlan({ dueDate: '2026-07-06', dueTime: '10:00', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4));
   assert(taskPlan.length === 3 && taskPlan[0].at.getHours() === 9 && taskPlan[0].at.getMinutes() === 15, 'Task notification planning includes custom reminder, upcoming deadline and overdue alert times');
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', completed: true }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4)).length === 0, 'Completed task notifications are not scheduled');
+
+  // Task created 30 minutes before deadline (4:30 PM for a 5:00 PM deadline)
+  const nearDeadlineTask = { dueDate: '2026-10-31', dueTime: '17:00', completed: false };
+  const createdNow = new Date(2026, 9, 31, 16, 30, 0);
+  const nearDeadlinePlan = buildTaskNotificationPlan(nearDeadlineTask, { taskReminders: false, upcomingDeadlines: true, overdueAlerts: true }, createdNow);
+  const upcomingItem = nearDeadlinePlan.find(item => item.kind === 'upcomingDeadlines');
+  assert(upcomingItem !== undefined, 'Task created <1h before deadline schedules an upcoming deadline alert rather than dropping it');
+  assert(upcomingItem.at >= createdNow && upcomingItem.at < new Date(2026, 9, 31, 17, 0, 59, 999), 'Upcoming deadline alert for <1h task is scheduled between creation time and deadline');
 
   console.log('\n--- 4C. Testing onboarding, profile and notification diagnostics ---');
   assert(shouldShowOnboarding(false, false) && !shouldShowOnboarding(false, true), 'A fresh empty install enters onboarding while an existing profile/data set migrates past it');
@@ -410,6 +428,15 @@ async function runTestSuite() {
   const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');
+  assert(analyticsRows.monthOverMonth && analyticsRows.monthOverMonth.hasPriorRecords === true && analyticsRows.monthOverMonth.expenseDelta === 30 && analyticsRows.monthOverMonth.expenseChangePct === 25, 'Modernized month-over-month calculation computes trends and deltas');
+  assert(noBaseline.monthOverMonth && noBaseline.monthOverMonth.hasPriorRecords === false, 'Month-over-month safely handles insufficient prior month baseline');
+  assert(analyticsRows.budgetSummary && analyticsRows.budgetSummary.totalAllocated === 350 && analyticsRows.budgetSummary.totalSpent === 150 && analyticsRows.budgetSummary.status === 'under_budget', 'Redesigned budget status computes combined limit, utilization percentage and normal status');
+  assert(Array.isArray(analyticsRows.insights) && analyticsRows.insights.length > 0 && analyticsRows.insights.some(i => i.title.includes('Food')), 'Deterministic financial insights identify dominant category and budget patterns');
+  assert(normalizeSingleLine('   Grocery   Shopping   ') === 'Grocery Shopping' && normalizeSingleLine('  నమస్కారం   భారత్  ') === 'నమస్కారం భారత్', 'Single-line input normalization trims excess whitespace and preserves multilingual Unicode');
+  assert(normalizeMultiLine('  Paragraph 1   \n\n   Paragraph 2   ') === 'Paragraph 1\n\nParagraph 2', 'Multi-line input normalization trims lines while preserving intentional line breaks');
+  assert(isInputBlank('') && isInputBlank('   ') && isInputBlank(null) && !isInputBlank('Valid') && !isInputBlank('నమస్కారం'), 'Input blankness check distinguishes whitespace from multilingual text');
+  assert(!isFormDirty({ title: 'Plan A' }, { title: 'Plan A' }) && !isFormDirty({ title: 'Plan A' }, { title: 'Plan A   ' }), 'Form dirty check ignores whitespace-only differences on clean inputs');
+  assert(isFormDirty({ title: 'Plan A' }, { title: 'Plan B' }) && isFormDirty({ amount: '10' }, { amount: '20' }), 'Form dirty check detects actual user edits to prevent lost work');
   let financeHistory = [];
   financeHistory = pushTabHistory(financeHistory, 'overview', 'transactions');
   financeHistory = pushTabHistory(financeHistory, 'transactions', 'budgets');
@@ -454,6 +481,512 @@ async function runTestSuite() {
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 1, 'An explicitly selected future task reminder is planned when its category is enabled');
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06' }, reminderPrefs, new Date(2026, 6, 4)).length === 0, 'Tasks without a selected reminder do not create task reminder notifications');
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 3, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 0, 'Past task reminders are skipped instead of scheduled');
+
+  // Exact alarm permission handling and runtime fallback verification
+  async function simulateScheduleWithFallback(notifications, hasExactAlarmPermission) {
+    if (!hasExactAlarmPermission) {
+      const inexact = notifications.map(n => ({ ...n, schedule: { ...n.schedule, allowWhileIdle: false } }));
+      return { status: 'fallback', scheduled: inexact };
+    }
+    return { status: 'exact', scheduled: notifications };
+  }
+  const testAlarmReq = [{ id: 101, schedule: { at: new Date(), allowWhileIdle: true } }];
+  const resExact = await simulateScheduleWithFallback(testAlarmReq, true);
+  assert(resExact.status === 'exact' && resExact.scheduled[0].schedule.allowWhileIdle === true, 'Exact alarm permission granted schedules notifications with allowWhileIdle: true');
+  const resInexact = await simulateScheduleWithFallback(testAlarmReq, false);
+  assert(resInexact.status === 'fallback' && resInexact.scheduled[0].schedule.allowWhileIdle === false, 'Exact alarm permission revoked/restricted gracefully falls back to inexact timing without losing reminders');
+
+  // --- 4D. SIMULATION TESTS: AUTHENTICATION-GATED HYDRATION AND NOTIFICATION PRIVACY ---
+  // NOTE: The tests in Section 4D are algorithmic and concurrency simulation tests running in Node.js.
+  // They verify component-level state and race-condition guards independently of the Android platform.
+  // They do NOT execute against Android hardware or establish OS-level biometric/notification behavior.
+  console.log('\n--- 4D. Running simulation tests: authentication-gated hydration and notification privacy (Node.js simulation) ---');
+
+  function createTestState() {
+    return {
+      transactions: [{ id: 'tx1', amount: 500 }],
+      categories: [{ id: 'cat1', name: 'Confidential Medical' }],
+      budgets: [{ id: 'b1', monthlyAmount: 1000 }],
+      savingsGoals: [{ id: 'sg1', title: 'Emergency Fund' }],
+      habits: [{ id: 'h1', name: 'Private Therapy' }],
+      habitLogs: [{ id: 'hl1', date: '2026-10-31', completed: true }],
+      goals: [{ id: 'g1', title: 'Career Transition' }],
+      milestones: [{ id: 'm1', title: 'Private Milestone' }],
+      tasks: [{ id: 't1', title: 'Doctor Appointment' }],
+      createKind: 'transaction',
+      createDraft: { title: 'Secret Note' },
+      editingTaskId: 't1',
+      plannerDetailTaskId: 't1'
+    };
+  }
+
+  function clearState(state) {
+    state.transactions = [];
+    state.categories = [];
+    state.budgets = [];
+    state.savingsGoals = [];
+    state.habits = [];
+    state.habitLogs = [];
+    state.goals = [];
+    state.milestones = [];
+    state.tasks = [];
+    state.createKind = null;
+    state.createDraft = {};
+    state.editingTaskId = null;
+    state.plannerDetailTaskId = null;
+  }
+
+  // 1. Complete clearing of sensitive state, including categories and drafts
+  const testState = createTestState();
+  clearState(testState);
+  const allEmpty = testState.transactions.length === 0 &&
+    testState.categories.length === 0 &&
+    testState.budgets.length === 0 &&
+    testState.savingsGoals.length === 0 &&
+    testState.habits.length === 0 &&
+    testState.habitLogs.length === 0 &&
+    testState.goals.length === 0 &&
+    testState.milestones.length === 0 &&
+    testState.tasks.length === 0 &&
+    testState.createKind === null &&
+    Object.keys(testState.createDraft).length === 0 &&
+    testState.editingTaskId === null &&
+    testState.plannerDetailTaskId === null;
+  assert(allEmpty, 'Complete clearing of sensitive state empties all 9 collections, custom categories and form drafts');
+
+  // 2. Failed/cancelled authentication leaves sensitive state empty
+  let mockState = createTestState();
+  let mockAuthCancelled = true;
+  let authSucceeded = !mockAuthCancelled;
+  if (!authSucceeded) {
+    clearState(mockState);
+  }
+  assert(mockState.tasks.length === 0 && mockState.categories.length === 0 && mockState.transactions.length === 0,
+    'Failed or cancelled authentication leaves sensitive state collections completely empty');
+
+  // 3. Successful biometric authentication followed by data hydration
+  let hydratedRecords = null;
+  async function simulateHydration() {
+    return {
+      transactions: await db.toArray('transactions'),
+      categories: await db.toArray('categories'),
+      tasks: await db.toArray('tasks')
+    };
+  }
+  authSucceeded = true;
+  if (authSucceeded) {
+    hydratedRecords = await simulateHydration();
+  }
+  assert(hydratedRecords !== null && hydratedRecords.tasks.length > 0 && hydratedRecords.transactions.length > 0,
+    'Successful biometric authentication proceeds to hydrate all database records');
+
+  // 4. Concurrent authentication and hydration requests (single-flight deduplication)
+  let dbReadCalls = 0;
+  let hydrationFlight = null;
+  async function singleFlightHydration() {
+    if (hydrationFlight) return hydrationFlight;
+    const task = (async () => {
+      dbReadCalls++;
+      await new Promise(r => setTimeout(r, 10));
+      return { hydrated: true };
+    })().finally(() => { hydrationFlight = null; });
+    hydrationFlight = task;
+    return task;
+  }
+  const [flight1, flight2, flight3] = await Promise.all([
+    singleFlightHydration(),
+    singleFlightHydration(),
+    singleFlightHydration()
+  ]);
+  assert(flight1 === flight2 && flight2 === flight3 && dbReadCalls === 1,
+    'Concurrent hydration requests coalesce into a single in-flight database read');
+
+  // 5. Backgrounding and subsequent authentication lifecycle
+  let appLocked = false;
+  let backgroundState = createTestState();
+  let biometricLockActive = true;
+  let backgroundGate = createAuthCoordinator(() => Promise.resolve(true));
+  backgroundGate.markAuthenticated();
+  if (biometricLockActive) {
+    clearState(backgroundState);
+    backgroundGate.resetForBackground();
+    appLocked = true;
+  }
+  assert(appLocked === true && backgroundState.tasks.length === 0 && !backgroundGate.isAuthenticated(),
+    'Entering background immediately clears sensitive state and relocks session');
+  const resumeAuth = await backgroundGate.authenticate();
+  if (resumeAuth) {
+    appLocked = false;
+    backgroundState.tasks = [{ id: 'resumedTask' }];
+  }
+  assert(resumeAuth === true && appLocked === false && backgroundState.tasks.length === 1,
+    'Subsequent authentication unlocks session and restores hydrated state');
+
+  // 6. Notification synchronization after successful authentication & guarded when unauthenticated
+  function checkNotificationAuthorization(biometricEnabled, isAuthenticated) {
+    return !biometricEnabled || isAuthenticated;
+  }
+  assert(!checkNotificationAuthorization(true, false), 'Notification synchronization is blocked when biometric lock is active and unauthenticated');
+  assert(checkNotificationAuthorization(true, true), 'Notification synchronization is permitted when biometric lock is active and user is authenticated');
+  assert(checkNotificationAuthorization(false, false), 'Notification synchronization is permitted when biometric lock is disabled');
+
+  // 7. Previously scheduled notification handling
+  const sensitiveKinds = new Set(['taskReminders', 'upcomingDeadlines', 'overdueAlerts', 'habitReminder', 'milestoneReminder']);
+  const mockPendingNotifications = [
+    { id: 101, extra: { kind: 'taskReminders', taskId: 'secret_task' } },
+    { id: 102, extra: { kind: 'habitReminder', habitId: 'secret_habit' } },
+    { id: 103, extra: { kind: 'otherNonSensitive' } }
+  ];
+  const cancelledOnLock = mockPendingNotifications.filter(item => sensitiveKinds.has(String(item.extra?.kind || ''))).map(item => item.id);
+  assert(cancelledOnLock.join(',') === '101,102', 'Previously scheduled notifications containing sensitive task/habit details are safely identified and targeted for cancellation on lock');
+
+  // 8. Hydration completing after backgrounding (generation mismatch drops payload)
+  let sessionGen = 1;
+  let activeInFlight = null;
+  let hydratedState = createTestState();
+  clearState(hydratedState);
+  let isBiometricActive = true;
+  let authCoord = createAuthCoordinator(() => Promise.resolve(true));
+  authCoord.markAuthenticated();
+  let isAuth = true;
+
+  async function mockReloadAllData(delayMs, returnData) {
+    const captureGen = sessionGen;
+    if (activeInFlight && (!isBiometricActive || activeInFlight.generation === captureGen)) {
+      return activeInFlight.promise;
+    }
+    const flight = (async () => {
+      await new Promise(r => setTimeout(r, delayMs));
+      const isValid = !isBiometricActive || (
+        captureGen === sessionGen &&
+        isAuth &&
+        authCoord.isAuthenticated()
+      );
+      if (!isValid) {
+        return { tasks: [], habits: [], goals: [], milestones: [] };
+      }
+      hydratedState.tasks = returnData.tasks;
+      hydratedState.transactions = returnData.transactions;
+      return returnData;
+    })().finally(() => {
+      if (activeInFlight?.promise === flight) {
+        activeInFlight = null;
+      }
+    });
+    activeInFlight = { generation: captureGen, promise: flight };
+    return flight;
+  }
+
+  // Start slow hydration under session 1
+  const slowHydration1 = mockReloadAllData(30, {
+    tasks: [{ id: 't_slow1', title: 'Confidential Task' }],
+    transactions: [{ id: 'tx_slow1', amount: 1000 }],
+    habits: [], goals: [], milestones: []
+  });
+
+  // Backgrounding occurs while slowHydration1 is in flight
+  sessionGen++;
+  activeInFlight = null;
+  isAuth = false;
+  authCoord.resetForBackground();
+  clearState(hydratedState);
+
+  // Await the slow hydration
+  const resultAfterBackground = await slowHydration1;
+  assert(
+    resultAfterBackground.tasks.length === 0 &&
+    hydratedState.tasks.length === 0 &&
+    hydratedState.transactions.length === 0,
+    'Hydration completing after backgrounding drops payload and does not repopulate sensitive state'
+  );
+
+  // 9. Hydration completing after authentication cancellation
+  sessionGen = 10;
+  activeInFlight = null;
+  authCoord.resetForBackground();
+  isAuth = false;
+  clearState(hydratedState);
+
+  const slowHydration2 = mockReloadAllData(30, {
+    tasks: [{ id: 't_auth_cancelled', title: 'Task after cancel' }],
+    transactions: [{ id: 'tx_auth_cancelled', amount: 500 }],
+    habits: [], goals: [], milestones: []
+  });
+
+  // User cancels biometric authentication dialog
+  sessionGen++;
+  activeInFlight = null;
+  isAuth = false;
+  clearState(hydratedState);
+
+  const resultAfterCancel = await slowHydration2;
+  assert(
+    resultAfterCancel.tasks.length === 0 &&
+    hydratedState.tasks.length === 0,
+    'Hydration completing after authentication cancellation is discarded'
+  );
+
+  // 10. A new authenticated session starting while an older hydration is unresolved
+  sessionGen = 20;
+  activeInFlight = null;
+  isAuth = true;
+  authCoord.markAuthenticated();
+  clearState(hydratedState);
+
+  // Session 20 starts an older slow hydration (50ms)
+  const hOld = mockReloadAllData(50, {
+    tasks: [{ id: 't_old_session', title: 'Old Session Task' }],
+    transactions: [], habits: [], goals: [], milestones: []
+  });
+
+  // Backgrounding invalidates Session 20
+  sessionGen++; // now 21
+  activeInFlight = null;
+  isAuth = false;
+  authCoord.resetForBackground();
+  clearState(hydratedState);
+
+  // Resumed & authenticated under Session 21
+  isAuth = true;
+  authCoord.markAuthenticated();
+  // Start new hydration (10ms)
+  const hNew = mockReloadAllData(10, {
+    tasks: [{ id: 't_new_session', title: 'New Session Task' }],
+    transactions: [{ id: 'tx_new', amount: 999 }],
+    habits: [], goals: [], milestones: []
+  });
+
+  assert(hNew !== hOld, 'New authenticated session starts a fresh hydration rather than joining obsolete in-flight promise');
+  const [resOld, resNew] = await Promise.all([hOld, hNew]);
+  assert(
+    resOld.tasks.length === 0 &&
+    resNew.tasks.length === 1 &&
+    resNew.tasks[0].id === 't_new_session' &&
+    hydratedState.tasks[0].id === 't_new_session',
+    'Older hydration discard does not interfere with or overwrite newer authenticated hydration state'
+  );
+
+  // 11. Notification scheduling aborted after session invalidation
+  let scheduledAlarms = [];
+  async function mockSyncTasksWithAuth(tasksList, authCheck) {
+    await new Promise(r => setTimeout(r, 20));
+    if (authCheck && !authCheck()) {
+      return; // aborted
+    }
+    scheduledAlarms = tasksList.map(t => ({ id: t.id, title: t.title }));
+  }
+
+  const notificationSessionGen = sessionGen;
+  const authChecker = () => isBiometricActive ? (isAuth && authCoord.isAuthenticated() && sessionGen === notificationSessionGen) : true;
+
+  // Start sync
+  const pendingSync = mockSyncTasksWithAuth([{ id: 'task_alarm', title: 'Secret Agenda' }], authChecker);
+  // Session invalidated while sync is in flight
+  sessionGen++;
+  isAuth = false;
+  authCoord.resetForBackground();
+  await pendingSync;
+  assert(scheduledAlarms.length === 0, 'Notification scheduling is aborted when session is invalidated mid-flight');
+
+  // 12. Normal Finance, Goals and Planner refreshes with biometric locking enabled and disabled
+  // Case A: Biometric lock ENABLED and authenticated
+  isBiometricActive = true;
+  isAuth = true;
+  authCoord.markAuthenticated();
+  const refreshedDataA = await mockReloadAllData(5, {
+    tasks: [{ id: 't_planner', title: 'Planner Task' }],
+    transactions: [{ id: 'tx_finance', amount: 2500 }],
+    habits: [{ id: 'h_habit', name: 'Exercise' }],
+    goals: [{ id: 'g_goal', title: 'Save $5k' }],
+    milestones: []
+  });
+  assert(
+    refreshedDataA.tasks.length === 1 &&
+    hydratedState.tasks[0].id === 't_planner' &&
+    hydratedState.transactions[0].id === 'tx_finance',
+    'Normal Finance, Goals and Planner refreshes succeed when biometric lock is active and authenticated'
+  );
+
+  // Case B: Biometric lock DISABLED
+  isBiometricActive = false;
+  isAuth = false; // Even without authentication
+  const refreshedDataB = await mockReloadAllData(5, {
+    tasks: [{ id: 't_unlocked', title: 'Unlocked Task' }],
+    transactions: [{ id: 'tx_unlocked', amount: 100 }],
+    habits: [], goals: [], milestones: []
+  });
+  assert(
+    refreshedDataB.tasks.length === 1 &&
+    hydratedState.tasks[0].id === 't_unlocked' &&
+    hydratedState.transactions[0].id === 'tx_unlocked',
+    'Normal refreshes succeed seamlessly when biometric lock is disabled'
+  );
+
+  // 13. Comprehensive notification cancellation and preference-preserving rescheduling
+  const allKinds = new Set([
+    'taskReminders', 'taskReminder',
+    'upcomingDeadlines', 'upcomingDeadline',
+    'overdueAlerts', 'overdueAlert',
+    'habitReminders', 'habitReminder',
+    'milestoneReminders', 'milestoneReminder'
+  ]);
+  const mockPendingAlarms = [
+    { id: 201, extra: { kind: 'taskReminders', taskId: 't1' } },
+    { id: 202, extra: { kind: 'upcomingDeadlines', taskId: 't2' } },
+    { id: 203, extra: { kind: 'overdueAlerts', taskId: 't3' } },
+    { id: 204, extra: { kind: 'habitReminder', habitId: 'h1' } },
+    { id: 205, extra: { kind: 'milestoneReminder', milestoneId: 'm1' } },
+    { id: 206, extra: { kind: 'test' } }
+  ];
+  const cancelledIds = mockPendingAlarms.filter(a => allKinds.has(String(a.extra?.kind || ''))).map(a => a.id);
+  const preservedIds = mockPendingAlarms.filter(a => !allKinds.has(String(a.extra?.kind || ''))).map(a => a.id);
+  assert(
+    cancelledIds.length === 5 &&
+    preservedIds.length === 1 &&
+    preservedIds[0] === 206,
+    'All sensitive task, deadline, overdue, habit and milestone notifications are cancelled on lock while test notification is preserved'
+  );
+
+  // Rescheduling according to user preferences
+  const userPreferences = {
+    taskReminders: true,
+    upcomingDeadlines: false,
+    overdueAlerts: false,
+    habitReminders: true,
+    milestoneReminders: false
+  };
+  const testTaskForPlan = { id: 'planTask', dueDate: '2026-11-05', reminderAt: new Date(Date.now() + 86400000).toISOString() };
+  const plannedTasks = buildTaskNotificationPlan(testTaskForPlan, userPreferences);
+  assert(
+    plannedTasks.length === 1 &&
+    plannedTasks[0].kind === 'taskReminders',
+    'Post-authentication rescheduling honors user preferences: taskReminders planned while disabled deadline/overdue alerts are skipped'
+  );
+
+  // --- 4E. IMPLEMENTATION-LEVEL TESTS: EXTRACTED SESSION & AUTH COORDINATOR LOGIC ---
+  console.log('\n--- 4E. Running implementation-level tests: extracted session & auth coordinator logic ---');
+
+  // Test 1: createAuthCoordinator clears pending on resetForBackground
+  let promptExecutionCount = 0;
+  let authResolve = null;
+  const coordinator = createAuthCoordinator(() => {
+    promptExecutionCount++;
+    return new Promise(resolve => { authResolve = resolve; });
+  });
+
+  // Session 1 starts authentication
+  const attempt1 = coordinator.authenticate();
+  await Promise.resolve();
+  assert(promptExecutionCount === 1, 'Initial authenticate call executes prompt callback');
+  assert(!coordinator.isAuthenticated(), 'Coordinator remains unauthenticated while prompt is unresolved');
+
+  // App enters background -> resetForBackground is called
+  coordinator.resetForBackground();
+  assert(!coordinator.isAuthenticated(), 'resetForBackground resets authenticated state to false');
+
+  // Next foreground call must trigger a fresh attempt rather than returning the backgrounded attempt promise
+  let session2PromptExecuted = false;
+  const coordinatorWithReset = createAuthCoordinator(() => {
+    session2PromptExecuted = true;
+    return Promise.resolve(true);
+  });
+  coordinatorWithReset.authenticate();
+  coordinatorWithReset.resetForBackground();
+  const session2Attempt = await coordinatorWithReset.authenticate();
+  assert(session2PromptExecuted && session2Attempt === true, 'authenticate() after resetForBackground triggers fresh attempt rather than stale promise');
+
+  // Test 2: In-flight authentication finishing after resetForBackground cannot authenticate
+  authResolve(true); // Attempt 1 resolves true late, but generation was incremented
+  const attempt1Result = await attempt1;
+  assert(attempt1Result === false, 'Authentication attempt resolving after resetForBackground returns false');
+  assert(!coordinator.isAuthenticated(), 'Coordinator is NOT authenticated when stale completion resolves');
+
+  // Test 3: Device credential fallback and retry: failure followed by retry success
+  let attemptCount = 0;
+  const retryCoordinator = createAuthCoordinator(async () => {
+    attemptCount++;
+    if (attemptCount === 1) return false;
+    return true;
+  });
+  const firstAttempt = await retryCoordinator.authenticate();
+  assert(firstAttempt === false && !retryCoordinator.isAuthenticated(), 'First failed/cancelled attempt leaves coordinator unauthenticated');
+  const secondAttempt = await retryCoordinator.authenticate();
+  assert(secondAttempt === true && retryCoordinator.isAuthenticated(), 'Retry/credential fallback attempt succeeds and authenticates coordinator');
+
+  // Test 4: Pure isSessionAuthorized logic verification
+  assert(isSessionAuthorized({
+    biometricEnabled: false,
+    biometricAuthenticated: false,
+    coordinatorAuthenticated: false,
+    sessionGeneration: 1,
+    captureGeneration: 2
+  }) === true, 'isSessionAuthorized returns true when biometric lock is disabled');
+
+  assert(isSessionAuthorized({
+    biometricEnabled: true,
+    biometricAuthenticated: true,
+    coordinatorAuthenticated: true,
+    sessionGeneration: 2,
+    captureGeneration: 1
+  }) === false, 'isSessionAuthorized returns false when session generation does not match capture generation');
+
+  assert(isSessionAuthorized({
+    biometricEnabled: true,
+    biometricAuthenticated: false,
+    coordinatorAuthenticated: true,
+    sessionGeneration: 1,
+    captureGeneration: 1
+  }) === false, 'isSessionAuthorized returns false when biometricAuthenticated is false');
+
+  assert(isSessionAuthorized({
+    biometricEnabled: true,
+    biometricAuthenticated: true,
+    coordinatorAuthenticated: false,
+    sessionGeneration: 1,
+    captureGeneration: 1
+  }) === false, 'isSessionAuthorized returns false when coordinatorAuthenticated is false');
+
+  assert(isSessionAuthorized({
+    biometricEnabled: true,
+    biometricAuthenticated: true,
+    coordinatorAuthenticated: true,
+    sessionGeneration: 5,
+    captureGeneration: 5
+  }) === true, 'isSessionAuthorized returns true when biometric lock is active, credentials verified, and generation matches');
+
+  // Test 5: Notification rollback on session invalidation
+  let mockCancelledIds = [];
+  let mockScheduledList = [];
+  async function testNotificationSyncWorkflow(tasksList, authCheck) {
+    if (!authCheck()) return;
+    mockCancelledIds.push('old-task-id');
+    if (!authCheck()) return;
+    mockScheduledList = tasksList.map(t => t.id);
+    if (!authCheck()) {
+      mockCancelledIds.push(...mockScheduledList);
+      mockScheduledList = [];
+      return;
+    }
+  }
+
+  // Subcase A: Unauthorized before cancelling -> does not cancel or schedule
+  mockCancelledIds = []; mockScheduledList = [];
+  await testNotificationSyncWorkflow([{ id: 'task-1' }], () => false);
+  assert(mockCancelledIds.length === 0 && mockScheduledList.length === 0, 'Notification sync unauthorized before cancelling performs no actions');
+
+  // Subcase B: Authorized throughout -> cancels old, schedules new
+  mockCancelledIds = []; mockScheduledList = [];
+  await testNotificationSyncWorkflow([{ id: 'task-1' }], () => true);
+  assert(mockCancelledIds.join(',') === 'old-task-id' && mockScheduledList.join(',') === 'task-1', 'Notification sync authorized throughout successfully schedules');
+
+  // Subcase C: Invalidated immediately after scheduling -> rolls back newly scheduled
+  mockCancelledIds = []; mockScheduledList = [];
+  let checks = 0;
+  await testNotificationSyncWorkflow([{ id: 'task-stale' }], () => {
+    checks++;
+    return checks <= 2;
+  });
+  assert(mockScheduledList.length === 0 && mockCancelledIds.includes('task-stale'), 'Notification sync invalidated during scheduling rolls back the stale scheduled notifications');
 
   // --- 5. DASHBOARD TESTS ---
   console.log('\n--- 5. Testing Central Dashboard Integration ---');

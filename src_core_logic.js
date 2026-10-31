@@ -90,7 +90,20 @@ function parseLocalDateTime(dateStr, timeStr = '00:00', endOfDay = false) {
 }
 
 function getTaskDeadline(task) {
-  return parseLocalDateTime(task.dueDate, task.dueTime || '00:00', !task.dueTime);
+  if (!task || !task.dueDate) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(task.dueDate)) return null;
+  const [year, month, day] = task.dueDate.split('-').map(Number);
+  if (task.dueTime) {
+    const parts = (task.dueTime || '').split(':').map(Number);
+    if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return null;
+    const [hour, minute] = parts;
+    const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    return date;
+  }
+  const date = new Date(year, month - 1, day, 23, 59, 59, 999);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return date;
 }
 
 function getTaskStatus(task, now = new Date()) {
@@ -135,12 +148,23 @@ function buildTaskNotificationPlan(task, preferences, now = new Date()) {
     if (!Number.isNaN(reminder.getTime())) add('taskReminders', reminder);
   }
   if (deadline && preferences.upcomingDeadlines) {
-    const upcoming = task.dueTime
-      ? new Date(deadline.getTime() - 60 * 60 * 1000)
-      : parseLocalDateTime(task.dueDate, '09:00');
-    add('upcomingDeadlines', upcoming);
+    if (task.dueTime) {
+      const oneHourBefore = new Date(deadline.getTime() - 60 * 60 * 1000);
+      if (oneHourBefore.getTime() > now.getTime()) {
+        add('upcomingDeadlines', oneHourBefore);
+      } else if (deadline.getTime() > now.getTime()) {
+        const leadMs = deadline.getTime() - now.getTime();
+        const alertOffsetMs = Math.min(60 * 1000, Math.floor(leadMs / 2));
+        const soon = new Date(now.getTime() + alertOffsetMs);
+        if (soon.getTime() < deadline.getTime()) {
+          add('upcomingDeadlines', soon);
+        }
+      }
+    } else {
+      add('upcomingDeadlines', parseLocalDateTime(task.dueDate, '09:00'));
+    }
   }
-  if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 60 * 1000));
+  if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 1000));
   return plan;
 }
 
@@ -264,6 +288,45 @@ function calculateFinanceMetrics(transactions, budgets, currentMonthStr) {
   };
 }
 
+function normalizeSingleLine(value) {
+  if (!value) return '';
+  return String(value).trim().replace(/[ \t]+/g, ' ');
+}
+
+function normalizeMultiLine(value) {
+  if (!value) return '';
+  return String(value).split('\n').map(line => line.trim()).join('\n').trim();
+}
+
+function isInputBlank(value) {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'string') return value.trim().length === 0;
+  return false;
+}
+
+function isFormDirty(initial, current, fields) {
+  if (!initial || !current) return false;
+  const targetFields = fields && fields.length > 0
+    ? fields
+    : Array.from(new Set([...Object.keys(initial), ...Object.keys(current)]));
+  for (const field of targetFields) {
+    const a = initial[field];
+    const b = current[field];
+    if (typeof a === 'number' || typeof b === 'number') {
+      const numA = Number(a) || 0;
+      const numB = Number(b) || 0;
+      if (numA !== numB) return true;
+    } else if (typeof a === 'boolean' || typeof b === 'boolean') {
+      if (Boolean(a) !== Boolean(b)) return true;
+    } else {
+      const strA = normalizeSingleLine(String(a ?? ''));
+      const strB = normalizeSingleLine(String(b ?? ''));
+      if (strA !== strB) return true;
+    }
+  }
+  return false;
+}
+
 // Export for node testing
 module.exports = {
   calculateStreaks,
@@ -288,5 +351,9 @@ module.exports = {
   getTasksForDate,
   greetingForHour,
   watchSystemTheme,
-  resolveBackAction
+  resolveBackAction,
+  normalizeSingleLine,
+  normalizeMultiLine,
+  isInputBlank,
+  isFormDirty
 };

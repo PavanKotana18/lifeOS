@@ -1,6 +1,27 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
-import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
+import {
+  Activity,
+  AlertCircle,
+  AlertTriangle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  CircleDollarSign,
+  Goal as GoalIcon,
+  Home,
+  Moon,
+  Shield,
+  ShieldCheck,
+  Smartphone,
+  Sun,
+  TrendingDown,
+  TrendingUp,
+  UserRound,
+} from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StorageService, db } from './db';
@@ -12,7 +33,29 @@ import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
+import {
+  buildFinanceEntry,
+  calculateStreaks,
+  calculateWeeklyHabitRate,
+  formatLocalDate,
+  formatLocalDateTime,
+  getGoalProgress,
+  getMonthCalendarDays,
+  getTaskStatus,
+  getTasksForDate,
+  greetingForHour,
+  isFormDirty,
+  isInputBlank,
+  isSessionAuthorized,
+  normalizeMultiLine,
+  normalizeSingleLine,
+  profileInitial,
+  resolveAppearance,
+  resolveBackAction,
+  shouldShowOnboarding,
+  sortTasksByDeadline,
+  watchSystemTheme,
+} from './services/domainUtils';
 
 type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -62,7 +105,7 @@ export default function App() {
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', channel: 'unknown', pendingCount: 0, lastError: '' });
+  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', channel: 'unknown', pendingCount: 0, lastError: '', lastSyncTime: null, exactAlarmStatus: 'checking' });
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
@@ -73,11 +116,20 @@ export default function App() {
   // Biometric Lock State
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
+  const biometricEnabledRef = useRef(false);
   const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
   const [biometricMessage, setBiometricMessage] = useState('');
-  const biometricAuthInFlight = useRef<Promise<boolean> | null>(null);
+  const biometricAuthInFlight = useRef<{
+    generation: number;
+    promise: Promise<boolean>;
+  } | null>(null);
   const biometricAuthenticated = useRef(false);
   const startupComplete = useRef(false);
+  const sessionGeneration = useRef(0);
+  const hydrationInFlight = useRef<{
+    generation: number;
+    promise: Promise<{ tasks: Task[]; habits: Habit[]; goals: Goal[]; milestones: Milestone[] }>;
+  } | null>(null);
   const authCoordinator = useRef(createAuthCoordinator(async () => {
     const result = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your identity to access your personal data');
     if (!result.success) setBiometricMessage(result.message || 'Authentication was not completed. Retry when you are ready.');
@@ -121,10 +173,12 @@ export default function App() {
   const [modalContent, setModalContent] = useState<React.ReactNode | null>(null);
   const [createKind, setCreateKind] = useState<'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress' | null>(null);
   const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
+  const initialDraftRef = useRef<Record<string, any> | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
+  const [preferencesExpanded, setPreferencesExpanded] = useState<boolean>(false);
 
   const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileNotificationsOpen, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation });
   backState.current = { createKind, modalContent, plannerDetailTaskId, profileNotificationsOpen, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation };
@@ -180,18 +234,45 @@ export default function App() {
     let appStateListener: { remove: () => Promise<void> } | undefined;
     CapacitorApp.addListener('appStateChange', async state => {
       if (!state.isActive) {
-        const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-        if (isBio) { biometricAuthenticated.current = false; authCoordinator.resetForBackground(); setIsLocked(true); setBiometricVerified(false); setBiometricMessage(''); }
+        if (biometricEnabledRef.current) {
+          sessionGeneration.current++;
+          biometricAuthInFlight.current = null;
+          hydrationInFlight.current = null;
+          clearSensitiveState();
+          biometricAuthenticated.current = false;
+          authCoordinator.resetForBackground();
+          setIsLocked(true);
+          setBiometricVerified(false);
+          setBiometricMessage('');
+          void NotificationService.cancelPendingNotifications();
+        }
         return;
       }
       setClockNow(new Date());
-      const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-      if (isBio && startupComplete.current && !biometricAuthenticated.current) void triggerBiometricAuth();
-      const records = await reloadAllData();
-      const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
-      const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
-      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
-      await refreshNotificationDiagnostics();
+      // Re-evaluate and re-apply system theme on app resume
+      const currentAppearance = await StorageService.settings.get<AppearancePreference>('theme', 'system');
+      if (currentAppearance === 'system') {
+        const sysDark = systemDarkPreference();
+        const nextTheme = sysDark ? 'dark' : 'light';
+        setTheme(nextTheme);
+        applyDomTheme(nextTheme);
+      }
+      if (biometricEnabledRef.current) {
+        if (!biometricAuthenticated.current) {
+          sessionGeneration.current++;
+          biometricAuthInFlight.current = null;
+          hydrationInFlight.current = null;
+          clearSensitiveState();
+          setIsLocked(true);
+          await triggerBiometricAuth();
+        }
+      } else {
+        const records = await reloadAllData();
+        const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+        const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
+        await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
+        await refreshNotificationDiagnostics();
+      }
     }).then(listener => { appStateListener = listener; });
     return () => {
       window.clearInterval(timer);
@@ -210,9 +291,7 @@ export default function App() {
     const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved); };
     const nativeTheme = (event: Event) => update((event as CustomEvent<{ dark: boolean }>).detail.dark ? 'dark' : 'light');
     window.addEventListener('lifeos:system-appearance', nativeTheme);
-    const stopMedia = typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
-      ? () => {}
-      : watchSystemTheme(window.matchMedia('(prefers-color-scheme: dark)'), update);
+    const stopMedia = watchSystemTheme(window.matchMedia('(prefers-color-scheme: dark)'), update);
     return () => { stopMedia(); window.removeEventListener('lifeos:system-appearance', nativeTheme); };
   }, [appearance]);
 
@@ -240,8 +319,32 @@ export default function App() {
 
   const requestCloseForm = () => {
     if (!backState.current.createKind) return;
-    if (!window.confirm('Close this form? Any unsaved changes will be lost.')) return;
-    setCreateKind(null); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null);
+    const isEditing = Boolean(editingTransactionId || editingGoalId || editingTaskId || editingHabitId);
+    let isDirty = false;
+    if (isEditing) {
+      if (editingTransactionId) {
+        isDirty = isFormDirty(initialDraftRef.current, createDraft, ['title', 'amount', 'category', 'type', 'paymentMethod', 'dateTime', 'notes', 'isRecurring']);
+      } else if (editingTaskId) {
+        isDirty = isFormDirty(initialDraftRef.current, createDraft, ['title', 'description', 'date', 'time', 'reminderAt', 'priority', 'category', 'recurring']);
+      } else if (editingHabitId) {
+        isDirty = isFormDirty(initialDraftRef.current, createDraft, ['title', 'description', 'targetPerDay', 'frequency', 'reminderTime', 'reminderWeekday']);
+      } else if (editingGoalId) {
+        isDirty = isFormDirty(initialDraftRef.current, createDraft, ['title', 'category', 'target', 'current', 'unit', 'date', 'startDate', 'priority', 'status', 'description']);
+      }
+    } else {
+      const contentFields = ['title', 'amount', 'description', 'notes', 'target'];
+      isDirty = contentFields.some(f => Boolean(createDraft[f] && normalizeSingleLine(createDraft[f]).length > 0));
+    }
+
+    if (isDirty) {
+      if (!window.confirm('Close this form? Any unsaved changes will be lost.')) return;
+    }
+    setCreateKind(null);
+    setEditingTaskId(null);
+    setEditingHabitId(null);
+    setEditingTransactionId(null);
+    setEditingGoalId(null);
+    initialDraftRef.current = null;
   };
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
@@ -279,6 +382,7 @@ export default function App() {
 
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
     setBiometricEnabled(lockSetting);
+    biometricEnabledRef.current = lockSetting;
     setIsLocked(lockSetting);
     const availability = await BiometricService.isAvailable();
     setBiometricAvailability(availability.isAvailable ? 'Available' : availability.code === 'NOT_ENROLLED' ? 'Supported, but no device credential is enrolled' : 'Unavailable on this device');
@@ -300,11 +404,15 @@ export default function App() {
 
     // A fresh process does not necessarily receive an appStateChange resume event.
     // Authenticate as part of bootstrap before appReady can expose protected UI.
-    if (lockSetting) await triggerBiometricAuth();
-
-    const records = await reloadAllData();
-    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences }, notificationsOn));
-    await refreshNotificationDiagnostics();
+    if (lockSetting) {
+      sessionGeneration.current++;
+      biometricAuthInFlight.current = null;
+      hydrationInFlight.current = null;
+      clearSensitiveState();
+      await triggerBiometricAuth();
+    } else {
+      await hydrateAuthenticatedData(notificationsOn, { ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences });
+    }
     startupComplete.current = true;
     setAppReady(true);
   };
@@ -330,13 +438,13 @@ export default function App() {
       if (!NotificationService.isSupported()) return { granted: false, status: 'unsupported', message: 'Install the updated Android build to enable local notifications.' };
       let status = await NotificationService.checkPermission();
       if (status === 'granted') return { granted: true, status };
-      if (notificationPermissionRequested) return { granted: false, status, message: 'Permission was previously declined. Open Android notification settings to allow it.' };
+      // Request native permission
+      status = await NotificationService.requestPermission();
       setNotificationPermissionRequested(true);
       await StorageService.settings.set('notificationPermissionRequested', true);
-      status = await NotificationService.requestPermission();
       return status === 'granted'
         ? { granted: true, status }
-        : { granted: false, status, message: 'Android did not grant notification permission. You can continue and enable it later in Profile.' };
+        : { granted: false, status, message: 'Android did not grant notification permission. You can enable it in Android Settings.' };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Android notification permission could not be checked.';
       return { granted: false, status: 'error', message };
@@ -352,11 +460,25 @@ export default function App() {
   };
 
   const syncNotificationSchedules = async (taskRows: Task[], habitRows: Habit[], goalRows: Goal[], milestoneRows: Milestone[], preferences = notificationPreferences) => {
+    const captureGen = sessionGeneration.current;
+    const isAuthorized = () => isSessionAuthorized({
+      biometricEnabled: biometricEnabledRef.current,
+      biometricAuthenticated: biometricAuthenticated.current,
+      coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+      sessionGeneration: sessionGeneration.current,
+      captureGeneration: captureGen,
+    });
+    if (!isAuthorized()) {
+      return;
+    }
     const results = await Promise.allSettled([
-      NotificationService.syncTasks(taskRows, preferences),
-      NotificationService.syncHabits(habitRows, preferences),
-      NotificationService.syncMilestones(goalRows, milestoneRows, preferences),
+      NotificationService.syncTasks(taskRows, preferences, isAuthorized),
+      NotificationService.syncHabits(habitRows, preferences, isAuthorized),
+      NotificationService.syncMilestones(goalRows, milestoneRows, preferences, isAuthorized),
     ]);
+    if (!isAuthorized()) {
+      return;
+    }
     if (results.some(result => result.status === 'rejected')) {
       console.warn('One or more local notification schedules could not be updated.', results.filter(result => result.status === 'rejected'));
       await refreshNotificationDiagnostics();
@@ -408,7 +530,9 @@ export default function App() {
     if (!availability.isAvailable) return { success: false, message: availability.code === 'NOT_ENROLLED' ? 'No fingerprint or device screen lock is enrolled. Set one up in Android settings, then try again.' : 'Device authentication is not available on this device.' };
     const result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
     if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
-    setBiometricEnabled(true); setBiometricVerified(true);
+    setBiometricEnabled(true);
+    biometricEnabledRef.current = true;
+    setBiometricVerified(true);
     biometricAuthenticated.current = true;
     authCoordinator.markAuthenticated();
     await StorageService.settings.set('biometricLockEnabled', true);
@@ -445,10 +569,108 @@ export default function App() {
     }
   };
 
+  const clearSensitiveState = () => {
+    setTransactions([]);
+    setCategories([]);
+    setBudgets([]);
+    setSavingsGoals([]);
+    setHabits([]);
+    setHabitLogs([]);
+    setGoals([]);
+    setMilestones([]);
+    setTasks([]);
+    setCreateKind(null);
+    setCreateDraft({});
+    setEditingTaskId(null);
+    setEditingHabitId(null);
+    setEditingTransactionId(null);
+    setEditingGoalId(null);
+    setPlannerDetailTaskId(null);
+  };
+
+  const reloadAllData = async () => {
+    const captureGen = sessionGeneration.current;
+    if (hydrationInFlight.current && (!biometricEnabledRef.current || hydrationInFlight.current.generation === captureGen)) {
+      return hydrationInFlight.current.promise;
+    }
+    const inFlightPromise = (async () => {
+      const [txs, cats, bgs, sgs, hbs, hLogs, gls, mls, tks] = await Promise.all([
+        StorageService.transactions.getAll(),
+        StorageService.categories.getAll(),
+        StorageService.budgets.getAll(),
+        StorageService.savings.getGoals(),
+        StorageService.habits.getAll(),
+        StorageService.habits.getLogs(),
+        StorageService.goals.getAll(),
+        db.milestones.toArray(),
+        StorageService.tasks.getAll()
+      ]);
+
+      const isSessionValid = isSessionAuthorized({
+        biometricEnabled: biometricEnabledRef.current,
+        biometricAuthenticated: biometricAuthenticated.current,
+        coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+        sessionGeneration: sessionGeneration.current,
+        captureGeneration: captureGen,
+      });
+
+      if (!isSessionValid) {
+        return { tasks: [], habits: [], goals: [], milestones: [] };
+      }
+
+      setTransactions(txs);
+      setCategories(cats);
+      setBudgets(bgs);
+      setSavingsGoals(sgs);
+      setHabits(hbs);
+      setHabitLogs(hLogs);
+      setGoals(gls);
+      setMilestones(mls);
+      setTasks(tks);
+      return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
+    })().finally(() => {
+      if (hydrationInFlight.current?.promise === inFlightPromise) {
+        hydrationInFlight.current = null;
+      }
+    });
+
+    hydrationInFlight.current = { generation: captureGen, promise: inFlightPromise };
+    return inFlightPromise;
+  };
+
+  const hydrateAuthenticatedData = async (notificationsOn = notificationsEnabled, prefs = notificationPreferences) => {
+    const captureGen = sessionGeneration.current;
+    const records = await reloadAllData();
+    if (!isSessionAuthorized({
+      biometricEnabled: biometricEnabledRef.current,
+      biometricAuthenticated: biometricAuthenticated.current,
+      coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+      sessionGeneration: sessionGeneration.current,
+      captureGeneration: captureGen,
+    })) {
+      return records;
+    }
+    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, notificationsOn));
+    if (!isSessionAuthorized({
+      biometricEnabled: biometricEnabledRef.current,
+      biometricAuthenticated: biometricAuthenticated.current,
+      coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+      sessionGeneration: sessionGeneration.current,
+      captureGeneration: captureGen,
+    })) {
+      return records;
+    }
+    await refreshNotificationDiagnostics();
+    return records;
+  };
+
   const triggerBiometricAuth = async () => {
-    if (biometricAuthInFlight.current) return biometricAuthInFlight.current;
-    if (biometricAuthenticated.current) return true;
-    const attempt = (async () => {
+    const authGen = sessionGeneration.current;
+    if (biometricAuthInFlight.current && biometricAuthInFlight.current.generation === authGen) {
+      return biometricAuthInFlight.current.promise;
+    }
+    if (biometricAuthenticated.current && authCoordinator.isAuthenticated()) return true;
+    const inFlightPromise = (async () => {
       setIsLocked(true);
       setBiometricMessage('Confirm your identity to open LifeOS.');
       const availability = await BiometricService.isAvailable();
@@ -456,52 +678,56 @@ export default function App() {
         const message = availability.code === 'NOT_ENROLLED'
           ? 'No biometric or device screen lock is enrolled. Set one up in Android settings, then retry.'
           : 'Device authentication is unavailable. Your data remains locked until authentication is available.';
+        sessionGeneration.current++;
+        biometricAuthInFlight.current = null;
+        hydrationInFlight.current = null;
+        biometricAuthenticated.current = false;
         setBiometricMessage(message);
         setBiometricAvailability(message);
+        clearSensitiveState();
         return false;
       }
       const success = await authCoordinator.authenticate();
-      if (success) {
+      const isStillValid = isSessionAuthorized({
+        biometricEnabled: biometricEnabledRef.current,
+        biometricAuthenticated: success,
+        coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+        sessionGeneration: sessionGeneration.current,
+        captureGeneration: authGen,
+      });
+
+      if (isStillValid) {
         biometricAuthenticated.current = true;
         setIsLocked(false);
         setBiometricVerified(true);
         setBiometricMessage('');
+        await hydrateAuthenticatedData();
         return true;
       }
+      sessionGeneration.current++;
+      biometricAuthInFlight.current = null;
+      hydrationInFlight.current = null;
+      biometricAuthenticated.current = false;
+      clearSensitiveState();
       return false;
     })().catch(error => {
       const message = error instanceof Error ? error.message : 'Device authentication failed. Your data remains locked.';
+      sessionGeneration.current++;
+      biometricAuthInFlight.current = null;
+      hydrationInFlight.current = null;
+      biometricAuthenticated.current = false;
       setBiometricMessage(message);
+      clearSensitiveState();
       console.error('LifeOS biometric startup authentication failed.', error);
       return false;
-    }).finally(() => { biometricAuthInFlight.current = null; });
-    biometricAuthInFlight.current = attempt;
-    return attempt;
-  };
+    }).finally(() => {
+      if (biometricAuthInFlight.current?.promise === inFlightPromise) {
+        biometricAuthInFlight.current = null;
+      }
+    });
 
-  const reloadAllData = async () => {
-    const [txs, cats, bgs, sgs, hbs, hLogs, gls, mls, tks] = await Promise.all([
-      StorageService.transactions.getAll(),
-      StorageService.categories.getAll(),
-      StorageService.budgets.getAll(),
-      StorageService.savings.getGoals(),
-      StorageService.habits.getAll(),
-      StorageService.habits.getLogs(),
-      StorageService.goals.getAll(),
-      db.milestones.toArray(),
-      StorageService.tasks.getAll()
-    ]);
-
-    setTransactions(txs);
-    setCategories(cats);
-    setBudgets(bgs);
-    setSavingsGoals(sgs);
-    setHabits(hbs);
-    setHabitLogs(hLogs);
-    setGoals(gls);
-    setMilestones(mls);
-    setTasks(tks);
-    return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
+    biometricAuthInFlight.current = { generation: authGen, promise: inFlightPromise };
+    return inFlightPromise;
   };
 
   const toggleTheme = async () => {
@@ -516,12 +742,14 @@ export default function App() {
   const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string) => {
     const now = new Date();
     const today = formatLocalDate(now);
-    setCreateDraft({
+    const draft = {
       title: '', amount: '', category: kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
       goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
-    });
+    };
+    initialDraftRef.current = { ...draft };
+    setCreateDraft(draft);
     setEditingTaskId(null);
     setEditingHabitId(null);
     setEditingTransactionId(null);
@@ -530,12 +758,14 @@ export default function App() {
   };
 
   const openEditTransaction = (transaction: Transaction) => {
-    setCreateDraft({
+    const draft = {
       title: transaction.description || '', amount: String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
       dateTime: formatLocalDateTime(new Date(transaction.occurredAt || transaction.createdAt)),
       notes: transaction.notes || '', isRecurring: transaction.isRecurring ? 'yes' : '',
-    });
+    };
+    initialDraftRef.current = { ...draft };
+    setCreateDraft(draft);
     setEditingTransactionId(transaction.id); setEditingTaskId(null); setEditingHabitId(null); setEditingGoalId(null); setCreateKind('transaction');
   };
 
@@ -546,28 +776,36 @@ export default function App() {
         : ['km/h', 'm/s', 'mph'].includes(oldUnit) ? userPrefs.speed : oldUnit;
     const target = oldUnit && selectedUnit !== oldUnit ? convertMeasurement(goal.targetValue, oldUnit, selectedUnit) : goal.targetValue;
     const current = oldUnit && selectedUnit !== oldUnit ? convertMeasurement(goal.currentValue, oldUnit, selectedUnit) : goal.currentValue;
-    setCreateDraft({ title: goal.title, category: goal.category, target: String(target), current: String(current), unit: selectedUnit, date: goal.targetDate, startDate: goal.startDate, priority: goal.priority, status: goal.status, description: goal.description || '' });
+    const draft = { title: goal.title, category: goal.category, target: String(target), current: String(current), unit: selectedUnit, date: goal.targetDate, startDate: goal.startDate, priority: goal.priority, status: goal.status, description: goal.description || '' };
+    initialDraftRef.current = { ...draft };
+    setCreateDraft(draft);
     setEditingGoalId(goal.id); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setCreateKind('goal');
   };
 
   const openEditTask = (task: Task) => {
-    setCreateDraft({
+    const draft = {
       title: task.title, description: task.description || task.notes || '', date: task.dueDate,
       time: task.dueTime || '', reminderAt: task.reminderAt ? formatLocalDateTime(new Date(task.reminderAt)) : '',
       priority: task.priority, category: task.category || '', recurring: task.recurring || 'None',
-    });
+    };
+    initialDraftRef.current = { ...draft };
+    setCreateDraft(draft);
     setEditingTaskId(task.id);
     setCreateKind('task');
   };
 
   const openGoalProgressForm = (goal: Goal) => {
-    setCreateDraft({ goalId: goal.id, current: String(goal.currentValue) });
+    const draft = { goalId: goal.id, current: String(goal.currentValue) };
+    initialDraftRef.current = { ...draft };
+    setCreateDraft(draft);
     setEditingTaskId(null);
     setCreateKind('goal-progress');
   };
 
   const openEditHabit = (habit: Habit) => {
-    setCreateDraft({ title: habit.name, description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
+    const draft = { title: habit.name, description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) };
+    initialDraftRef.current = { ...draft };
+    setCreateDraft(draft);
     setEditingHabitId(habit.id);
     setEditingTaskId(null);
     setCreateKind('habit');
@@ -577,6 +815,8 @@ export default function App() {
     event.preventDefault();
     if (!createKind) return;
     const value = (key: string) => (createDraft[key] || '').trim();
+    const single = (key: string) => normalizeSingleLine(createDraft[key]);
+    const multi = (key: string) => normalizeMultiLine(createDraft[key]);
     let reminderCouldNotEnable = false;
     try {
       if (createKind === 'task' && value('reminderAt') && (!notificationsEnabled || !notificationPreferences.taskReminders)) {
@@ -589,14 +829,27 @@ export default function App() {
         } else reminderCouldNotEnable = true;
       }
       if (createKind === 'transaction') {
-        const values = buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: Number(value('amount')), category: value('category'), description: value('title'), dateTime: value('dateTime'), paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' });
+        const title = single('title');
+        if (isInputBlank(title)) throw new Error('Enter a transaction description.');
+        const values = buildTransactionUpdate({
+          type: value('type') as 'income' | 'expense',
+          amount: Number(value('amount')),
+          category: single('category') || 'General',
+          description: title,
+          dateTime: value('dateTime'),
+          paymentMethod: single('paymentMethod') || 'Other',
+          notes: multi('notes') || undefined,
+          isRecurring: value('isRecurring') === 'yes',
+        });
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
         else await StorageService.transactions.add(values);
       } else if (createKind === 'habit') {
+        const habitName = single('title');
+        if (isInputBlank(habitName)) throw new Error('Enter a habit name.');
         const targetPerDay = value('targetPerDay') ? Number(value('targetPerDay')) : undefined;
         if (targetPerDay !== undefined && (!Number.isFinite(targetPerDay) || targetPerDay <= 0)) throw new Error('Habit target must be greater than zero.');
         const existingHabit = editingHabitId ? habits.find(habit => habit.id === editingHabitId) : undefined;
-        const habit: Partial<Habit> = { name: value('title'), description: value('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
+        const habit: Partial<Habit> = { name: habitName, description: multi('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
         if (editingHabitId) await StorageService.habits.update(editingHabitId, habit);
         else await StorageService.habits.add({ ...habit, name: habit.name!, frequency: habit.frequency!, color: habit.color! });
       } else if (createKind === 'budget') {
@@ -604,30 +857,36 @@ export default function App() {
         if (!Number.isFinite(monthlyAmount) || monthlyAmount <= 0) throw new Error('Enter a budget greater than zero.');
         await StorageService.budgets.upsert({ monthlyAmount, monthYear: value('month') });
       } else if (createKind === 'savings') {
+        const goalTitle = single('title');
+        if (isInputBlank(goalTitle)) throw new Error('Enter a savings goal title.');
         const targetAmount = Number(value('target'));
         const currentAmount = Number(value('current'));
         if (!Number.isFinite(targetAmount) || targetAmount <= 0 || !Number.isFinite(currentAmount) || currentAmount < 0) {
           throw new Error('Enter a positive savings target and a valid current amount.');
         }
-        await StorageService.savings.addGoal({ title: value('title'), targetAmount, currentAmount, targetDate: value('date'), category: value('category') || undefined });
+        await StorageService.savings.addGoal({ title: goalTitle, targetAmount, currentAmount, targetDate: value('date'), category: single('category') || undefined });
       } else if (createKind === 'contribution') {
         const amount = Number(value('amount'));
         if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a contribution greater than zero.');
-        await StorageService.savings.addContribution({ goalId: value('goalId'), amount, date: value('date'), notes: value('notes') || undefined });
+        await StorageService.savings.addContribution({ goalId: value('goalId'), amount, date: value('date'), notes: multi('notes') || undefined });
       } else if (createKind === 'milestone') {
-        await StorageService.goals.addMilestone({ goalId: value('goalId'), title: value('title'), targetDate: value('date') || undefined, completed: false });
+        const mTitle = single('title');
+        if (isInputBlank(mTitle)) throw new Error('Enter a milestone title.');
+        await StorageService.goals.addMilestone({ goalId: value('goalId'), title: mTitle, targetDate: value('date') || undefined, completed: false });
       } else if (createKind === 'goal-progress') {
         const currentValue = Number(value('current'));
         const goal = goals.find(item => item.id === value('goalId'));
         if (!goal || !Number.isFinite(currentValue) || currentValue < 0) throw new Error('Choose a goal and enter valid progress.');
         await StorageService.goals.update(goal.id, { currentValue });
       } else if (createKind === 'goal') {
+        const gTitle = single('title');
+        if (isInputBlank(gTitle)) throw new Error('Enter a goal title.');
         let targetValue = Number(value('target'));
         let currentValue = Number(value('current'));
         if (!Number.isFinite(targetValue) || targetValue <= 0 || !Number.isFinite(currentValue) || currentValue < 0) {
           throw new Error('Enter a positive target and a valid current progress value.');
         }
-        let goalUnit = value('unit');
+        let goalUnit = single('unit');
         if (canonicalUnit(goalUnit) !== goalUnit) {
           const canonical = canonicalUnit(goalUnit);
           targetValue = convertMeasurement(targetValue, goalUnit, canonical);
@@ -635,7 +894,7 @@ export default function App() {
           goalUnit = canonical;
         }
         const goalFields = {
-          title: value('title'), description: value('description') || undefined,
+          title: gTitle, description: multi('description') || undefined,
           category: value('category') as Goal['category'], targetValue, currentValue,
           unit: goalUnit || undefined, startDate: value('startDate') || value('date'), targetDate: value('date'),
           priority: value('priority') as Goal['priority'], status: (value('status') || 'In Progress') as Goal['status'],
@@ -643,11 +902,13 @@ export default function App() {
         if (editingGoalId) await StorageService.goals.update(editingGoalId, goalFields);
         else await StorageService.goals.add(goalFields);
       } else {
+        const taskTitle = single('title');
+        if (isInputBlank(taskTitle)) throw new Error('Enter a task title.');
         const reminderAt = value('reminderAt') ? new Date(value('reminderAt')).toISOString() : undefined;
         const taskUpdates: Partial<Task> = {
-          title: value('title'), description: value('description') || undefined, notes: value('description') || undefined,
+          title: taskTitle, description: multi('description') || undefined, notes: multi('description') || undefined,
           dueDate: value('date'), dueTime: value('time') || undefined, reminderAt,
-          priority: value('priority') as Task['priority'], category: value('category') || undefined,
+          priority: value('priority') as Task['priority'], category: single('category') || undefined,
           recurring: value('recurring') as Task['recurring'],
         };
         if (editingTaskId) await StorageService.tasks.update(editingTaskId, taskUpdates);
@@ -658,6 +919,7 @@ export default function App() {
       const schedulePreferences = { ...notificationPreferences, taskReminders: reminderOptedIn || notificationPreferences.taskReminders };
       await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(schedulePreferences, notificationsEnabled || reminderOptedIn));
       setCreateKind(null);
+      initialDraftRef.current = null;
       const wasEditingTask = editingTaskId;
       const wasEditingHabit = editingHabitId;
       const wasEditingTransaction = editingTransactionId;
@@ -1080,13 +1342,104 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-semibold">Month-over-month</h4><span className="text-[10px] text-slate-400">vs {previousMonthKey(financeMonth)}</span></div>
-                  {[{ label: 'Income', current: financeMetrics.totalIncome, previous: financeMetrics.previousMonthIncome, color: 'bg-emerald-500' }, { label: 'Expenses', current: financeMetrics.totalExpenses, previous: financeMetrics.previousMonthExpenses, color: 'bg-rose-500' }].map(row => {
-                    const max = Math.max(row.current, row.previous, 1);
-                    return <div key={row.label} className="mb-3 last:mb-0"><div className="mb-1 flex justify-between text-[10px]"><span>{row.label}</span><span>{formatMoney(row.current)} <span className="text-slate-500">· {formatMoney(row.previous)}</span></span></div><div className="flex h-2 gap-1"><div className={`h-full rounded ${row.color}`} style={{ width: `${row.current / max * 100}%` }} /><div className="h-full rounded bg-slate-600" style={{ width: `${row.previous / max * 100}%` }} /></div></div>;
-                  })}
-                  <p className="mt-2 text-[10px] text-slate-500">Current month · previous month</p>
+                {/* Month-over-month Modernized FIN-01 */}
+                <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold">Month-over-month Trend</h4>
+                      <p className="text-xs text-slate-400">Comparing with {previousMonthKey(financeMonth)}</p>
+                    </div>
+                    {financeAnalytics.monthOverMonth.hasPriorRecords ? (
+                      <span className="rounded-full bg-slate-800 px-2.5 py-1 text-[10px] font-medium text-slate-300">
+                        Historical Data Available
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-[10px] font-medium text-amber-300">
+                        No Prior Month Baseline
+                      </span>
+                    )}
+                  </div>
+
+                  {!financeAnalytics.monthOverMonth.hasPriorRecords ? (
+                    <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-3.5 text-xs text-slate-400">
+                      <p className="font-medium text-slate-300">No prior month records to compare</p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Add transactions across multiple months to unlock percentage differences, savings rate movement, and visual trend comparisons.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Income Comparison */}
+                      <div className="rounded-xl bg-slate-800/60 p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-slate-300">Income</span>
+                          <div className="flex items-center gap-1.5">
+                            {financeAnalytics.monthOverMonth.incomeDelta > 0 ? (
+                              <span className="flex items-center gap-0.5 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-300">
+                                <TrendingUp size={12} />+{financeAnalytics.monthOverMonth.incomeChangePct?.toFixed(1)}%
+                              </span>
+                            ) : financeAnalytics.monthOverMonth.incomeDelta < 0 ? (
+                              <span className="flex items-center gap-0.5 rounded bg-rose-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-rose-300">
+                                <TrendingDown size={12} />{financeAnalytics.monthOverMonth.incomeChangePct?.toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[11px] font-medium text-slate-300">0.0%</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-2 flex items-baseline justify-between">
+                          <span className="text-base font-bold text-emerald-400">{formatMoney(financeAnalytics.monthOverMonth.currentIncome)}</span>
+                          <span className="text-xs text-slate-400">Prior: {formatMoney(financeAnalytics.monthOverMonth.previousIncome)}</span>
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {financeAnalytics.monthOverMonth.incomeDelta >= 0 ? '+' : ''}{formatMoney(financeAnalytics.monthOverMonth.incomeDelta)} difference
+                        </p>
+                      </div>
+
+                      {/* Expenses Comparison */}
+                      <div className="rounded-xl bg-slate-800/60 p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-slate-300">Expenses</span>
+                          <div className="flex items-center gap-1.5">
+                            {financeAnalytics.monthOverMonth.expenseDelta < 0 ? (
+                              <span className="flex items-center gap-0.5 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-300">
+                                <TrendingDown size={12} />{financeAnalytics.monthOverMonth.expenseChangePct?.toFixed(1)}%
+                              </span>
+                            ) : financeAnalytics.monthOverMonth.expenseDelta > 0 ? (
+                              <span className="flex items-center gap-0.5 rounded bg-rose-500/20 px-1.5 py-0.5 text-[11px] font-semibold text-rose-300">
+                                <TrendingUp size={12} />+{financeAnalytics.monthOverMonth.expenseChangePct?.toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="rounded bg-slate-700 px-1.5 py-0.5 text-[11px] font-medium text-slate-300">0.0%</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-2 flex items-baseline justify-between">
+                          <span className="text-base font-bold text-rose-400">{formatMoney(financeAnalytics.monthOverMonth.currentExpenses)}</span>
+                          <span className="text-xs text-slate-400">Prior: {formatMoney(financeAnalytics.monthOverMonth.previousExpenses)}</span>
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-500">
+                          {financeAnalytics.monthOverMonth.expenseDelta >= 0 ? '+' : ''}{formatMoney(financeAnalytics.monthOverMonth.expenseDelta)} difference ({financeAnalytics.monthOverMonth.expenseDelta <= 0 ? 'reduced spending' : 'increased spending'})
+                        </p>
+                      </div>
+
+                      {/* Relative Magnitude Bar */}
+                      <div className="pt-1">
+                        <div className="flex justify-between text-[10px] text-slate-400 mb-1">
+                          <span>Current vs Prior Expenses</span>
+                          <span>{financeAnalytics.monthOverMonth.previousExpenses > 0 ? `${(financeAnalytics.monthOverMonth.currentExpenses / financeAnalytics.monthOverMonth.previousExpenses * 100).toFixed(0)}% of prior` : '—'}</span>
+                        </div>
+                        <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
+                          <div
+                            className={`h-full rounded-full ${financeAnalytics.monthOverMonth.expenseDelta <= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                            style={{
+                              width: `${Math.min(100, Math.max(5, (financeAnalytics.monthOverMonth.currentExpenses / Math.max(1, financeAnalytics.monthOverMonth.currentExpenses, financeAnalytics.monthOverMonth.previousExpenses)) * 100))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Quick Add Buttons */}
@@ -1110,6 +1463,10 @@ export default function App() {
                     placeholder="Search description, category..."
                     value={financeSearch}
                     onChange={(e) => setFinanceSearch(e.target.value)}
+                    inputMode="search"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     className="flex-1 p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white"
                   />
                   <button onClick={() => openCreateForm('transaction')} className="shrink-0 rounded-xl bg-indigo-600 px-3 text-xs font-semibold text-white">+ Add</button>
@@ -1183,7 +1540,21 @@ export default function App() {
             </div>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
-              <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-slate-400">Based on transactions saved on this device</p></div><label className="text-[10px] text-slate-400">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="mt-1 block rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs" /></label></div>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-semibold">Financial insights</h3>
+                  <p className="text-xs text-slate-400">Based on transactions saved on this device</p>
+                </div>
+                <div>
+                  <input
+                    type="month"
+                    aria-label="Analytics month"
+                    value={financeMonth}
+                    onChange={event => setFinanceMonth(event.target.value)}
+                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-white"
+                  />
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2.5">
                 {[['Income', financeAnalytics.totalIncome, 'text-emerald-400'], ['Expenses', financeAnalytics.totalExpenses, 'text-rose-400'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-rose-400' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'text-indigo-400']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><p className="text-xs text-slate-400">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
               </div>
@@ -1195,8 +1566,172 @@ export default function App() {
               <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="mb-2"><h4 className="text-sm font-semibold">Expense categories</h4><p className="text-xs text-slate-400">{financeMonth} · {formatMoney(financeAnalytics.totalExpenses)} total</p></div>
                 {financeAnalytics.categories.length === 0 ? <div className="py-7 text-center text-sm text-slate-400">No expense records for this month.</div> : <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><div className="h-52"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={financeAnalytics.categories} dataKey="amount" nameKey="name" innerRadius={50} outerRadius={78} paddingAngle={2}><Cell fill="#4f46e5" />{financeAnalytics.categories.slice(1).map((entry, index) => <Cell key={entry.name} fill={['#0f766e', '#d97706', '#0284c7', '#7c3aed', '#be123c', '#475569'][index % 6]} />)}</Pie><Tooltip contentStyle={{ background: theme === 'dark' ? '#111827' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#cbd5e1', borderRadius: 12 }} formatter={(value: number) => formatMoney(value)} /></PieChart></ResponsiveContainer></div><div className="space-y-2">{financeAnalytics.categories.map((entry, index) => <div key={entry.name} className="flex items-center justify-between gap-3 text-xs"><span className="flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: ['#4f46e5', '#0f766e', '#d97706', '#0284c7', '#7c3aed', '#be123c', '#475569'][index % 7] }} /><span className="truncate">{entry.name}</span></span><span className="shrink-0 text-right text-secondary">{formatMoney(entry.amount)} · {entry.percentage.toFixed(1)}%</span></div>)}</div></div>}
               </section>
-              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-slate-400">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${pct >= 100 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-rose-400' : ''}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
-              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
+              {/* Redesigned Budget Status FIN-03 */}
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold">Budget status</h4>
+                    <p className="text-xs text-slate-400">Monthly limits and spending status</p>
+                  </div>
+                  {financeAnalytics.budgetSummary.totalAllocated > 0 && (
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+                        financeAnalytics.budgetSummary.status === 'exceeded'
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                          : financeAnalytics.budgetSummary.status === 'approaching_limit'
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      }`}
+                    >
+                      {financeAnalytics.budgetSummary.status === 'exceeded'
+                        ? 'Over Budget'
+                        : financeAnalytics.budgetSummary.status === 'approaching_limit'
+                          ? 'Approaching Limit'
+                          : 'Within Limits'}
+                    </span>
+                  )}
+                </div>
+
+                {financeAnalytics.budgetSummary.totalAllocated === 0 ? (
+                  <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-4 text-center text-xs text-slate-400">
+                    <p className="font-medium text-slate-300">No budgets set for this month</p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Set a monthly spending limit in the Budgets tab to track utilization and get limit alerts.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="rounded-xl bg-slate-800/60 p-3.5 space-y-2">
+                      <div className="flex justify-between items-baseline text-xs">
+                        <span className="font-medium text-slate-300">Overall Utilization</span>
+                        <span className="font-bold text-sm">
+                          {formatMoney(financeAnalytics.budgetSummary.totalSpent)} / {formatMoney(financeAnalytics.budgetSummary.totalAllocated)}
+                        </span>
+                      </div>
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-700/60">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            financeAnalytics.budgetSummary.utilizationPct >= 100
+                              ? 'bg-rose-500'
+                              : financeAnalytics.budgetSummary.utilizationPct >= 80
+                                ? 'bg-amber-500'
+                                : 'bg-indigo-500'
+                          }`}
+                          style={{ width: `${Math.min(100, financeAnalytics.budgetSummary.utilizationPct)}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[11px] text-slate-400">
+                        <span>{financeAnalytics.budgetSummary.utilizationPct.toFixed(1)}% used</span>
+                        <span className={financeAnalytics.budgetSummary.remaining < 0 ? 'text-rose-400 font-semibold' : 'text-slate-300'}>
+                          {financeAnalytics.budgetSummary.remaining < 0
+                            ? `${formatMoney(Math.abs(financeAnalytics.budgetSummary.remaining))} over budget`
+                            : `${formatMoney(financeAnalytics.budgetSummary.remaining)} remaining`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      {financeAnalytics.budgetSummary.items.map(row => (
+                        <div key={row.category} className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-semibold text-slate-200">{row.category}</span>
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                row.status === 'exceeded'
+                                  ? 'bg-rose-500/20 text-rose-300'
+                                  : row.status === 'approaching'
+                                    ? 'bg-amber-500/20 text-amber-300'
+                                    : 'bg-emerald-500/20 text-emerald-300'
+                              }`}
+                            >
+                              {row.status === 'exceeded' ? 'Exceeded' : row.status === 'approaching' ? 'Warning' : 'On Track'}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex justify-between text-xs text-slate-400">
+                            <span>{formatMoney(row.spent)} spent</span>
+                            <span>Limit: {formatMoney(row.allocated)}</span>
+                          </div>
+                          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                            <div
+                              className={`h-full rounded-full ${
+                                row.status === 'exceeded' ? 'bg-rose-500' : row.status === 'approaching' ? 'bg-amber-500' : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.min(100, row.utilizationPct)}%` }}
+                            />
+                          </div>
+                          <p className="mt-1.5 text-[10px] text-slate-500">
+                            {row.remaining < 0
+                              ? `Exceeded by ${formatMoney(Math.abs(row.remaining))}`
+                              : `${formatMoney(row.remaining)} remaining (${row.utilizationPct.toFixed(0)}% used)`}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              {/* Data-backed What Stands Out FIN-05 */}
+              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold">What stands out</h4>
+                    <p className="text-xs text-slate-400">Data-driven observations from your stored records</p>
+                  </div>
+                </div>
+
+                {financeAnalytics.insights.length === 0 ? (
+                  <div className="rounded-xl border border-slate-800/80 bg-slate-950/40 p-4 text-center text-xs text-slate-400">
+                    <p className="font-medium text-slate-300">No significant patterns detected yet</p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      As you record more transactions and set monthly budgets, personalized spending trends and budget observations will appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {financeAnalytics.insights.map(item => {
+                      const Icon =
+                        item.severity === 'alert'
+                          ? AlertTriangle
+                          : item.severity === 'warning'
+                            ? AlertCircle
+                            : item.severity === 'positive'
+                              ? CheckCircle2
+                              : CircleDollarSign;
+                      const borderClass =
+                        item.severity === 'alert'
+                          ? 'border-rose-500/40 bg-rose-950/20'
+                          : item.severity === 'warning'
+                            ? 'border-amber-500/40 bg-amber-950/20'
+                            : item.severity === 'positive'
+                              ? 'border-emerald-500/40 bg-emerald-950/20'
+                              : 'border-indigo-500/40 bg-indigo-950/20';
+                      const textClass =
+                        item.severity === 'alert'
+                          ? 'text-rose-300'
+                          : item.severity === 'warning'
+                            ? 'text-amber-300'
+                            : item.severity === 'positive'
+                              ? 'text-emerald-300'
+                              : 'text-indigo-300';
+
+                      return (
+                        <div key={item.id} className={`rounded-xl border p-3 ${borderClass}`}>
+                          <div className="flex items-start gap-2.5">
+                            <div className={`mt-0.5 shrink-0 ${textClass}`}>
+                              <Icon size={16} />
+                            </div>
+                            <div className="flex-1">
+                              <h5 className={`text-xs font-semibold ${textClass}`}>{item.title}</h5>
+                              <p className="mt-0.5 text-xs text-slate-300 leading-relaxed">{item.description}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
             </div>}
           </div>
         )}
@@ -1287,7 +1822,17 @@ export default function App() {
             </section>
             <section className="space-y-3" aria-label="Selected day agenda">
               <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-slate-500">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="min-h-10 rounded-lg border border-slate-700 px-3 text-xs font-semibold text-indigo-400">Quick add</button></div>
-              <input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm" />
+              <input
+                aria-label="Search planner tasks"
+                value={plannerSearch}
+                onChange={e => setPlannerSearch(e.target.value)}
+                placeholder="Search tasks"
+                inputMode="search"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm"
+              />
               <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
               {plannerDetailTask && <article className="rounded-2xl border border-indigo-500/30 bg-slate-900 p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-10 rounded-lg px-3 text-xs text-slate-400">Back to agenda</button></div><p className="mt-2 text-sm text-slate-400">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-rose-300' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-emerald-300' : 'text-indigo-300'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-slate-700 text-sm font-semibold text-indigo-400">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
             {visiblePlannerTasks.length === 0 ? (
@@ -1333,14 +1878,14 @@ export default function App() {
 
             <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
               <div className="flex items-center gap-3"><div className="profile-avatar flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-xl font-bold text-white">{profileInitial(displayName) || <UserRound size={21} />}</div><div><p className="text-xs text-slate-400">Your LifeOS profile</p><h3 className="mt-0.5 text-lg font-semibold">{displayName.trim() || 'Personal details'}</h3></div></div>
-              <label className="block text-xs text-slate-300">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="block text-xs text-slate-300">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" autoCapitalize="words" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <p className="text-xs text-slate-500">Your name appears in the greeting and Profile avatar.</p>
             </section>
 
             <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
               <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-slate-400">Device-level authentication for the app.</p></div>
               <p className="text-xs text-slate-400">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
-              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-800/60 p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-slate-400">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-10 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-800/60 p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-slate-400">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); biometricEnabledRef.current = false; setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-10 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className={`flex items-center gap-1 text-[11px] ${biometricVerified ? 'text-emerald-300' : 'text-amber-300'}`}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
             </section>
 
@@ -1350,30 +1895,58 @@ export default function App() {
             </section>
 
             <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-              <div><h3 className="text-base font-semibold">Preferences</h3><p className="mt-1 text-xs text-slate-400">Formats affect display and new input only. Existing amounts are never converted.</p></div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs text-slate-300">Currency<select value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value as UserPreferences['currency'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="INR">INR · ₹</option><option value="USD">USD · $</option><option value="EUR">EUR · €</option><option value="GBP">GBP · £</option></select></label>
-                <label className="text-xs text-slate-300">Distance<select value={userPrefs.distance} onChange={event => void saveUserPreference('distance', event.target.value as UserPreferences['distance'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="km">Kilometres · km</option><option value="mi">Miles · mi</option></select></label>
-                <label className="text-xs text-slate-300">Speed<select value={userPrefs.speed} onChange={event => void saveUserPreference('speed', event.target.value as UserPreferences['speed'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="km/h">Kilometres/hour</option><option value="m/s">Metres/second</option><option value="mph">Miles/hour</option></select></label>
-                <label className="text-xs text-slate-300">Volume<select value={userPrefs.volume} onChange={event => void saveUserPreference('volume', event.target.value as UserPreferences['volume'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="L">Litres · L</option><option value="mL">Millilitres · mL</option><option value="US gal">US gallons</option><option value="Imp gal">Imperial gallons</option></select></label>
-                <label className="text-xs text-slate-300">Date format<select value={userPrefs.dateFormat} onChange={event => void saveUserPreference('dateFormat', event.target.value as UserPreferences['dateFormat'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="DMY">DD/MM/YYYY</option><option value="MDY">MM/DD/YYYY</option><option value="YMD">YYYY-MM-DD</option></select></label>
-                <label className="text-xs text-slate-300">Week starts<select value={userPrefs.firstDayOfWeek} onChange={event => void saveUserPreference('firstDayOfWeek', event.target.value as UserPreferences['firstDayOfWeek'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label>
-                <label className="text-xs text-slate-300">Time format<select value={userPrefs.timeFormat} onChange={event => void saveUserPreference('timeFormat', event.target.value as UserPreferences['timeFormat'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="12h">12-hour</option><option value="24h">24-hour</option></select></label>
-                <label className="text-xs text-slate-300">Number locale<select value={userPrefs.locale} onChange={event => void saveUserPreference('locale', event.target.value as UserPreferences['locale'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="system">Follow device</option><option value="en-IN">English · India</option><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="de-DE">German · Germany</option></select></label>
-              </div>
-              <p className="text-[11px] text-slate-500">Financial values use one stored currency and are only reformatted here; no exchange-rate conversion is applied. Distance and volume use canonical storage units for new goal measurements. Speed is saved as a preference for features that use it.</p>
+              <button
+                type="button"
+                onClick={() => setPreferencesExpanded(!preferencesExpanded)}
+                className="flex w-full items-center justify-between text-left focus:outline-none"
+                aria-expanded={preferencesExpanded}
+                aria-label="Toggle Preferences section"
+              >
+                <div>
+                  <h3 className="text-base font-semibold">Preferences</h3>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {preferencesExpanded ? 'Formats affect display and new input only. Existing amounts are never converted.' : 'Customize currency, distance, date format, and number locales.'}
+                  </p>
+                </div>
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800 text-slate-400">
+                  {preferencesExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </div>
+              </button>
+
+              {preferencesExpanded && (
+                <div className="space-y-4 border-t border-slate-800/80 pt-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="text-xs text-slate-300">Currency<select value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value as UserPreferences['currency'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="INR">INR · ₹</option><option value="USD">USD · $</option><option value="EUR">EUR · €</option><option value="GBP">GBP · £</option></select></label>
+                    <label className="text-xs text-slate-300">Distance<select value={userPrefs.distance} onChange={event => void saveUserPreference('distance', event.target.value as UserPreferences['distance'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="km">Kilometres · km</option><option value="mi">Miles · mi</option></select></label>
+                    <label className="text-xs text-slate-300">Speed<select value={userPrefs.speed} onChange={event => void saveUserPreference('speed', event.target.value as UserPreferences['speed'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="km/h">Kilometres/hour</option><option value="m/s">Metres/second</option><option value="mph">Miles/hour</option></select></label>
+                    <label className="text-xs text-slate-300">Volume<select value={userPrefs.volume} onChange={event => void saveUserPreference('volume', event.target.value as UserPreferences['volume'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="L">Litres · L</option><option value="mL">Millilitres · mL</option><option value="US gal">US gallons</option><option value="Imp gal">Imperial gallons</option></select></label>
+                    <label className="text-xs text-slate-300">Date format<select value={userPrefs.dateFormat} onChange={event => void saveUserPreference('dateFormat', event.target.value as UserPreferences['dateFormat'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="DMY">DD/MM/YYYY</option><option value="MDY">MM/DD/YYYY</option><option value="YMD">YYYY-MM-DD</option></select></label>
+                    <label className="text-xs text-slate-300">Week starts<select value={userPrefs.firstDayOfWeek} onChange={event => void saveUserPreference('firstDayOfWeek', event.target.value as UserPreferences['firstDayOfWeek'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label>
+                    <label className="text-xs text-slate-300">Time format<select value={userPrefs.timeFormat} onChange={event => void saveUserPreference('timeFormat', event.target.value as UserPreferences['timeFormat'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="12h">12-hour</option><option value="24h">24-hour</option></select></label>
+                    <label className="text-xs text-slate-300">Number locale<select value={userPrefs.locale} onChange={event => void saveUserPreference('locale', event.target.value as UserPreferences['locale'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="system">Follow device</option><option value="en-IN">English · India</option><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="de-DE">German · Germany</option></select></label>
+                  </div>
+                  <p className="text-[11px] text-slate-500">Financial values use one stored currency and are only reformatted here; no exchange-rate conversion is applied. Distance and volume use canonical storage units for new goal measurements. Speed is saved as a preference for features that use it.</p>
+                </div>
+              )}
             </section>
 
             <button onClick={() => setProfileNotificationsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-slate-400">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-slate-500" /></button>
 
             {profileNotificationsOpen && <div className={`fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium text-indigo-400"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
             <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-              <p className="text-xs text-slate-400">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
+              <p className="text-xs text-slate-400">Android can delay inexact reminders to save battery. LifeOS configures exact alarm capabilities and idle wake permissions for punctual reminders.</p>
               <div className="flex min-h-11 items-center justify-between rounded-xl bg-slate-800/60 px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
               <p className="text-[11px] text-slate-400">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
               {!notificationDiagnostics.supported && <p className="text-[11px] text-amber-300">The native notification plugin is not available in this runtime.</p>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-slate-800 pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
-              <div className="space-y-1 rounded-xl border border-slate-800 p-3 text-[10px] text-slate-400"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-rose-300' : 'text-emerald-300'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
+              <div className="space-y-1 rounded-xl border border-slate-800 p-3 text-[10px] text-slate-400">
+                <p>Plugin: <span className={notificationDiagnostics.supported ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p>
+                <p>Channel: {notificationDiagnostics.channel}</p>
+                <p>Pending notifications: {notificationDiagnostics.pendingCount}</p>
+                <p>Exact alarm support: <span className="text-slate-300">{notificationDiagnostics.exactAlarmStatus}</span></p>
+                {notificationDiagnostics.lastSyncTime && <p>Last sync: {new Date(notificationDiagnostics.lastSyncTime).toLocaleTimeString()}</p>}
+                <p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-rose-300' : 'text-emerald-300'}>{notificationDiagnostics.lastError || 'None'}</span></p>
+              </div>
               <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Test notification scheduled for ${at.toLocaleTimeString()}`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="min-h-11 rounded-xl bg-indigo-600 px-3 text-xs font-semibold text-white">Test notification · 10 sec</button><button onClick={() => void openNotificationSettings()} className="min-h-11 rounded-xl bg-slate-800 px-3 text-xs font-semibold">Android settings</button></div>
               <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-10 w-full rounded-xl border border-slate-700 text-xs font-medium text-slate-300">Refresh diagnostics</button>
             </section></div></div>}
@@ -1462,31 +2035,31 @@ export default function App() {
             </div>
             {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-slate-300">
               {createKind === 'transaction' ? 'Description' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
-              <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm text-white" />
+              <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} autoCapitalize="words" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm text-white" />
             </label>}
             {createKind === 'transaction' && <>
               <label className="mb-3 block text-xs text-slate-300">Type<select value={createDraft.type} onChange={e => setCreateDraft({ ...createDraft, type: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
               <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Category<input required maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Category<input required maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} autoCapitalize="words" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" autoCapitalize="words" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} autoCapitalize="sentences" autoCorrect="on" spellCheck={true} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
               <label className="mb-4 block text-xs text-slate-300">Transaction date and time<input required type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'habit' && <>
-              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} autoCapitalize="sentences" autoCorrect="on" spellCheck={true} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Frequency<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
-              <label className="mb-3 block text-xs text-slate-300">Daily target (optional)<input type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Daily target (optional)<input type="number" min="0.01" step="any" inputMode="decimal" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-slate-300">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
             </>}
             {createKind === 'goal' && <>
               <label className="mb-3 block text-xs text-slate-300">Category<select value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select></label>
               <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-slate-300">Target<input required type="number" min="0.01" step="any" inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label><label className="text-xs text-slate-300">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></div>
-              <label className="mb-3 block text-xs text-slate-300">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." autoCapitalize="none" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Priority<select value={createDraft.priority || 'Medium'} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
               {editingGoalId && <label className="mb-3 block text-xs text-slate-300">Status<select value={createDraft.status || 'In Progress'} onChange={e => setCreateDraft({ ...createDraft, status: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['In Progress', 'Paused', 'Completed'].map(status => <option key={status}>{status}</option>)}</select></label>}
-              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} autoCapitalize="sentences" autoCorrect="on" spellCheck={true} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'budget' && <>
               <label className="mb-3 block text-xs text-slate-300">Monthly limit<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
@@ -1494,19 +2067,19 @@ export default function App() {
             </>}
             {createKind === 'savings' && <>
               <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-slate-300">Target amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label><label className="text-xs text-slate-300">Already saved<input type="number" min="0" step="0.01" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></div>
-              <label className="mb-3 block text-xs text-slate-300">Category (optional)<input maxLength={40} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Category (optional)<input maxLength={40} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} autoCapitalize="words" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'contribution' && <>
               <label className="mb-3 block text-xs text-slate-300">Savings goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{savingsGoals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>
               <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} autoCapitalize="sentences" autoCorrect="on" spellCheck={true} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-slate-300">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-slate-300">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-slate-300">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <>
-              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} autoCapitalize="sentences" autoCorrect="on" spellCheck={true} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              <label className="mb-3 block text-xs text-slate-300">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} autoCapitalize="words" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-slate-300">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-2 py-3 text-sm" /></label><label className="text-xs text-slate-300">Due time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-2 py-3 text-sm" /></label></div>
               <label className="mb-3 block text-xs text-slate-300">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-slate-500">Uses local time; delivery may be approximate on Android.</span></label>
               <label className="mb-3 block text-xs text-slate-300">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>

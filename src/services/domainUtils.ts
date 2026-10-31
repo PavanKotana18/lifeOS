@@ -59,12 +59,29 @@ export function parseLocalDateTime(date: string, time = '00:00', endOfDay = fals
   const result = new Date(year, month - 1, day, hour, minute, endOfDay ? 59 : 0, endOfDay ? 999 : 0);
   return result.getFullYear() === year && result.getMonth() === month - 1 && result.getDate() === day ? result : null;
 }
-export const getTaskDeadline = (task: Pick<Task, 'dueDate' | 'dueTime'>) => task.dueDate ? parseLocalDateTime(task.dueDate, task.dueTime || '00:00', !task.dueTime) : null;
+
+export function getTaskDeadline(task: Pick<Task, 'dueDate' | 'dueTime'>): Date | null {
+  if (!task || !task.dueDate) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(task.dueDate);
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  if (task.dueTime) {
+    const timeParts = task.dueTime.split(':').map(Number);
+    if (timeParts.length < 2 || Number.isNaN(timeParts[0]) || Number.isNaN(timeParts[1])) return null;
+    const [hour, minute] = timeParts;
+    const result = new Date(year, month - 1, day, hour, minute, 0, 0);
+    return result.getFullYear() === year && result.getMonth() === month - 1 && result.getDate() === day ? result : null;
+  }
+  const result = new Date(year, month - 1, day, 23, 59, 59, 999);
+  return result.getFullYear() === year && result.getMonth() === month - 1 && result.getDate() === day ? result : null;
+}
+
 export function getTaskStatus(task: Pick<Task, 'dueDate' | 'dueTime' | 'completed'>, now = new Date()): 'Pending' | 'Overdue' | 'Completed' {
   if (task.completed) return 'Completed';
   const deadline = getTaskDeadline(task);
-  return deadline && now > deadline ? 'Overdue' : 'Pending';
+  return deadline && now.getTime() > deadline.getTime() ? 'Overdue' : 'Pending';
 }
+
 export function sortTasksByDeadline<T extends Pick<Task, 'dueDate' | 'dueTime' | 'completed'>>(tasks: T[], now = new Date()): T[] {
   return [...tasks].sort((a, b) => {
     const rank = (task: T) => getTaskStatus(task, now) === 'Overdue' ? 0 : getTaskStatus(task, now) === 'Completed' ? 2 : 1;
@@ -96,13 +113,99 @@ export function buildFinanceEntry(localDateTime: string, savedAt = new Date()) {
   if (Number.isNaN(parsed.getTime())) throw new Error('Invalid local transaction date/time');
   return { date: formatLocalDate(parsed), occurredAt: parsed.toISOString(), createdAt: savedAt.toISOString() };
 }
+
 export function buildTaskNotificationPlan(task: Task, preferences: NotificationPreferences, now = new Date()) {
   if (task.completed) return [] as { kind: keyof NotificationPreferences; at: Date }[];
   const plan: { kind: keyof NotificationPreferences; at: Date }[] = [];
   const deadline = getTaskDeadline(task);
-  const add = (kind: keyof NotificationPreferences, at: Date | null) => { if (at && !Number.isNaN(at.getTime()) && at > now) plan.push({ kind, at }); };
-  if (preferences.taskReminders && task.reminderAt) add('taskReminders', new Date(task.reminderAt));
-  if (deadline && preferences.upcomingDeadlines) add('upcomingDeadlines', task.dueTime ? new Date(deadline.getTime() - 60 * 60_000) : parseLocalDateTime(task.dueDate, '09:00'));
-  if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 60_000));
+  const add = (kind: keyof NotificationPreferences, at: Date | null) => {
+    if (at && !Number.isNaN(at.getTime()) && at.getTime() > now.getTime()) plan.push({ kind, at });
+  };
+  if (preferences.taskReminders && task.reminderAt) {
+    const reminder = new Date(task.reminderAt);
+    if (!Number.isNaN(reminder.getTime())) add('taskReminders', reminder);
+  }
+  if (deadline && preferences.upcomingDeadlines) {
+    if (task.dueTime) {
+      const oneHourBefore = new Date(deadline.getTime() - 60 * 60_000);
+      if (oneHourBefore.getTime() > now.getTime()) {
+        add('upcomingDeadlines', oneHourBefore);
+      } else if (deadline.getTime() > now.getTime()) {
+        // Task created or checked less than 1 hour before deadline
+        const leadMs = deadline.getTime() - now.getTime();
+        const alertOffsetMs = Math.min(60_000, Math.floor(leadMs / 2));
+        const soon = new Date(now.getTime() + alertOffsetMs);
+        if (soon.getTime() < deadline.getTime()) {
+          add('upcomingDeadlines', soon);
+        }
+      }
+    } else {
+      add('upcomingDeadlines', parseLocalDateTime(task.dueDate, '09:00'));
+    }
+  }
+  if (deadline && preferences.overdueAlerts) {
+    add('overdueAlerts', new Date(deadline.getTime() + 1_000));
+  }
   return plan;
+}
+
+// Input Experience & Normalization Utilities
+export function normalizeSingleLine(value: string | undefined | null): string {
+  if (!value) return '';
+  return value.trim().replace(/[ \t]+/g, ' ');
+}
+
+export function normalizeMultiLine(value: string | undefined | null): string {
+  if (!value) return '';
+  return value.split('\n').map(line => line.trim()).join('\n').trim();
+}
+
+export function isInputBlank(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'string') return value.trim().length === 0;
+  return false;
+}
+
+export function isFormDirty<T extends Record<string, any>>(
+  initial: T | null | undefined,
+  current: T | null | undefined,
+  fields?: (keyof T)[]
+): boolean {
+  if (!initial || !current) return false;
+  const targetFields = fields && fields.length > 0
+    ? fields
+    : (Array.from(new Set([...Object.keys(initial), ...Object.keys(current)])) as (keyof T)[]);
+  for (const field of targetFields) {
+    const a = initial[field];
+    const b = current[field];
+    if (typeof a === 'number' || typeof b === 'number') {
+      const numA = Number(a) || 0;
+      const numB = Number(b) || 0;
+      if (numA !== numB) return true;
+    } else if (typeof a === 'boolean' || typeof b === 'boolean') {
+      if (Boolean(a) !== Boolean(b)) return true;
+    } else {
+      const strA = normalizeSingleLine(String(a ?? ''));
+      const strB = normalizeSingleLine(String(b ?? ''));
+      if (strA !== strB) return true;
+    }
+  }
+  return false;
+}
+
+export interface SessionAuthorizationState {
+  biometricEnabled: boolean;
+  biometricAuthenticated: boolean;
+  coordinatorAuthenticated: boolean;
+  sessionGeneration: number;
+  captureGeneration: number;
+}
+
+export function isSessionAuthorized(state: SessionAuthorizationState): boolean {
+  if (!state.biometricEnabled) return true;
+  return (
+    state.biometricAuthenticated &&
+    state.coordinatorAuthenticated &&
+    state.sessionGeneration === state.captureGeneration
+  );
 }
