@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#090d16" />
     <title>LifeOS</title>
+    <script>const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches; document.documentElement.classList.toggle('dark', systemDark); document.querySelector('meta[name="theme-color"]').setAttribute('content', systemDark ? '#090d16' : '#f8fafc');</script>
   </head>
-  <body class="bg-[#090d16]">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -5,6 +5,43 @@ export const profileInitial = (name: string) => name.trim().charAt(0).toLocaleUp
 export const resolveAppearance = (preference: AppearancePreference, systemDark: boolean) => preference === 'system' ? (systemDark ? 'dark' : 'light') : preference;
 export const shouldShowOnboarding = (completed: boolean, hasLegacyData: boolean, started = false) => started ? !completed : !completed && !hasLegacyData;
 export const shouldAnimateNavigation = (prefersReducedMotion: boolean) => !prefersReducedMotion;
+export function resolveBackAction(state: { appReady: boolean; onboarding: boolean; locked: boolean; dialogOpen: boolean; exitDialogOpen: boolean; taskDetailsOpen: boolean; tab: string; childViewOpen: boolean }, hasPreviousTab: boolean) {
+  if (!state.appReady || state.onboarding || state.locked) return 'ignore';
+  if (state.dialogOpen) return 'dismiss-dialog';
+  if (state.exitDialogOpen) return 'dismiss-exit-dialog';
+  if (state.taskDetailsOpen) return 'close-task-details';
+  if (state.childViewOpen) return 'close-child-view';
+  if (hasPreviousTab) return 'previous-tab';
+  if (state.tab !== 'dashboard') return 'home';
+  return 'confirm-exit';
+}
+type ThemeMediaQuery = {
+  matches: boolean;
+  addEventListener?: (type: 'change', listener: () => void) => void;
+  removeEventListener?: (type: 'change', listener: () => void) => void;
+  addListener?: (listener: () => void) => void;
+  removeListener?: (listener: () => void) => void;
+};
+export function watchSystemTheme(media: ThemeMediaQuery, onTheme: (theme: 'dark' | 'light') => void) {
+  const update = () => onTheme(media.matches ? 'dark' : 'light');
+  update();
+  if (media.addEventListener) media.addEventListener('change', update); else media.addListener?.(update);
+  return () => { if (media.removeEventListener) media.removeEventListener('change', update); else media.removeListener?.(update); };
+}
+export const getTasksForDate = <T extends { dueDate?: string }>(tasks: T[], date: string) => tasks.filter(task => task.dueDate === date);
+export function getMonthCalendarDays(year: number, monthIndex: number, weekStartsOnMonday = true): string[] {
+  const first = new Date(year, monthIndex, 1);
+  const offset = weekStartsOnMonday ? (first.getDay() + 6) % 7 : first.getDay();
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const cellCount = Math.ceil((offset + daysInMonth) / 7) * 7;
+  const start = new Date(year, monthIndex, 1 - offset);
+  return Array.from({ length: cellCount }, (_, index) => formatLocalDate(new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)));
+}
+export const greetingForHour = (hour: number, name: string) => {
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const cleanName = name.trim();
+  return cleanName ? `${greeting}, ${cleanName}.` : `${greeting}.`;
+};
 export const normalizeNotificationPermission = (status: string, wasRequested: boolean) => status === 'granted' ? 'Granted' : status === 'denied' && wasRequested ? 'Denied · open Android settings' : status === 'denied' ? 'Denied' : status === 'prompt' || status === 'prompt-with-rationale' ? 'Not requested' : status;
 export const stableNotificationId = (key: string) => {
   let hash = 2166136261;

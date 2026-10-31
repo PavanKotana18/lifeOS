@@ -26,7 +26,12 @@ const {
   resolveAppearance,
   normalizeNotificationPermission,
   shouldAnimateNavigation,
-  stableNotificationId
+  stableNotificationId,
+  getMonthCalendarDays,
+  getTasksForDate,
+  greetingForHour,
+  watchSystemTheme,
+  resolveBackAction
 } = require('./src_core_logic.js');
 
 // Mock in-memory database abstraction layer matching Dexie API
@@ -364,12 +369,27 @@ async function runTestSuite() {
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', completed: true }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4)).length === 0, 'Completed task notifications are not scheduled');
 
   console.log('\n--- 4C. Testing onboarding, profile and notification diagnostics ---');
-  assert(shouldShowOnboarding(false, false) && !shouldShowOnboarding(false, true), 'First launch onboards while existing legacy data migrates past onboarding');
-  assert(shouldShowOnboarding(false, true, true) && !shouldShowOnboarding(true, true, true), 'Interrupted onboarding resumes, completed onboarding stays complete');
+  assert(shouldShowOnboarding(false, false) && !shouldShowOnboarding(false, true), 'A fresh empty install enters onboarding while an existing profile/data set migrates past it');
+  assert(shouldShowOnboarding(false, false, true) && !shouldShowOnboarding(true, false, true), 'An interrupted first-run flow resumes while a completed flow remains closed');
+  assert(shouldShowOnboarding(false, false, true), 'Skipping optional biometric setup does not prevent unfinished onboarding from resuming');
   assert(profileInitial(' Pavan Kotana ') === 'P' && profileInitial('') === '', 'Profile avatar uses the uppercase first letter and handles an empty name');
   assert(resolveAppearance('dark', false) === 'dark' && resolveAppearance('light', true) === 'light' && resolveAppearance('system', true) === 'dark' && resolveAppearance('system', false) === 'light', 'Dark, light and system appearance preferences resolve correctly');
+  let themeListener; let systemDark = true; const appliedThemes = [];
+  const unwatchTheme = watchSystemTheme({ get matches() { return systemDark; }, addEventListener: (_, listener) => { themeListener = listener; }, removeEventListener: () => { themeListener = undefined; } }, theme => appliedThemes.push(theme));
+  systemDark = false; themeListener(); systemDark = true; themeListener(); unwatchTheme();
+  assert(appliedThemes.join(',') === 'dark,light,dark' && !themeListener, 'System appearance updates while running and removes its listener on cleanup');
+  const febLeapDays = getMonthCalendarDays(2024, 1);
+  const janDays = getMonthCalendarDays(2021, 0);
+  assert(febLeapDays.filter(day => day.startsWith('2024-02-')).length === 29 && febLeapDays.includes('2024-03-03'), 'Monthly planner grid covers leap days and adjacent month boundaries');
+  assert(janDays[0] === '2020-12-28' && janDays.includes('2021-01-31'), 'Calendar grid starts on Monday and includes month edges');
+  assert(getTasksForDate([{ id: 1, dueDate: '2026-10-31' }, { id: 2, dueDate: '2026-11-01' }], '2026-10-31').length === 1, 'Calendar selection filters the agenda to its local date');
+  assert(greetingForHour(8, 'Pavan') === 'Good morning, Pavan.' && greetingForHour(14, '') === 'Good afternoon.', 'Personal greeting uses local hour and handles a missing display name');
   assert(normalizeNotificationPermission('granted', true) === 'Granted' && normalizeNotificationPermission('denied', true).includes('settings') && normalizeNotificationPermission('prompt', false) === 'Not requested', 'Notification permission states distinguish granted, denied and not-yet-requested');
   assert(shouldAnimateNavigation(false) && !shouldAnimateNavigation(true), 'Navigation transition respects reduced-motion preference');
+  const backRoute = { appReady: true, onboarding: false, locked: false, dialogOpen: false, exitDialogOpen: false, taskDetailsOpen: false, childViewOpen: false, tab: 'finance' };
+  assert(resolveBackAction({ ...backRoute, dialogOpen: true }, true) === 'dismiss-dialog' && resolveBackAction({ ...backRoute, tab: 'planner', taskDetailsOpen: true }, true) === 'close-task-details', 'Back closes dialogs and nested task details before changing pages');
+  assert(resolveBackAction({ ...backRoute, tab: 'settings', childViewOpen: true }, true) === 'close-child-view' && resolveBackAction({ ...backRoute, tab: 'settings' }, true) === 'previous-tab', 'Back closes notification preferences to Profile, then returns to the previous tab');
+  assert(resolveBackAction(backRoute, true) === 'previous-tab' && resolveBackAction({ ...backRoute, tab: 'dashboard' }, false) === 'confirm-exit' && resolveBackAction({ ...backRoute, onboarding: true }, true) === 'ignore', 'Back follows prior tabs and confirms exit only at the application root');
   assert(stableNotificationId('task:abc:taskReminders') === stableNotificationId('task:abc:taskReminders') && stableNotificationId('task:abc:taskReminders') !== stableNotificationId('task:def:taskReminders'), 'Notification IDs remain stable per task and distinct across tasks');
   const reminderPrefs = { taskReminders: true, upcomingDeadlines: false, overdueAlerts: false };
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 1, 'An explicitly selected future task reminder is planned when its category is enabled');

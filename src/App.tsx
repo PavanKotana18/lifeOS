@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
-import { Activity, CalendarDays, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
+import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { StorageService, db } from './db';
 import { BiometricService } from './services/biometricService';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getTaskStatus, profileInitial, resolveAppearance, shouldShowOnboarding, sortTasksByDeadline } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
+
+type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
+const systemDarkPreference = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
+const applyDomTheme = (theme: 'dark' | 'light') => {
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  document.documentElement.style.colorScheme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#090d16' : '#f8fafc');
+};
 
 const notificationLabels: Record<keyof NotificationPreferences, string> = {
   taskReminders: 'Task reminders',
@@ -30,10 +38,17 @@ import {
 
 export default function App() {
   // Navigation & Theme State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
+  const activeTabRef = useRef<MainTab>('dashboard');
+  const navigationHistory = useRef<MainTab[]>([]);
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+  const [plannerSelectedDate, setPlannerSelectedDate] = useState(() => formatLocalDate(new Date()));
+  const [plannerDisplayedMonth, setPlannerDisplayedMonth] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); });
+  const [plannerDetailTaskId, setPlannerDetailTaskId] = useState<string | null>(null);
+  const [profileNotificationsOpen, setProfileNotificationsOpen] = useState(false);
   const scrollPositions = useRef<Record<string, number>>({});
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [appearance, setAppearancePreference] = useState<AppearancePreference>('dark');
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
+  const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
   const [currency, setCurrency] = useState<string>('INR');
   const [currencySymbol, setCurrencySymbol] = useState<string>('₹');
   const [displayName, setDisplayName] = useState('');
@@ -45,6 +60,8 @@ export default function App() {
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [startupError, setStartupError] = useState('');
   const [appReady, setAppReady] = useState(false);
 
   // Biometric Lock State
@@ -90,9 +107,52 @@ export default function App() {
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
 
+  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileNotificationsOpen, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation });
+  backState.current = { createKind, modalContent, plannerDetailTaskId, profileNotificationsOpen, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation };
+
+  const navigateTo = (tab: MainTab) => {
+    const previous = activeTabRef.current;
+    if (previous === tab) return;
+    navigationHistory.current.push(previous);
+    activeTabRef.current = tab;
+    setShowExitConfirmation(false);
+    setActiveTab(tab);
+  };
+
+  const navigateBack = () => {
+    const state = backState.current;
+    const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileNotificationsOpen) }, navigationHistory.current.length > 0);
+    if (action === 'ignore') return;
+    if (action === 'dismiss-dialog') { setCreateKind(null); setEditingTaskId(null); setEditingHabitId(null); setModalContent(null); return; }
+    if (action === 'dismiss-exit-dialog') { setShowExitConfirmation(false); return; }
+    if (action === 'close-task-details') { setPlannerDetailTaskId(null); return; }
+    if (action === 'close-child-view') {
+      if (state.activeTab === 'finance') setFinanceSubtab('overview');
+      if (state.activeTab === 'habits') setHabitsSubtab('checklist');
+      if (state.activeTab === 'goals') setGoalsSubtab('active');
+      if (state.activeTab === 'settings') setProfileNotificationsOpen(false);
+      return;
+    }
+    const previous = navigationHistory.current.pop();
+    if (action === 'previous-tab' && previous) {
+      activeTabRef.current = previous;
+      setActiveTab(previous);
+      return;
+    }
+    if (action === 'home') {
+      activeTabRef.current = 'dashboard';
+      setActiveTab('dashboard');
+      return;
+    }
+    setShowExitConfirmation(true);
+  };
+
   // Load Initial Settings & Data
   useEffect(() => {
-    initApp();
+    void initApp().catch(error => {
+      console.error('LifeOS startup failed.', error);
+      setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.');
+    });
     const timer = window.setInterval(() => setClockNow(new Date()), 60_000);
     let appStateListener: { remove: () => Promise<void> } | undefined;
     CapacitorApp.addListener('appStateChange', async state => {
@@ -118,23 +178,14 @@ export default function App() {
 
   useEffect(() => {
     let listener: { remove: () => Promise<void> } | undefined;
-    CapacitorApp.addListener('backButton', () => {
-      if (createKind) { setCreateKind(null); return; }
-      if (activeTab !== 'dashboard') { setActiveTab('dashboard'); return; }
-      void CapacitorApp.exitApp();
-    }).then(value => { listener = value; });
+    CapacitorApp.addListener('backButton', () => navigateBack()).then(value => { listener = value; });
     return () => { listener?.remove(); };
-  }, [activeTab, createKind]);
+  }, []);
 
   useEffect(() => {
     if (appearance !== 'system') return;
     const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const update = () => {
-      const resolved = resolveAppearance('system', media.matches);
-      setTheme(resolved); document.documentElement.classList.toggle('dark', resolved === 'dark');
-    };
-    update(); media.addEventListener?.('change', update);
-    return () => media.removeEventListener?.('change', update);
+    return watchSystemTheme(media, resolved => { setTheme(resolved); applyDomTheme(resolved); });
   }, [appearance]);
 
   useLayoutEffect(() => {
@@ -152,8 +203,11 @@ export default function App() {
   };
 
   const initApp = async () => {
-    const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'dark');
-    await applyAppearance(savedTheme);
+    const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'system');
+    setAppearancePreference(savedTheme);
+    const resolvedTheme = resolveAppearance(savedTheme, systemDarkPreference());
+    setTheme(resolvedTheme);
+    applyDomTheme(resolvedTheme);
 
     const savedCur = await StorageService.settings.get<string>('currency', 'INR');
     setCurrency(savedCur);
@@ -175,12 +229,16 @@ export default function App() {
 
     const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
     const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
+    const savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
+    // Keep this inspection read-only: saving a default theme before this point
+    // made a fresh database look like a legacy install and skipped onboarding.
     const settingsCount = await db.settings.count();
     const dataCounts = await Promise.all([db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(), db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count()]);
     const legacyState = settingsCount > 0 || dataCounts.some(count => count > 0);
     const needsOnboarding = shouldShowOnboarding(completed, legacyState, started);
     setOnboardingRequired(needsOnboarding);
     setOnboardingComplete(completed || !needsOnboarding);
+    setOnboardingStep(Math.max(0, Math.min(4, savedOnboardingStep)));
     if (!completed && !needsOnboarding) await StorageService.settings.set('onboardingCompleted', true);
     if (needsOnboarding && !started) await StorageService.settings.set('onboardingStarted', true);
 
@@ -194,9 +252,9 @@ export default function App() {
 
   const applyAppearance = async (preference: AppearancePreference) => {
     setAppearancePreference(preference);
-    const resolved = resolveAppearance(preference, window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? true);
+    const resolved = resolveAppearance(preference, systemDarkPreference());
     setTheme(resolved);
-    document.documentElement.classList.toggle('dark', resolved === 'dark');
+    applyDomTheme(resolved);
     await StorageService.settings.set('theme', preference);
   };
 
@@ -296,7 +354,9 @@ export default function App() {
   const finishOnboarding = async () => {
     await StorageService.settings.set('onboardingCompleted', true);
     await StorageService.settings.set('onboardingStarted', false);
-    setOnboardingComplete(true); setOnboardingRequired(false); setActiveTab('dashboard');
+    await StorageService.settings.set('onboardingStep', 0);
+    setOnboardingStep(0);
+    setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; activeTabRef.current = 'dashboard'; setActiveTab('dashboard');
   };
 
   const importBackupFile = async (file?: File) => {
@@ -361,15 +421,15 @@ export default function App() {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     setAppearancePreference(next);
-    document.documentElement.classList.toggle('dark', next === 'dark');
+    applyDomTheme(next);
     await StorageService.settings.set('theme', next);
   };
 
-  const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string) => {
+  const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string) => {
     const now = new Date();
     const today = formatLocalDate(now);
     setCreateDraft({
-      title: '', amount: '', category: kind === 'goal' ? 'Other' : '', date: today, month: financeMonth,
+      title: '', amount: '', category: kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
       goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
@@ -588,19 +648,34 @@ export default function App() {
   const todayKey = formatLocalDate(clockNow);
   const tomorrowDate = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 1);
   const tomorrowKey = formatLocalDate(tomorrowDate);
+  const calendarDays = useMemo(() => getMonthCalendarDays(plannerDisplayedMonth.getFullYear(), plannerDisplayedMonth.getMonth()), [plannerDisplayedMonth]);
+  const plannerTasksByDate = useMemo(() => {
+    const byDate = new Map<string, Task[]>();
+    for (const task of tasks) {
+      if (!task.dueDate) continue;
+      const rows = byDate.get(task.dueDate) || [];
+      rows.push(task); byDate.set(task.dueDate, rows);
+    }
+    return byDate;
+  }, [tasks]);
+  const selectedPlannerDateLabel = new Date(`${plannerSelectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const dashboardTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => getTaskStatus(task, clockNow) === 'Overdue' || task.dueDate === todayKey), clockNow).slice(0, 5), [tasks, clockNow, todayKey]);
-  const visiblePlannerTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => {
+  const visiblePlannerTasks = useMemo(() => {
+    const dateScopedTasks = ['today', 'tomorrow', 'upcoming'].includes(plannerFilter) ? tasks : getTasksForDate(tasks, plannerSelectedDate);
+    return sortTasksByDeadline(dateScopedTasks.filter(task => {
     const status = getTaskStatus(task, clockNow);
-    const statusMatch = plannerFilter === 'all' || plannerFilter === 'today' || plannerFilter === 'tomorrow' || plannerFilter === 'upcoming'
-      ? true : status.toLowerCase() === plannerFilter;
+    const dateScope = ['today', 'tomorrow', 'upcoming'].includes(plannerFilter);
+    const statusMatch = dateScope || plannerFilter === 'all' ? true : status.toLowerCase() === plannerFilter;
     const dateMatch = plannerFilter === 'today' ? task.dueDate === todayKey
       : plannerFilter === 'tomorrow' ? task.dueDate === tomorrowKey
         : plannerFilter === 'upcoming' ? task.dueDate > tomorrowKey && task.dueDate <= formatLocalDate(new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 7))
-          : true;
+          : task.dueDate === plannerSelectedDate;
     const query = plannerSearch.trim().toLowerCase();
     const searchMatch = !query || `${task.title} ${task.description || ''} ${task.notes || ''} ${task.category || ''}`.toLowerCase().includes(query);
     return statusMatch && dateMatch && searchMatch && (plannerPriority === 'all' || task.priority === plannerPriority);
-  }), clockNow), [tasks, clockNow, plannerFilter, plannerSearch, plannerPriority, todayKey, tomorrowKey]);
+    }), clockNow);
+  }, [tasks, clockNow, plannerFilter, plannerSearch, plannerPriority, todayKey, tomorrowKey, plannerSelectedDate]);
+  const plannerDetailTask = plannerDetailTaskId ? tasks.find(task => task.id === plannerDetailTaskId) : undefined;
 
   const goalProgress = (goal: Goal) => getGoalProgress(goal.currentValue, goal.targetValue);
   const filteredTransactions = useMemo(() => transactions.filter(tx => {
@@ -614,12 +689,14 @@ export default function App() {
     : financeSort === 'amount-desc' ? b.amount - a.amount : (b.date || '').localeCompare(a.date || '')),
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
 
-  if (!appReady) return <div className="fixed inset-0 flex items-center justify-center bg-[#090d16] text-white" aria-label="Loading LifeOS"><div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-400" /></div>;
+  if (!appReady) return <div className={`fixed inset-0 flex items-center justify-center px-6 ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-slate-300">{startupError}</p><button className="mt-5 min-h-11 rounded-xl bg-indigo-600 px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-400" />}</div>;
 
   if (onboardingRequired && !onboardingComplete) return <Onboarding
     initialName={displayName}
     preferences={notificationPreferences}
     appearance={appearance}
+    initialStep={onboardingStep}
+    onStepChange={async step => { await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', step); setOnboardingStep(step); }}
     onSaveName={updateDisplayName}
     onEnableBiometric={handleEnableBiometric}
     onSkipBiometric={() => {}}
@@ -639,7 +716,7 @@ export default function App() {
   // If App is Biometrically Locked, render Lock Screen Overlay
   if (isLocked) {
     return (
-      <div className="fixed inset-0 z-50 bg-[#090d16] text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`}>
         <div className="w-20 h-20 rounded-3xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center mb-6">
           <svg className="w-10 h-10 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
@@ -661,12 +738,16 @@ export default function App() {
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} style={{ paddingBottom: 'calc(6.25rem + env(safe-area-inset-bottom))' }}>
       {/* Top Mobile Header */}
-      <header className="sticky top-0 z-40 mx-auto flex max-w-md items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/90 px-4 py-2.5 backdrop-blur-md">
-        <div className="flex min-w-0 items-center gap-2.5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white">L</div><div className="min-w-0"><h1 className="text-sm font-bold leading-tight">LifeOS</h1><p className="truncate text-[11px] text-slate-400">Welcome back, {displayName.trim() || 'there'}!</p></div></div>
-        <div className="flex shrink-0 items-center gap-2">
-          {biometricEnabled && <span className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[9px] font-semibold ${biometricVerified ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : 'border-amber-500/20 bg-amber-500/10 text-amber-200'}`}><ShieldCheck size={12} />{biometricVerified ? 'Biometric verified' : 'Protected'}</span>}
-          <button onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={16} /> : <Sun size={16} />}</button>
+      <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white" aria-hidden="true">L</div>
+          <div className="min-w-0">
+            <div className="mb-0.5 text-[10px] font-bold uppercase tracking-[.14em] text-indigo-300">LifeOS</div>
+            <h1 className="header-greeting text-[clamp(1rem,4vw,1.3rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
+            <p className="mt-0.5 truncate text-xs text-slate-400">{activeTab === 'dashboard' ? "Here's your day at a glance." : `Your ${({ finance: 'finances', habits: 'habits', goals: 'goals', planner: 'planner', settings: 'profile' } as Record<string, string>)[activeTab] || 'day'}, thoughtfully organized.`}</p>
+          </div>
         </div>
+        <button onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
       </header>
 
       {/* Main Container */}
@@ -675,10 +756,7 @@ export default function App() {
         <div key={activeTab} className="tab-transition">
         {activeTab === 'dashboard' && (
           <div className="space-y-4">
-            <div>
-              <p className="text-xs text-slate-400">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}</p>
-              <h2 className="text-xl font-bold mt-0.5">Your day at a glance</h2>
-            </div>
+            <div><p className="text-sm font-medium text-slate-500">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
 
             {/* Productivity Score Card */}
             <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/40 to-blue-950/30 border border-indigo-800/40">
@@ -701,13 +779,13 @@ export default function App() {
             <section className="rounded-2xl border border-violet-800/40 bg-gradient-to-br from-violet-950/35 to-indigo-950/25 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-[10px] font-bold uppercase tracking-wider text-violet-300">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
-                <button onClick={() => setActiveTab('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold text-violet-300" aria-label="Open Goals">View all →</button>
+                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold text-violet-300" aria-label="Open Goals">View all →</button>
               </div>
               {goals.filter(goal => goal.status === 'In Progress').length === 0 ? (
-                <div className="rounded-xl bg-slate-900/50 px-3 py-4 text-center text-xs text-slate-400"><p>No active goals yet.</p><button onClick={() => { setActiveTab('goals'); openCreateForm('goal'); }} className="mt-2 font-semibold text-violet-300">Create your first goal</button></div>
+                <div className="rounded-xl bg-slate-900/50 px-3 py-4 text-center text-xs text-slate-400"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="mt-2 font-semibold text-violet-300">Create your first goal</button></div>
               ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => {
                 const progress = goalProgress(goal);
-                return <button key={goal.id} onClick={() => setActiveTab('goals')} className="block w-full rounded-xl bg-slate-900/55 p-3 text-left">
+                return <button key={goal.id} onClick={() => navigateTo('goals')} className="block w-full rounded-xl bg-slate-900/55 p-3 text-left">
                   <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{goal.title}</span><span className="shrink-0 text-xs font-bold text-violet-300">{progress}%</span></div>
                   <div className="my-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-violet-500" style={{ width: `${progress}%` }} /></div>
                   <div className="flex justify-between gap-2 text-[10px] text-slate-400"><span>{goal.currentValue} / {goal.targetValue}{goal.unit ? ` ${goal.unit}` : ''}</span><span>{formatDate(goal.targetDate)} · {getDaysRemainingText(goal.targetDate)}</span></div>
@@ -719,7 +797,7 @@ export default function App() {
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Monthly Finance ({financeMonth})</h3>
-                <button onClick={() => setActiveTab('finance')} className="text-xs text-indigo-400 font-semibold">Details &rarr;</button>
+                <button onClick={() => navigateTo('finance')} className="text-xs text-indigo-400 font-semibold">Details &rarr;</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
                 <div className="p-3 rounded-xl bg-slate-800/60">
@@ -741,7 +819,7 @@ export default function App() {
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Habits Today</h3>
-                <button onClick={() => setActiveTab('habits')} className="text-xs text-indigo-400 font-semibold">Manage</button>
+                <button onClick={() => navigateTo('habits')} className="text-xs text-indigo-400 font-semibold">Manage</button>
               </div>
               {habits.length === 0 ? (
                 <div className="text-center py-6 text-xs text-slate-500">No habits configured yet. Create one in Habits tab.</div>
@@ -779,7 +857,7 @@ export default function App() {
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Today's Agenda</h3>
-                <button onClick={() => setActiveTab('planner')} className="text-xs text-indigo-400 font-semibold">All Tasks</button>
+                <button onClick={() => navigateTo('planner')} className="text-xs text-indigo-400 font-semibold">All Tasks</button>
               </div>
               {dashboardTasks.length === 0 ? (
                 <div className="text-center py-6 text-xs text-slate-500">No tasks due today. You're all caught up!</div>
@@ -804,7 +882,7 @@ export default function App() {
                         <div>
                           <p className="text-sm font-medium">{t.title}</p>
                           <p className="text-[10px] text-slate-400">{formatDate(t.dueDate)}{t.dueTime ? ` · ${t.dueTime}` : ''}</p>
-                          <div className="mt-1 flex flex-wrap gap-1"><span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${t.priority === 'Urgent' ? 'bg-rose-500/20 text-rose-400' : t.priority === 'High' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-300'}`}>{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${status === 'Overdue' ? 'bg-rose-500/20 text-rose-300' : status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-300'}`}>{status}</span></div>
+                          <div className="mt-1 flex flex-wrap gap-1"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.priority === 'Urgent' ? 'bg-rose-500/20 text-rose-400' : t.priority === 'High' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-300'}`}>{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${status === 'Overdue' ? 'bg-rose-500/20 text-rose-300' : status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-300'}`}>{status}</span></div>
                         </div>
                       </div>
                     </div>
@@ -868,7 +946,7 @@ export default function App() {
                     const max = Math.max(row.current, row.previous, 1);
                     return <div key={row.label} className="mb-3 last:mb-0"><div className="mb-1 flex justify-between text-[10px]"><span>{row.label}</span><span>{formatMoney(row.current)} <span className="text-slate-500">· {formatMoney(row.previous)}</span></span></div><div className="flex h-2 gap-1"><div className={`h-full rounded ${row.color}`} style={{ width: `${row.current / max * 100}%` }} /><div className="h-full rounded bg-slate-600" style={{ width: `${row.previous / max * 100}%` }} /></div></div>;
                   })}
-                  <p className="mt-2 text-[9px] text-slate-500">Current month · previous month</p>
+                  <p className="mt-2 text-[10px] text-slate-500">Current month · previous month</p>
                 </div>
 
                 {/* Quick Add Buttons */}
@@ -1020,7 +1098,7 @@ export default function App() {
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} /></div>
                   <div className="flex justify-between text-xs text-slate-400"><span>{g.currentValue} / {g.targetValue}{g.unit ? ` ${g.unit}` : ''}</span><span>{goalMilestones.filter(milestone => milestone.completed).length}/{goalMilestones.length} milestones</span></div>
                   <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-indigo-300">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-slate-200">+ Milestone</button>}<button onClick={async () => { await StorageService.goals.update(g.id, { status: goalsSubtab === 'completed' ? 'In Progress' : 'Completed' }); await reloadAllData(); showToast(goalsSubtab === 'completed' ? 'Goal reopened' : 'Goal completed', 'success'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-emerald-300">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!window.confirm(`Delete goal “${g.title}” and its milestones?`)) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] text-rose-300">Delete</button></div>
-                  {goalMilestones.length > 0 && <div className="space-y-2 border-t border-slate-800 pt-3">{goalMilestones.map(milestone => <div key={milestone.id} className="flex items-center gap-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-4 w-4 accent-indigo-500" /><div className="min-w-0 flex-1"><p className={`text-xs ${milestone.completed ? 'text-slate-500 line-through' : ''}`}>{milestone.title}</p>{milestone.targetDate && <p className="text-[9px] text-slate-500">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</p>}</div></div>)}</div>}
+                  {goalMilestones.length > 0 && <div className="space-y-2 border-t border-slate-800 pt-3">{goalMilestones.map(milestone => <div key={milestone.id} className="flex items-center gap-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-4 w-4 accent-indigo-500" /><div className="min-w-0 flex-1"><p className={`text-xs ${milestone.completed ? 'text-slate-500 line-through' : ''}`}>{milestone.title}</p>{milestone.targetDate && <p className="text-[10px] text-slate-500">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</p>}</div></div>)}</div>}
                 </div>;
               })
             )}
@@ -1030,11 +1108,36 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         {activeTab === 'planner' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Daily Tasks & Agenda</h2><button onClick={() => openCreateForm('task')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Add task</button></div>
-            <input value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks and descriptions" className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm" />
-            <div className="grid grid-cols-2 gap-2"><select aria-label="Task filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
+            <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-indigo-400">Planner</p><h2 className="text-xl font-semibold tracking-tight">Your calendar</h2></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white transition active:scale-[.98]">+ Add task</button></div>
+            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm" aria-label="Monthly task calendar">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1"><button aria-label="Previous month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="min-h-10 min-w-10 rounded-lg text-slate-300 transition hover:bg-slate-800 active:scale-95"><ChevronLeft size={19} className="mx-auto" /></button><h3 className="min-w-32 text-center text-sm font-semibold">{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3><button aria-label="Next month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="min-h-10 min-w-10 rounded-lg text-slate-300 transition hover:bg-slate-800 active:scale-95"><ChevronRight size={19} className="mx-auto" /></button></div>
+                <button onClick={() => { setPlannerSelectedDate(todayKey); setPlannerDisplayedMonth(new Date(clockNow.getFullYear(), clockNow.getMonth(), 1)); setPlannerFilter('all'); }} className="min-h-9 rounded-lg px-3 text-xs font-semibold text-indigo-400 transition active:scale-95">Today</button>
+              </div>
+              <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-medium text-slate-500">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <span key={day} className="py-1">{day}</span>)}</div>
+              <div className="grid grid-cols-7 gap-y-1">
+                {calendarDays.map(day => {
+                  const dayTasks = plannerTasksByDate.get(day) || [];
+                  const overdue = dayTasks.some(task => getTaskStatus(task, clockNow) === 'Overdue');
+                  const allComplete = dayTasks.length > 0 && dayTasks.every(task => task.completed);
+                  const inMonth = day.slice(0, 7) === `${plannerDisplayedMonth.getFullYear()}-${String(plannerDisplayedMonth.getMonth() + 1).padStart(2, '0')}`;
+                  const isToday = day === todayKey;
+                  const selected = day === plannerSelectedDate;
+                  const label = new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+                  return <button key={day} aria-label={`${label}${dayTasks.length ? `, ${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'}` : ''}${overdue ? ', overdue tasks' : ''}`} aria-pressed={selected} onClick={() => { setPlannerSelectedDate(day); if (!inMonth) setPlannerDisplayedMonth(new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, 1)); setPlannerFilter('all'); }} className={`relative flex min-h-10 flex-col items-center justify-center rounded-xl text-xs transition active:scale-95 ${selected ? 'bg-indigo-600 font-semibold text-white shadow-sm' : isToday ? 'border border-indigo-400/70 font-semibold text-indigo-300' : inMonth ? 'text-slate-200 hover:bg-slate-800' : 'text-slate-600'}`}>
+                    <span>{Number(day.slice(-2))}</span>{dayTasks.length > 0 && <span className={`mt-0.5 h-1 w-1 rounded-full ${selected ? 'bg-white' : overdue ? 'bg-rose-500' : allComplete ? 'bg-emerald-500' : 'bg-indigo-400'}`} aria-hidden="true" />}
+                  </button>;
+                })}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-800 pt-2.5 text-[10px] text-slate-500"><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full bg-indigo-400" />Tasks</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full bg-rose-500" />Overdue</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Complete</span></div>
+            </section>
+            <section className="space-y-3" aria-label="Selected day agenda">
+              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-slate-500">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="min-h-10 rounded-lg border border-slate-700 px-3 text-xs font-semibold text-indigo-400">Quick add</button></div>
+              <input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm" />
+              <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
+              {plannerDetailTask && <article className="rounded-2xl border border-indigo-500/30 bg-slate-900 p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-10 rounded-lg px-3 text-xs text-slate-400">Back to agenda</button></div><p className="mt-2 text-sm text-slate-400">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${plannerDetailTask.dueTime}` : ' · end of day'}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-rose-300' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-emerald-300' : 'text-indigo-300'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatLocalDateTime(new Date(plannerDetailTask.reminderAt)).replace('T', ' · ') : 'None'}</p></div></div><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-slate-700 text-sm font-semibold text-indigo-400">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
             {visiblePlannerTasks.length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 py-10 text-center text-sm text-slate-400">No tasks match this view. Add a task or change the filters.</div>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 px-5 py-9 text-center"><div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-slate-400"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-slate-500">Choose another day or add a task when you’re ready.</p></div>
             ) : (
               <div className="space-y-2">
                 {visiblePlannerTasks.map(t => {
@@ -1053,10 +1156,10 @@ export default function App() {
                         className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
                       />
                       <div>
-                        <p className={`text-sm font-medium ${t.completed ? 'line-through text-slate-500' : ''}`}>{t.title}</p>
+                        <button onClick={() => setPlannerDetailTaskId(t.id)} className={`min-h-10 text-left text-sm font-medium ${t.completed ? 'line-through text-slate-500' : ''}`}>{t.title}</button>
                         {t.description && <p className="mt-0.5 text-xs text-slate-400">{t.description}</p>}
                         <p className="text-xs text-slate-400">Due {formatDate(t.dueDate)}{t.dueTime ? ` · ${t.dueTime}` : ' · end of day'}</p>
-                        <div className="mt-1 flex gap-1"><span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-300">{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[9px] ${status === 'Overdue' ? 'bg-rose-500/20 text-rose-300' : status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-indigo-500/20 text-indigo-300'}`}>{status}</span>{t.recurring !== 'None' && <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] text-slate-300">{t.recurring}</span>}</div>
+                        <div className="mt-1 flex gap-1"><span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] ${status === 'Overdue' ? 'bg-rose-500/20 text-rose-300' : status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-indigo-500/20 text-indigo-300'}`}>{status}</span>{t.recurring !== 'None' && <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">{t.recurring}</span>}</div>
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col gap-2"><button onClick={() => openEditTask(t)} className="rounded-lg px-2 py-1 text-xs text-indigo-400">Edit</button><button onClick={async () => { if (!window.confirm(`Delete “${t.title}”?`)) return; await NotificationService.cancelTask(t); await StorageService.tasks.delete(t.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task removed', 'info'); }} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:text-rose-400">Delete</button></div>
@@ -1064,6 +1167,7 @@ export default function App() {
                 })}
               </div>
             )}
+            </section>
           </div>
         )}
 
@@ -1090,8 +1194,10 @@ export default function App() {
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`flex min-h-12 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'border-indigo-400 bg-indigo-500/10 text-indigo-200' : 'border-slate-700 bg-slate-800 text-slate-300'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
 
+            <button onClick={() => setProfileNotificationsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-slate-400">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-slate-500" /></button>
+
+            {profileNotificationsOpen && <div className={`fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium text-indigo-400"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
             <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Local notifications</h3>
               <p className="text-xs text-slate-400">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
               <div className="flex min-h-11 items-center justify-between rounded-xl bg-slate-800/60 px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
               <p className="text-[11px] text-slate-400">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
@@ -1100,7 +1206,7 @@ export default function App() {
               <div className="space-y-1 rounded-xl border border-slate-800 p-3 text-[10px] text-slate-400"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-rose-300' : 'text-emerald-300'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
               <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Test notification scheduled for ${at.toLocaleTimeString()}`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="min-h-11 rounded-xl bg-indigo-600 px-3 text-xs font-semibold text-white">Test notification · 10 sec</button><button onClick={() => void openNotificationSettings()} className="min-h-11 rounded-xl bg-slate-800 px-3 text-xs font-semibold">Android settings</button></div>
               <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-10 w-full rounded-xl border border-slate-700 text-xs font-medium text-slate-300">Refresh diagnostics</button>
-            </section>
+            </section></div></div>}
 
             {/* Demo Data Trigger */}
             <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
@@ -1152,7 +1258,7 @@ export default function App() {
 
             <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-2">
               <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-slate-400">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-slate-500">Offline-first personal management. Your records are stored in the local app database.</p>
-              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-10 rounded-xl border border-slate-700 px-3 text-xs font-medium">Restart onboarding</button>
+              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-10 rounded-xl border border-slate-700 px-3 text-xs font-medium">Restart onboarding</button>
             </section>
 
             {/* Danger Zone */}
@@ -1178,7 +1284,7 @@ export default function App() {
       </main>
 
       {createKind && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateKind(null); }}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }} onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateKind(null); }}>
           <form onSubmit={saveNewRecord} className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-bold">{editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? 'Add savings goal' : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
@@ -1242,10 +1348,10 @@ export default function App() {
           return (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => navigateTo(tab)}
             aria-label={label}
             aria-current={activeTab === tab ? 'page' : undefined}
-            className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[9px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-300 font-bold' : 'text-slate-400'}`}
+            className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-300 font-bold' : 'text-slate-400'}`}
           >
             {tab === 'settings' ? <span className={`flex h-[21px] w-[21px] items-center justify-center rounded-full text-[10px] font-bold ${displayName.trim() ? 'bg-indigo-500 text-white' : activeTab === tab ? 'bg-indigo-500/20 text-indigo-200' : 'bg-slate-700 text-slate-300'}`} aria-hidden="true">{profileInitial(displayName) || <Icon size={14} />}</span> : <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />}
             <span>{label}</span>
@@ -1253,6 +1359,8 @@ export default function App() {
           );
         })}
       </nav>
+
+      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave LifeOS?</h2><p className="mt-2 text-sm text-slate-400">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="min-h-11 flex-1 rounded-xl border border-slate-700 text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="min-h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white">Exit app</button></div></section></div>}
 
       {/* In-app Toast Notification */}
       {toast && (
