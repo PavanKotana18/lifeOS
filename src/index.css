@@ -17,6 +17,10 @@
   --ink-muted: #94a3b8;
 }
 
+.text-primary { color: var(--ink); }
+.text-secondary { color: var(--ink-secondary); }
+.text-muted { color: var(--ink-muted); }
+
 html, body, #root {
   min-height: 100%;
   margin: 0;
@@ -129,6 +133,7 @@ html:not(.dark) {
   --ink-muted: #475569;
   background: var(--page);
 }
+html.dark { color-scheme: dark; }
 
 html:not(.dark) body { background: var(--page); color: var(--ink); }
 html:not(.dark) .app-header { border-color: #d8e0eb; background: rgb(255 255 255 / 95%); }

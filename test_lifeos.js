@@ -13,10 +13,16 @@ process.env.TZ = 'America/New_York';
 const fs = require('fs');
 const vm = require('vm');
 const ts = require('typescript');
-const authModule = { exports: {} };
-const authSource = fs.readFileSync('./src/services/authCoordinator.ts', 'utf8');
-vm.runInNewContext(ts.transpileModule(authSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: authModule, exports: authModule.exports, Promise });
-const { createAuthCoordinator } = authModule.exports;
+function loadTsModule(path) {
+  const loadedModule = { exports: {} };
+  const source = fs.readFileSync(path, 'utf8');
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: loadedModule, exports: loadedModule.exports, Promise, Intl, Date, Math, Number, String, Object, Array, Error });
+  return loadedModule.exports;
+}
+const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
+const userPreferenceUtils = loadTsModule('./src/services/userPreferences.ts');
+const { buildFinanceAnalytics } = loadTsModule('./src/services/financeAnalytics.ts');
+const { pushTabHistory, popTabHistory } = loadTsModule('./src/services/tabHistory.ts');
 const {
   calculateStreaks,
   calculateFinanceMetrics,
@@ -381,6 +387,35 @@ async function runTestSuite() {
   assert(shouldShowOnboarding(false, false, true), 'Skipping optional biometric setup does not prevent unfinished onboarding from resuming');
   assert(profileInitial(' Pavan Kotana ') === 'P' && profileInitial('') === '', 'Profile avatar uses the uppercase first letter and handles an empty name');
   assert(resolveAppearance('dark', false) === 'dark' && resolveAppearance('light', true) === 'light' && resolveAppearance('system', true) === 'dark' && resolveAppearance('system', false) === 'light', 'Dark, light and system appearance preferences resolve correctly');
+  assert(userPreferenceUtils.resolveSystemDark(false, true) === false && userPreferenceUtils.resolveSystemDark(true, false) === true && userPreferenceUtils.resolveSystemDark(undefined, false) === false, 'Native Android appearance overrides stale WebView media state and browsers fall back to matchMedia');
+  const restoredPreferences = userPreferenceUtils.mergeUserPreferences({ currency: 'EUR', distance: 'mi', timeFormat: '24h' }, 'INR');
+  assert(restoredPreferences.currency === 'EUR' && restoredPreferences.distance === 'mi' && restoredPreferences.timeFormat === '24h' && restoredPreferences.volume === 'L', 'Stored preferences restore while new fields receive safe defaults');
+  assert(userPreferenceUtils.formatCurrency(1234.5, 'USD', 'en-US') === '$1,234.50' && userPreferenceUtils.formatCurrency(1234.5, 'EUR', 'de-DE').includes('1.234,50'), 'Currency uses locale separators and currency precision');
+  assert(userPreferenceUtils.getNumberLocale('EUR', 'system') === undefined, 'System locale uses the device Intl locale instead of inferring locale from currency');
+  assert(userPreferenceUtils.formatTimePreference(new Date(2026, 0, 2, 13, 5), '24h', 'en-GB').includes('13:05') && userPreferenceUtils.formatTimePreference(new Date(2026, 0, 2, 13, 5), '12h', 'en-US').includes('1:05'), 'Time format preference changes display without altering stored timestamps');
+  assert(Math.abs(userPreferenceUtils.convertMeasurement(1, 'mi', 'km') - 1.609344) < 1e-12 && Math.abs(userPreferenceUtils.convertMeasurement(500, 'mL', 'L') - 0.5) < 1e-12, 'Distance and volume conversion preserve precise canonical values');
+  assert(Math.abs(userPreferenceUtils.convertMeasurement(1, 'mph', 'm/s') - 0.44704) < 1e-12 && userPreferenceUtils.convertMeasurement(0, 'L', 'US gal') === 0, 'Speed conversions and zero edge cases are supported');
+  let invalidConversionRejected = false; try { userPreferenceUtils.convertMeasurement(1, 'mi', 'L'); } catch { invalidConversionRejected = true; }
+  assert(invalidConversionRejected && userPreferenceUtils.formatDatePreference(new Date(2026, 0, 2), 'YMD') === '2026-01-02', 'Incompatible units fail safely and date display preference formats consistently');
+  const transactionUpdate = userPreferenceUtils.buildTransactionUpdate({ type: 'expense', amount: 18.25, category: 'Food', description: 'Lunch', dateTime: '2026-10-31T12:15', paymentMethod: 'UPI', notes: 'Workday', isRecurring: false });
+  assert(transactionUpdate.amount === 18.25 && transactionUpdate.date === '2026-10-31' && transactionUpdate.notes === 'Workday' && !('id' in transactionUpdate) && !('createdAt' in transactionUpdate), 'Transaction edit fields exclude identity and creation timestamp so updates preserve them');
+  const analyticsRows = buildFinanceAnalytics([
+    { date: '2026-09-03', amount: 120, type: 'expense', category: 'Rent' },
+    { date: '2026-10-01', amount: 1000, type: 'income', category: 'Salary' },
+    { date: '2026-10-02', amount: 100, type: 'expense', category: 'Food' },
+    { date: '2026-10-03', amount: 50, type: 'expense', category: 'Rent' },
+  ], [{ monthYear: '2026-10', categoryId: 'Food', monthlyAmount: 150 }, { monthYear: '2026-10', monthlyAmount: 200 }], '2026-10');
+  assert(analyticsRows.totalIncome === 1000 && analyticsRows.totalExpenses === 150 && analyticsRows.netSavings === 850 && analyticsRows.savingsRate === 85 && analyticsRows.expenseChange === 25, 'Finance analytics totals, savings rate, and month comparison derive from stored records');
+  assert(analyticsRows.largestCategory.name === 'Food' && analyticsRows.largestCategory.percentage > 66 && analyticsRows.budgetRows[0].spent === 100 && analyticsRows.budgetRows[0].remaining === 50, 'Expense category ranking and category budget insights are accurate');
+  const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
+  const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
+  assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');
+  let financeHistory = [];
+  financeHistory = pushTabHistory(financeHistory, 'overview', 'transactions');
+  financeHistory = pushTabHistory(financeHistory, 'transactions', 'budgets');
+  const financeBackOne = popTabHistory(financeHistory, 'overview');
+  const financeBackTwo = popTabHistory(financeBackOne.history, 'overview');
+  assert(financeBackOne.next === 'transactions' && financeBackTwo.next === 'overview' && financeBackTwo.history.length === 0 && pushTabHistory(financeHistory, 'budgets', 'budgets').length === 2, 'Nested Finance navigation returns through visited subtabs without duplicate entries');
   assert(resolveAppearance('system', false) === 'light' && resolveAppearance('system', true) === 'dark' && resolveAppearance('light', true) === 'light' && resolveAppearance('dark', false) === 'dark' && resolveAppearance('system', false) === 'light', 'System follows current appearance after switching back from either explicit theme and persisted System survives restart');
   let themeListener; let systemDark = true; const appliedThemes = [];
   const unwatchTheme = watchSystemTheme({ get matches() { return systemDark; }, addEventListener: (_, listener) => { themeListener = listener; }, removeEventListener: () => { themeListener = undefined; } }, theme => appliedThemes.push(theme));
