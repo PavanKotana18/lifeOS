@@ -56,9 +56,8 @@ export default function App() {
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [displayName, setDisplayName] = useState('');
-  const [gender, setGender] = useState<'male' | 'female' | 'unspecified' | ''>('');
   const [clockNow, setClockNow] = useState(() => new Date());
-  const [logoPhase, setLogoPhase] = useState<'brand' | 'portrait' | 'rest'>('brand');
+  const [logoPhase, setLogoPhase] = useState<'brand' | 'rest'>('brand');
   const logoIntroPlayed = useRef(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
@@ -221,9 +220,8 @@ export default function App() {
     if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
     logoIntroPlayed.current = true;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setLogoPhase('rest'); return; }
-    const toPortrait = window.setTimeout(() => setLogoPhase('portrait'), 240);
-    const toRest = window.setTimeout(() => setLogoPhase('rest'), 640);
-    return () => { window.clearTimeout(toPortrait); window.clearTimeout(toRest); };
+    const toRest = window.setTimeout(() => setLogoPhase('rest'), 240);
+    return () => window.clearTimeout(toRest);
   }, [appReady, isLocked, onboardingRequired, onboardingComplete]);
 
   useLayoutEffect(() => {
@@ -271,7 +269,6 @@ export default function App() {
     const savedUserPrefs = await StorageService.settings.get<Partial<UserPreferences>>('userPreferences', {});
     setUserPrefs(mergeUserPreferences(savedUserPrefs, storedCurrency));
     setDisplayName(await StorageService.settings.get<string>('displayName', ''));
-    setGender(await StorageService.settings.get<'male' | 'female' | 'unspecified' | ''>('gender', ''));
     const savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
     const hasRequestedNotifications = await StorageService.settings.get<boolean>('notificationPermissionRequested', false);
     const savedNotificationsEnabled = await StorageService.settings.get<boolean | undefined>('notificationsEnabled', undefined);
@@ -371,11 +368,6 @@ export default function App() {
   const updateDisplayName = async (name: string) => {
     setDisplayName(name.slice(0, 48));
     await StorageService.settings.set('displayName', name.slice(0, 48).trim());
-  };
-
-  const updateGender = async (value: 'male' | 'female' | 'unspecified' | '') => {
-    setGender(value);
-    await StorageService.settings.set('gender', value);
   };
 
   const toggleNotificationCategory = async (key: keyof NotificationPreferences) => {
@@ -839,12 +831,11 @@ export default function App() {
 
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
-    initialGender={gender}
     preferences={notificationPreferences}
     appearance={appearance}
     initialStep={onboardingStep}
     onStepChange={async step => { await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', step); setOnboardingStep(step); }}
-    onSaveIdentity={async (name, selectedGender) => { await updateDisplayName(name); await updateGender(selectedGender); }}
+    onSaveIdentity={async name => { await updateDisplayName(name); }}
     onEnableBiometric={handleEnableBiometric}
     onSkipBiometric={() => {}}
     onAppearance={applyAppearance}
@@ -889,7 +880,7 @@ export default function App() {
       <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
         <div className="flex min-w-0 items-center gap-3">
           <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white logo-${logoPhase}`} aria-hidden="true">
-            {logoPhase === 'portrait' && gender === 'male' ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-6 w-6"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.5-3.5 2.8-5.5 6.5-5.5s6 2 6.5 5.5M9 13.8l3 2 3-2"/></svg> : logoPhase === 'portrait' && gender === 'female' ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-6 w-6"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.5-3.5 2.8-5.5 6.5-5.5s6 2 6.5 5.5M8 10.5l-1 4.5m9-4.5 1 4.5"/></svg> : <span>L</span>}
+            <span>L</span>
           </div>
           <div className="min-w-0">
             <h1 className="header-greeting text-[clamp(1.05rem,4.2vw,1.35rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
@@ -1343,8 +1334,7 @@ export default function App() {
             <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
               <div className="flex items-center gap-3"><div className="profile-avatar flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-xl font-bold text-white">{profileInitial(displayName) || <UserRound size={21} />}</div><div><p className="text-xs text-slate-400">Your LifeOS profile</p><h3 className="mt-0.5 text-lg font-semibold">{displayName.trim() || 'Personal details'}</h3></div></div>
               <label className="block text-xs text-slate-300">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="block text-xs text-slate-300">Gender <span className="text-slate-500">· optional</span><select value={gender} onChange={event => void updateGender(event.target.value as typeof gender)} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="">Not set</option><option value="male">Male</option><option value="female">Female</option><option value="unspecified">Prefer not to say</option></select></label>
-              <p className="text-xs text-slate-500">Your name appears in the greeting and Profile avatar. Gender is optional and only affects the brief logo introduction.</p>
+              <p className="text-xs text-slate-500">Your name appears in the greeting and Profile avatar.</p>
             </section>
 
             <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
