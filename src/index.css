@@ -12,11 +12,65 @@ html, body, #root {
   width: 100%;
 }
 
+html {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #090d16;
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   font-family: Inter, system-ui, -apple-system, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
 }
 
 button, input, select, textarea {
   font: inherit;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 3px;
+}
+
+::selection {
+  background: rgb(99 102 241 / 35%);
+}
+
+html:not(.dark) {
+  color-scheme: light;
+  background: #f8fafc;
+}
+
+html:not(.dark) .bg-slate-900,
+html:not(.dark) .bg-slate-900\/90 {
+  background-color: #ffffff;
+}
+
+html:not(.dark) .bg-slate-800,
+html:not(.dark) .bg-slate-800\/60 {
+  background-color: #f1f5f9;
+}
+
+html:not(.dark) .border-slate-800,
+html:not(.dark) .border-slate-700 {
+  border-color: #e2e8f0;
+}
+
+html:not(.dark) .text-slate-400,
+html:not(.dark) .text-slate-300 {
+  color: #64748b;
+}
+
+html:not(.dark) input,
+html:not(.dark) select,
+html:not(.dark) textarea {
+  color: #0f172a;
 }

@@ -55,6 +55,8 @@ export default function App() {
   // UI Toast & Modal State
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'danger' } | null>(null);
   const [modalContent, setModalContent] = useState<React.ReactNode | null>(null);
+  const [createKind, setCreateKind] = useState<'transaction' | 'habit' | 'goal' | 'task' | null>(null);
+  const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
 
   // Load Initial Settings & Data
   useEffect(() => {
@@ -143,6 +145,54 @@ export default function App() {
     setTheme(next);
     document.documentElement.classList.toggle('dark', next === 'dark');
     await StorageService.settings.set('theme', next);
+  };
+
+  const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task') => {
+    const today = new Date().toISOString().slice(0, 10);
+    setCreateDraft({
+      title: '', amount: '', category: kind === 'goal' ? 'Other' : '', date: today,
+      type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
+    });
+    setCreateKind(kind);
+  };
+
+  const saveNewRecord = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!createKind) return;
+    const value = (key: string) => (createDraft[key] || '').trim();
+    try {
+      if (createKind === 'transaction') {
+        const amount = Number(value('amount'));
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
+        await StorageService.transactions.add({
+          type: value('type') as 'income' | 'expense', amount, category: value('category'),
+          description: value('title'), date: value('date'), paymentMethod: value('paymentMethod') || 'Other',
+        });
+      } else if (createKind === 'habit') {
+        await StorageService.habits.add({ name: value('title'), frequency: value('frequency') as Habit['frequency'], color: '#6366f1' });
+      } else if (createKind === 'goal') {
+        const targetValue = Number(value('target'));
+        const currentValue = Number(value('current'));
+        if (!Number.isFinite(targetValue) || targetValue <= 0 || !Number.isFinite(currentValue) || currentValue < 0) {
+          throw new Error('Enter a positive target and a valid current progress value.');
+        }
+        await StorageService.goals.add({
+          title: value('title'), category: value('category') as Goal['category'], targetValue,
+          currentValue, unit: value('unit') || undefined, startDate: value('startDate') || value('date'),
+          targetDate: value('date'), priority: value('priority') as Goal['priority'], status: 'In Progress',
+        });
+      } else {
+        await StorageService.tasks.add({
+          title: value('title'), dueDate: value('date'), priority: value('priority') as Task['priority'],
+          category: value('category') || undefined, recurring: 'None', completed: false,
+        });
+      }
+      await reloadAllData();
+      setCreateKind(null);
+      showToast(`${createKind[0].toUpperCase()}${createKind.slice(1)} added`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save this item', 'danger');
+    }
   };
 
   const formatMoney = (amount: number) => {
@@ -493,7 +543,7 @@ export default function App() {
                 {/* Quick Add Buttons */}
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setFinanceSubtab('transactions')}
+                    onClick={() => openCreateForm('transaction')}
                     className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-semibold text-xs active:scale-95 transition"
                   >
                     + Record Transaction
@@ -577,6 +627,7 @@ export default function App() {
                 <h2 className="text-lg font-bold">Habit Tracker</h2>
                 <p className="text-xs text-slate-400">Daily consistency monitor</p>
               </div>
+              <button onClick={() => openCreateForm('habit')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Add habit</button>
             </div>
 
             <div className="space-y-2">
@@ -625,7 +676,7 @@ export default function App() {
         {/* VIEW 4: GOALS */}
         {activeTab === 'goals' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold">Personal Goals</h2>
+            <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Add goal</button></div>
             {goals.length === 0 ? (
               <div className="text-center py-10 text-xs text-slate-500">No active goals yet.</div>
             ) : (
@@ -654,7 +705,7 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         {activeTab === 'planner' && (
           <div className="space-y-4">
-            <h2 className="text-lg font-bold">Daily Tasks & Agenda</h2>
+            <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Daily Tasks & Agenda</h2><button onClick={() => openCreateForm('task')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Add task</button></div>
             {tasks.length === 0 ? (
               <div className="text-center py-10 text-xs text-slate-500">No tasks found.</div>
             ) : (
@@ -781,6 +832,39 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {createKind && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateKind(null); }}>
+          <form onSubmit={saveNewRecord} className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Add {createKind}</h2>
+              <button type="button" aria-label="Close" onClick={() => setCreateKind(null)} className="rounded-lg px-3 py-1 text-slate-300 hover:bg-slate-800">✕</button>
+            </div>
+            <label className="mb-3 block text-xs text-slate-300">
+              {createKind === 'transaction' ? 'Description' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' ? 'Goal title' : 'Task title'}
+              <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm text-white" />
+            </label>
+            {createKind === 'transaction' && <>
+              <label className="mb-3 block text-xs text-slate-300">Type<select value={createDraft.type} onChange={e => setCreateDraft({ ...createDraft, type: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+              <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Category<input required maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+            </>}
+            {createKind === 'habit' && <label className="mb-3 block text-xs text-slate-300">Frequency<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>}
+            {createKind === 'goal' && <>
+              <label className="mb-3 block text-xs text-slate-300">Category<select value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select></label>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-slate-300">Target<input required type="number" min="0.01" step="any" inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label><label className="text-xs text-slate-300">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></div>
+              <label className="mb-3 block text-xs text-slate-300">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+            </>}
+            {createKind === 'task' && <>
+              <label className="mb-3 block text-xs text-slate-300">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
+              <label className="mb-3 block text-xs text-slate-300">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+            </>}
+            {createKind !== 'habit' && <label className="mb-4 block text-xs text-slate-300">{createKind === 'goal' ? 'Target date' : createKind === 'task' ? 'Due date' : 'Date'}<input required type="date" value={createDraft.date} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>}
+            <button type="submit" className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white active:scale-[.99]">Save {createKind}</button>
+          </form>
+        </div>
+      )}
 
       {/* Floating Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900 border-t border-slate-800 flex justify-around py-3 z-30">
