@@ -70,15 +70,18 @@ export const NotificationService = {
     return result.display;
   },
 
-  async syncTasks(tasks: Task[], preferences: NotificationPreferences) {
+  async syncTasks(tasks: Task[], preferences: NotificationPreferences, isAuthorized?: () => boolean) {
     if (!isNative()) return;
     try {
       await this.ensureChannel();
+      if (isAuthorized && !isAuthorized()) return;
       const pending = await LocalNotifications.getPending();
       const taskKinds = new Set(['taskReminders', 'upcomingDeadlines', 'overdueAlerts']);
       const oldTaskNotifications = pending.notifications.filter(item => taskKinds.has(String(item.extra?.kind || '')));
+      if (isAuthorized && !isAuthorized()) return;
       await cancelIds(oldTaskNotifications.map(item => item.id));
       if (await this.checkPermission() !== 'granted') return;
+      if (isAuthorized && !isAuthorized()) return;
 
       const labels: Record<string, string> = {
         taskReminders: 'Task reminder', upcomingDeadlines: 'Upcoming deadline', overdueAlerts: 'Task overdue',
@@ -89,7 +92,14 @@ export const NotificationService = {
         schedule: { at: plan.at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: plan.kind, taskId: task.id },
       })));
-      if (notifications.length) await schedule(notifications);
+      if (isAuthorized && !isAuthorized()) return;
+      if (notifications.length) {
+        await schedule(notifications);
+        if (isAuthorized && !isAuthorized()) {
+          await cancelIds(notifications.map(item => item.id));
+          return;
+        }
+      }
       writeLastError('');
     } catch (error) {
       writeLastError(errorMessage(error));
@@ -103,10 +113,11 @@ export const NotificationService = {
     catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS task notification cancellation failed:', error); throw error; }
   },
 
-  async syncHabits(habits: Habit[], preferences: NotificationPreferences) {
+  async syncHabits(habits: Habit[], preferences: NotificationPreferences, isAuthorized?: () => boolean) {
     if (!isNative()) return;
     try {
     await this.ensureChannel();
+    if (isAuthorized && !isAuthorized()) return;
     const weekdays = [Weekday.Sunday, Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday, Weekday.Thursday, Weekday.Friday, Weekday.Saturday];
     const entries = habits.filter(habit => habit.reminderTime).flatMap(habit => {
       const [hour, minute] = (habit.reminderTime || '').split(':').map(Number);
@@ -115,15 +126,24 @@ export const NotificationService = {
           : habit.frequency === 'weekly' ? [habit.reminderWeekday || Weekday.Monday] : weekdays;
       return days.map(weekday => ({ habit, hour, minute, weekday }));
     });
+    if (isAuthorized && !isAuthorized()) return;
     await cancelIds(habits.flatMap(habit => [1, 2, 3, 4, 5, 6, 7].map(day => notificationId(`habit:${habit.id}:${day}`))));
     if (!preferences.habitReminders || await this.checkPermission() !== 'granted') return;
-    await schedule(entries.map(({ habit, hour, minute, weekday }) => ({
+    if (isAuthorized && !isAuthorized()) return;
+    const habitNotifications = entries.map(({ habit, hour, minute, weekday }) => ({
       id: notificationId(`habit:${habit.id}:${weekday}`),
       title: 'Habit reminder', body: `Time for: ${habit.name}`,
       schedule: { on: { weekday, hour, minute }, allowWhileIdle: false },
       channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
       extra: { kind: 'habitReminder', habitId: habit.id },
-    })));
+    }));
+    if (habitNotifications.length) {
+      await schedule(habitNotifications);
+      if (isAuthorized && !isAuthorized()) {
+        await cancelIds(habitNotifications.map(item => item.id));
+        return;
+      }
+    }
     } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS habit notification scheduling failed:', error); throw error; }
   },
 
@@ -133,15 +153,18 @@ export const NotificationService = {
     catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS habit notification cancellation failed:', error); throw error; }
   },
 
-  async syncMilestones(goals: Goal[], milestones: Milestone[], preferences: NotificationPreferences) {
+  async syncMilestones(goals: Goal[], milestones: Milestone[], preferences: NotificationPreferences, isAuthorized?: () => boolean) {
     if (!isNative()) return;
     try {
     await this.ensureChannel();
+    if (isAuthorized && !isAuthorized()) return;
     const completedGoalIds = new Set(goals.filter(goal => goal.status === 'Completed').map(goal => goal.id));
     const activeMilestones = milestones.filter(milestone => !milestone.completed && milestone.targetDate && !completedGoalIds.has(milestone.goalId));
     const ids = milestones.map(milestone => notificationId(`milestone:${milestone.id}`));
+    if (isAuthorized && !isAuthorized()) return;
     await cancelIds(ids);
     if (!preferences.milestoneReminders || await this.checkPermission() !== 'granted') return;
+    if (isAuthorized && !isAuthorized()) return;
     const goalById = new Map(goals.map(goal => [goal.id, goal]));
     const now = new Date();
     const notifications = activeMilestones.flatMap(milestone => {
@@ -155,13 +178,41 @@ export const NotificationService = {
         extra: { kind: 'milestoneReminder', milestoneId: milestone.id },
       }];
     });
-    await schedule(notifications);
+    if (isAuthorized && !isAuthorized()) return;
+    if (notifications.length) {
+      await schedule(notifications);
+      if (isAuthorized && !isAuthorized()) {
+        await cancelIds(notifications.map(item => item.id));
+        return;
+      }
+    }
     } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS milestone notification scheduling failed:', error); throw error; }
   },
 
   async cancelMilestones(milestones: Milestone[]) {
     try { await cancelIds(milestones.map(milestone => notificationId(`milestone:${milestone.id}`))); }
     catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS milestone notification cancellation failed:', error); throw error; }
+  },
+
+  async cancelPendingNotifications() {
+    if (!isNative()) return;
+    try {
+      const pending = await LocalNotifications.getPending();
+      const sensitiveKinds = new Set([
+        'taskReminders', 'taskReminder',
+        'upcomingDeadlines', 'upcomingDeadline',
+        'overdueAlerts', 'overdueAlert',
+        'habitReminders', 'habitReminder',
+        'milestoneReminders', 'milestoneReminder',
+      ]);
+      const sensitive = pending.notifications.filter(item =>
+        sensitiveKinds.has(String(item.extra?.kind || ''))
+      );
+      await cancelIds(sensitive.map(item => item.id));
+    } catch (error) {
+      writeLastError(errorMessage(error));
+      console.warn('LifeOS could not cancel sensitive pending notifications:', error);
+    }
   },
 
   async ensureChannel() {
