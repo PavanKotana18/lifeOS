@@ -12,7 +12,7 @@ import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme, isSessionAuthorized } from './services/domainUtils';
 
 type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -76,9 +76,12 @@ export default function App() {
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
   const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
   const [biometricMessage, setBiometricMessage] = useState('');
-  const biometricAuthInFlight = useRef<Promise<boolean> | null>(null);
+  const biometricEnabledRef = useRef(false);
+  const biometricAuthInFlight = useRef<{ generation: number; promise: Promise<boolean> } | null>(null);
   const biometricAuthenticated = useRef(false);
   const startupComplete = useRef(false);
+  const sessionGeneration = useRef(0);
+  const hydrationInFlight = useRef<{ generation: number; promise: Promise<{ tasks: Task[]; habits: Habit[]; goals: Goal[]; milestones: Milestone[] }> } | null>(null);
   const authCoordinator = useRef(createAuthCoordinator(async () => {
     const result = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your identity to access your personal data');
     if (!result.success) setBiometricMessage(result.message || 'Authentication was not completed. Retry when you are ready.');
@@ -200,7 +203,19 @@ export default function App() {
       if (!state.isActive) {
         const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
         if (disposed) return;
-        if (isBio) { biometricAuthenticated.current = false; authCoordinator.resetForBackground(); setIsLocked(true); setBiometricVerified(false); setBiometricMessage(''); }
+        biometricEnabledRef.current = isBio;
+        if (isBio) {
+          sessionGeneration.current++;
+          biometricAuthInFlight.current = null;
+          hydrationInFlight.current = null;
+          clearSensitiveState();
+          biometricAuthenticated.current = false;
+          authCoordinator.resetForBackground();
+          setIsLocked(true);
+          setBiometricVerified(false);
+          setBiometricMessage('');
+          void NotificationService.cancelPendingNotifications();
+        }
         return;
       }
       if (resumeInProgress) return;
@@ -209,7 +224,19 @@ export default function App() {
         setClockNow(new Date());
         const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
         if (disposed) return;
-        if (isBio && startupComplete.current && !biometricAuthenticated.current) void triggerBiometricAuth();
+        biometricEnabledRef.current = isBio;
+        if (isBio) {
+          if (!biometricAuthenticated.current || !authCoordinator.isAuthenticated()) {
+            sessionGeneration.current++;
+            biometricAuthInFlight.current = null;
+            hydrationInFlight.current = null;
+            clearSensitiveState();
+            setIsLocked(true);
+            const authenticated = await triggerBiometricAuth();
+            if (!authenticated || disposed) return;
+          }
+          return;
+        }
         const records = await reloadAllData();
         if (disposed) return;
         const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
@@ -326,6 +353,7 @@ export default function App() {
 
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
     setBiometricEnabled(lockSetting);
+    biometricEnabledRef.current = lockSetting;
     setIsLocked(lockSetting);
     const availability = await BiometricService.isAvailable();
     setBiometricAvailability(availability.isAvailable ? 'Available' : availability.code === 'NOT_ENROLLED' ? 'Supported, but no device credential is enrolled' : 'Unavailable on this device');
@@ -345,13 +373,16 @@ export default function App() {
     if (!completed && !needsOnboarding) await StorageService.settings.set('onboardingCompleted', true);
     if (needsOnboarding && !started) await StorageService.settings.set('onboardingStarted', true);
 
-    // A fresh process does not necessarily receive an appStateChange resume event.
-    // Authenticate as part of bootstrap before appReady can expose protected UI.
-    if (lockSetting) await triggerBiometricAuth();
-
-    const records = await reloadAllData();
-    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences }, notificationsOn));
-    await refreshNotificationDiagnostics();
+    // Authenticate before any protected data is hydrated or exposed.
+    if (lockSetting) {
+      sessionGeneration.current++;
+      biometricAuthInFlight.current = null;
+      hydrationInFlight.current = null;
+      clearSensitiveState();
+      await triggerBiometricAuth();
+    } else {
+      await hydrateAuthenticatedData(notificationsOn, { ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences });
+    }
     startupComplete.current = true;
     setAppReady(true);
   };
@@ -399,15 +430,23 @@ export default function App() {
   };
 
   const syncNotificationSchedules = async (taskRows: Task[], habitRows: Habit[], goalRows: Goal[], milestoneRows: Milestone[], preferences = notificationPreferences) => {
+    const captureGen = sessionGeneration.current;
+    const isAuthorized = () => isSessionAuthorized({
+      biometricEnabled: biometricEnabledRef.current,
+      biometricAuthenticated: biometricAuthenticated.current,
+      coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+      sessionGeneration: sessionGeneration.current,
+      captureGeneration: captureGen,
+    });
+    if (!isAuthorized()) return;
     const results = await Promise.allSettled([
-      NotificationService.syncTasks(taskRows, preferences),
-      NotificationService.syncHabits(habitRows, preferences),
-      NotificationService.syncMilestones(goalRows, milestoneRows, preferences),
+      NotificationService.syncTasks(taskRows, preferences, isAuthorized),
+      NotificationService.syncHabits(habitRows, preferences, isAuthorized),
+      NotificationService.syncMilestones(goalRows, milestoneRows, preferences, isAuthorized),
     ]);
+    if (!isAuthorized()) return;
     if (results.some(result => result.status === 'rejected')) {
       console.warn('One or more local notification schedules could not be updated.', results.filter(result => result.status === 'rejected'));
-      await refreshNotificationDiagnostics();
-      return;
     }
     await refreshNotificationDiagnostics();
   };
@@ -492,10 +531,88 @@ export default function App() {
     }
   };
 
+  const clearSensitiveState = () => {
+    setTransactions([]);
+    setCategories([]);
+    setBudgets([]);
+    setSavingsGoals([]);
+    setHabits([]);
+    setHabitLogs([]);
+    setGoals([]);
+    setMilestones([]);
+    setTasks([]);
+    setCreateKind(null);
+    setCreateDraft({});
+    setEditingTaskId(null);
+    setEditingHabitId(null);
+    setEditingTransactionId(null);
+    setEditingGoalId(null);
+    setPlannerDetailTaskId(null);
+  };
+
+  const reloadAllData = async () => {
+    const captureGen = sessionGeneration.current;
+    if (hydrationInFlight.current && (!biometricEnabledRef.current || hydrationInFlight.current.generation === captureGen)) {
+      return hydrationInFlight.current.promise;
+    }
+    const inFlightPromise = (async () => {
+      const [txs, cats, bgs, sgs, hbs, hLogs, gls, mls, tks] = await Promise.all([
+        StorageService.transactions.getAll(),
+        StorageService.categories.getAll(),
+        StorageService.budgets.getAll(),
+        StorageService.savings.getGoals(),
+        StorageService.habits.getAll(),
+        StorageService.habits.getLogs(),
+        StorageService.goals.getAll(),
+        db.milestones.toArray(),
+        StorageService.tasks.getAll()
+      ]);
+      const authorized = isSessionAuthorized({
+        biometricEnabled: biometricEnabledRef.current,
+        biometricAuthenticated: biometricAuthenticated.current,
+        coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+        sessionGeneration: sessionGeneration.current,
+        captureGeneration: captureGen,
+      });
+      if (!authorized) return { tasks: [], habits: [], goals: [], milestones: [] };
+      setTransactions(txs);
+      setCategories(cats);
+      setBudgets(bgs);
+      setSavingsGoals(sgs);
+      setHabits(hbs);
+      setHabitLogs(hLogs);
+      setGoals(gls);
+      setMilestones(mls);
+      setTasks(tks);
+      return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
+    })().finally(() => {
+      if (hydrationInFlight.current?.promise === inFlightPromise) hydrationInFlight.current = null;
+    });
+    hydrationInFlight.current = { generation: captureGen, promise: inFlightPromise };
+    return inFlightPromise;
+  };
+
+  const hydrateAuthenticatedData = async (notificationsOn = notificationsEnabled, prefs = notificationPreferences) => {
+    const captureGen = sessionGeneration.current;
+    const records = await reloadAllData();
+    const authorized = () => isSessionAuthorized({
+      biometricEnabled: biometricEnabledRef.current,
+      biometricAuthenticated: biometricAuthenticated.current,
+      coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+      sessionGeneration: sessionGeneration.current,
+      captureGeneration: captureGen,
+    });
+    if (!authorized()) return records;
+    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, notificationsOn));
+    if (authorized()) await refreshNotificationDiagnostics();
+    return records;
+  };
+
   const triggerBiometricAuth = async () => {
-    if (biometricAuthInFlight.current) return biometricAuthInFlight.current;
-    if (biometricAuthenticated.current) return true;
-    const attempt = (async () => {
+    const authGen = sessionGeneration.current;
+    if (biometricAuthInFlight.current?.generation === authGen) return biometricAuthInFlight.current.promise;
+    if (biometricAuthenticated.current && authCoordinator.isAuthenticated()) return true;
+    const inFlightPromise = (async () => {
       setIsLocked(true);
       setBiometricMessage('Confirm your identity to open LifeOS.');
       const availability = await BiometricService.isAvailable();
@@ -503,52 +620,43 @@ export default function App() {
         const message = availability.code === 'NOT_ENROLLED'
           ? 'No biometric or device screen lock is enrolled. Set one up in Android settings, then retry.'
           : 'Device authentication is unavailable. Your data remains locked until authentication is available.';
+        biometricAuthenticated.current = false;
         setBiometricMessage(message);
         setBiometricAvailability(message);
+        clearSensitiveState();
         return false;
       }
       const success = await authCoordinator.authenticate();
-      if (success) {
-        biometricAuthenticated.current = true;
-        setIsLocked(false);
-        setBiometricVerified(true);
-        setBiometricMessage('');
-        return true;
+      const stillValid = success && isSessionAuthorized({
+        biometricEnabled: biometricEnabledRef.current,
+        biometricAuthenticated: success,
+        coordinatorAuthenticated: authCoordinator.isAuthenticated(),
+        sessionGeneration: sessionGeneration.current,
+        captureGeneration: authGen,
+      });
+      if (!stillValid) {
+        biometricAuthenticated.current = false;
+        clearSensitiveState();
+        return false;
       }
-      return false;
+      biometricAuthenticated.current = true;
+      setIsLocked(false);
+      setBiometricVerified(true);
+      setBiometricMessage('');
+      await hydrateAuthenticatedData();
+      return true;
     })().catch(error => {
       const message = error instanceof Error ? error.message : 'Device authentication failed. Your data remains locked.';
+      biometricAuthenticated.current = false;
       setBiometricMessage(message);
+      clearSensitiveState();
       console.error('LifeOS biometric startup authentication failed.', error);
       return false;
-    }).finally(() => { biometricAuthInFlight.current = null; });
-    biometricAuthInFlight.current = attempt;
-    return attempt;
-  };
-
-  const reloadAllData = async () => {
-    const [txs, cats, bgs, sgs, hbs, hLogs, gls, mls, tks] = await Promise.all([
-      StorageService.transactions.getAll(),
-      StorageService.categories.getAll(),
-      StorageService.budgets.getAll(),
-      StorageService.savings.getGoals(),
-      StorageService.habits.getAll(),
-      StorageService.habits.getLogs(),
-      StorageService.goals.getAll(),
-      db.milestones.toArray(),
-      StorageService.tasks.getAll()
-    ]);
-
-    setTransactions(txs);
-    setCategories(cats);
-    setBudgets(bgs);
-    setSavingsGoals(sgs);
-    setHabits(hbs);
-    setHabitLogs(hLogs);
-    setGoals(gls);
-    setMilestones(mls);
-    setTasks(tks);
-    return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
+    }).finally(() => {
+      if (biometricAuthInFlight.current?.promise === inFlightPromise) biometricAuthInFlight.current = null;
+    });
+    biometricAuthInFlight.current = { generation: authGen, promise: inFlightPromise };
+    return inFlightPromise;
   };
 
   const handleHabitCompletion = async (
