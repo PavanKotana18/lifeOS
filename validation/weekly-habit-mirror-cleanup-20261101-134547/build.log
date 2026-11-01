@@ -1,0 +1,20 @@
+
+> lifeos-personal@1.0.0 build
+> vite build
+
+vite v6.4.5 building for production...
+transforming...
+✓ 2213 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   1.11 kB │ gzip:   0.56 kB
+dist/assets/index-Bv7yRqxu.css   28.63 kB │ gzip:   6.42 kB
+dist/assets/web-7GjtFdP-.js       0.67 kB │ gzip:   0.33 kB
+dist/assets/web-D3QIcJWc.js       3.44 kB │ gzip:   1.10 kB
+dist/assets/index-CxA2SY-j.js   827.16 kB │ gzip: 233.70 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 7.81s

@@ -133,21 +133,40 @@ function calculateWeeklyHabitRate(logs, habitId, today = new Date(), frequency =
     logs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)
   );
 
+  if (frequency === 'weekly') {
+    // Same Monday-Sunday calendar boundary as production TypeScript.
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const mondayOffset = (todayStart.getDay() + 6) % 7;
+    const weekStart = new Date(
+      todayStart.getFullYear(),
+      todayStart.getMonth(),
+      todayStart.getDate() - mondayOffset
+    );
+    const weekEnd = new Date(
+      weekStart.getFullYear(),
+      weekStart.getMonth(),
+      weekStart.getDate() + 6,
+      23, 59, 59, 999
+    );
+
+    const completed = [...completedDates].some(date => {
+      if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) return false;
+      const d = new Date(`${date}T00:00:00`);
+      return !Number.isNaN(d.getTime()) &&
+        d.getFullYear() === Number(date.slice(0, 4)) &&
+        d.getMonth() + 1 === Number(date.slice(5, 7)) &&
+        d.getDate() === Number(date.slice(8, 10)) &&
+        d >= weekStart && d <= weekEnd;
+    }) ? 1 : 0;
+
+    return { completed, rate: completed ? 100 : 0 };
+  }
+
   const eligibleDates = [];
   for (let offset = 0; offset < 7; offset++) {
     const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
     const key = formatLocalDate(day);
     if (isHabitScheduledOnDate(frequency, key)) eligibleDates.push(key);
-  }
-
-  if (frequency === 'weekly') {
-    const completed = [...completedDates].some(date => {
-      const d = new Date(`${date}T00:00:00`);
-      return !Number.isNaN(d.getTime()) &&
-        d >= new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6) &&
-        d <= new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-    }) ? 1 : 0;
-    return { completed, rate: completed ? 100 : 0 };
   }
 
   const completed = eligibleDates.filter(date => completedDates.has(date)).length;
@@ -156,7 +175,6 @@ function calculateWeeklyHabitRate(logs, habitId, today = new Date(), frequency =
     : 0;
   return { completed, rate };
 }
-
 
 function buildTaskNotificationPlan(task, preferences, now = new Date()) {
   if (task.completed) return [];

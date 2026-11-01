@@ -1,0 +1,54 @@
+
+> lifeos-personal@1.0.0 test
+> node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js
+
+=== STARTING LIFEOS AUTOMATED VERIFICATION SUITE ===
+
+
+--- 1. Testing Finance Module ---
+✅ PASSED: Create income transaction (Salary: ₹1,20,000)
+✅ PASSED: Create expense transactions (Rent: ₹35,000, Food: ₹15,000)
+✅ PASSED: Verify monthly total income: expected 120000, got 120000
+✅ PASSED: Verify monthly total expenses: expected 50000, got 50000
+✅ PASSED: Verify remaining balance: expected 70000, got 70000
+✅ PASSED: Verify budget utilisation: expected 83.3%, got 83.3%
+✅ PASSED: Edit transaction amount updated to 18000
+✅ PASSED: Verify recalculation after edit: total expenses 53000
+✅ PASSED: Verify recalculation after delete: total expenses 18000
+✅ PASSED: Verify category analytics after delete
+
+--- 2. Testing Habit Tracker Module ---
+✅ PASSED: Create habit "Drink 3L Water"
+✅ PASSED: Verify habit marked completed today
+✅ PASSED: Verify current streak is 4 (got 4)
+✅ PASSED: Verify longest streak is 4 (got 4)
+✅ PASSED: Verify historical records preserved against actual dates
+✅ PASSED: Verify undo completion today
+✅ PASSED: Verify streak calculation after undo (got 3)
+
+--- 3. Testing Goals Module ---
+✅ PASSED: Create goal "Run Half Marathon"
+✅ PASSED: Add milestones to goal
+✅ PASSED: Verify progress calculation: expected 47.4%, got 47.4%
+✅ PASSED: Verify milestone completed status
+
+--- 4. Testing Daily Planner Module ---
+✅ PASSED: Create task with Urgent priority
+✅ PASSED: Edit priority to High and change due date to 2026-11-01
+✅ PASSED: Mark task completed and verify persistent state
+
+--- 4B. Testing local deadlines and scheduling logic ---
+✅ PASSED: Task without a time remains pending through the end of its local due day
+✅ PASSED: Task without a time becomes overdue after its local due day ends
+✅ PASSED: Task with a due time becomes overdue after that local time
+✅ PASSED: Completed tasks never become overdue
+✅ PASSED: Task sorting places overdue items first and completed items last
+✅ PASSED: Habit streak remains continuous across the daylight-saving transition
+✅ PASSED: Weekly completion rate uses local calendar days
+✅ PASSED: Weekday habit rate uses five scheduled weekdays, not seven calendar days
+✅ PASSED: Weekend habit rate uses scheduled weekend days
+❌ FAILED: Weekly habit needs one completion in the current Monday-Sunday week
+Test suite failed: Error: Test assertion failed: Weekly habit needs one completion in the current Monday-Sunday week
+    at assert (/data/data/com.termux/files/home/lifeOS/test_lifeos.js:183:13)
+    at runTestSuite (/data/data/com.termux/files/home/lifeOS/test_lifeos.js:384:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)

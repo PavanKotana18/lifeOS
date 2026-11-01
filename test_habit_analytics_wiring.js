@@ -94,7 +94,7 @@ const weeklyRate = calculateWeeklyHabitRate(
 );
 check(
   weeklyRate.completed === 1 && weeklyRate.scheduled === 1 && weeklyRate.rate === 100,
-  'Weekly frequency accepts one completion in rolling seven days'
+  'Weekly frequency accepts one completion in the current calendar week'
 );
 
 const priorWeekOnlyRate = calculateWeeklyHabitRate(

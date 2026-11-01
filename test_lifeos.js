@@ -383,7 +383,15 @@ async function runTestSuite() {
     'Weekend habit rate uses scheduled weekend days');
   assert(calculateWeeklyHabitRate([{ habitId: 'weekly', date: '2026-10-28', completed: true }],
     'weekly', new Date(2026, 9, 30), 'weekly').rate === 100,
-    'Weekly habit needs one completion in the rolling seven-day window');
+    'Weekly habit needs one completion in the current Monday-Sunday week');
+  assert(calculateWeeklyHabitRate(
+    [{ habitId: 'weekly-boundary', date: '2026-11-01', completed: true }],
+    'weekly-boundary', new Date(2026, 10, 8), 'weekly'
+  ).rate === 0, 'Previous Sunday does not count in the new Monday-Sunday week');
+  assert(calculateWeeklyHabitRate(
+    [{ habitId: 'weekly-boundary', date: '2026-11-09', completed: true }],
+    'weekly-boundary', new Date(2026, 10, 8), 'weekly'
+  ).rate === 0, 'Next Monday does not count in the current calendar week');
   const weekdayStreakLogs = ['2026-10-26','2026-10-27','2026-10-28','2026-10-29','2026-10-30']
     .map(date => ({ habitId: 'weekday-streak', date, completed: true }));
   assert(calculateStreaks(weekdayStreakLogs, 'weekday-streak', '2026-11-02', 'weekdays').currentStreak === 5,
