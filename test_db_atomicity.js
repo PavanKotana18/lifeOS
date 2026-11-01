@@ -237,7 +237,57 @@ async function main() {
       'Repeated completion toggles update one existing log'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/10 PASSED`);
+
+    // 10. Same-millisecond record creation must not collide.
+    const originalNow = Date.now;
+    Date.now = () => 1793530000000;
+    try {
+      const habits = await Promise.all([
+        StorageService.habits.add({ name: 'Rapid habit A', frequency: 'daily', color: '#123456' }),
+        StorageService.habits.add({ name: 'Rapid habit B', frequency: 'daily', color: '#654321' })
+      ]);
+      check(
+        habits[0].id !== habits[1].id &&
+        await db.habits.where('id').anyOf(habits.map(item => item.id)).count() === 2,
+        'Rapid habit creation generates distinct IDs within one millisecond'
+      );
+
+      const savingsGoals = await Promise.all([
+        StorageService.savings.addGoal({ title: 'Rapid savings A', targetAmount: 1000, currentAmount: 0, targetDate: '2027-01-01' }),
+        StorageService.savings.addGoal({ title: 'Rapid savings B', targetAmount: 2000, currentAmount: 0, targetDate: '2027-02-01' })
+      ]);
+      check(
+        savingsGoals[0].id !== savingsGoals[1].id &&
+        await db.savingsGoals.where('id').anyOf(savingsGoals.map(item => item.id)).count() === 2,
+        'Rapid savings-goal creation preserves both records'
+      );
+
+      const goals = await Promise.all([
+        StorageService.goals.add({ title: 'Rapid goal A', category: 'Education', targetValue: 10, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-01-01', priority: 'Medium', status: 'In Progress' }),
+        StorageService.goals.add({ title: 'Rapid goal B', category: 'Education', targetValue: 20, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-02-01', priority: 'Medium', status: 'In Progress' })
+      ]);
+      check(goals[0].id !== goals[1].id, 'Rapid goal creation generates distinct IDs');
+
+      const milestones = await Promise.all([
+        StorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone A', completed: false }),
+        StorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone B', completed: false })
+      ]);
+      check(milestones[0].id !== milestones[1].id, 'Rapid milestone creation generates distinct IDs');
+
+      const budgets = await Promise.all([
+        StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 100 }),
+        StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 200 })
+      ]);
+      const monthlyBudgets = await db.budgets.where('monthYear').equals('2026-11').toArray();
+      check(
+        budgets[0].id === budgets[1].id && monthlyBudgets.length === 1,
+        'Concurrent monthly budget upserts serialize into one budget record'
+      );
+    } finally {
+      Date.now = originalNow;
+    }
+
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/15 PASSED`);
   } finally {
     await db.delete();
   }

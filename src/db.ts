@@ -43,7 +43,19 @@ export class LifeOSDatabase extends Dexie {
   }
 }
 
+
 export const db = new LifeOSDatabase();
+
+let recordIdSequence = 0;
+
+export function createRecordId(prefix: string): string {
+  const randomPart =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+
+  return `${prefix}_${Date.now().toString(36)}_${(recordIdSequence++).toString(36)}_${randomPart}`;
+}
 
 // Clean Database Abstraction Layer Interface
 export interface IDataStorage {
@@ -302,7 +314,7 @@ export const StorageService: IDataStorage = {
       return db.transactions.get(id);
     },
     async add(tx) {
-      const id = 'tx_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const id = createRecordId('tx');
       const createdAt = new Date().toISOString();
       const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
       await db.transactions.add(record);
@@ -369,7 +381,7 @@ export const StorageService: IDataStorage = {
       return cats;
     },
     async add(cat) {
-      const id = 'cat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const id = createRecordId('cat');
       const record: Category = { ...cat, id };
       await db.categories.add(record);
       return record;
@@ -389,15 +401,24 @@ export const StorageService: IDataStorage = {
       return db.budgets.filter(b => b.monthYear === month).toArray();
     },
     async upsert(budget) {
-      const existing = await db.budgets.filter(b => b.monthYear === budget.monthYear && b.categoryId === budget.categoryId).first();
-      if (existing) {
-        await db.budgets.update(existing.id, { monthlyAmount: budget.monthlyAmount });
-        return { ...existing, monthlyAmount: budget.monthlyAmount };
-      }
-      const id = 'b_' + Date.now();
-      const record: Budget = { ...budget, id, createdAt: new Date().toISOString() };
-      await db.budgets.add(record);
-      return record;
+      return db.transaction('rw', db.budgets, async () => {
+        const existing = await db.budgets
+          .filter(b => b.monthYear === budget.monthYear && b.categoryId === budget.categoryId)
+          .first();
+
+        if (existing) {
+          await db.budgets.update(existing.id, { monthlyAmount: budget.monthlyAmount });
+          return { ...existing, monthlyAmount: budget.monthlyAmount };
+        }
+
+        const record: Budget = {
+          ...budget,
+          id: createRecordId('b'),
+          createdAt: new Date().toISOString()
+        };
+        await db.budgets.add(record);
+        return record;
+      });
     },
     async delete(id) {
       await db.budgets.delete(id);
@@ -408,7 +429,7 @@ export const StorageService: IDataStorage = {
       return db.savingsGoals.toArray();
     },
     async addGoal(goal) {
-      const id = 'sg_' + Date.now();
+      const id = createRecordId('sg');
       const record: SavingsGoal = { ...goal, id, createdAt: new Date().toISOString() };
       await db.savingsGoals.add(record);
       return record;
@@ -430,7 +451,7 @@ export const StorageService: IDataStorage = {
         const goal = await db.savingsGoals.get(contribution.goalId);
         if (!goal) throw new Error('Savings goal not found');
 
-        const id = 'sc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        const id = createRecordId('sc');
         await db.savingsGoals.update(goal.id, {
           currentAmount: (goal.currentAmount || 0) + contribution.amount
         });
@@ -448,7 +469,7 @@ export const StorageService: IDataStorage = {
       return db.habits.filter(h => !h.archived).toArray();
     },
     async add(habit) {
-      const id = 'h_' + Date.now();
+      const id = createRecordId('h');
       const record: Habit = { ...habit, id, createdAt: new Date().toISOString() };
       await db.habits.add(record);
       return record;
@@ -500,7 +521,7 @@ export const StorageService: IDataStorage = {
         if (existing) {
           await db.habitLogs.update(existing.id, { completed, completedAt });
         } else {
-          const id = 'hl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+          const id = createRecordId('hl');
           await db.habitLogs.add({ id, habitId, date, completed, completedAt });
         }
       });
@@ -511,7 +532,7 @@ export const StorageService: IDataStorage = {
       return db.goals.toArray();
     },
     async add(goal) {
-      const id = 'g_' + Date.now();
+      const id = createRecordId('g');
       const record: Goal = { ...goal, id, createdAt: new Date().toISOString() };
       await db.goals.add(record);
       return record;
@@ -529,7 +550,7 @@ export const StorageService: IDataStorage = {
       return db.milestones.where('goalId').equals(goalId).toArray();
     },
     async addMilestone(milestone) {
-      const id = 'm_' + Date.now();
+      const id = createRecordId('m');
       const record: Milestone = { ...milestone, id };
       await db.milestones.add(record);
       return record;
@@ -549,7 +570,7 @@ export const StorageService: IDataStorage = {
       return db.tasks.toArray();
     },
     async add(task) {
-      const id = 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      const id = createRecordId('t');
       const record: Task = { ...task, id, createdAt: new Date().toISOString() };
       await db.tasks.add(record);
       return record;
