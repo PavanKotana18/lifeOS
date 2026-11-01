@@ -1,0 +1,161 @@
+require('fake-indexeddb/auto');
+
+const fs = require('fs');
+const path = require('path');
+const Module = require('module');
+const ts = require('typescript');
+const assert = require('assert');
+
+async function main() {
+  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true
+    }
+  }).outputText;
+
+  const loaded = new Module(path.join(__dirname, 'src/db.atomicity.cjs'), module);
+  loaded.filename = path.join(__dirname, 'src/db.atomicity.cjs');
+  loaded.paths = module.paths;
+  loaded._compile(compiled, loaded.filename);
+
+  const { db, StorageService } = loaded.exports;
+  await db.open();
+
+  let passed = 0;
+  const check = (condition, message) => {
+    assert.ok(condition, message);
+    passed++;
+    console.log('PASS:', message);
+  };
+
+  const stamp = '2026-11-01T10:00:00.000Z';
+
+  try {
+    // 1. Contribution insert failure must roll back the goal balance update.
+    await db.savingsGoals.add({
+      id: 'sg-atomic', title: 'Emergency fund',
+      targetAmount: 10000, currentAmount: 1000,
+      targetDate: '2027-12-31', createdAt: stamp
+    });
+
+    const stopContribution = db.savingsContributions.hook('creating')
+      .subscribe(() => { throw new Error('Injected contribution failure'); });
+
+    try {
+      await assert.rejects(StorageService.savings.addContribution({
+        goalId: 'sg-atomic', amount: 500, date: '2026-11-01'
+      }));
+    } finally {
+      stopContribution();
+    }
+
+    check(
+      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1000 &&
+      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 0,
+      'Contribution failure rolls back the goal balance and contribution record'
+    );
+
+    // 2. Invalid amounts and missing goals must be rejected.
+    await assert.rejects(
+      StorageService.savings.addContribution({
+        goalId: 'sg-atomic', amount: 0, date: '2026-11-01'
+      })
+    );
+    await assert.rejects(
+      StorageService.savings.addContribution({
+        goalId: 'missing-goal', amount: 100, date: '2026-11-01'
+      })
+    );
+
+    check(
+      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1000 &&
+      await db.savingsContributions.count() === 0,
+      'Invalid amounts and missing goals create no financial records'
+    );
+
+    // 3. Habit deletion must roll back if dependent-log deletion fails.
+    await db.habits.add({
+      id: 'habit-atomic', name: 'Read',
+      frequency: 'daily', color: '#123456', createdAt: stamp
+    });
+    await db.habitLogs.add({
+      id: 'log-atomic', habitId: 'habit-atomic',
+      date: '2026-11-01', completed: true
+    });
+
+    const stopHabitDelete = db.habitLogs.hook('deleting')
+      .subscribe(() => { throw new Error('Injected habit-log deletion failure'); });
+
+    try {
+      await assert.rejects(StorageService.habits.delete('habit-atomic'));
+    } finally {
+      stopHabitDelete();
+    }
+
+    check(
+      Boolean(await db.habits.get('habit-atomic')) &&
+      Boolean(await db.habitLogs.get('log-atomic')),
+      'Habit deletion rolls back when dependent-log deletion fails'
+    );
+
+    // 4. Goal deletion must roll back if milestone deletion fails.
+    await db.goals.add({
+      id: 'goal-atomic', title: 'Learn security',
+      category: 'Education', targetValue: 10, currentValue: 2,
+      startDate: '2026-11-01', targetDate: '2027-01-01',
+      priority: 'High', status: 'In Progress', createdAt: stamp
+    });
+    await db.milestones.add({
+      id: 'milestone-atomic', goalId: 'goal-atomic',
+      title: 'Complete module one', completed: false
+    });
+
+    const stopMilestoneDelete = db.milestones.hook('deleting')
+      .subscribe(() => { throw new Error('Injected milestone deletion failure'); });
+
+    try {
+      await assert.rejects(StorageService.goals.delete('goal-atomic'));
+    } finally {
+      stopMilestoneDelete();
+    }
+
+    check(
+      Boolean(await db.goals.get('goal-atomic')) &&
+      Boolean(await db.milestones.get('milestone-atomic')),
+      'Goal deletion rolls back when milestone deletion fails'
+    );
+
+    // 5. Savings-goal deletion must roll back if contribution deletion fails.
+    await db.savingsContributions.add({
+      id: 'contribution-atomic', goalId: 'sg-atomic',
+      amount: 100, date: '2026-11-01', createdAt: stamp
+    });
+
+    const stopSavingsDelete = db.savingsContributions.hook('deleting')
+      .subscribe(() => { throw new Error('Injected savings deletion failure'); });
+
+    try {
+      await assert.rejects(StorageService.savings.deleteGoal('sg-atomic'));
+    } finally {
+      stopSavingsDelete();
+    }
+
+    check(
+      Boolean(await db.savingsGoals.get('sg-atomic')) &&
+      Boolean(await db.savingsContributions.get('contribution-atomic')),
+      'Savings-goal deletion rolls back when contribution deletion fails'
+    );
+
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/5 PASSED`);
+  } finally {
+    await db.delete();
+  }
+}
+
+main().catch(error => {
+  console.error('DATABASE ATOMICITY TEST FAILED:', error);
+  process.exitCode = 1;
+});

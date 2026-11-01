@@ -417,16 +417,27 @@ export const StorageService: IDataStorage = {
       await db.savingsGoals.update(id, updates);
     },
     async deleteGoal(id) {
-      await db.savingsGoals.delete(id);
-      await db.savingsContributions.where('goalId').equals(id).delete();
+      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
+        await db.savingsGoals.delete(id);
+        await db.savingsContributions.where('goalId').equals(id).delete();
+      });
     },
     async addContribution(contribution) {
-      const id = 'sc_' + Date.now();
-      await db.savingsContributions.add({ ...contribution, id, createdAt: new Date().toISOString() });
-      const goal = await db.savingsGoals.get(contribution.goalId);
-      if (goal) {
-        await db.savingsGoals.update(goal.id, { currentAmount: (goal.currentAmount || 0) + contribution.amount });
+      if (!Number.isFinite(contribution.amount) || contribution.amount <= 0) {
+        throw new Error('Savings contribution amount must be a positive finite number');
       }
+      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
+        const goal = await db.savingsGoals.get(contribution.goalId);
+        if (!goal) throw new Error('Savings goal not found');
+
+        const id = 'sc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        await db.savingsGoals.update(goal.id, {
+          currentAmount: (goal.currentAmount || 0) + contribution.amount
+        });
+        await db.savingsContributions.add({
+          ...contribution, id, createdAt: new Date().toISOString()
+        });
+      });
     },
     async getContributions(goalId) {
       return db.savingsContributions.where('goalId').equals(goalId).reverse().sortBy('date');
@@ -446,8 +457,10 @@ export const StorageService: IDataStorage = {
       await db.habits.update(id, updates);
     },
     async delete(id) {
-      await db.habits.delete(id);
-      await db.habitLogs.where('habitId').equals(id).delete();
+      await db.transaction('rw', db.habits, db.habitLogs, async () => {
+        await db.habits.delete(id);
+        await db.habitLogs.where('habitId').equals(id).delete();
+      });
     },
     async getLogs(habitId) {
       if (habitId) return db.habitLogs.where('habitId').equals(habitId).toArray();
@@ -486,8 +499,10 @@ export const StorageService: IDataStorage = {
       await db.goals.update(id, { ...updates, updatedAt: new Date().toISOString() });
     },
     async delete(id) {
-      await db.goals.delete(id);
-      await db.milestones.where('goalId').equals(id).delete();
+      await db.transaction('rw', db.goals, db.milestones, async () => {
+        await db.goals.delete(id);
+        await db.milestones.where('goalId').equals(id).delete();
+      });
     },
     async getMilestones(goalId) {
       return db.milestones.where('goalId').equals(goalId).toArray();
