@@ -1,117 +1,274 @@
-
-name: Extract LifeOS project
+name: Secure LifeOS ZIP Extraction
 
 on:
   workflow_dispatch:
 
+concurrency:
+  group: lifeos-zip-extraction
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  extract:
-    name: Extract and Commit LifeOS
+  validate:
+    name: Validate and extract archive
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: read
+
     steps:
-      # Step 1: Checkout repository
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Validate and safely extract ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import shutil
+          import stat
+          import zipfile
+          from pathlib import Path, PurePosixPath
+
+          archive = Path("LifeOS-Android-Capacitor_New.zip")
+          destination = Path("incoming/LifeOS-Android-Capacitor_New")
+          expected_root = "LifeOS-Android-Capacitor_New"
+
+          MAX_ENTRIES = 2000
+          MAX_TOTAL_SIZE = 100 * 1024 * 1024
+          MAX_FILE_SIZE = 25 * 1024 * 1024
+          MAX_RATIO = 1000
+
+          if not archive.is_file():
+              raise SystemExit("ZIP archive not found.")
+
+          if destination.exists():
+              shutil.rmtree(destination)
+
+          with zipfile.ZipFile(archive) as z:
+              entries = z.infolist()
+
+              if len(entries) > MAX_ENTRIES:
+                  raise SystemExit("Too many archive entries.")
+
+              if sum(e.file_size for e in entries) > MAX_TOTAL_SIZE:
+                  raise SystemExit("Archive exceeds total size limit.")
+
+              seen = set()
+              extracted = 0
+
+              for item in entries:
+                  name = item.filename
+
+                  if not name or "\\" in name or name.startswith("/"):
+                      raise SystemExit(f"Unsafe path: {name!r}")
+
+                  parts = name.split("/")
+                  is_directory = item.is_dir()
+
+                  if is_directory and parts[-1] == "":
+                      parts = parts[:-1]
+
+                  if any(p in ("", ".", "..") for p in parts):
+                      raise SystemExit(f"Unsafe path: {name}")
+
+                  if not parts or parts[0] != expected_root:
+                      raise SystemExit(f"Unexpected archive root: {name}")
+
+                  if any(p.lower() in (".git", ".github") for p in parts):
+                      continue
+
+                  if item.flag_bits & 0x1:
+                      raise SystemExit(f"Encrypted entry rejected: {name}")
+
+                  mode = item.external_attr >> 16
+                  file_type = stat.S_IFMT(mode)
+
+                  if file_type == stat.S_IFLNK:
+                      raise SystemExit(f"Symlink rejected: {name}")
+
+                  if file_type not in (0, stat.S_IFREG, stat.S_IFDIR):
+                      raise SystemExit(f"Special file rejected: {name}")
+
+                  if is_directory:
+                      continue
+
+                  if item.file_size > MAX_FILE_SIZE:
+                      raise SystemExit(f"File exceeds size limit: {name}")
+
+                  if item.file_size and not item.compress_size:
+                      raise SystemExit(f"Invalid compression metadata: {name}")
+
+                  if item.compress_size and (
+                      item.file_size / item.compress_size > MAX_RATIO
+                  ):
+                      raise SystemExit(f"Suspicious compression ratio: {name}")
+
+                  relative = parts[1:]
+
+                  if not relative:
+                      raise SystemExit(f"Invalid file path: {name}")
+
+                  normalized = "/".join(relative)
+                  key = normalized.casefold()
+
+                  if key in seen:
+                      raise SystemExit(f"Duplicate file path: {name}")
+
+                  seen.add(key)
+
+                  filename = relative[-1].lower()
+
+                  sensitive = (
+                      filename.startswith(".env")
+                      or filename.endswith((
+                          ".jks", ".keystore", ".p12", ".pfx",
+                          ".pem", ".key", ".p8"
+                      ))
+                      or filename in (
+                          "google-services.json",
+                          "id_rsa",
+                          "id_ed25519"
+                      )
+                      or "credentials" in filename
+                      or "secrets" in filename
+                  )
+
+                  if sensitive:
+                      raise SystemExit(f"Potential secret file rejected: {name}")
+
+                  target = destination.joinpath(*relative)
+
+                  if not target.resolve().is_relative_to(destination.resolve()):
+                      raise SystemExit(f"Path escaped destination: {name}")
+
+                  target.parent.mkdir(parents=True, exist_ok=True)
+
+                  with z.open(item) as source, target.open("xb") as output:
+                      shutil.copyfileobj(source, output)
+
+                  extracted += 1
+
+          if extracted == 0:
+              raise SystemExit("No eligible project files extracted.")
+
+          required = (
+              "package.json",
+              "capacitor.config.ts",
+              "vite.config.ts",
+              "src/App.tsx",
+              "src/main.tsx",
+              "android/app/build.gradle",
+          )
+
+          missing = [
+              name for name in required
+              if not (destination / name).is_file()
+          ]
+
+          if missing:
+              raise SystemExit(
+                  "Required files missing: " + ", ".join(missing)
+              )
+
+          print(f"Validated and extracted {extracted} files.")
+          print(f"Destination: {destination}")
+          PY
+
+      - name: Upload validated snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: validated-lifeos-snapshot
+          path: incoming/LifeOS-Android-Capacitor_New/
+          if-no-files-found: error
+          retention-days: 7
+
+  create-pr:
+    name: Create review pull request
+    needs: validate
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ secrets.EXTRACT_TOKEN }}
 
-      # Step 2: Verify ZIP file
-      - name: Verify ZIP archive
+      - name: Clear previous snapshot
+        shell: bash
+        run: rm -rf -- incoming
+
+      - name: Download validated snapshot
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: validated-lifeos-snapshot
+          path: incoming/LifeOS-Android-Capacitor_New
+
+      - name: Create or update extraction PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -euo pipefail
 
-          ZIP_FILE="LifeOS-Android-Capacitor_New.zip"
+          BRANCH="automation/extract-lifeos-zip"
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "::error::ZIP file not found: $ZIP_FILE"
-            exit 1
-          fi
-
-          echo "ZIP archive found."
-          ls -lh "$ZIP_FILE"
-
-      # Step 3: Extract project
-      - name: Extract project files
-        run: |
-          set -euo pipefail
-
-          ZIP_FILE="LifeOS-Android-Capacitor_New.zip"
-          TEMP_DIR=$(mktemp -d)
-
-          echo "Extracting project archive..."
-
-          unzip -q "$ZIP_FILE" -d "$TEMP_DIR"
-
-          # Detect whether ZIP contains a root folder
-          ROOT_COUNT=$(find "$TEMP_DIR" -mindepth 1 -maxdepth 1 | wc -l)
-
-          if [ "$ROOT_COUNT" -eq 1 ] && \
-             [ -d "$TEMP_DIR/LifeOS-Android-Capacitor_New" ]; then
-            SRC_DIR="$TEMP_DIR/LifeOS-Android-Capacitor_New"
-          else
-            SRC_DIR="$TEMP_DIR"
-          fi
-
-          echo "Copying project files and subfolders..."
-
-          cp -a "$SRC_DIR"/. .
-
-          rm -rf "$TEMP_DIR"
-
-          echo "Extraction completed."
-          echo "Extracted project structure:"
-          find . -maxdepth 3 -type f \
-            ! -path "./.git/*" \
-            | sort | head -200
-
-      # Step 4: Validate important project files
-      - name: Validate project structure
-        run: |
-          set -euo pipefail
-
-          REQUIRED_FILES=(
-            "package.json"
-            "capacitor.config.ts"
-            "vite.config.ts"
-            "android/app/build.gradle"
-            "android/app/src/main/AndroidManifest.xml"
-            "src/App.tsx"
-            "src/main.tsx"
-          )
-
-          for FILE in "${REQUIRED_FILES[@]}"; do
-            if [ ! -f "$FILE" ]; then
-              echo "::error::Required project file missing: $FILE"
-              exit 1
-            fi
-          done
-
-          echo "All required project files are present."
-
-      # Step 5: Configure Git
-      - name: Configure Git
-        run: |
           git config user.name "github-actions[bot]"
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
-      # Step 6: Commit and push
-      - name: Commit and push extracted project
-        run: |
-          set -euo pipefail
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+            git switch --create "$BRANCH" --track "origin/$BRANCH"
+          else
+            git switch --create "$BRANCH" origin/main
+          fi
 
-          git add -A
+          git add -- incoming/LifeOS-Android-Capacitor_New/
 
           if git diff --cached --quiet; then
-            echo "No changes detected."
+            echo "No snapshot changes to propose."
+            exit 0
+          fi
+
+          git commit -m "Add validated LifeOS ZIP snapshot for review"
+          git push origin "$BRANCH"
+
+          if gh pr view "$BRANCH" --json url >/dev/null 2>&1; then
+            echo "Updated existing extraction pull request."
           else
-            git commit -m "Extract LifeOS Android project from ZIP"
-            git push origin HEAD:main
-            echo "Project successfully pushed to main."
+            gh pr create \
+              --base main \
+              --head "$BRANCH" \
+              --title "Review: imported LifeOS project snapshot" \
+              --body-file - <<'BODY'
+          ## Purpose
+          Review the project snapshot imported from the tracked ZIP archive.
+
+          ## Security controls
+          - Extracted into an isolated incoming/ directory.
+          - Existing application source files are not overwritten.
+          - .git and .github archive entries are excluded.
+          - Unsafe paths, symlinks, special files and duplicate paths are rejected.
+          - File size and compression limits are enforced.
+          - Potential credential and signing files are rejected.
+          - Imported code is not executed by the write-enabled job.
+          - No direct push to main is performed.
+
+          ## Required review
+          Compare the snapshot against the current application.
+          Run appropriate checks before promoting any files into the project root.
+          BODY
           fi

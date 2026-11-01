@@ -3,15 +3,62 @@ name: Build LifeOS Android APK
 
 on:
   push:
-    branches: ["main", "master"]
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "bugfix/**"
+      - "release/**"
+      - "hotfix/**"
+  pull_request:
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build Android APK
+  checks:
+    name: Automated checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Run Automated LifeOS Verification Tests
+        run: npm test
+
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+  android-build:
+    name: Android integration and release verification
+    needs: checks
+    if: >-
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/'))) ||
+      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/feature/')))
     runs-on: ubuntu-latest
 
     steps:
@@ -50,12 +97,6 @@ jobs:
 
       - name: Install Node Dependencies
         run: npm ci
-
-      - name: Run Automated LifeOS Verification Tests
-        run: npm test
-
-      - name: Check TypeScript
-        run: npx tsc --noEmit
 
       - name: Build Web Application
         run: npm run build
