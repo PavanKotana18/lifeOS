@@ -232,3 +232,64 @@ export function buildTaskNotificationPlan(task: Task, preferences: NotificationP
   if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 60_000));
   return plan;
 }
+
+// Input Experience & Normalization Utilities
+export function normalizeSingleLine(value: string | undefined | null): string {
+  if (!value) return '';
+  return value.trim().replace(/[ \t]+/g, ' ');
+}
+
+export function normalizeMultiLine(value: string | undefined | null): string {
+  if (!value) return '';
+  return value.split('\n').map(line => line.trim()).join('\n').trim();
+}
+
+export function isInputBlank(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'string') return value.trim().length === 0;
+  return false;
+}
+
+export function isFormDirty<T extends Record<string, any>>(
+  initial: T | null | undefined,
+  current: T | null | undefined,
+  fields?: (keyof T)[]
+): boolean {
+  if (!initial || !current) return false;
+  const targetFields = fields && fields.length > 0
+    ? fields
+    : (Array.from(new Set([...Object.keys(initial), ...Object.keys(current)])) as (keyof T)[]);
+  for (const field of targetFields) {
+    const a = initial[field];
+    const b = current[field];
+    if (typeof a === 'number' || typeof b === 'number') {
+      const numA = Number(a) || 0;
+      const numB = Number(b) || 0;
+      if (numA !== numB) return true;
+    } else if (typeof a === 'boolean' || typeof b === 'boolean') {
+      if (Boolean(a) !== Boolean(b)) return true;
+    } else {
+      const strA = normalizeSingleLine(String(a ?? ''));
+      const strB = normalizeSingleLine(String(b ?? ''));
+      if (strA !== strB) return true;
+    }
+  }
+  return false;
+}
+
+export interface SessionAuthorizationState {
+  biometricEnabled: boolean;
+  biometricAuthenticated: boolean;
+  coordinatorAuthenticated: boolean;
+  sessionGeneration: number;
+  captureGeneration: number;
+}
+
+export function isSessionAuthorized(state: SessionAuthorizationState): boolean {
+  if (!state.biometricEnabled) return true;
+  return (
+    state.biometricAuthenticated &&
+    state.coordinatorAuthenticated &&
+    state.sessionGeneration === state.captureGeneration
+  );
+}
