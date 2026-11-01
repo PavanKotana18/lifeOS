@@ -68,7 +68,7 @@ function validateTransactionRecord(
   }
 
   if (requireComplete || record.date !== undefined) {
-    if (typeof record.date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(record.date)) {
+    if (typeof record.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(record.date)) {
       throw new Error('Transaction date must use YYYY-MM-DD format');
     }
     const [year, month, day] = record.date.split('-').map(Number);
