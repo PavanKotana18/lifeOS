@@ -1,5 +1,26 @@
 apply plugin: 'com.android.application'
 
+// package.json is the authoritative app version. CI adds its monotonically
+// increasing workflow run number so every distributable build gets a higher
+// Android versionCode while local builds remain reproducible.
+def lifeosPackage = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
+def lifeosVersion = lifeosPackage.version
+def lifeosVersionMatch = (lifeosVersion =~ /^(\d+)\.(\d+)\.(\d+)$/)
+if (!lifeosVersionMatch.matches()) {
+    throw new GradleException("package.json version must be MAJOR.MINOR.PATCH, got: ${lifeosVersion}")
+}
+def lifeosMajor = lifeosVersionMatch[0][1].toInteger()
+def lifeosMinor = lifeosVersionMatch[0][2].toInteger()
+def lifeosPatch = lifeosVersionMatch[0][3].toInteger()
+if (lifeosMinor >= 1000 || lifeosPatch >= 1000) {
+    throw new GradleException('LifeOS Android versionCode mapping requires MINOR and PATCH below 1000.')
+}
+def lifeosBuildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '0').toInteger()
+def lifeosVersionCode = lifeosMajor * 1000000 + lifeosMinor * 1000 + lifeosPatch + lifeosBuildNumber
+if (lifeosVersionCode <= 0 || lifeosVersionCode > 2100000000) {
+    throw new GradleException("Calculated Android versionCode is out of range: ${lifeosVersionCode}")
+}
+
 android {
     namespace "com.lifeos.personal"
     compileSdkVersion rootProject.ext.compileSdkVersion
@@ -7,8 +28,8 @@ android {
         applicationId "com.lifeos.personal"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0"
+        versionCode lifeosVersionCode
+        versionName lifeosVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'

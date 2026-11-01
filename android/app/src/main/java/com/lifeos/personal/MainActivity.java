@@ -1,6 +1,8 @@
 package com.lifeos.personal;
 
 import android.os.Bundle;
+import android.content.res.Configuration;
+import android.view.View;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -9,5 +11,27 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BiometricAuthPlugin.class);
         registerPlugin(NotificationSettingsPlugin.class);
         super.onCreate(savedInstanceState);
+    }
+
+    private void notifyWebTheme(Configuration configuration) {
+        if (bridge == null || bridge.getWebView() == null) return;
+        int nightMode = configuration.uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        if (nightMode != Configuration.UI_MODE_NIGHT_YES && nightMode != Configuration.UI_MODE_NIGHT_NO) return;
+        boolean dark = nightMode == Configuration.UI_MODE_NIGHT_YES;
+        String script = "window.lifeosSystemDark=" + dark + ";window.dispatchEvent(new CustomEvent('lifeos:system-appearance',{detail:{dark:" + dark + "}}));";
+        View webView = bridge.getWebView();
+        webView.post(() -> bridge.getWebView().evaluateJavascript(script, null));
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        notifyWebTheme(newConfig);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        notifyWebTheme(getResources().getConfiguration());
     }
 }

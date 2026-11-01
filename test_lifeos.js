@@ -10,6 +10,19 @@
  */
 
 process.env.TZ = 'America/New_York';
+const fs = require('fs');
+const vm = require('vm');
+const ts = require('typescript');
+function loadTsModule(path) {
+  const loadedModule = { exports: {} };
+  const source = fs.readFileSync(path, 'utf8');
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: loadedModule, exports: loadedModule.exports, Promise, Intl, Date, Math, Number, String, Object, Array, Error });
+  return loadedModule.exports;
+}
+const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
+const userPreferenceUtils = loadTsModule('./src/services/userPreferences.ts');
+const { buildFinanceAnalytics } = loadTsModule('./src/services/financeAnalytics.ts');
+const { pushTabHistory, popTabHistory } = loadTsModule('./src/services/tabHistory.ts');
 const {
   calculateStreaks,
   calculateFinanceMetrics,
@@ -26,7 +39,12 @@ const {
   resolveAppearance,
   normalizeNotificationPermission,
   shouldAnimateNavigation,
-  stableNotificationId
+  stableNotificationId,
+  getMonthCalendarDays,
+  getTasksForDate,
+  greetingForHour,
+  watchSystemTheme,
+  resolveBackAction
 } = require('./src_core_logic.js');
 
 // Mock in-memory database abstraction layer matching Dexie API
@@ -354,6 +372,34 @@ async function runTestSuite() {
   const dstLogs = ['2026-03-07', '2026-03-08', '2026-03-09'].map(date => ({ habitId: 'dst', date, completed: true }));
   assert(calculateStreaks(dstLogs, 'dst', '2026-03-09').currentStreak === 3, 'Habit streak remains continuous across the daylight-saving transition');
   assert(calculateWeeklyHabitRate(dstLogs, 'dst', new Date(2026, 2, 9)).rate === 43, 'Weekly completion rate uses local calendar days');
+  // Frequency-aware habit analytics regression tests
+  const weekdayLogs = ['2026-10-26','2026-10-27','2026-10-28','2026-10-29','2026-10-30']
+    .map(date => ({ habitId: 'weekday', date, completed: true }));
+  assert(calculateWeeklyHabitRate(weekdayLogs, 'weekday', new Date(2026, 9, 30), 'weekdays').rate === 100,
+    'Weekday habit rate uses five scheduled weekdays, not seven calendar days');
+  const weekendLogs = ['2026-10-24','2026-10-25']
+    .map(date => ({ habitId: 'weekend', date, completed: true }));
+  assert(calculateWeeklyHabitRate(weekendLogs, 'weekend', new Date(2026, 9, 25), 'weekends').rate === 100,
+    'Weekend habit rate uses scheduled weekend days');
+  assert(calculateWeeklyHabitRate([{ habitId: 'weekly', date: '2026-10-28', completed: true }],
+    'weekly', new Date(2026, 9, 30), 'weekly').rate === 100,
+    'Weekly habit needs one completion in the current Monday-Sunday week');
+  assert(calculateWeeklyHabitRate(
+    [{ habitId: 'weekly-boundary', date: '2026-11-01', completed: true }],
+    'weekly-boundary', new Date(2026, 10, 8), 'weekly'
+  ).rate === 0, 'Previous Sunday does not count in the new Monday-Sunday week');
+  assert(calculateWeeklyHabitRate(
+    [{ habitId: 'weekly-boundary', date: '2026-11-09', completed: true }],
+    'weekly-boundary', new Date(2026, 10, 8), 'weekly'
+  ).rate === 0, 'Next Monday does not count in the current calendar week');
+  const weekdayStreakLogs = ['2026-10-26','2026-10-27','2026-10-28','2026-10-29','2026-10-30']
+    .map(date => ({ habitId: 'weekday-streak', date, completed: true }));
+  assert(calculateStreaks(weekdayStreakLogs, 'weekday-streak', '2026-11-02', 'weekdays').currentStreak === 5,
+    'Weekday streak continues across Saturday and Sunday');
+  const weeklyStreakLogs = ['2026-10-19','2026-10-28']
+    .map(date => ({ habitId: 'weekly-streak', date, completed: true }));
+  assert(calculateStreaks(weeklyStreakLogs, 'weekly-streak', '2026-10-30', 'weekly').currentStreak === 2,
+    'Weekly streak counts consecutive calendar weeks');
   assert(getGoalProgress(125, 100) === 100 && getGoalProgress(-2, 100) === 0, 'Goal progress is bounded between zero and one hundred percent');
   const localNow = new Date(2026, 6, 4, 8, 5, 6, 7);
   const entry = buildFinanceEntry(formatLocalDateTime(localNow), localNow);
@@ -364,12 +410,84 @@ async function runTestSuite() {
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', completed: true }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4)).length === 0, 'Completed task notifications are not scheduled');
 
   console.log('\n--- 4C. Testing onboarding, profile and notification diagnostics ---');
-  assert(shouldShowOnboarding(false, false) && !shouldShowOnboarding(false, true), 'First launch onboards while existing legacy data migrates past onboarding');
-  assert(shouldShowOnboarding(false, true, true) && !shouldShowOnboarding(true, true, true), 'Interrupted onboarding resumes, completed onboarding stays complete');
+  assert(shouldShowOnboarding(false, false) && !shouldShowOnboarding(false, true), 'A fresh empty install enters onboarding while an existing profile/data set migrates past it');
+  assert(shouldShowOnboarding(false, false, true) && !shouldShowOnboarding(true, false, true), 'An interrupted first-run flow resumes while a completed flow remains closed');
+  assert(shouldShowOnboarding(false, false, true), 'Skipping optional biometric setup does not prevent unfinished onboarding from resuming');
   assert(profileInitial(' Pavan Kotana ') === 'P' && profileInitial('') === '', 'Profile avatar uses the uppercase first letter and handles an empty name');
   assert(resolveAppearance('dark', false) === 'dark' && resolveAppearance('light', true) === 'light' && resolveAppearance('system', true) === 'dark' && resolveAppearance('system', false) === 'light', 'Dark, light and system appearance preferences resolve correctly');
+  assert(userPreferenceUtils.resolveSystemDark(false, true) === false && userPreferenceUtils.resolveSystemDark(true, false) === true && userPreferenceUtils.resolveSystemDark(undefined, false) === false, 'Native Android appearance overrides stale WebView media state and browsers fall back to matchMedia');
+  const restoredPreferences = userPreferenceUtils.mergeUserPreferences({ currency: 'EUR', distance: 'mi', timeFormat: '24h' }, 'INR');
+  assert(restoredPreferences.currency === 'EUR' && restoredPreferences.distance === 'mi' && restoredPreferences.timeFormat === '24h' && restoredPreferences.volume === 'L', 'Stored preferences restore while new fields receive safe defaults');
+  assert(userPreferenceUtils.formatCurrency(1234.5, 'USD', 'en-US') === '$1,234.50' && userPreferenceUtils.formatCurrency(1234.5, 'EUR', 'de-DE').includes('1.234,50'), 'Currency uses locale separators and currency precision');
+  assert(userPreferenceUtils.getNumberLocale('EUR', 'system') === undefined, 'System locale uses the device Intl locale instead of inferring locale from currency');
+  assert(userPreferenceUtils.formatTimePreference(new Date(2026, 0, 2, 13, 5), '24h', 'en-GB').includes('13:05') && userPreferenceUtils.formatTimePreference(new Date(2026, 0, 2, 13, 5), '12h', 'en-US').includes('1:05'), 'Time format preference changes display without altering stored timestamps');
+  assert(Math.abs(userPreferenceUtils.convertMeasurement(1, 'mi', 'km') - 1.609344) < 1e-12 && Math.abs(userPreferenceUtils.convertMeasurement(500, 'mL', 'L') - 0.5) < 1e-12, 'Distance and volume conversion preserve precise canonical values');
+  assert(Math.abs(userPreferenceUtils.convertMeasurement(1, 'mph', 'm/s') - 0.44704) < 1e-12 && userPreferenceUtils.convertMeasurement(0, 'L', 'US gal') === 0, 'Speed conversions and zero edge cases are supported');
+  let invalidConversionRejected = false; try { userPreferenceUtils.convertMeasurement(1, 'mi', 'L'); } catch { invalidConversionRejected = true; }
+  assert(invalidConversionRejected && userPreferenceUtils.formatDatePreference(new Date(2026, 0, 2), 'YMD') === '2026-01-02', 'Incompatible units fail safely and date display preference formats consistently');
+  const transactionUpdate = userPreferenceUtils.buildTransactionUpdate({ type: 'expense', amount: 18.25, category: 'Food', description: 'Lunch', dateTime: '2026-10-31T12:15', paymentMethod: 'UPI', notes: 'Workday', isRecurring: false });
+  assert(transactionUpdate.amount === 18.25 && transactionUpdate.date === '2026-10-31' && transactionUpdate.notes === 'Workday' && !('id' in transactionUpdate) && !('createdAt' in transactionUpdate), 'Transaction edit fields exclude identity and creation timestamp so updates preserve them');
+  const analyticsRows = buildFinanceAnalytics([
+    { date: '2026-09-03', amount: 120, type: 'expense', category: 'Rent' },
+    { date: '2026-10-01', amount: 1000, type: 'income', category: 'Salary' },
+    { date: '2026-10-02', amount: 100, type: 'expense', category: 'Food' },
+    { date: '2026-10-03', amount: 50, type: 'expense', category: 'Rent' },
+  ], [
+    { monthYear: '2026-10', categoryId: 'cat-food', monthlyAmount: 150 },
+    { monthYear: '2026-10', categoryId: 'cat-rent', monthlyAmount: 100 },
+    { monthYear: '2026-10', categoryId: 'cat-missing', monthlyAmount: 75 },
+    { monthYear: '2026-10', monthlyAmount: 200 },
+  ], '2026-10', 6, [
+    { id: 'cat-food', name: 'Food' },
+    { id: 'cat-rent', name: 'Rent' },
+  ]);
+  assert(analyticsRows.totalIncome === 1000 && analyticsRows.totalExpenses === 150 && analyticsRows.netSavings === 850 && analyticsRows.savingsRate === 85 && analyticsRows.expenseChange === 25, 'Finance analytics totals, savings rate, and month comparison derive from stored records');
+  assert(analyticsRows.largestCategory.name === 'Food' && analyticsRows.largestCategory.percentage > 66 && analyticsRows.budgetRows[0].category === 'Food' && analyticsRows.budgetRows[0].spent === 100 && analyticsRows.budgetRows[0].remaining === 50, 'Category budget resolves category ID to its display name and calculates spending');
+  assert(analyticsRows.budgetRows[1].category === 'Rent' && analyticsRows.budgetRows[1].spent === 50 && analyticsRows.budgetRows[1].remaining === 50, 'A second category budget resolves and calculates independently');
+  assert(analyticsRows.budgetRows[2].category === 'Unknown category' && analyticsRows.budgetRows[2].spent === 0 && analyticsRows.budgetRows[2].remaining === 75, 'Missing category references fail safely without misattributing spending');
+  assert(analyticsRows.budgetRows[3].category === 'Overall' && analyticsRows.budgetRows[3].spent === 150, 'Overall budgets continue to use total expenses');
+  const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
+  const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
+  assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');
+  let financeHistory = [];
+  financeHistory = pushTabHistory(financeHistory, 'overview', 'transactions');
+  financeHistory = pushTabHistory(financeHistory, 'transactions', 'budgets');
+  const financeBackOne = popTabHistory(financeHistory, 'overview');
+  const financeBackTwo = popTabHistory(financeBackOne.history, 'overview');
+  assert(financeBackOne.next === 'transactions' && financeBackTwo.next === 'overview' && financeBackTwo.history.length === 0 && pushTabHistory(financeHistory, 'budgets', 'budgets').length === 2, 'Nested Finance navigation returns through visited subtabs without duplicate entries');
+  assert(resolveAppearance('system', false) === 'light' && resolveAppearance('system', true) === 'dark' && resolveAppearance('light', true) === 'light' && resolveAppearance('dark', false) === 'dark' && resolveAppearance('system', false) === 'light', 'System follows current appearance after switching back from either explicit theme and persisted System survives restart');
+  let themeListener; let systemDark = true; const appliedThemes = [];
+  const unwatchTheme = watchSystemTheme({ get matches() { return systemDark; }, addEventListener: (_, listener) => { themeListener = listener; }, removeEventListener: () => { themeListener = undefined; } }, theme => appliedThemes.push(theme));
+  systemDark = false; themeListener(); systemDark = true; themeListener(); unwatchTheme();
+  assert(appliedThemes.join(',') === 'dark,light,dark' && !themeListener, 'System appearance updates while running and removes its listener on cleanup');
+  let authCalls = 0; let finishAuth;
+  const gate = createAuthCoordinator(() => { authCalls++; return new Promise(resolve => { finishAuth = resolve; }); });
+  const firstPrompt = gate.authenticate(); const duplicatePrompt = gate.authenticate();
+  assert(firstPrompt === duplicatePrompt && authCalls === 0, 'Cold launch authentication coalesces duplicate lifecycle requests into one prompt');
+  await Promise.resolve();
+  finishAuth(false);
+  assert(await firstPrompt === false && !gate.isAuthenticated(), 'Cancelled/failed authentication leaves protected state locked');
+  const retryPrompt = gate.authenticate(); await Promise.resolve(); finishAuth(true);
+  assert(await retryPrompt && gate.isAuthenticated() && authCalls === 2, 'Authentication failure supports a controlled retry and successful authentication unlocks');
+  gate.resetForBackground();
+  const resumePrompt = gate.authenticate(); await Promise.resolve(); finishAuth(true);
+  assert(await resumePrompt && authCalls === 3, 'Backgrounding relocks and a resumed session requires authentication again');
+  let finishStaleAuth;
+  const staleGate = createAuthCoordinator(() => new Promise(resolve => { finishStaleAuth = resolve; }));
+  const stalePrompt = staleGate.authenticate(); await Promise.resolve(); staleGate.resetForBackground(); finishStaleAuth(true);
+  assert(await stalePrompt === false && !staleGate.isAuthenticated(), 'Authentication completing after backgrounding cannot unlock the app');
+  const febLeapDays = getMonthCalendarDays(2024, 1);
+  const janDays = getMonthCalendarDays(2021, 0);
+  assert(febLeapDays.filter(day => day.startsWith('2024-02-')).length === 29 && febLeapDays.includes('2024-03-03'), 'Monthly planner grid covers leap days and adjacent month boundaries');
+  assert(janDays[0] === '2020-12-28' && janDays.includes('2021-01-31'), 'Calendar grid starts on Monday and includes month edges');
+  assert(getTasksForDate([{ id: 1, dueDate: '2026-10-31' }, { id: 2, dueDate: '2026-11-01' }], '2026-10-31').length === 1, 'Calendar selection filters the agenda to its local date');
+  assert(greetingForHour(8, 'Pavan') === 'Good morning, Pavan.' && greetingForHour(14, '') === 'Good afternoon.', 'Personal greeting uses local hour and handles a missing display name');
   assert(normalizeNotificationPermission('granted', true) === 'Granted' && normalizeNotificationPermission('denied', true).includes('settings') && normalizeNotificationPermission('prompt', false) === 'Not requested', 'Notification permission states distinguish granted, denied and not-yet-requested');
   assert(shouldAnimateNavigation(false) && !shouldAnimateNavigation(true), 'Navigation transition respects reduced-motion preference');
+  const backRoute = { appReady: true, onboarding: false, locked: false, dialogOpen: false, exitDialogOpen: false, taskDetailsOpen: false, childViewOpen: false, tab: 'finance' };
+  assert(resolveBackAction({ ...backRoute, dialogOpen: true }, true) === 'dismiss-dialog' && resolveBackAction({ ...backRoute, tab: 'planner', taskDetailsOpen: true }, true) === 'close-task-details', 'Back closes dialogs and nested task details before changing pages');
+  assert(resolveBackAction({ ...backRoute, tab: 'settings', childViewOpen: true }, true) === 'close-child-view' && resolveBackAction({ ...backRoute, tab: 'settings' }, true) === 'previous-tab', 'Back closes notification preferences to Profile, then returns to the previous tab');
+  assert(resolveBackAction(backRoute, true) === 'previous-tab' && resolveBackAction({ ...backRoute, tab: 'dashboard' }, false) === 'confirm-exit' && resolveBackAction({ ...backRoute, onboarding: true }, true) === 'ignore', 'Back follows prior tabs and confirms exit only at the application root');
   assert(stableNotificationId('task:abc:taskReminders') === stableNotificationId('task:abc:taskReminders') && stableNotificationId('task:abc:taskReminders') !== stableNotificationId('task:def:taskReminders'), 'Notification IDs remain stable per task and distinct across tasks');
   const reminderPrefs = { taskReminders: true, upcomingDeadlines: false, overdueAlerts: false };
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 1, 'An explicitly selected future task reminder is planned when its category is enabled');

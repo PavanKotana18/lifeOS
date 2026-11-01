@@ -7,9 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test_lifeos.js",
+    "test": "node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js && node test_offline_resilience.js && node test_tasks_recurrence_edges.js",
     "cap:sync": "cap sync",
-    "cap:open": "cap open android"
+    "cap:open": "cap open android",
+    "postinstall": "node scripts/patch-capacitor-tar.js"
   },
   "dependencies": {
     "@capacitor/android": "^6.0.0",
@@ -28,9 +29,18 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "esbuild": "^0.25.12",
+    "fake-indexeddb": "^6.2.7",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^6.4.5"
+  },
+  "overrides": {
+    "tar": "7.5.22",
+    "rimraf": {
+      "glob": "14.0.3"
+    },
+    "minimatch": "11.0.3"
   }
 }
