@@ -657,25 +657,32 @@ export const StorageService: IDataStorage = {
   },
   backup: {
     async exportData() {
-      const exportObj = {
-        app: 'LifeOS',
-        version: '1.0.0',
-        exportedAt: new Date().toISOString(),
-        tables: {
-          transactions: await db.transactions.toArray(),
-          categories: await db.categories.toArray(),
-          budgets: await db.budgets.toArray(),
-          savingsGoals: await db.savingsGoals.toArray(),
-          savingsContributions: await db.savingsContributions.toArray(),
-          habits: await db.habits.toArray(),
-          habitLogs: await db.habitLogs.toArray(),
-          goals: await db.goals.toArray(),
-          milestones: await db.milestones.toArray(),
-          tasks: await db.tasks.toArray(),
-          settings: await db.settings.toArray()
-        }
-      };
-      return JSON.stringify(exportObj, null, 2);
+      const tables = [
+        db.transactions, db.categories, db.budgets, db.savingsGoals,
+        db.savingsContributions, db.habits, db.habitLogs, db.goals,
+        db.milestones, db.tasks, db.settings
+      ];
+      return db.transaction('r', tables, async () => {
+        const exportObj = {
+          app: 'LifeOS',
+          version: '1.0.0',
+          exportedAt: new Date().toISOString(),
+          tables: {
+            transactions: await db.transactions.toArray(),
+            categories: await db.categories.toArray(),
+            budgets: await db.budgets.toArray(),
+            savingsGoals: await db.savingsGoals.toArray(),
+            savingsContributions: await db.savingsContributions.toArray(),
+            habits: await db.habits.toArray(),
+            habitLogs: await db.habitLogs.toArray(),
+            goals: await db.goals.toArray(),
+            milestones: await db.milestones.toArray(),
+            tasks: await db.tasks.toArray(),
+            settings: await db.settings.toArray()
+          }
+        };
+        return JSON.stringify(exportObj, null, 2);
+      });
     },
     async importData(jsonData: string, options: { replaceExisting?: boolean } = {}) {
       let parsed: any;
@@ -736,20 +743,17 @@ export const StorageService: IDataStorage = {
       return { success: true, counts };
     },
     async clearAll() {
-      await Promise.all([
-        db.transactions.clear(),
-        db.categories.clear(),
-        db.budgets.clear(),
-        db.savingsGoals.clear(),
-        db.savingsContributions.clear(),
-        db.habits.clear(),
-        db.habitLogs.clear(),
-        db.goals.clear(),
-        db.milestones.clear(),
-        db.tasks.clear(),
-        db.settings.clear()
-      ]);
-      // Re-seed default categories
+      const tables = [
+        db.transactions, db.categories, db.budgets, db.savingsGoals,
+        db.savingsContributions, db.habits, db.habitLogs, db.goals,
+        db.milestones, db.tasks, db.settings
+      ];
+      await db.transaction('rw', tables, async () => {
+        for (const table of tables) {
+          await table.clear();
+        }
+      });
+      // Re-seed default categories after the atomic clear commits.
       await StorageService.categories.getAll();
     },
     async seedDemoData() {

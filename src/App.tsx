@@ -1465,15 +1465,22 @@ export default function App() {
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
-                    const json = await StorageService.backup.exportData();
-                    const blob = new Blob([json], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `lifeos-backup-${formatLocalDate(new Date())}.json`;
-                    a.click();
-                    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-                    showToast('Backup JSON exported', 'success');
+                    let downloadUrl: string | null = null;
+                    try {
+                      const json = await StorageService.backup.exportData();
+                      const blob = new Blob([json], { type: 'application/json' });
+                      downloadUrl = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = downloadUrl;
+                      a.download = `lifeos-backup-${formatLocalDate(new Date())}.json`;
+                      a.click();
+                      showToast('Backup JSON exported', 'success');
+                    } catch (error) {
+                      console.error('LifeOS backup export failed:', error);
+                      showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
+                    } finally {
+                      if (downloadUrl) window.setTimeout(() => URL.revokeObjectURL(downloadUrl!), 1000);
+                    }
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-slate-800 text-white text-xs font-semibold"
                 >

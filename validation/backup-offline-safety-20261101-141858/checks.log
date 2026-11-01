@@ -1,0 +1,233 @@
+=== PATCH STATUS ===
+patch=0
+test_patch=0
+
+=== FULL TEST SUITE ===
+
+> lifeos-personal@1.0.0 test
+> node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js
+
+=== STARTING LIFEOS AUTOMATED VERIFICATION SUITE ===
+
+
+--- 1. Testing Finance Module ---
+✅ PASSED: Create income transaction (Salary: ₹1,20,000)
+✅ PASSED: Create expense transactions (Rent: ₹35,000, Food: ₹15,000)
+✅ PASSED: Verify monthly total income: expected 120000, got 120000
+✅ PASSED: Verify monthly total expenses: expected 50000, got 50000
+✅ PASSED: Verify remaining balance: expected 70000, got 70000
+✅ PASSED: Verify budget utilisation: expected 83.3%, got 83.3%
+✅ PASSED: Edit transaction amount updated to 18000
+✅ PASSED: Verify recalculation after edit: total expenses 53000
+✅ PASSED: Verify recalculation after delete: total expenses 18000
+✅ PASSED: Verify category analytics after delete
+
+--- 2. Testing Habit Tracker Module ---
+✅ PASSED: Create habit "Drink 3L Water"
+✅ PASSED: Verify habit marked completed today
+✅ PASSED: Verify current streak is 4 (got 4)
+✅ PASSED: Verify longest streak is 4 (got 4)
+✅ PASSED: Verify historical records preserved against actual dates
+✅ PASSED: Verify undo completion today
+✅ PASSED: Verify streak calculation after undo (got 3)
+
+--- 3. Testing Goals Module ---
+✅ PASSED: Create goal "Run Half Marathon"
+✅ PASSED: Add milestones to goal
+✅ PASSED: Verify progress calculation: expected 47.4%, got 47.4%
+✅ PASSED: Verify milestone completed status
+
+--- 4. Testing Daily Planner Module ---
+✅ PASSED: Create task with Urgent priority
+✅ PASSED: Edit priority to High and change due date to 2026-11-01
+✅ PASSED: Mark task completed and verify persistent state
+
+--- 4B. Testing local deadlines and scheduling logic ---
+✅ PASSED: Task without a time remains pending through the end of its local due day
+✅ PASSED: Task without a time becomes overdue after its local due day ends
+✅ PASSED: Task with a due time becomes overdue after that local time
+✅ PASSED: Completed tasks never become overdue
+✅ PASSED: Task sorting places overdue items first and completed items last
+✅ PASSED: Habit streak remains continuous across the daylight-saving transition
+✅ PASSED: Weekly completion rate uses local calendar days
+✅ PASSED: Weekday habit rate uses five scheduled weekdays, not seven calendar days
+✅ PASSED: Weekend habit rate uses scheduled weekend days
+✅ PASSED: Weekly habit needs one completion in the current Monday-Sunday week
+✅ PASSED: Previous Sunday does not count in the new Monday-Sunday week
+✅ PASSED: Next Monday does not count in the current calendar week
+✅ PASSED: Weekday streak continues across Saturday and Sunday
+✅ PASSED: Weekly streak counts consecutive calendar weeks
+✅ PASSED: Goal progress is bounded between zero and one hundred percent
+✅ PASSED: Finance date/time converts from device-local input to a stable instant
+✅ PASSED: Finance entry keeps the exact save timestamp
+✅ PASSED: Task notification planning includes custom reminder, upcoming deadline and overdue alert times
+✅ PASSED: Completed task notifications are not scheduled
+
+--- 4C. Testing onboarding, profile and notification diagnostics ---
+✅ PASSED: A fresh empty install enters onboarding while an existing profile/data set migrates past it
+✅ PASSED: An interrupted first-run flow resumes while a completed flow remains closed
+✅ PASSED: Skipping optional biometric setup does not prevent unfinished onboarding from resuming
+✅ PASSED: Profile avatar uses the uppercase first letter and handles an empty name
+✅ PASSED: Dark, light and system appearance preferences resolve correctly
+✅ PASSED: Native Android appearance overrides stale WebView media state and browsers fall back to matchMedia
+✅ PASSED: Stored preferences restore while new fields receive safe defaults
+✅ PASSED: Currency uses locale separators and currency precision
+✅ PASSED: System locale uses the device Intl locale instead of inferring locale from currency
+✅ PASSED: Time format preference changes display without altering stored timestamps
+✅ PASSED: Distance and volume conversion preserve precise canonical values
+✅ PASSED: Speed conversions and zero edge cases are supported
+✅ PASSED: Incompatible units fail safely and date display preference formats consistently
+✅ PASSED: Transaction edit fields exclude identity and creation timestamp so updates preserve them
+✅ PASSED: Finance analytics totals, savings rate, and month comparison derive from stored records
+✅ PASSED: Expense category ranking and category budget insights are accurate
+✅ PASSED: Analytics distinguish missing prior data from a recorded month with zero expenses
+✅ PASSED: Nested Finance navigation returns through visited subtabs without duplicate entries
+✅ PASSED: System follows current appearance after switching back from either explicit theme and persisted System survives restart
+✅ PASSED: System appearance updates while running and removes its listener on cleanup
+✅ PASSED: Cold launch authentication coalesces duplicate lifecycle requests into one prompt
+✅ PASSED: Cancelled/failed authentication leaves protected state locked
+✅ PASSED: Authentication failure supports a controlled retry and successful authentication unlocks
+✅ PASSED: Backgrounding relocks and a resumed session requires authentication again
+✅ PASSED: Authentication completing after backgrounding cannot unlock the app
+✅ PASSED: Monthly planner grid covers leap days and adjacent month boundaries
+✅ PASSED: Calendar grid starts on Monday and includes month edges
+✅ PASSED: Calendar selection filters the agenda to its local date
+✅ PASSED: Personal greeting uses local hour and handles a missing display name
+✅ PASSED: Notification permission states distinguish granted, denied and not-yet-requested
+✅ PASSED: Navigation transition respects reduced-motion preference
+✅ PASSED: Back closes dialogs and nested task details before changing pages
+✅ PASSED: Back closes notification preferences to Profile, then returns to the previous tab
+✅ PASSED: Back follows prior tabs and confirms exit only at the application root
+✅ PASSED: Notification IDs remain stable per task and distinct across tasks
+✅ PASSED: An explicitly selected future task reminder is planned when its category is enabled
+✅ PASSED: Tasks without a selected reminder do not create task reminder notifications
+✅ PASSED: Past task reminders are skipped instead of scheduled
+
+--- 5. Testing Central Dashboard Integration ---
+✅ PASSED: Verify dashboard pending vs completed tasks count
+✅ PASSED: Dashboard dynamically reflects new pending task
+✅ PASSED: Verify dynamic productivity score calculation: 75%
+
+--- 6. Testing Backup & Restore Module ---
+✅ PASSED: Export complete application data to valid JSON string
+✅ PASSED: Clear all data confirmed and verified empty
+✅ PASSED: Import JSON backup successfully
+✅ PASSED: Restored 2 transactions
+✅ PASSED: Restored 1 habits
+✅ PASSED: Restored 2 tasks
+✅ PASSED: Restored 1 goals
+
+========================================
+ALL TESTS PASSED! (91/91 assertions verified)
+========================================
+
+PASS: Accepts a valid backup containing all 11 tables
+PASS: Rejects missing table arrays
+PASS: Rejects duplicate record IDs
+PASS: Rejects invalid transaction amount
+PASS: Rejects impossible calendar dates
+PASS: Rejects invalid category type
+PASS: Rejects broken budget category reference
+PASS: Rejects broken savings contribution reference
+PASS: Rejects broken habit log reference
+PASS: Rejects duplicate habit/date combinations
+PASS: Rejects invalid habit frequency
+PASS: Rejects broken milestone goal reference
+PASS: Rejects invalid goal status
+PASS: Rejects invalid task recurrence
+PASS: Rejects invalid task time
+PASS: Rejects duplicate settings keys
+
+Backup validation tests: 16/16 passed
+PASS: Invalid backup leaves existing IndexedDB records unchanged
+PASS: Failed restore rolls back earlier table changes
+PASS: Existing transaction, category and task records preserved
+PASS: Backup export reads all tables inside a readonly transaction
+PASS: Failed clearAll rolls back earlier table clears
+
+REAL DEXIE / INDEXEDDB BACKUP TESTS: 5/5 PASSED
+PASS: Contribution failure rolls back the goal balance and contribution record
+PASS: Invalid amounts and missing goals create no financial records
+PASS: Habit deletion rolls back when dependent-log deletion fails
+PASS: Goal deletion rolls back when milestone deletion fails
+PASS: Savings-goal deletion rolls back when contribution deletion fails
+PASS: Valid YYYY-MM-DD date is accepted and persisted
+PASS: Concurrent habit completion creates exactly one completed log
+PASS: Invalid dates and missing habits create no additional logs
+PASS: Failed habit-log insertion leaves no partial record
+PASS: Repeated completion toggles update one existing log
+
+DATABASE ATOMICITY TESTS: 10/10 PASSED
+PASS: Daily recurrence creates the next day occurrence
+PASS: Concurrent completion creates exactly one occurrence
+PASS: Uncomplete and re-complete does not duplicate the occurrence
+PASS: Monthly recurrence clamps January 31 to February 28
+PASS: Weekly recurrence advances seven calendar days
+PASS: Failed occurrence creation rolls back original completion
+PASS: Non-recurring task completes without creating another task
+RECURRENCE TESTS: 7/7 PASSED
+PASS: Monday scheduled for weekdays
+PASS: Friday scheduled for weekdays
+PASS: Saturday excluded from weekdays
+PASS: Sunday excluded from weekdays
+PASS: Saturday scheduled for weekends
+PASS: Sunday scheduled for weekends
+PASS: Monday excluded from weekends
+PASS: Daily frequency remains scheduled independent of weekday
+PASS: Impossible date rejected
+PASS: Invalid date format rejected
+PASS: Weekday rate uses five scheduled days
+PASS: Weekend rate uses two scheduled days
+PASS: Weekday streak crosses Saturday and Sunday
+PASS: Weekend streak counts Saturday and Sunday
+PASS: Weekly frequency accepts one completion in the current calendar week
+PASS: Previous Sunday does not count in the new Monday-Sunday week
+PASS: Next Monday does not count in the current calendar week
+PASS: Weekly streak counts consecutive Monday-start weeks
+PASS: App passes frequency into streak calculation
+PASS: App passes frequency into weekly rate calculation
+PASS: Productivity score respects unscheduled days
+PASS: Habit UI displays scheduled-day denominator
+PASS: Habit completion writes are centralised in one UI handler
+PASS: Habit persistence failures are visible to the user
+PASS: Successful saves with failed UI refresh are reported accurately
+PASS: Notification refresh failures do not misreport the habit save as failed
+PASS: Dashboard and Habits tab use the shared completion handler
+PASS: Habit deletion is centralised in one UI handler
+PASS: Habit deletion failures are visible to the user
+PASS: Habits tab uses the shared deletion handler
+PRODUCTION HABIT ANALYTICS TESTS: 30/30 PASSED
+full_tests=0
+
+=== TYPESCRIPT ===
+typescript=0
+
+=== PRODUCTION BUILD ===
+
+> lifeos-personal@1.0.0 build
+> vite build
+
+vite v6.4.5 building for production...
+transforming...
+✓ 2213 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   1.11 kB │ gzip:   0.56 kB
+dist/assets/index-Bv7yRqxu.css   28.63 kB │ gzip:   6.42 kB
+dist/assets/web-DN_j353B.js       0.67 kB │ gzip:   0.33 kB
+dist/assets/web-DZb_yVWU.js       3.44 kB │ gzip:   1.10 kB
+dist/assets/index-BUDl2sbG.js   829.09 kB │ gzip: 234.19 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 8.37s
+build=0
+
+=== PRODUCTION DEPENDENCY AUDIT ===
+found 0 vulnerabilities
+production_audit=0
+
+=== DIFF VALIDATION ===
+diff_check=0
