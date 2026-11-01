@@ -45,6 +45,60 @@ export class LifeOSDatabase extends Dexie {
 
 export const db = new LifeOSDatabase();
 
+let recordIdSequence = 0;
+
+export function createRecordId(prefix: string): string {
+  const randomPart =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+
+  return `${prefix}_${Date.now().toString(36)}_${(recordIdSequence++).toString(36)}_${randomPart}`;
+}
+
+function validateTransactionRecord(
+  record: Partial<Transaction>,
+  requireComplete: boolean
+): void {
+  if (requireComplete || record.amount !== undefined) {
+    if (typeof record.amount !== 'number' || !Number.isFinite(record.amount) || record.amount <= 0) {
+      throw new Error('Transaction amount must be a positive finite number');
+    }
+  }
+
+  if (requireComplete || record.date !== undefined) {
+    if (typeof record.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(record.date)) {
+      throw new Error('Transaction date must use YYYY-MM-DD format');
+    }
+    const [year, month, day] = record.date.split('-').map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) {
+      throw new Error('Transaction date must be a valid calendar date');
+    }
+  }
+
+  if (requireComplete && record.type !== 'income' && record.type !== 'expense') {
+    throw new Error('Transaction type must be income or expense');
+  }
+  if (record.type !== undefined && record.type !== 'income' && record.type !== 'expense') {
+    throw new Error('Transaction type must be income or expense');
+  }
+
+  for (const field of ['category', 'description', 'paymentMethod'] as const) {
+    const value = record[field];
+    if (
+      (requireComplete && (typeof value !== 'string' || !value.trim())) ||
+      (value !== undefined && (typeof value !== 'string' || !value.trim()))
+    ) {
+      throw new Error(`Transaction ${field} is required`);
+    }
+  }
+}
+
 // Clean Database Abstraction Layer Interface
 export interface IDataStorage {
   transactions: {
@@ -302,14 +356,26 @@ export const StorageService: IDataStorage = {
       return db.transactions.get(id);
     },
     async add(tx) {
-      const id = 'tx_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      validateTransactionRecord(tx, true);
+      const id = createRecordId('tx');
       const createdAt = new Date().toISOString();
       const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
       await db.transactions.add(record);
       return record;
     },
     async update(id, updates) {
-      await db.transactions.update(id, { ...updates, updatedAt: new Date().toISOString() });
+      await db.transaction('rw', db.transactions, async () => {
+        const existing = await db.transactions.get(id);
+        if (!existing) return;
+        validateTransactionRecord({ ...existing, ...updates }, true);
+        const safeUpdates = { ...updates };
+        delete safeUpdates.id;
+        delete safeUpdates.createdAt;
+        await db.transactions.update(id, {
+          ...safeUpdates,
+          updatedAt: new Date().toISOString()
+        });
+      });
     },
     async delete(id) {
       await db.transactions.delete(id);
@@ -343,9 +409,9 @@ export const StorageService: IDataStorage = {
   },
   categories: {
     async getAll() {
-      const cats = await db.categories.toArray();
-      if (cats.length === 0) {
-        // Seed default categories only
+      return db.transaction('rw', db.categories, async () => {
+        const cats = await db.categories.toArray();
+        if (cats.length > 0) return cats;
         const defaultCats: Category[] = [
           { id: 'cat_sal', name: 'Salary', type: 'income', color: '#10b981', isDefault: true },
           { id: 'cat_free', name: 'Freelance', type: 'income', color: '#3b82f6', isDefault: true },
@@ -365,11 +431,10 @@ export const StorageService: IDataStorage = {
         ];
         await db.categories.bulkAdd(defaultCats);
         return defaultCats;
-      }
-      return cats;
+      });
     },
     async add(cat) {
-      const id = 'cat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const id = createRecordId('cat');
       const record: Category = { ...cat, id };
       await db.categories.add(record);
       return record;
@@ -378,7 +443,13 @@ export const StorageService: IDataStorage = {
       await db.categories.update(id, updates);
     },
     async delete(id) {
-      await db.categories.delete(id);
+      await db.transaction('rw', db.categories, db.budgets, async () => {
+        const linked = await db.budgets.where('categoryId').equals(id).count();
+        if (linked > 0) {
+          throw new Error('Category is linked to one or more budgets and cannot be deleted');
+        }
+        await db.categories.delete(id);
+      });
     }
   },
   budgets: {
@@ -389,15 +460,19 @@ export const StorageService: IDataStorage = {
       return db.budgets.filter(b => b.monthYear === month).toArray();
     },
     async upsert(budget) {
-      const existing = await db.budgets.filter(b => b.monthYear === budget.monthYear && b.categoryId === budget.categoryId).first();
-      if (existing) {
-        await db.budgets.update(existing.id, { monthlyAmount: budget.monthlyAmount });
-        return { ...existing, monthlyAmount: budget.monthlyAmount };
-      }
-      const id = 'b_' + Date.now();
-      const record: Budget = { ...budget, id, createdAt: new Date().toISOString() };
-      await db.budgets.add(record);
-      return record;
+      return db.transaction('rw', db.budgets, async () => {
+        const existing = await db.budgets
+          .filter(b => b.monthYear === budget.monthYear && b.categoryId === budget.categoryId)
+          .first();
+        if (existing) {
+          await db.budgets.update(existing.id, { monthlyAmount: budget.monthlyAmount });
+          return { ...existing, monthlyAmount: budget.monthlyAmount };
+        }
+        const id = createRecordId('b');
+        const record: Budget = { ...budget, id, createdAt: new Date().toISOString() };
+        await db.budgets.add(record);
+        return record;
+      });
     },
     async delete(id) {
       await db.budgets.delete(id);
@@ -408,7 +483,7 @@ export const StorageService: IDataStorage = {
       return db.savingsGoals.toArray();
     },
     async addGoal(goal) {
-      const id = 'sg_' + Date.now();
+      const id = createRecordId('sg');
       const record: SavingsGoal = { ...goal, id, createdAt: new Date().toISOString() };
       await db.savingsGoals.add(record);
       return record;
@@ -430,7 +505,7 @@ export const StorageService: IDataStorage = {
         const goal = await db.savingsGoals.get(contribution.goalId);
         if (!goal) throw new Error('Savings goal not found');
 
-        const id = 'sc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        const id = createRecordId('sc');
         await db.savingsGoals.update(goal.id, {
           currentAmount: (goal.currentAmount || 0) + contribution.amount
         });
@@ -448,7 +523,7 @@ export const StorageService: IDataStorage = {
       return db.habits.filter(h => !h.archived).toArray();
     },
     async add(habit) {
-      const id = 'h_' + Date.now();
+      const id = createRecordId('h');
       const record: Habit = { ...habit, id, createdAt: new Date().toISOString() };
       await db.habits.add(record);
       return record;
@@ -500,7 +575,7 @@ export const StorageService: IDataStorage = {
         if (existing) {
           await db.habitLogs.update(existing.id, { completed, completedAt });
         } else {
-          const id = 'hl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+          const id = createRecordId('hl');
           await db.habitLogs.add({ id, habitId, date, completed, completedAt });
         }
       });
@@ -511,7 +586,7 @@ export const StorageService: IDataStorage = {
       return db.goals.toArray();
     },
     async add(goal) {
-      const id = 'g_' + Date.now();
+      const id = createRecordId('g');
       const record: Goal = { ...goal, id, createdAt: new Date().toISOString() };
       await db.goals.add(record);
       return record;
@@ -529,7 +604,7 @@ export const StorageService: IDataStorage = {
       return db.milestones.where('goalId').equals(goalId).toArray();
     },
     async addMilestone(milestone) {
-      const id = 'm_' + Date.now();
+      const id = createRecordId('m');
       const record: Milestone = { ...milestone, id };
       await db.milestones.add(record);
       return record;
@@ -549,7 +624,7 @@ export const StorageService: IDataStorage = {
       return db.tasks.toArray();
     },
     async add(task) {
-      const id = 't_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      const id = createRecordId('t');
       const record: Task = { ...task, id, createdAt: new Date().toISOString() };
       await db.tasks.add(record);
       return record;
