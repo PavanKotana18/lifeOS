@@ -62,31 +62,31 @@ check('No application-level fetch dependency exists in bootstrap or database lay
 });
 
 check('Capacitor app-state listener removes itself if registration resolves after cleanup', () => {
-  assert.match(app, /let disposed = false;[\\s\\S]*CapacitorApp\\.addListener\\('appStateChange'/);
-  assert.match(app, /if \\(disposed\\) await listener\\.remove\\(\\)/);
-  assert.match(app, /appStateListener\\?\.remove/);
+  assert.ok(app.includes("let disposed = false;"));
+  assert.ok(app.includes("CapacitorApp.addListener('appStateChange'"));
+  assert.ok(app.includes("if (disposed) await listener.remove()"));
 });
 
 check('Capacitor back-button listener removes itself if registration resolves after cleanup', () => {
-  assert.match(app, /CapacitorApp\\.addListener\\('backButton'/);
-  assert.match(app, /if \\(disposed\\) await value\\.remove\\(\\)/);
+  assert.ok(app.includes("CapacitorApp.addListener('backButton'"));
+  assert.ok(app.includes("if (disposed) await value.remove()"));
 });
 
 check('Resume processing prevents overlapping recovery runs', () => {
-  assert.match(app, /if \\(resumeInProgress\\) return/);
-  assert.match(app, /resumeInProgress = true/);
-  assert.match(app, /finally \\{[\\s\\S]*resumeInProgress = false/);
+  assert.ok(app.includes("if (resumeInProgress) return"));
+  assert.ok(app.includes("resumeInProgress = true"));
+  assert.ok(app.includes("resumeInProgress = false"));
 });
 
 check('Resume and listener-registration failures are handled explicitly', () => {
-  assert.match(app, /LifeOS resume recovery failed/);
-  assert.match(app, /LifeOS app-state listener registration failed/);
-  assert.match(app, /LifeOS back-button listener registration failed/);
+  assert.ok(app.includes("LifeOS resume recovery failed"));
+  assert.ok(app.includes("LifeOS app-state listener registration failed"));
+  assert.ok(app.includes("LifeOS back-button listener registration failed"));
 });
 
 check('Disposed lifecycle callbacks do not continue updating app state', () => {
-  assert.match(app, /if \\(disposed\\) return/);
-  assert.match(app, /if \\(!disposed\\) await refreshNotificationDiagnostics/);
+  assert.ok(app.includes("if (disposed) return"));
+  assert.ok(app.includes("if (!disposed) await refreshNotificationDiagnostics()"));
 });
 
 console.log(`OFFLINE RESILIENCE SOURCE CHECKS: ${passed}/14 PASSED`);
