@@ -376,7 +376,7 @@ async function main() {
       'Category can be deleted after budget removal without deleting historical transactions'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/18 PASSED`);
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/19 PASSED`);
   } finally {
     await db.delete();
   }

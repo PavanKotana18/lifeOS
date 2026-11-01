@@ -1,0 +1,73 @@
+< eb495b7 fix(db): protect category budget references
+< 90e97b5 fix(db): correct transaction date validation regex
+< f9f473d fix(db): enforce transaction storage invariants
+< 17dec0a fix(db): serialize default category initialization
+< d20b0bc fix(db): prevent record ID collisions and budget upsert races
+> 2516a63 Security remediation: harden backup restore and ZIP extraction (#3)
+> 646c818 Promote validated LifeOS application changes to main (#4)
+< da50598 Fix lifecycle regression test assertions
+< cbf7c89 Harden app lifecycle listener recovery
+< 446ba4c Add Phase 3 recurrence edge-case tests
+< f32c37c Record Phase 3 final build gates
+< 7956b99 Record Phase 3 dependency audit results
+< a1e5cd3 Record Phase 3 full test rerun
+< 1c62964 Remove vulnerable direct esbuild dependency and record evidence
+< 1ac650f Record esbuild remediation recovery state
+< 8954563 Fix category budget ID resolution
+< 03ebaab Add consolidated Phase 3 business logic review evidence
+< 8080e29 Add offline connectivity status and resilience checks
+< 91a70a1 Harden backup export and atomic data clearing
+< d0d914b fix(habits): make UI writes resilient
+< 307666d Fix habit log date validation
+< 0168b14 Make habit completion writes atomic
+< 8629c2c Fix weekly habit mirror date validation
+< 27efe06 Align habit analytics mirror and calendar tests
+< da13eeb Align weekly habit analytics to calendar weeks
+< e778fe8 Record habit analytics test harness validation
+< b999a3d Repair executable habit analytics regression tests
+< e81d01d Record habit analytics regression validation
+< 7a5b67b Fix production habit scheduling date validation
+< 78163aa Record final habit analytics validation
+< 7331cd2 Correct production habit analytics frequency handling
+< 7de2360 Record habit analytics correction validation
+< a8fd686 Fix frequency-aware habit analytics in production
+< 22b7ce0 fix: make habit streaks and weekly rates frequency-aware
+< b049625 fix: make recurring task completion atomic and idempotent
+< 614f6e7 fix: make recurring task completion atomic and idempotent
+< 56b1ea3 fix: make recurring task completion atomic and idempotent
+< 00e99b6 fix(tasks): make recurring completion atomic and idempotent
+< 12b6686 fix(tasks): make recurring completion atomic and idempotent
+< d7842d4 test: record LifeOS atomicity validation
+< 047c8eb test: correct Dexie hook cleanup in atomicity tests
+< 8d20220 test: add LifeOS atomicity validation results
+< 0452bb0 fix: make related LifeOS data updates atomic
+< a575105 chore(audit): upload LifeOS review bundle 20261101-122710
+< 6eb039e fix: restore Capacitor sync compatibility with tar v7
+> 0d2ca35 Add personalized onboarding and repair local reminders
+> bb6a5b3 Improve LifeOS planning, finance, goals, and reminders
+> d89ac84 Complete finance budget and savings views
+> c2535ff Ignore generated Capacitor sync files
+> 91d99a7 Document Android APK artifacts and signing status
+> 51079c4 Fix Tailwind styling and restore LifeOS create flows
+> 4425963 Add Tailwind CSS base styles and global styles
+> 81ec14f Import index.css in main.tsx
+> 2c4893e Enable AndroidX and Jetifier in gradle.properties
+> d650c58 Include capacitor.settings.gradle in settings.gradle
+> 13b90e2 Modify sdkmanager license command to not exit on failure
+> c0e6ed1 Remove npm cache from Node.js setup
+> c067405 Update Node dependency installation command
+> 64d3614 Update build-apk workflow for Android APK
+> 4cdf8b3 Extract LifeOS Android project from ZIP
+> 6f6a4e5 Enhance workflow for extracting LifeOS project
+> 59d60ea Add workflows permission to extract-project.yml
+> 08952c2 Add workflow to extract LifeOS project from ZIP
+> 50ceae7 Delete vite.config.ts
+> cd40d43 Delete tsconfig.json
+> 312f58a Delete test_lifeos.js
+> c0d1d57 Delete src_core_logic.js
+> 650517c Delete package.json
+> bc51b24 Delete index.html
+> 1284887 Delete capacitor.config.ts
+> 24690c4 Delete README.md
+> 2ea2f81 Add files via upload
+> 563855d Add files via upload
