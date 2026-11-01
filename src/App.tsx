@@ -191,32 +191,65 @@ export default function App() {
       setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.');
     });
     const timer = window.setInterval(() => setClockNow(new Date()), 60_000);
+    let disposed = false;
+    let resumeInProgress = false;
     let appStateListener: { remove: () => Promise<void> } | undefined;
-    CapacitorApp.addListener('appStateChange', async state => {
+
+    void CapacitorApp.addListener('appStateChange', async state => {
+      if (disposed) return;
       if (!state.isActive) {
         const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
+        if (disposed) return;
         if (isBio) { biometricAuthenticated.current = false; authCoordinator.resetForBackground(); setIsLocked(true); setBiometricVerified(false); setBiometricMessage(''); }
         return;
       }
-      setClockNow(new Date());
-      const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-      if (isBio && startupComplete.current && !biometricAuthenticated.current) void triggerBiometricAuth();
-      const records = await reloadAllData();
-      const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
-      const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
-      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
-      await refreshNotificationDiagnostics();
-    }).then(listener => { appStateListener = listener; });
+      if (resumeInProgress) return;
+      resumeInProgress = true;
+      try {
+        setClockNow(new Date());
+        const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
+        if (disposed) return;
+        if (isBio && startupComplete.current && !biometricAuthenticated.current) void triggerBiometricAuth();
+        const records = await reloadAllData();
+        if (disposed) return;
+        const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+        const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
+        await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
+        if (!disposed) await refreshNotificationDiagnostics();
+      } catch (error) {
+        console.error('LifeOS resume recovery failed.', error);
+      } finally {
+        resumeInProgress = false;
+      }
+    }).then(async listener => {
+      if (disposed) await listener.remove();
+      else appStateListener = listener;
+    }).catch(error => {
+      if (!disposed) console.error('LifeOS app-state listener registration failed.', error);
+    });
+
     return () => {
+      disposed = true;
       window.clearInterval(timer);
-      appStateListener?.remove();
+      if (appStateListener) void appStateListener.remove().catch(error => console.error('LifeOS app-state listener cleanup failed.', error));
     };
   }, []);
 
   useEffect(() => {
+    let disposed = false;
     let listener: { remove: () => Promise<void> } | undefined;
-    CapacitorApp.addListener('backButton', () => navigateBack()).then(value => { listener = value; });
-    return () => { listener?.remove(); };
+    void CapacitorApp.addListener('backButton', () => {
+      if (!disposed) navigateBack();
+    }).then(async value => {
+      if (disposed) await value.remove();
+      else listener = value;
+    }).catch(error => {
+      if (!disposed) console.error('LifeOS back-button listener registration failed.', error);
+    });
+    return () => {
+      disposed = true;
+      if (listener) void listener.remove().catch(error => console.error('LifeOS back-button listener cleanup failed.', error));
+    };
   }, []);
 
   useEffect(() => {
