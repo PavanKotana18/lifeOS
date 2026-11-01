@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test_lifeos.js",
+    "test": "node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js",
     "cap:sync": "cap sync",
     "cap:open": "cap open android"
   },
@@ -28,9 +28,17 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "fake-indexeddb": "^6.2.7",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^6.4.5"
+  },
+  "overrides": {
+    "tar": "7.5.22",
+    "rimraf": {
+      "glob": "14.0.3"
+    },
+    "minimatch": "11.0.3"
   }
 }

@@ -112,6 +112,187 @@ export interface IDataStorage {
   };
 }
 
+
+export function validateBackupTables(tablesData: any): string[] {
+  const names = [
+    'transactions', 'categories', 'budgets', 'savingsGoals',
+    'savingsContributions', 'habits', 'habitLogs', 'goals',
+    'milestones', 'tasks', 'settings'
+  ];
+
+  const fail = (table: string, index: number, field: string): never => {
+    throw new Error(`Invalid backup: ${table}[${index}].${field}`);
+  };
+  const obj = (v: any) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const str = (v: any) => typeof v === 'string' && v.trim().length > 0;
+  const optionalString = (r: any, k: string, t: string, i: number) =>
+    r[k] !== undefined && r[k] !== null && typeof r[k] !== 'string' ? fail(t, i, k) : undefined;
+  const num = (v: any) => typeof v === 'number' && Number.isFinite(v);
+  const date = (v: any) => {
+    if (typeof v !== 'string' || !/^(\d{4})-(\d{2})-(\d{2})$/.test(v)) return false;
+    const [y, m, d] = v.split('-').map(Number);
+    const x = new Date(Date.UTC(y, m - 1, d));
+    return x.getUTCFullYear() === y && x.getUTCMonth() === m - 1 && x.getUTCDate() === d;
+  };
+  const month = (v: any) => typeof v === 'string' && /^(\d{4})-(0[1-9]|1[0-2])$/.test(v);
+  const time = (v: any) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+  const instant = (v: any) => typeof v === 'string' && !Number.isNaN(Date.parse(v));
+  const requiredString = (r: any, k: string, t: string, i: number) => {
+    if (!str(r[k])) fail(t, i, k);
+  };
+  const requiredNumber = (r: any, k: string, t: string, i: number, min = 0) => {
+    if (!num(r[k]) || r[k] < min) fail(t, i, k);
+  };
+  const requiredDate = (r: any, k: string, t: string, i: number) => {
+    if (!date(r[k])) fail(t, i, k);
+  };
+  const optionalInstant = (r: any, k: string, t: string, i: number) => {
+    if (r[k] !== undefined && r[k] !== null && !instant(r[k])) fail(t, i, k);
+  };
+  const optionalBoolean = (r: any, k: string, t: string, i: number) => {
+    if (r[k] !== undefined && r[k] !== null && typeof r[k] !== 'boolean') fail(t, i, k);
+  };
+  const enumValue = (v: any, allowed: string[]) => typeof v === 'string' && allowed.includes(v);
+  const ids: Record<string, Set<string>> = {};
+  const unique = (rows: any[], key: string, table: string) => {
+    const seen = new Set<string>();
+    rows.forEach((r, i) => {
+      if (!obj(r) || !str(r[key])) fail(table, i, key);
+      if (seen.has(r[key])) fail(table, i, `duplicate ${key}`);
+      seen.add(r[key]);
+    });
+    return seen;
+  };
+
+  if (!obj(tablesData)) throw new Error('Invalid backup tables object');
+  for (const name of names) {
+    if (!Array.isArray(tablesData[name])) throw new Error(`Invalid backup: ${name} must be an array`);
+    ids[name] = unique(tablesData[name], name === 'settings' ? 'key' : 'id', name);
+  }
+
+  const check = (table: string, fn: (r: any, i: number) => void) =>
+    tablesData[table].forEach(fn);
+
+  check('transactions', (r, i) => {
+    if (!enumValue(r.type, ['income', 'expense'])) fail('transactions', i, 'type');
+    requiredNumber(r, 'amount', 'transactions', i);
+    for (const k of ['category', 'description', 'paymentMethod', 'createdAt']) requiredString(r, k, 'transactions', i);
+    requiredDate(r, 'date', 'transactions', i);
+    optionalString(r, 'notes', 'transactions', i);
+    optionalInstant(r, 'occurredAt', 'transactions', i);
+    optionalInstant(r, 'updatedAt', 'transactions', i);
+    optionalBoolean(r, 'isRecurring', 'transactions', i);
+  });
+
+  check('categories', (r, i) => {
+    for (const k of ['name', 'color']) requiredString(r, k, 'categories', i);
+    if (!enumValue(r.type, ['income', 'expense'])) fail('categories', i, 'type');
+    optionalString(r, 'icon', 'categories', i);
+    optionalBoolean(r, 'isDefault', 'categories', i);
+  });
+
+  check('budgets', (r, i) => {
+    requiredNumber(r, 'monthlyAmount', 'budgets', i);
+    if (!month(r.monthYear)) fail('budgets', i, 'monthYear');
+    requiredString(r, 'createdAt', 'budgets', i);
+    optionalString(r, 'categoryId', 'budgets', i);
+    if (r.categoryId && !ids.categories.has(r.categoryId)) fail('budgets', i, 'categoryId reference');
+  });
+
+  check('savingsGoals', (r, i) => {
+    requiredString(r, 'title', 'savingsGoals', i);
+    requiredNumber(r, 'targetAmount', 'savingsGoals', i);
+    requiredNumber(r, 'currentAmount', 'savingsGoals', i);
+    requiredDate(r, 'targetDate', 'savingsGoals', i);
+    requiredString(r, 'createdAt', 'savingsGoals', i);
+    optionalString(r, 'category', 'savingsGoals', i);
+    optionalString(r, 'notes', 'savingsGoals', i);
+  });
+
+  check('savingsContributions', (r, i) => {
+    requiredString(r, 'goalId', 'savingsContributions', i);
+    if (!ids.savingsGoals.has(r.goalId)) fail('savingsContributions', i, 'goalId reference');
+    requiredNumber(r, 'amount', 'savingsContributions', i);
+    requiredDate(r, 'date', 'savingsContributions', i);
+    requiredString(r, 'createdAt', 'savingsContributions', i);
+    optionalString(r, 'notes', 'savingsContributions', i);
+  });
+
+  check('habits', (r, i) => {
+    requiredString(r, 'name', 'habits', i);
+    if (!enumValue(r.frequency, ['daily', 'weekdays', 'weekends', 'weekly'])) fail('habits', i, 'frequency');
+    requiredString(r, 'color', 'habits', i);
+    requiredString(r, 'createdAt', 'habits', i);
+    optionalString(r, 'description', 'habits', i);
+    optionalString(r, 'icon', 'habits', i);
+    optionalBoolean(r, 'archived', 'habits', i);
+    if (r.targetPerDay !== undefined && (!num(r.targetPerDay) || r.targetPerDay <= 0)) fail('habits', i, 'targetPerDay');
+    if (r.reminderTime !== undefined && !time(r.reminderTime)) fail('habits', i, 'reminderTime');
+    if (r.reminderWeekday !== undefined && (!Number.isInteger(r.reminderWeekday) || r.reminderWeekday < 1 || r.reminderWeekday > 7)) fail('habits', i, 'reminderWeekday');
+  });
+
+  check('habitLogs', (r, i) => {
+    requiredString(r, 'habitId', 'habitLogs', i);
+    if (!ids.habits.has(r.habitId)) fail('habitLogs', i, 'habitId reference');
+    requiredDate(r, 'date', 'habitLogs', i);
+    if (typeof r.completed !== 'boolean') fail('habitLogs', i, 'completed');
+    optionalInstant(r, 'completedAt', 'habitLogs', i);
+  });
+  const habitLogKeys = new Set<string>();
+  tablesData.habitLogs.forEach((r: any, i: number) => {
+    const key = `${r.habitId}|${r.date}`;
+    if (habitLogKeys.has(key)) fail('habitLogs', i, 'duplicate habitId/date');
+    habitLogKeys.add(key);
+  });
+
+  check('goals', (r, i) => {
+    requiredString(r, 'title', 'goals', i);
+    if (!enumValue(r.category, ['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'])) fail('goals', i, 'category');
+    requiredNumber(r, 'targetValue', 'goals', i);
+    requiredNumber(r, 'currentValue', 'goals', i);
+    requiredDate(r, 'startDate', 'goals', i);
+    requiredDate(r, 'targetDate', 'goals', i);
+    if (!enumValue(r.priority, ['Low', 'Medium', 'High', 'Urgent'])) fail('goals', i, 'priority');
+    if (!enumValue(r.status, ['In Progress', 'Completed', 'Paused'])) fail('goals', i, 'status');
+    requiredString(r, 'createdAt', 'goals', i);
+    optionalString(r, 'description', 'goals', i);
+    optionalString(r, 'unit', 'goals', i);
+    optionalInstant(r, 'updatedAt', 'goals', i);
+  });
+
+  check('milestones', (r, i) => {
+    requiredString(r, 'goalId', 'milestones', i);
+    if (!ids.goals.has(r.goalId)) fail('milestones', i, 'goalId reference');
+    requiredString(r, 'title', 'milestones', i);
+    if (typeof r.completed !== 'boolean') fail('milestones', i, 'completed');
+    if (r.targetDate !== undefined) requiredDate(r, 'targetDate', 'milestones', i);
+    optionalInstant(r, 'completedAt', 'milestones', i);
+  });
+
+  check('tasks', (r, i) => {
+    requiredString(r, 'title', 'tasks', i);
+    requiredDate(r, 'dueDate', 'tasks', i);
+    if (!enumValue(r.priority, ['Low', 'Medium', 'High', 'Urgent'])) fail('tasks', i, 'priority');
+    if (!enumValue(r.recurring, ['None', 'Daily', 'Weekly', 'Monthly'])) fail('tasks', i, 'recurring');
+    if (typeof r.completed !== 'boolean') fail('tasks', i, 'completed');
+    requiredString(r, 'createdAt', 'tasks', i);
+    optionalString(r, 'description', 'tasks', i);
+    optionalString(r, 'category', 'tasks', i);
+    optionalString(r, 'notes', 'tasks', i);
+    if (r.dueTime !== undefined && !time(r.dueTime)) fail('tasks', i, 'dueTime');
+    optionalInstant(r, 'reminderAt', 'tasks', i);
+    optionalInstant(r, 'completedAt', 'tasks', i);
+    optionalInstant(r, 'updatedAt', 'tasks', i);
+  });
+
+  check('settings', (r, i) => {
+    if (!str(r.key)) fail('settings', i, 'key');
+    if (!Object.prototype.hasOwnProperty.call(r, 'value')) fail('settings', i, 'value');
+  });
+
+  return names;
+}
+
 export const StorageService: IDataStorage = {
   transactions: {
     async getAll() {
@@ -428,21 +609,7 @@ export const StorageService: IDataStorage = {
       }
 
       const tablesData = parsed.tables || parsed.data;
-      const tableNames = ['transactions', 'categories', 'budgets', 'savingsGoals', 'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings'];
-      if (!tablesData || typeof tablesData !== 'object' || Array.isArray(tablesData)) throw new Error('Invalid backup tables object');
-      for (const name of tableNames) {
-        if (!Array.isArray(tablesData[name])) throw new Error(`Invalid backup: ${name} must be an array`);
-        for (const row of tablesData[name]) {
-          const key = name === 'settings' ? row?.key : row?.id;
-          if (!row || typeof row !== 'object' || typeof key !== 'string' || !key) throw new Error(`Invalid backup record in ${name}`);
-        }
-      }
-      const transactions = tablesData.transactions as Transaction[];
-      if (transactions.some(tx => !['income', 'expense'].includes(tx.type) || !Number.isFinite(Number(tx.amount)) || !/^\d{4}-\d{2}-\d{2}$/.test(tx.date))) {
-        throw new Error('Invalid transaction record in backup');
-      }
-      const tasks = tablesData.tasks as Task[];
-      if (tasks.some(task => typeof task.title !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || ''))) throw new Error('Invalid task record in backup');
+      const tableNames = validateBackupTables(tablesData);
 
       const existingCounts = await Promise.all([
         db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(),
@@ -466,11 +633,23 @@ export const StorageService: IDataStorage = {
         db.tasks,
         db.settings
       ], async () => {
+        const liveCounts = await Promise.all([
+          db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(),
+          db.savingsContributions.count(), db.habits.count(), db.habitLogs.count(), db.goals.count(),
+          db.milestones.count(), db.tasks.count(), db.settings.count()
+        ]);
+        if (liveCounts.some(count => count > 0) && !options.replaceExisting) {
+          throw new Error('Existing LifeOS data was found. Confirm replacement before restoring this backup.');
+        }
         for (const table of tableNames) {
           const records = tablesData[table] as any[];
           await (db as any)[table].clear();
           if (records.length) await (db as any)[table].bulkPut(records);
-          counts[table] = records.length;
+          const actualCount = await (db as any)[table].count();
+          if (actualCount !== records.length) {
+            throw new Error(`Restore verification failed for ${table}: expected ${records.length}, found ${actualCount}`);
+          }
+          counts[table] = actualCount;
         }
       });
       return { success: true, counts };
