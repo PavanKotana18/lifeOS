@@ -372,6 +372,34 @@ async function runTestSuite() {
   const dstLogs = ['2026-03-07', '2026-03-08', '2026-03-09'].map(date => ({ habitId: 'dst', date, completed: true }));
   assert(calculateStreaks(dstLogs, 'dst', '2026-03-09').currentStreak === 3, 'Habit streak remains continuous across the daylight-saving transition');
   assert(calculateWeeklyHabitRate(dstLogs, 'dst', new Date(2026, 2, 9)).rate === 43, 'Weekly completion rate uses local calendar days');
+  // Frequency-aware habit analytics regression tests
+  const weekdayLogs = ['2026-10-26','2026-10-27','2026-10-28','2026-10-29','2026-10-30']
+    .map(date => ({ habitId: 'weekday', date, completed: true }));
+  assert(calculateWeeklyHabitRate(weekdayLogs, 'weekday', new Date(2026, 9, 30), 'weekdays').rate === 100,
+    'Weekday habit rate uses five scheduled weekdays, not seven calendar days');
+  const weekendLogs = ['2026-10-24','2026-10-25']
+    .map(date => ({ habitId: 'weekend', date, completed: true }));
+  assert(calculateWeeklyHabitRate(weekendLogs, 'weekend', new Date(2026, 9, 25), 'weekends').rate === 100,
+    'Weekend habit rate uses scheduled weekend days');
+  assert(calculateWeeklyHabitRate([{ habitId: 'weekly', date: '2026-10-28', completed: true }],
+    'weekly', new Date(2026, 9, 30), 'weekly').rate === 100,
+    'Weekly habit needs one completion in the current Monday-Sunday week');
+  assert(calculateWeeklyHabitRate(
+    [{ habitId: 'weekly-boundary', date: '2026-11-01', completed: true }],
+    'weekly-boundary', new Date(2026, 10, 8), 'weekly'
+  ).rate === 0, 'Previous Sunday does not count in the new Monday-Sunday week');
+  assert(calculateWeeklyHabitRate(
+    [{ habitId: 'weekly-boundary', date: '2026-11-09', completed: true }],
+    'weekly-boundary', new Date(2026, 10, 8), 'weekly'
+  ).rate === 0, 'Next Monday does not count in the current calendar week');
+  const weekdayStreakLogs = ['2026-10-26','2026-10-27','2026-10-28','2026-10-29','2026-10-30']
+    .map(date => ({ habitId: 'weekday-streak', date, completed: true }));
+  assert(calculateStreaks(weekdayStreakLogs, 'weekday-streak', '2026-11-02', 'weekdays').currentStreak === 5,
+    'Weekday streak continues across Saturday and Sunday');
+  const weeklyStreakLogs = ['2026-10-19','2026-10-28']
+    .map(date => ({ habitId: 'weekly-streak', date, completed: true }));
+  assert(calculateStreaks(weeklyStreakLogs, 'weekly-streak', '2026-10-30', 'weekly').currentStreak === 2,
+    'Weekly streak counts consecutive calendar weeks');
   assert(getGoalProgress(125, 100) === 100 && getGoalProgress(-2, 100) === 0, 'Goal progress is bounded between zero and one hundred percent');
   const localNow = new Date(2026, 6, 4, 8, 5, 6, 7);
   const entry = buildFinanceEntry(formatLocalDateTime(localNow), localNow);
@@ -404,9 +432,20 @@ async function runTestSuite() {
     { date: '2026-10-01', amount: 1000, type: 'income', category: 'Salary' },
     { date: '2026-10-02', amount: 100, type: 'expense', category: 'Food' },
     { date: '2026-10-03', amount: 50, type: 'expense', category: 'Rent' },
-  ], [{ monthYear: '2026-10', categoryId: 'Food', monthlyAmount: 150 }, { monthYear: '2026-10', monthlyAmount: 200 }], '2026-10');
+  ], [
+    { monthYear: '2026-10', categoryId: 'cat-food', monthlyAmount: 150 },
+    { monthYear: '2026-10', categoryId: 'cat-rent', monthlyAmount: 100 },
+    { monthYear: '2026-10', categoryId: 'cat-missing', monthlyAmount: 75 },
+    { monthYear: '2026-10', monthlyAmount: 200 },
+  ], '2026-10', 6, [
+    { id: 'cat-food', name: 'Food' },
+    { id: 'cat-rent', name: 'Rent' },
+  ]);
   assert(analyticsRows.totalIncome === 1000 && analyticsRows.totalExpenses === 150 && analyticsRows.netSavings === 850 && analyticsRows.savingsRate === 85 && analyticsRows.expenseChange === 25, 'Finance analytics totals, savings rate, and month comparison derive from stored records');
-  assert(analyticsRows.largestCategory.name === 'Food' && analyticsRows.largestCategory.percentage > 66 && analyticsRows.budgetRows[0].spent === 100 && analyticsRows.budgetRows[0].remaining === 50, 'Expense category ranking and category budget insights are accurate');
+  assert(analyticsRows.largestCategory.name === 'Food' && analyticsRows.largestCategory.percentage > 66 && analyticsRows.budgetRows[0].category === 'Food' && analyticsRows.budgetRows[0].spent === 100 && analyticsRows.budgetRows[0].remaining === 50, 'Category budget resolves category ID to its display name and calculates spending');
+  assert(analyticsRows.budgetRows[1].category === 'Rent' && analyticsRows.budgetRows[1].spent === 50 && analyticsRows.budgetRows[1].remaining === 50, 'A second category budget resolves and calculates independently');
+  assert(analyticsRows.budgetRows[2].category === 'Unknown category' && analyticsRows.budgetRows[2].spent === 0 && analyticsRows.budgetRows[2].remaining === 75, 'Missing category references fail safely without misattributing spending');
+  assert(analyticsRows.budgetRows[3].category === 'Overall' && analyticsRows.budgetRows[3].spent === 150, 'Overall budgets continue to use total expenses');
   const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');

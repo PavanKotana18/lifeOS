@@ -12,7 +12,7 @@ import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
 
 type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -57,6 +57,7 @@ export default function App() {
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [displayName, setDisplayName] = useState('');
   const [clockNow, setClockNow] = useState(() => new Date());
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [logoPhase, setLogoPhase] = useState<'brand' | 'rest'>('brand');
   const logoIntroPlayed = useRef(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
@@ -170,6 +171,19 @@ export default function App() {
     setShowExitConfirmation(true);
   };
 
+  // Connectivity is informational only; LifeOS records remain in local IndexedDB.
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    setIsOnline(typeof navigator === 'undefined' || navigator.onLine);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Load Initial Settings & Data
   useEffect(() => {
     void initApp().catch(error => {
@@ -177,32 +191,65 @@ export default function App() {
       setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.');
     });
     const timer = window.setInterval(() => setClockNow(new Date()), 60_000);
+    let disposed = false;
+    let resumeInProgress = false;
     let appStateListener: { remove: () => Promise<void> } | undefined;
-    CapacitorApp.addListener('appStateChange', async state => {
+
+    void CapacitorApp.addListener('appStateChange', async state => {
+      if (disposed) return;
       if (!state.isActive) {
         const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
+        if (disposed) return;
         if (isBio) { biometricAuthenticated.current = false; authCoordinator.resetForBackground(); setIsLocked(true); setBiometricVerified(false); setBiometricMessage(''); }
         return;
       }
-      setClockNow(new Date());
-      const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-      if (isBio && startupComplete.current && !biometricAuthenticated.current) void triggerBiometricAuth();
-      const records = await reloadAllData();
-      const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
-      const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
-      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
-      await refreshNotificationDiagnostics();
-    }).then(listener => { appStateListener = listener; });
+      if (resumeInProgress) return;
+      resumeInProgress = true;
+      try {
+        setClockNow(new Date());
+        const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
+        if (disposed) return;
+        if (isBio && startupComplete.current && !biometricAuthenticated.current) void triggerBiometricAuth();
+        const records = await reloadAllData();
+        if (disposed) return;
+        const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+        const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
+        await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
+        if (!disposed) await refreshNotificationDiagnostics();
+      } catch (error) {
+        console.error('LifeOS resume recovery failed.', error);
+      } finally {
+        resumeInProgress = false;
+      }
+    }).then(async listener => {
+      if (disposed) await listener.remove();
+      else appStateListener = listener;
+    }).catch(error => {
+      if (!disposed) console.error('LifeOS app-state listener registration failed.', error);
+    });
+
     return () => {
+      disposed = true;
       window.clearInterval(timer);
-      appStateListener?.remove();
+      if (appStateListener) void appStateListener.remove().catch(error => console.error('LifeOS app-state listener cleanup failed.', error));
     };
   }, []);
 
   useEffect(() => {
+    let disposed = false;
     let listener: { remove: () => Promise<void> } | undefined;
-    CapacitorApp.addListener('backButton', () => navigateBack()).then(value => { listener = value; });
-    return () => { listener?.remove(); };
+    void CapacitorApp.addListener('backButton', () => {
+      if (!disposed) navigateBack();
+    }).then(async value => {
+      if (disposed) await value.remove();
+      else listener = value;
+    }).catch(error => {
+      if (!disposed) console.error('LifeOS back-button listener registration failed.', error);
+    });
+    return () => {
+      disposed = true;
+      if (listener) void listener.remove().catch(error => console.error('LifeOS back-button listener cleanup failed.', error));
+    };
   }, []);
 
   useEffect(() => {
@@ -504,6 +551,70 @@ export default function App() {
     return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
   };
 
+  const handleHabitCompletion = async (
+    habitId: string,
+    habitName: string,
+    date: string,
+    currentlyCompleted: boolean
+  ) => {
+    try {
+      await StorageService.habits.logCompletion(habitId, date, !currentlyCompleted);
+    } catch (error) {
+      console.error('LifeOS could not save habit completion.', error);
+      showToast(error instanceof Error ? error.message : 'Could not update habit completion', 'danger');
+      return;
+    }
+
+    let records;
+    try {
+      records = await reloadAllData();
+    } catch (error) {
+      console.error('Habit was saved, but LifeOS could not refresh its data.', error);
+      showToast(`${habitName} was saved, but the screen could not refresh. Reopen Habits to verify.`, 'danger');
+      return;
+    }
+
+    try {
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+    } catch (error) {
+      console.error('Habit was saved, but notification schedules could not refresh.', error);
+      showToast(`${habitName} was saved, but notification schedules could not refresh.`, 'danger');
+      return;
+    }
+
+    showToast(currentlyCompleted ? 'Habit unmarked' : 'Habit finished!', 'success');
+  };
+
+  const handleHabitDeletion = async (habit: Habit) => {
+    try {
+      await StorageService.habits.delete(habit.id);
+    } catch (error) {
+      console.error('LifeOS could not delete habit.', error);
+      showToast(error instanceof Error ? error.message : 'Could not delete habit', 'danger');
+      return;
+    }
+
+    let records;
+    try {
+      records = await reloadAllData();
+    } catch (error) {
+      console.error('Habit was deleted, but LifeOS could not refresh its data.', error);
+      showToast(`${habit.name} was deleted, but the screen could not refresh. Reopen Habits to verify.`, 'danger');
+      return;
+    }
+
+    try {
+      await NotificationService.cancelHabit(habit);
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+    } catch (error) {
+      console.error('Habit was deleted, but notification schedules could not refresh.', error);
+      showToast(`${habit.name} was deleted, but notification schedules could not refresh.`, 'danger');
+      return;
+    }
+
+    showToast('Habit removed', 'info');
+  };
+
   const toggleTheme = async () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
@@ -762,18 +873,22 @@ export default function App() {
     };
   }, [transactions, budgets, financeMonth]);
 
-  const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange), [transactions, budgets, financeMonth, financeAnalyticsRange]);
+  const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange, categories), [transactions, budgets, financeMonth, financeAnalyticsRange, categories]);
 
   // Habit Streak Calculation Helper
   const getHabitStreaks = (habitId: string, targetDate: string) => {
-    const stats = calculateStreaks(habitLogs, habitId, targetDate);
+    const stats = calculateStreaks(habitLogs, habitId, targetDate, habits.find(h => h.id === habitId)?.frequency || 'daily');
     return { ...stats, totalCount: new Set(habitLogs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)).size };
   };
 
   // Productivity Score Calculation
   const productivityScore = useMemo(() => {
     const todayStr = formatLocalDate(clockNow);
-    const completedHabits = habits.filter(h => getHabitStreaks(h.id, todayStr).completedToday).length;
+    const completedHabits = habits.filter(h => {
+      if (h.frequency === 'weekly') return calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency).completed > 0;
+      if (!isHabitScheduledOnDate(h.frequency, todayStr)) return true;
+      return getHabitStreaks(h.id, todayStr).completedToday;
+    }).length;
     const habitWeight = habits.length > 0 ? (completedHabits / habits.length) * 50 : 50;
 
     const todayTasks = tasks.filter(t => t.dueDate === todayStr || (!t.dueDate && !t.completed));
@@ -890,6 +1005,14 @@ export default function App() {
         <button onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
       </header>
 
+      {!isOnline && (
+        <div role="status" aria-live="polite" className="mx-auto max-w-md px-4 pt-2">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            Offline — LifeOS records remain stored on this device. Internet-dependent services may be unavailable.
+          </div>
+        </div>
+      )}
+
       {/* Main Container */}
       <main className="max-w-md mx-auto p-4 space-y-4">
         {/* VIEW 1: DASHBOARD */}
@@ -972,11 +1095,7 @@ export default function App() {
                       <div key={h.id} className="p-3 rounded-xl bg-slate-800/60 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <button
-                            onClick={async () => {
-                              await StorageService.habits.logCompletion(h.id, todayStr, !stats.completedToday);
-                              const records = await reloadAllData();
-                              await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
-                            }}
+                            onClick={() => handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}
                             className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs transition ${stats.completedToday ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600'}`}
                           >
                             {stats.completedToday ? '✓' : ''}
@@ -1220,12 +1339,12 @@ export default function App() {
                 habits.map(h => {
                   const todayStr = habitsSelectedDate;
                   const stats = getHabitStreaks(h.id, todayStr);
-                  const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow);
+                  const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency);
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={async event => { event.stopPropagation(); await StorageService.habits.logCompletion(h.id, todayStr, !stats.completedToday); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast(stats.completedToday ? 'Habit unmarked' : 'Habit finished!', 'success'); }} className={`h-9 w-9 shrink-0 rounded-full border-2 text-sm ${stats.completedToday ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-600'}`}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-slate-500' : ''}`}>{h.name}</span><span className="block text-[10px] text-amber-400">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button onClick={async event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; await NotificationService.cancelHabit(h); await StorageService.habits.delete(h.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Habit removed', 'info'); }} className="rounded-lg px-2 py-1 text-xs text-slate-400">Delete</button></div>
-                      <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400"><span>Weekly completion</span><span>{weekly.completed}/7 days · {weekly.rate}%</span></div><div className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} className={`h-2 flex-1 rounded-full ${done ? 'bg-emerald-500' : 'bg-slate-700'}`} />; })}</div>
+                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`h-9 w-9 shrink-0 rounded-full border-2 text-sm ${stats.completedToday ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-600'}`}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-slate-500' : ''}`}>{h.name}</span><span className="block text-[10px] text-amber-400">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button onClick={event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; void handleHabitDeletion(h); }} className="rounded-lg px-2 py-1 text-xs text-slate-400">Delete</button></div>
+                      <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400"><span>Weekly completion</span><span>{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} className={`h-2 flex-1 rounded-full ${done ? 'bg-emerald-500' : 'bg-slate-700'}`} />; })}</div>
                       {h.reminderTime && <p className="mt-2 text-[10px] text-slate-400">Reminder · {h.reminderTime} local</p>}
                     </div>
                   );
@@ -1401,15 +1520,22 @@ export default function App() {
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
-                    const json = await StorageService.backup.exportData();
-                    const blob = new Blob([json], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `lifeos-backup-${formatLocalDate(new Date())}.json`;
-                    a.click();
-                    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-                    showToast('Backup JSON exported', 'success');
+                    let downloadUrl: string | null = null;
+                    try {
+                      const json = await StorageService.backup.exportData();
+                      const blob = new Blob([json], { type: 'application/json' });
+                      downloadUrl = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = downloadUrl;
+                      a.download = `lifeos-backup-${formatLocalDate(new Date())}.json`;
+                      a.click();
+                      showToast('Backup JSON exported', 'success');
+                    } catch (error) {
+                      console.error('LifeOS backup export failed:', error);
+                      showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
+                    } finally {
+                      if (downloadUrl) window.setTimeout(() => URL.revokeObjectURL(downloadUrl!), 1000);
+                    }
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-slate-800 text-white text-xs font-semibold"
                 >

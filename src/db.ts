@@ -417,16 +417,27 @@ export const StorageService: IDataStorage = {
       await db.savingsGoals.update(id, updates);
     },
     async deleteGoal(id) {
-      await db.savingsGoals.delete(id);
-      await db.savingsContributions.where('goalId').equals(id).delete();
+      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
+        await db.savingsGoals.delete(id);
+        await db.savingsContributions.where('goalId').equals(id).delete();
+      });
     },
     async addContribution(contribution) {
-      const id = 'sc_' + Date.now();
-      await db.savingsContributions.add({ ...contribution, id, createdAt: new Date().toISOString() });
-      const goal = await db.savingsGoals.get(contribution.goalId);
-      if (goal) {
-        await db.savingsGoals.update(goal.id, { currentAmount: (goal.currentAmount || 0) + contribution.amount });
+      if (!Number.isFinite(contribution.amount) || contribution.amount <= 0) {
+        throw new Error('Savings contribution amount must be a positive finite number');
       }
+      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
+        const goal = await db.savingsGoals.get(contribution.goalId);
+        if (!goal) throw new Error('Savings goal not found');
+
+        const id = 'sc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        await db.savingsGoals.update(goal.id, {
+          currentAmount: (goal.currentAmount || 0) + contribution.amount
+        });
+        await db.savingsContributions.add({
+          ...contribution, id, createdAt: new Date().toISOString()
+        });
+      });
     },
     async getContributions(goalId) {
       return db.savingsContributions.where('goalId').equals(goalId).reverse().sortBy('date');
@@ -446,30 +457,53 @@ export const StorageService: IDataStorage = {
       await db.habits.update(id, updates);
     },
     async delete(id) {
-      await db.habits.delete(id);
-      await db.habitLogs.where('habitId').equals(id).delete();
+      await db.transaction('rw', db.habits, db.habitLogs, async () => {
+        await db.habits.delete(id);
+        await db.habitLogs.where('habitId').equals(id).delete();
+      });
     },
     async getLogs(habitId) {
       if (habitId) return db.habitLogs.where('habitId').equals(habitId).toArray();
       return db.habitLogs.toArray();
     },
     async logCompletion(habitId, date, completed) {
-      const existing = await db.habitLogs.filter(l => l.habitId === habitId && l.date === date).first();
-      if (existing) {
-        await db.habitLogs.update(existing.id, {
-          completed,
-          completedAt: completed ? new Date().toISOString() : undefined
-        });
-      } else {
-        const id = 'hl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-        await db.habitLogs.add({
-          id,
-          habitId,
-          date,
-          completed,
-          completedAt: completed ? new Date().toISOString() : undefined
-        });
+      if (typeof habitId !== 'string' || !habitId.trim()) {
+        throw new Error('Habit ID is required');
       }
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        throw new Error('Habit log date must use YYYY-MM-DD format');
+      }
+      const [year, month, day] = date.split('-').map(Number);
+      const parsedDate = new Date(Date.UTC(year, month - 1, day));
+      if (
+        parsedDate.getUTCFullYear() !== year ||
+        parsedDate.getUTCMonth() !== month - 1 ||
+        parsedDate.getUTCDate() !== day
+      ) {
+        throw new Error('Habit log date must be a valid calendar date');
+      }
+      if (typeof completed !== 'boolean') {
+        throw new Error('Habit completion status must be boolean');
+      }
+
+      await db.transaction('rw', db.habits, db.habitLogs, async () => {
+        const habit = await db.habits.get(habitId);
+        if (!habit) throw new Error('Habit not found');
+
+        const existing = await db.habitLogs
+          .where('[habitId+date]')
+          .equals([habitId, date])
+          .first();
+
+        const completedAt = completed ? new Date().toISOString() : undefined;
+
+        if (existing) {
+          await db.habitLogs.update(existing.id, { completed, completedAt });
+        } else {
+          const id = 'hl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+          await db.habitLogs.add({ id, habitId, date, completed, completedAt });
+        }
+      });
     }
   },
   goals: {
@@ -486,8 +520,10 @@ export const StorageService: IDataStorage = {
       await db.goals.update(id, { ...updates, updatedAt: new Date().toISOString() });
     },
     async delete(id) {
-      await db.goals.delete(id);
-      await db.milestones.where('goalId').equals(id).delete();
+      await db.transaction('rw', db.goals, db.milestones, async () => {
+        await db.goals.delete(id);
+        await db.milestones.where('goalId').equals(id).delete();
+      });
     },
     async getMilestones(goalId) {
       return db.milestones.where('goalId').equals(goalId).toArray();
@@ -525,44 +561,89 @@ export const StorageService: IDataStorage = {
       await db.tasks.delete(id);
     },
     async toggleCompleted(id, completed) {
-      const task = await db.tasks.get(id);
-      if (!task) return;
-      await db.tasks.update(id, {
-        completed,
-        completedAt: completed ? new Date().toISOString() : undefined
-      });
+      await db.transaction('rw', db.tasks, async () => {
+        const task = await db.tasks.get(id);
+        if (!task) return;
 
-      // Handle recurrence auto-generation
-      if (completed && task.recurring && task.recurring !== 'None') {
-        const [year, month, day] = (task.dueDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
-        const nextDate = new Date(year, month - 1, day);
-        if (task.recurring === 'Daily') nextDate.setDate(nextDate.getDate() + 1);
-        else if (task.recurring === 'Weekly') nextDate.setDate(nextDate.getDate() + 7);
-        else if (task.recurring === 'Monthly') {
-          const originalDay = nextDate.getDate();
-          nextDate.setDate(1);
-          nextDate.setMonth(nextDate.getMonth() + 1);
-          nextDate.setDate(Math.min(originalDay, new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate()));
+        if (!completed) {
+          if (task.completed) {
+            await db.tasks.update(id, {
+              completed: false,
+              completedAt: undefined,
+              updatedAt: new Date().toISOString()
+            });
+          }
+          return;
         }
 
-        const yyyy = nextDate.getFullYear();
-        const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
-        const dd = String(nextDate.getDate()).padStart(2, '0');
+        if (task.recurring && task.recurring !== 'None') {
+          const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(task.dueDate);
+          if (!match) throw new Error('Invalid recurring task due date');
 
-        await db.tasks.add({
-          id: 't_' + Date.now() + '_rec_' + Math.random().toString(36).slice(2, 6),
-          title: task.title,
-          description: task.description,
-          dueDate: `${yyyy}-${mm}-${dd}`,
-          dueTime: task.dueTime,
-          priority: task.priority,
-          category: task.category,
-          notes: task.notes,
-          recurring: task.recurring,
-          completed: false,
-          createdAt: new Date().toISOString()
-        });
-      }
+          const year = Number(match[1]);
+          const month = Number(match[2]);
+          const day = Number(match[3]);
+          const nextDate = new Date(Date.UTC(year, month - 1, day));
+
+          if (
+            nextDate.getUTCFullYear() !== year ||
+            nextDate.getUTCMonth() !== month - 1 ||
+            nextDate.getUTCDate() !== day
+          ) {
+            throw new Error('Invalid recurring task due date');
+          }
+
+          if (task.recurring === 'Daily') {
+            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+          } else if (task.recurring === 'Weekly') {
+            nextDate.setUTCDate(nextDate.getUTCDate() + 7);
+          } else if (task.recurring === 'Monthly') {
+            const originalDay = nextDate.getUTCDate();
+            nextDate.setUTCDate(1);
+            nextDate.setUTCMonth(nextDate.getUTCMonth() + 1);
+            const lastDay = new Date(Date.UTC(
+              nextDate.getUTCFullYear(),
+              nextDate.getUTCMonth() + 1,
+              0
+            )).getUTCDate();
+            nextDate.setUTCDate(Math.min(originalDay, lastDay));
+          } else {
+            throw new Error('Unsupported recurrence frequency');
+          }
+
+          const nextDueDate = [
+            nextDate.getUTCFullYear(),
+            String(nextDate.getUTCMonth() + 1).padStart(2, '0'),
+            String(nextDate.getUTCDate()).padStart(2, '0')
+          ].join('-');
+
+          const nextTaskId = `rec_${task.id}_${nextDueDate}`;
+          if (!(await db.tasks.get(nextTaskId))) {
+            await db.tasks.add({
+              id: nextTaskId,
+              title: task.title,
+              description: task.description,
+              dueDate: nextDueDate,
+              dueTime: task.dueTime,
+              priority: task.priority,
+              category: task.category,
+              notes: task.notes,
+              recurring: task.recurring,
+              completed: false,
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+
+        if (!task.completed) {
+          const now = new Date().toISOString();
+          await db.tasks.update(id, {
+            completed: true,
+            completedAt: now,
+            updatedAt: now
+          });
+        }
+      });
     }
   },
   settings: {
@@ -576,25 +657,32 @@ export const StorageService: IDataStorage = {
   },
   backup: {
     async exportData() {
-      const exportObj = {
-        app: 'LifeOS',
-        version: '1.0.0',
-        exportedAt: new Date().toISOString(),
-        tables: {
-          transactions: await db.transactions.toArray(),
-          categories: await db.categories.toArray(),
-          budgets: await db.budgets.toArray(),
-          savingsGoals: await db.savingsGoals.toArray(),
-          savingsContributions: await db.savingsContributions.toArray(),
-          habits: await db.habits.toArray(),
-          habitLogs: await db.habitLogs.toArray(),
-          goals: await db.goals.toArray(),
-          milestones: await db.milestones.toArray(),
-          tasks: await db.tasks.toArray(),
-          settings: await db.settings.toArray()
-        }
-      };
-      return JSON.stringify(exportObj, null, 2);
+      const tables = [
+        db.transactions, db.categories, db.budgets, db.savingsGoals,
+        db.savingsContributions, db.habits, db.habitLogs, db.goals,
+        db.milestones, db.tasks, db.settings
+      ];
+      return db.transaction('r', tables, async () => {
+        const exportObj = {
+          app: 'LifeOS',
+          version: '1.0.0',
+          exportedAt: new Date().toISOString(),
+          tables: {
+            transactions: await db.transactions.toArray(),
+            categories: await db.categories.toArray(),
+            budgets: await db.budgets.toArray(),
+            savingsGoals: await db.savingsGoals.toArray(),
+            savingsContributions: await db.savingsContributions.toArray(),
+            habits: await db.habits.toArray(),
+            habitLogs: await db.habitLogs.toArray(),
+            goals: await db.goals.toArray(),
+            milestones: await db.milestones.toArray(),
+            tasks: await db.tasks.toArray(),
+            settings: await db.settings.toArray()
+          }
+        };
+        return JSON.stringify(exportObj, null, 2);
+      });
     },
     async importData(jsonData: string, options: { replaceExisting?: boolean } = {}) {
       let parsed: any;
@@ -655,20 +743,17 @@ export const StorageService: IDataStorage = {
       return { success: true, counts };
     },
     async clearAll() {
-      await Promise.all([
-        db.transactions.clear(),
-        db.categories.clear(),
-        db.budgets.clear(),
-        db.savingsGoals.clear(),
-        db.savingsContributions.clear(),
-        db.habits.clear(),
-        db.habitLogs.clear(),
-        db.goals.clear(),
-        db.milestones.clear(),
-        db.tasks.clear(),
-        db.settings.clear()
-      ]);
-      // Re-seed default categories
+      const tables = [
+        db.transactions, db.categories, db.budgets, db.savingsGoals,
+        db.savingsContributions, db.habits, db.habitLogs, db.goals,
+        db.milestones, db.tasks, db.settings
+      ];
+      await db.transaction('rw', tables, async () => {
+        for (const table of tables) {
+          await table.clear();
+        }
+      });
+      // Re-seed default categories after the atomic clear commits.
       await StorageService.categories.getAll();
     },
     async seedDemoData() {

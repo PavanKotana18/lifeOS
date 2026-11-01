@@ -3,69 +3,72 @@
  */
 
 // Streak Calculation Engine
-function calculateStreaks(habitLogs, targetHabitId, todayStr) {
-  // habitLogs: array of { habitId, date: 'YYYY-MM-DD', completed: boolean }
+function calculateStreaks(habitLogs, targetHabitId, todayStr, frequency = 'daily') {
   const completedDates = new Set(
     habitLogs
-      .filter(l => l.habitId === targetHabitId && l.completed)
-      .map(l => l.date)
+      .filter(log => log.habitId === targetHabitId && log.completed)
+      .map(log => log.date)
+      .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
   );
-
-  if (completedDates.size === 0) {
-    return { currentStreak: 0, longestStreak: 0, completedToday: false };
-  }
-
   const completedToday = completedDates.has(todayStr);
+  const ordinal = date => dateOrdinal(date);
+  const dateFromOrdinal = value => new Date(value * 86400000).toISOString().slice(0, 10);
 
-  // Parse all dates and sort ascending
-  const sortedDates = Array.from(completedDates).sort();
-  
-  // Calculate longest streak
-  let longestStreak = 0;
-  let tempStreak = 0;
-  let prevDate = null;
+  if (frequency === 'weekly') {
+    const weekStart = date => {
+      const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+      return ordinal(date) - ((day + 6) % 7);
+    };
+    const weeks = new Set([...completedDates].map(weekStart));
+    if (!weeks.size) return { currentStreak: 0, longestStreak: 0, completedToday };
 
-  for (const dStr of sortedDates) {
-      const curDate = new Date(`${dStr}T00:00:00`);
-    if (prevDate) {
-      const diffDays = dateOrdinal(dStr) - dateOrdinal(formatLocalDate(prevDate));
-      if (diffDays === 1) {
-        tempStreak += 1;
-      } else if (diffDays > 1) {
-        tempStreak = 1;
-      }
-    } else {
-      tempStreak = 1;
+    const sorted = [...weeks].sort((a, b) => a - b);
+    let longestStreak = 0, run = 0, previous = null;
+    for (const week of sorted) {
+      run = previous !== null && week === previous + 7 ? run + 1 : 1;
+      longestStreak = Math.max(longestStreak, run);
+      previous = week;
     }
-    if (tempStreak > longestStreak) longestStreak = tempStreak;
-    prevDate = curDate;
+
+    const currentWeek = weekStart(todayStr);
+    let checkWeek = weeks.has(currentWeek) ? currentWeek : currentWeek - 7;
+    let currentStreak = 0;
+    while (weeks.has(checkWeek)) {
+      currentStreak++;
+      checkWeek -= 7;
+    }
+    return { currentStreak, longestStreak, completedToday };
   }
 
-  // Calculate current streak: check backward from today or yesterday
+  const scheduled = date => isHabitScheduledOnDate(frequency, date);
+  const dates = [...completedDates].filter(scheduled).sort();
+  if (!dates.length) return { currentStreak: 0, longestStreak: 0, completedToday };
+
+  let longestStreak = 0, run = 0, previous = null;
+  for (const date of dates) {
+    let previousScheduled = ordinal(date) - 1;
+    while (!scheduled(dateFromOrdinal(previousScheduled))) previousScheduled--;
+    run = previous !== null && ordinal(previous) === previousScheduled ? run + 1 : 1;
+    longestStreak = Math.max(longestStreak, run);
+    previous = date;
+  }
+
+  let check = ordinal(todayStr);
+  if (!completedDates.has(todayStr) || !scheduled(todayStr)) {
+    check--;
+    while (!scheduled(dateFromOrdinal(check))) check--;
+  }
+
   let currentStreak = 0;
-  let checkDate = new Date(todayStr + 'T00:00:00');
-  
-  // If not completed today, streak might still be active if completed yesterday
-  if (!completedDates.has(todayStr)) {
-    checkDate.setDate(checkDate.getDate() - 1);
-  }
-
-  while (true) {
-    const yyyy = checkDate.getFullYear();
-    const mm = String(checkDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(checkDate.getDate()).padStart(2, '0');
-    const checkStr = `${yyyy}-${mm}-${dd}`;
-
-    if (completedDates.has(checkStr)) {
-      currentStreak += 1;
-      checkDate.setDate(checkDate.getDate() - 1);
-    } else {
-      break;
-    }
+  while (completedDates.has(dateFromOrdinal(check)) && scheduled(dateFromOrdinal(check))) {
+    currentStreak++;
+    check--;
+    while (!scheduled(dateFromOrdinal(check))) check--;
   }
 
   return { currentStreak, longestStreak, completedToday };
 }
+
 
 function dateOrdinal(dateStr) {
   const [year, month, day] = dateStr.split('-').map(Number);
@@ -115,14 +118,62 @@ function getGoalProgress(current, target) {
   return Math.max(0, Math.min(100, Math.round(currentValue / targetValue * 100)));
 }
 
-function calculateWeeklyHabitRate(logs, habitId, today = new Date()) {
-  let completed = 0;
+function isHabitScheduledOnDate(frequency, dateStr) {
+  if (frequency === 'weekly') return true;
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return false;
+  const day = date.getUTCDay();
+  if (frequency === 'weekdays') return day >= 1 && day <= 5;
+  if (frequency === 'weekends') return day === 0 || day === 6;
+  return true;
+}
+
+function calculateWeeklyHabitRate(logs, habitId, today = new Date(), frequency = 'daily') {
+  const completedDates = new Set(
+    logs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)
+  );
+
+  if (frequency === 'weekly') {
+    // Same Monday-Sunday calendar boundary as production TypeScript.
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const mondayOffset = (todayStart.getDay() + 6) % 7;
+    const weekStart = new Date(
+      todayStart.getFullYear(),
+      todayStart.getMonth(),
+      todayStart.getDate() - mondayOffset
+    );
+    const weekEnd = new Date(
+      weekStart.getFullYear(),
+      weekStart.getMonth(),
+      weekStart.getDate() + 6,
+      23, 59, 59, 999
+    );
+
+    const completed = [...completedDates].some(date => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+      const d = new Date(`${date}T00:00:00`);
+      return !Number.isNaN(d.getTime()) &&
+        d.getFullYear() === Number(date.slice(0, 4)) &&
+        d.getMonth() + 1 === Number(date.slice(5, 7)) &&
+        d.getDate() === Number(date.slice(8, 10)) &&
+        d >= weekStart && d <= weekEnd;
+    }) ? 1 : 0;
+
+    return { completed, rate: completed ? 100 : 0 };
+  }
+
+  const eligibleDates = [];
   for (let offset = 0; offset < 7; offset++) {
     const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
     const key = formatLocalDate(day);
-    if (logs.some(log => log.habitId === habitId && log.date === key && log.completed)) completed++;
+    if (isHabitScheduledOnDate(frequency, key)) eligibleDates.push(key);
   }
-  return { completed, rate: Math.round(completed / 7 * 100) };
+
+  const completed = eligibleDates.filter(date => completedDates.has(date)).length;
+  const rate = eligibleDates.length
+    ? Math.round(completed / eligibleDates.length * 100)
+    : 0;
+  return { completed, rate };
 }
 
 function buildTaskNotificationPlan(task, preferences, now = new Date()) {
@@ -267,6 +318,7 @@ function calculateFinanceMetrics(transactions, budgets, currentMonthStr) {
 // Export for node testing
 module.exports = {
   calculateStreaks,
+  isHabitScheduledOnDate,
   calculateFinanceMetrics,
   formatLocalDate,
   formatLocalDateTime,
