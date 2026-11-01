@@ -41,15 +41,15 @@ async function main() {
       targetDate: '2027-12-31', createdAt: stamp
     });
 
-    const stopContribution = db.savingsContributions.hook('creating')
-      .subscribe(() => { throw new Error('Injected contribution failure'); });
+    const contributionFailure = () => { throw new Error('Injected contribution failure'); };
+    db.savingsContributions.hook('creating').subscribe(contributionFailure);
 
     try {
       await assert.rejects(StorageService.savings.addContribution({
         goalId: 'sg-atomic', amount: 500, date: '2026-11-01'
       }));
     } finally {
-      stopContribution();
+      db.savingsContributions.hook('creating').unsubscribe(contributionFailure);
     }
 
     check(
@@ -86,13 +86,13 @@ async function main() {
       date: '2026-11-01', completed: true
     });
 
-    const stopHabitDelete = db.habitLogs.hook('deleting')
-      .subscribe(() => { throw new Error('Injected habit-log deletion failure'); });
+    const habitDeleteFailure = () => { throw new Error('Injected habit-log deletion failure'); };
+    db.habitLogs.hook('deleting').subscribe(habitDeleteFailure);
 
     try {
       await assert.rejects(StorageService.habits.delete('habit-atomic'));
     } finally {
-      stopHabitDelete();
+      db.habitLogs.hook('deleting').unsubscribe(habitDeleteFailure);
     }
 
     check(
@@ -113,13 +113,13 @@ async function main() {
       title: 'Complete module one', completed: false
     });
 
-    const stopMilestoneDelete = db.milestones.hook('deleting')
-      .subscribe(() => { throw new Error('Injected milestone deletion failure'); });
+    const milestoneDeleteFailure = () => { throw new Error('Injected milestone deletion failure'); };
+    db.milestones.hook('deleting').subscribe(milestoneDeleteFailure);
 
     try {
       await assert.rejects(StorageService.goals.delete('goal-atomic'));
     } finally {
-      stopMilestoneDelete();
+      db.milestones.hook('deleting').unsubscribe(milestoneDeleteFailure);
     }
 
     check(
@@ -134,13 +134,13 @@ async function main() {
       amount: 100, date: '2026-11-01', createdAt: stamp
     });
 
-    const stopSavingsDelete = db.savingsContributions.hook('deleting')
-      .subscribe(() => { throw new Error('Injected savings deletion failure'); });
+    const savingsDeleteFailure = () => { throw new Error('Injected savings deletion failure'); };
+    db.savingsContributions.hook('deleting').subscribe(savingsDeleteFailure);
 
     try {
       await assert.rejects(StorageService.savings.deleteGoal('sg-atomic'));
     } finally {
-      stopSavingsDelete();
+      db.savingsContributions.hook('deleting').unsubscribe(savingsDeleteFailure);
     }
 
     check(
