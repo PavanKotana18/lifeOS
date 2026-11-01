@@ -3,7 +3,7 @@ import packageInfo from '../package.json';
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { StorageService, db } from './db';
+import { StorageService, sessionManager } from './db';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
 import { DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
@@ -109,7 +109,7 @@ export default function App() {
   const [habitsSubtab, setHabitsSubtab] = useState<'checklist' | 'weekly' | 'monthly'>('checklist');
   const [habitsSelectedDate, setHabitsSelectedDate] = useState<string>(formatLocalDate(new Date()));
 
-  const [goalsSubtab, setGoalsSubtab] = useState<'active' | 'completed'>('active');
+  const [goalsSubtab, setGoalsSubtab] = useState<'active' | 'paused' | 'completed'>('active');
   const [goalsCategoryFilter, setGoalsCategoryFilter] = useState<string>('all');
 
   const [plannerSubtab, setPlannerSubtab] = useState<'agenda' | 'weekly' | 'all'>('agenda');
@@ -198,18 +198,38 @@ export default function App() {
     void CapacitorApp.addListener('appStateChange', async state => {
       if (disposed) return;
       if (!state.isActive) {
+        // Close admission immediately, then wait for admitted database work.
+        sessionManager.lock();
+        await sessionManager.waitForIdle();
+
         const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
         if (disposed) return;
-        if (isBio) { biometricAuthenticated.current = false; authCoordinator.resetForBackground(); setIsLocked(true); setBiometricVerified(false); setBiometricMessage(''); }
+        if (isBio) {
+          biometricAuthenticated.current = false;
+          authCoordinator.resetForBackground();
+          setIsLocked(true);
+          setBiometricVerified(false);
+          setBiometricMessage('');
+        }
         return;
       }
       if (resumeInProgress) return;
       resumeInProgress = true;
       try {
+        // Wait for any previous background operation drain before reopening.
+        await sessionManager.waitForIdle();
+        if (disposed) return;
+
         setClockNow(new Date());
         const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
         if (disposed) return;
-        if (isBio && startupComplete.current && !biometricAuthenticated.current) void triggerBiometricAuth();
+        if (isBio && startupComplete.current && !biometricAuthenticated.current) {
+          const authenticated = await triggerBiometricAuth();
+          if (!authenticated || !biometricAuthenticated.current || disposed) return;
+        }
+        // Never reload protected records while the biometric session is locked.
+        if (!isBio) sessionManager.unlock();
+        if (!sessionManager.isUnlocked()) return;
         const records = await reloadAllData();
         if (disposed) return;
         const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
@@ -305,6 +325,7 @@ export default function App() {
   };
 
   const initApp = async () => {
+    // Bootstrap-safe preferences only.
     const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'system');
     setAppearancePreference(savedTheme);
     const resolvedTheme = resolveAppearance(savedTheme, systemDarkPreference());
@@ -312,45 +333,97 @@ export default function App() {
     applyDomTheme(resolvedTheme);
     localStorage.setItem('lifeos-appearance', savedTheme);
 
+    const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
+    setBiometricEnabled(lockSetting);
+    setIsLocked(lockSetting);
+
+    const availability = await BiometricService.isAvailable();
+    setBiometricAvailability(
+      availability.isAvailable
+        ? 'Available'
+        : availability.code === 'NOT_ENROLLED'
+          ? 'Supported, but no device credential is enrolled'
+          : 'Unavailable on this device'
+    );
+
+    // Onboarding progress is intentionally bootstrap-safe.
+    const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
+    const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
+    const savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
+
+    // Establish the application session before reading private preferences or records.
+    if (lockSetting) {
+      const authenticated = await triggerBiometricAuth();
+      if (!authenticated || !biometricAuthenticated.current || !sessionManager.isUnlocked()) {
+        startupComplete.current = true;
+        setAppReady(true);
+        return;
+      }
+    } else {
+      sessionManager.unlock();
+    }
+
+    // Private preferences are read only after session authorization.
     const storedCurrency = await StorageService.settings.get<UserPreferences['currency']>('currency', 'INR');
     const savedUserPrefs = await StorageService.settings.get<Partial<UserPreferences>>('userPreferences', {});
     setUserPrefs(mergeUserPreferences(savedUserPrefs, storedCurrency));
     setDisplayName(await StorageService.settings.get<string>('displayName', ''));
-    const savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
-    const hasRequestedNotifications = await StorageService.settings.get<boolean>('notificationPermissionRequested', false);
-    const savedNotificationsEnabled = await StorageService.settings.get<boolean | undefined>('notificationsEnabled', undefined);
-    const notificationsOn = savedNotificationsEnabled ?? Object.values(savedNotificationPreferences).some(Boolean);
+
+    const savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>(
+      'notificationPreferences',
+      DEFAULT_NOTIFICATION_PREFERENCES
+    );
+    const hasRequestedNotifications = await StorageService.settings.get<boolean>(
+      'notificationPermissionRequested',
+      false
+    );
+    const savedNotificationsEnabled = await StorageService.settings.get<boolean | undefined>(
+      'notificationsEnabled',
+      undefined
+    );
+    const notificationsOn =
+      savedNotificationsEnabled ?? Object.values(savedNotificationPreferences).some(Boolean);
+
     setNotificationsEnabled(notificationsOn);
-    setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences });
+    setNotificationPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      ...savedNotificationPreferences
+    });
     setNotificationPermissionRequested(hasRequestedNotifications);
 
-    const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-    setBiometricEnabled(lockSetting);
-    setIsLocked(lockSetting);
-    const availability = await BiometricService.isAvailable();
-    setBiometricAvailability(availability.isAvailable ? 'Available' : availability.code === 'NOT_ENROLLED' ? 'Supported, but no device credential is enrolled' : 'Unavailable on this device');
-
-    const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
-    const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
-    const savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
-    // Keep this inspection read-only: saving a default theme before this point
-    // made a fresh database look like a legacy install and skipped onboarding.
-    const settingsCount = await db.settings.count();
-    const dataCounts = await Promise.all([db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(), db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count()]);
-    const legacyState = settingsCount > 0 || dataCounts.some(count => count > 0);
+    // This operation inspects private tables, so it must follow authentication.
+    const legacyState = await StorageService.backup.hasData();
     const needsOnboarding = shouldShowOnboarding(completed, legacyState, started);
+
     setOnboardingRequired(needsOnboarding);
     setOnboardingComplete(completed || !needsOnboarding);
     setOnboardingStep(Math.max(0, Math.min(4, savedOnboardingStep)));
-    if (!completed && !needsOnboarding) await StorageService.settings.set('onboardingCompleted', true);
-    if (needsOnboarding && !started) await StorageService.settings.set('onboardingStarted', true);
 
-    // A fresh process does not necessarily receive an appStateChange resume event.
-    // Authenticate as part of bootstrap before appReady can expose protected UI.
-    if (lockSetting) await triggerBiometricAuth();
+    if (!completed && !needsOnboarding) {
+      await StorageService.settings.set('onboardingCompleted', true);
+    }
+    if (needsOnboarding && !started) {
+      await StorageService.settings.set('onboardingStarted', true);
+    }
+
+    // Recheck in case the app was backgrounded during startup.
+    if (!sessionManager.isUnlocked()) {
+      startupComplete.current = true;
+      setAppReady(true);
+      return;
+    }
 
     const records = await reloadAllData();
-    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences }, notificationsOn));
+    await syncNotificationSchedules(
+      records.tasks,
+      records.habits,
+      records.goals,
+      records.milestones,
+      effectiveNotificationPreferences(
+        { ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences },
+        notificationsOn
+      )
+    );
     await refreshNotificationDiagnostics();
     startupComplete.current = true;
     setAppReady(true);
@@ -455,6 +528,7 @@ export default function App() {
     if (!availability.isAvailable) return { success: false, message: availability.code === 'NOT_ENROLLED' ? 'No fingerprint or device screen lock is enrolled. Set one up in Android settings, then try again.' : 'Device authentication is not available on this device.' };
     const result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
     if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
+    sessionManager.unlock();
     setBiometricEnabled(true); setBiometricVerified(true);
     biometricAuthenticated.current = true;
     authCoordinator.markAuthenticated();
@@ -474,10 +548,7 @@ export default function App() {
     if (!file) return;
     try {
       const text = await file.text();
-      const hasRecords = await Promise.all([
-        db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(),
-        db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(), db.settings.count(),
-      ]).then(counts => counts.some(count => count > 0));
+      const hasRecords = await StorageService.backup.hasData();
       if (hasRecords && !window.confirm('This backup will replace the existing LifeOS data on this device. Export a backup first if you need a copy. Continue?')) return;
       await StorageService.backup.importData(text, { replaceExisting: true });
       const records = await reloadAllData();
@@ -509,6 +580,7 @@ export default function App() {
       }
       const success = await authCoordinator.authenticate();
       if (success) {
+        sessionManager.unlock();
         biometricAuthenticated.current = true;
         setIsLocked(false);
         setBiometricVerified(true);
@@ -535,7 +607,7 @@ export default function App() {
       StorageService.habits.getAll(),
       StorageService.habits.getLogs(),
       StorageService.goals.getAll(),
-      db.milestones.toArray(),
+      StorageService.goals.getAllMilestones(),
       StorageService.tasks.getAll()
     ]);
 
@@ -1358,19 +1430,19 @@ export default function App() {
         {activeTab === 'goals' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Add goal</button></div>
-            <div className="flex gap-2"><button onClick={() => setGoalsSubtab('active')} className={`flex-1 rounded-xl px-3 py-2 text-xs ${goalsSubtab === 'active' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Active</button><button onClick={() => setGoalsSubtab('completed')} className={`flex-1 rounded-xl px-3 py-2 text-xs ${goalsSubtab === 'completed' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Completed</button></div>
+            <div className="grid grid-cols-3 gap-2"><button onClick={() => setGoalsSubtab('active')} className={`rounded-xl px-2 py-2 text-xs ${goalsSubtab === 'active' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Active</button><button onClick={() => setGoalsSubtab('paused')} className={`rounded-xl px-2 py-2 text-xs ${goalsSubtab === 'paused' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Paused</button><button onClick={() => setGoalsSubtab('completed')} className={`rounded-xl px-2 py-2 text-xs ${goalsSubtab === 'completed' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Completed</button></div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
-            {goals.filter(goal => (goalsSubtab === 'completed' ? goal.status === 'Completed' : goal.status === 'In Progress') && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 py-10 text-center text-sm text-slate-400">{goalsSubtab === 'completed' ? 'Completed goals will appear here.' : 'No active goals yet. Set a goal to start tracking progress.'}</div>
+            {goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 py-10 text-center text-sm text-slate-400">{goalsSubtab === 'completed' ? 'Completed goals will appear here.' : goalsSubtab === 'paused' ? 'No paused goals. You can pause an active goal whenever needed.' : 'No active goals yet. Set a goal to start tracking progress.'}</div>
             ) : (
-              goals.filter(goal => (goalsSubtab === 'completed' ? goal.status === 'Completed' : goal.status === 'In Progress') && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).map(g => {
+              goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).map(g => {
                 const pct = goalProgress(g);
                 const goalMilestones = milestones.filter(milestone => milestone.goalId === g.id);
                 return <div key={g.id} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
                   <div className="flex items-start justify-between gap-3"><div><button onClick={() => openEditGoal(g)} className="min-h-9 text-left font-semibold text-sm hover:text-indigo-300">{g.title}</button><p className="text-[10px] text-slate-400">{g.category} · target {formatDate(g.targetDate)} · {getDaysRemainingText(g.targetDate)}</p></div><span className="text-sm font-bold text-indigo-400">{pct}%</span></div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} /></div>
                   <div className="flex justify-between text-xs text-slate-400"><span>{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</span><span>{goalMilestones.filter(milestone => milestone.completed).length}/{goalMilestones.length} milestones</span></div>
-                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-indigo-300">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-slate-200">+ Milestone</button>}<button onClick={async () => { await StorageService.goals.update(g.id, { status: goalsSubtab === 'completed' ? 'In Progress' : 'Completed' }); await reloadAllData(); showToast(goalsSubtab === 'completed' ? 'Goal reopened' : 'Goal completed', 'success'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-emerald-300">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!window.confirm(`Delete goal “${g.title}” and its milestones?`)) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] text-rose-300">Delete</button></div>
+                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-indigo-300">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-slate-200">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-amber-300">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-emerald-300">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!window.confirm(`Delete goal “${g.title}” and its milestones?`)) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] text-rose-300">Delete</button></div>
                   {goalMilestones.length > 0 && <div className="space-y-2 border-t border-slate-800 pt-3">{goalMilestones.map(milestone => <div key={milestone.id} className="flex items-center gap-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-4 w-4 accent-indigo-500" /><div className="min-w-0 flex-1"><p className={`text-xs ${milestone.completed ? 'text-slate-500 line-through' : ''}`}>{milestone.title}</p>{milestone.targetDate && <p className="text-[10px] text-slate-500">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</p>}</div></div>)}</div>}
                 </div>;
               })

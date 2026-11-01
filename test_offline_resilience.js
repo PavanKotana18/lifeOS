@@ -27,7 +27,8 @@ check('Application initial data loading uses local StorageService and Dexie tabl
   assert.match(app, /const initApp = async/);
   assert.match(app, /const reloadAllData = async/);
   assert.match(app, /StorageService\.transactions\.getAll\(\)/);
-  assert.match(app, /db\.milestones\.toArray\(\)/);
+  assert.match(app, /StorageService\.goals\.getAllMilestones\(\)/);
+  assert.doesNotMatch(app, /\bdb\.[A-Za-z]+\.(get|count|toArray|put|add|update|delete|clear|where|filter|orderBy|bulkPut|bulkDelete)\s*\(/);
 });
 
 check('Connectivity state initializes from navigator.onLine', () => {

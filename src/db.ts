@@ -1,4 +1,5 @@
 import Dexie, { Table } from 'dexie';
+import { createSessionManager } from './services/sessionManager';
 import {
   Transaction,
   Category,
@@ -12,7 +13,7 @@ import {
   Task
 } from './types';
 
-export class LifeOSDatabase extends Dexie {
+class LifeOSDatabase extends Dexie {
   transactions!: Table<Transaction, string>;
   categories!: Table<Category, string>;
   budgets!: Table<Budget, string>;
@@ -44,7 +45,7 @@ export class LifeOSDatabase extends Dexie {
 }
 
 
-export const db = new LifeOSDatabase();
+const db = new LifeOSDatabase();
 
 let recordIdSequence = 0;
 
@@ -140,6 +141,7 @@ export interface IDataStorage {
   };
   goals: {
     getAll(): Promise<Goal[]>;
+    getAllMilestones(): Promise<Milestone[]>;
     add(goal: Omit<Goal, 'id' | 'createdAt'>): Promise<Goal>;
     update(id: string, updates: Partial<Goal>): Promise<void>;
     delete(id: string): Promise<void>;
@@ -160,6 +162,7 @@ export interface IDataStorage {
     set(key: string, value: any): Promise<void>;
   };
   backup: {
+    hasData(): Promise<boolean>;
     exportData(): Promise<string>;
     importData(jsonData: string, options?: { replaceExisting?: boolean }): Promise<{ success: boolean; counts: Record<string, number> }>;
     clearAll(): Promise<void>;
@@ -348,7 +351,7 @@ export function validateBackupTables(tablesData: any): string[] {
   return names;
 }
 
-export const StorageService: IDataStorage = {
+const rawStorageService: IDataStorage = {
   transactions: {
     async getAll() {
       return db.transactions.reverse().sortBy('date');
@@ -611,6 +614,9 @@ export const StorageService: IDataStorage = {
     async getAll() {
       return db.goals.toArray();
     },
+    async getAllMilestones() {
+      return db.milestones.toArray();
+    },
     async add(goal) {
       const id = createRecordId('g');
       const record: Goal = { ...goal, id, createdAt: new Date().toISOString() };
@@ -769,6 +775,22 @@ export const StorageService: IDataStorage = {
     }
   },
   backup: {
+    async hasData() {
+      const counts = await Promise.all([
+        db.transactions.count(),
+        db.categories.count(),
+        db.budgets.count(),
+        db.savingsGoals.count(),
+        db.savingsContributions.count(),
+        db.habits.count(),
+        db.habitLogs.count(),
+        db.goals.count(),
+        db.milestones.count(),
+        db.tasks.count(),
+        db.settings.count()
+      ]);
+      return counts.some(count => count > 0);
+    },
     async exportData() {
       const tables = [
         db.transactions, db.categories, db.budgets, db.savingsGoals,
@@ -866,10 +888,10 @@ export const StorageService: IDataStorage = {
           await table.clear();
         }
       });
-      // Re-seed default categories after the atomic clear commits.
-      await StorageService.categories.getAll();
+      // This parent operation already owns a session lease.
+      await rawStorageService.categories.getAll();
     },
-    async seedDemoData() {
+        async seedDemoData() {
       // User-initiated optional demo data
       const today = new Date().toISOString().split('T')[0];
       const curMonth = today.substring(0, 7);
@@ -882,36 +904,36 @@ export const StorageService: IDataStorage = {
         { type: 'expense', amount: 2400, category: 'Utilities', description: 'Fiber Broadband & Power', date: `${curMonth}-12`, paymentMethod: 'UPI' },
         { type: 'expense', amount: 12000, category: 'Investments', description: 'Index Equity SIP', date: `${curMonth}-05`, paymentMethod: 'Bank Transfer' }
       ];
-      for (const tx of demoTxs) await StorageService.transactions.add(tx);
+      for (const tx of demoTxs) await rawStorageService.transactions.add(tx);
 
-      await StorageService.budgets.upsert({ monthlyAmount: 60000, monthYear: curMonth });
-      await StorageService.budgets.upsert({ categoryId: 'Food', monthlyAmount: 12000, monthYear: curMonth });
+      await rawStorageService.budgets.upsert({ monthlyAmount: 60000, monthYear: curMonth });
+      await rawStorageService.budgets.upsert({ categoryId: 'Food', monthlyAmount: 12000, monthYear: curMonth });
 
-      const goal = await StorageService.savings.addGoal({
+      const goal = await rawStorageService.savings.addGoal({
         title: 'Emergency Reserve Fund',
         targetAmount: 200000,
         currentAmount: 85000,
         targetDate: '2026-12-31',
         category: 'Financial'
       });
-      await StorageService.savings.addContribution({
+      await rawStorageService.savings.addContribution({
         goalId: goal.id,
         amount: 20000,
         date: `${curMonth}-05`,
         notes: 'Monthly savings contribution'
       });
 
-      const h1 = await StorageService.habits.add({ name: 'Drink 3L Water', frequency: 'daily', color: '#3b82f6' });
-      const h2 = await StorageService.habits.add({ name: 'Walk 10,000 steps', frequency: 'daily', color: '#10b981' });
-      const h3 = await StorageService.habits.add({ name: 'Read 20 pages', frequency: 'daily', color: '#8b5cf6' });
+      const h1 = await rawStorageService.habits.add({ name: 'Drink 3L Water', frequency: 'daily', color: '#3b82f6' });
+      const h2 = await rawStorageService.habits.add({ name: 'Walk 10,000 steps', frequency: 'daily', color: '#10b981' });
+      const h3 = await rawStorageService.habits.add({ name: 'Read 20 pages', frequency: 'daily', color: '#8b5cf6' });
 
       // Add streaks
       const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-      await StorageService.habits.logCompletion(h1.id, yesterday, true);
-      await StorageService.habits.logCompletion(h1.id, today, true);
-      await StorageService.habits.logCompletion(h2.id, yesterday, true);
+      await rawStorageService.habits.logCompletion(h1.id, yesterday, true);
+      await rawStorageService.habits.logCompletion(h1.id, today, true);
+      await rawStorageService.habits.logCompletion(h2.id, yesterday, true);
 
-      const g = await StorageService.goals.add({
+      const g = await rawStorageService.goals.add({
         title: 'Run Half Marathon (21.1 km)',
         description: 'Prepare endurance for state marathon event',
         category: 'Fitness',
@@ -923,13 +945,90 @@ export const StorageService: IDataStorage = {
         priority: 'High',
         status: 'In Progress'
       });
-      await StorageService.goals.addMilestone({ goalId: g.id, title: '5km continuous run', completed: true });
-      await StorageService.goals.addMilestone({ goalId: g.id, title: '10km non-stop run', completed: true });
-      await StorageService.goals.addMilestone({ goalId: g.id, title: '15km long trail run', completed: false });
+      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '5km continuous run', completed: true });
+      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '10km non-stop run', completed: true });
+      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '15km long trail run', completed: false });
 
-      await StorageService.tasks.add({ title: 'Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false });
-      await StorageService.tasks.add({ title: '5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true });
-      await StorageService.tasks.add({ title: 'Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false });
-    }
+      await rawStorageService.tasks.add({ title: 'Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false });
+      await rawStorageService.tasks.add({ title: '5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true });
+      await rawStorageService.tasks.add({ title: 'Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false }); }
   }
 };
+
+
+/**
+ * Application-level authorization guard.
+ *
+ * Only explicitly allowlisted bootstrap settings are readable while locked.
+ * All other StorageService operations require an authenticated session.
+ *
+ * This is not a cryptographic boundary: direct IndexedDB access remains
+ * possible to code executing inside a compromised WebView.
+ */
+export const sessionManager = createSessionManager();
+
+const BOOTSTRAP_SETTING_KEYS = new Set([
+  'theme',
+  'biometricLockEnabled',
+  'onboardingCompleted',
+  'onboardingStarted',
+  'onboardingStep'
+]);
+
+const READ_OPERATIONS: Record<string, Set<string>> = {
+  transactions: new Set(['getAll', 'getById', 'filter']),
+  categories: new Set(['getAll']),
+  budgets: new Set(['getAll', 'getByMonth']),
+  savings: new Set(['getGoals', 'getContributions']),
+  habits: new Set(['getAll', 'getLogs']),
+  goals: new Set(['getAll', 'getAllMilestones', 'getMilestones']),
+  tasks: new Set(['getAll']),
+  settings: new Set(['get']),
+  backup: new Set(['hasData', 'exportData'])
+};
+
+function protectStorage<T extends object>(target: T, namespace = ''): T {
+  return new Proxy(target, {
+    get(object, property, receiver) {
+      const value = Reflect.get(object, property, receiver);
+
+      if (value && typeof value === 'object') {
+        return protectStorage(value, String(property));
+      }
+
+      if (typeof value !== 'function') return value;
+
+      return async (...args: unknown[]) => {
+        const isBootstrapSetting =
+          namespace === 'settings' &&
+          (property === 'get' || property === 'set') &&
+          typeof args[0] === 'string' &&
+          BOOTSTRAP_SETTING_KEYS.has(args[0]);
+
+        const token = isBootstrapSetting
+          ? null
+          : sessionManager.beginOperation();
+
+        try {
+          const result = await Reflect.apply(value, object, args);
+
+          const isRead =
+            typeof property === 'string' &&
+            READ_OPERATIONS[namespace]?.has(property) === true;
+
+          // Private reads cannot return stale data after the session locks.
+          // Admitted writes finish normally and are drained before lock completion.
+          if (token !== null && isRead) {
+            sessionManager.assertCurrent(token);
+          }
+
+          return result;
+        } finally {
+          if (token !== null) sessionManager.endOperation();
+        }
+      };
+    }
+  });
+}
+
+export const StorageService: IDataStorage = protectStorage(rawStorageService);
