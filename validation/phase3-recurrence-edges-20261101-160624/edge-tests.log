@@ -1,0 +1,9 @@
+PASS: January 31 advances to February 29 in a leap year
+PASS: February 29 advances to March 29 without date overflow
+PASS: December 31 advances correctly across the year boundary
+PASS: A 30th-of-month recurrence remains on the 30th when possible
+PASS: May 31 clamps to June 30
+PASS: Editing a generated occurrence does not modify its source task
+PASS: Deleting a generated occurrence preserves its completed source task
+PASS: Repeated completion after database reopen does not duplicate the occurrence
+RECURRENCE EDGE TESTS: 8/8 PASSED
