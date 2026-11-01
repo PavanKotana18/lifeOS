@@ -1,7 +1,9 @@
 PATCH_STATUS exit=1
-===== DIFF_CHECK =====
+Traceback (most recent call last):
+  File "<stdin>", line 6, in <module>
+AssertionError
+SOURCE_VERIFICATION exit=1
 DIFF_CHECK exit=0
-===== TESTS =====
 
 > lifeos-personal@1.0.0 test
 > node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js
@@ -156,9 +158,7 @@ AssertionError [ERR_ASSERTION]: Daily recurrence creates the next day occurrence
   diff: 'simple'
 }
 TESTS exit=1
-===== TYPESCRIPT =====
 TYPESCRIPT exit=0
-===== BUILD =====
 
 > lifeos-personal@1.0.0 build
 > vite build
@@ -178,8 +178,7 @@ dist/assets/index-Z08MLC7h.js   825.06 kB │ gzip: 232.96 kB
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-✓ built in 8.20s
+✓ built in 8.68s
 BUILD exit=0
-===== DEPENDENCY_AUDIT =====
 found 0 vulnerabilities
 DEPENDENCY_AUDIT exit=0
