@@ -88,6 +88,28 @@ check(
   'Weekend streak counts Saturday and Sunday'
 );
 
+const impossibleDateStreak = calculateStreaks([
+  { habitId: 'invalid-date', date: '2026-02-31', completed: true }
+], 'invalid-date', '2026-03-01', 'daily');
+
+check(
+  impossibleDateStreak.currentStreak === 0 &&
+  impossibleDateStreak.longestStreak === 0 &&
+  impossibleDateStreak.completedToday === false,
+  'Streak calculation ignores impossible logged calendar dates'
+);
+
+const invalidTodayStreak = calculateStreaks(
+  [], 'invalid-today', '2026-02-30', 'daily'
+);
+
+check(
+  invalidTodayStreak.currentStreak === 0 &&
+  invalidTodayStreak.longestStreak === 0 &&
+  invalidTodayStreak.completedToday === false,
+  'Streak calculation safely rejects an impossible today date'
+);
+
 const weeklyRate = calculateWeeklyHabitRate(
   [{ habitId: 'weekly', date: '2026-11-04', completed: true }],
   'weekly', new Date(2026, 10, 8), 'weekly'
@@ -177,5 +199,5 @@ check(
   'Habits tab uses the shared deletion handler'
 );
 
-console.log(`PRODUCTION HABIT ANALYTICS TESTS: ${passed}/30 PASSED`);
-if (passed !== 30) process.exitCode = 1;
+console.log(`PRODUCTION HABIT ANALYTICS TESTS: ${passed}/32 PASSED`);
+if (passed !== 32) process.exitCode = 1;

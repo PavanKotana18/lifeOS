@@ -7,15 +7,19 @@ export function createAuthCoordinator(authenticate: () => Promise<boolean>) {
       if (authenticated) return Promise.resolve(true);
       if (pending) return pending;
       const attemptGeneration = generation;
-      pending = Promise.resolve().then(authenticate).then(result => {
-        const valid = generation === attemptGeneration && result;
-        authenticated = valid;
-        return valid;
-      }).finally(() => { pending = null; });
-      return pending;
+      let attempt: Promise<boolean>;
+      attempt = Promise.resolve().then(authenticate).then(result => {
+        if (generation !== attemptGeneration) return false;
+        authenticated = result;
+        return result;
+      }).finally(() => {
+        if (pending === attempt) pending = null;
+      });
+      pending = attempt;
+      return attempt;
     },
-    resetForBackground() { generation++; authenticated = false; },
-    markAuthenticated() { generation++; authenticated = true; },
+    resetForBackground() { generation++; authenticated = false; pending = null; },
+    markAuthenticated() { generation++; authenticated = true; pending = null; },
     isAuthenticated() { return authenticated; },
   };
 }

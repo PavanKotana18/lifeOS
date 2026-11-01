@@ -145,10 +145,23 @@ export function calculateStreaks(
   today: string,
   frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly' = 'daily'
 ) {
+  const isValidCalendarDate = (date: string) => {
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return false;
+    }
+    const parsed = new Date(`${date}T00:00:00.000Z`);
+    return Number.isFinite(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === date;
+  };
+
+  if (!isValidCalendarDate(today)) {
+    return { currentStreak: 0, longestStreak: 0, completedToday: false };
+  }
+
   const completedDates = new Set(
     logs.filter(log => log.habitId === habitId && log.completed)
       .map(log => log.date)
-      .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
+      .filter(isValidCalendarDate)
   );
 
   const ordinal = (date: string) => {

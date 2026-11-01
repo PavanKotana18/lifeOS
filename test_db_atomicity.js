@@ -237,7 +237,202 @@ async function main() {
       'Repeated completion toggles update one existing log'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/10 PASSED`);
+
+    // 10. Same-millisecond record creation must not collide.
+    const originalNow = Date.now;
+    Date.now = () => 1793530000000;
+    try {
+      const habits = await Promise.all([
+        StorageService.habits.add({ name: 'Rapid habit A', frequency: 'daily', color: '#123456' }),
+        StorageService.habits.add({ name: 'Rapid habit B', frequency: 'daily', color: '#654321' })
+      ]);
+      check(
+        habits[0].id !== habits[1].id &&
+        await db.habits.where('id').anyOf(habits.map(item => item.id)).count() === 2,
+        'Rapid habit creation generates distinct IDs within one millisecond'
+      );
+
+      const savingsGoals = await Promise.all([
+        StorageService.savings.addGoal({ title: 'Rapid savings A', targetAmount: 1000, currentAmount: 0, targetDate: '2027-01-01' }),
+        StorageService.savings.addGoal({ title: 'Rapid savings B', targetAmount: 2000, currentAmount: 0, targetDate: '2027-02-01' })
+      ]);
+      check(
+        savingsGoals[0].id !== savingsGoals[1].id &&
+        await db.savingsGoals.where('id').anyOf(savingsGoals.map(item => item.id)).count() === 2,
+        'Rapid savings-goal creation preserves both records'
+      );
+
+      const goals = await Promise.all([
+        StorageService.goals.add({ title: 'Rapid goal A', category: 'Education', targetValue: 10, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-01-01', priority: 'Medium', status: 'In Progress' }),
+        StorageService.goals.add({ title: 'Rapid goal B', category: 'Education', targetValue: 20, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-02-01', priority: 'Medium', status: 'In Progress' })
+      ]);
+      check(goals[0].id !== goals[1].id, 'Rapid goal creation generates distinct IDs');
+
+      const milestones = await Promise.all([
+        StorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone A', completed: false }),
+        StorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone B', completed: false })
+      ]);
+      check(milestones[0].id !== milestones[1].id, 'Rapid milestone creation generates distinct IDs');
+
+      const budgets = await Promise.all([
+        StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 100 }),
+        StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 200 })
+      ]);
+      const monthlyBudgets = await db.budgets.where('monthYear').equals('2026-11').toArray();
+      check(
+        budgets[0].id === budgets[1].id && monthlyBudgets.length === 1,
+        'Concurrent monthly budget upserts serialize into one budget record'
+      );
+    } finally {
+      Date.now = originalNow;
+    }
+
+    // 16. Transaction storage rejects invalid records and preserves identity fields.
+    await assert.rejects(StorageService.transactions.add({
+      amount: 0, date: '2026-11-01', category: 'Food',
+      description: 'Invalid amount', paymentMethod: 'Cash', type: 'expense'
+    }));
+    await assert.rejects(StorageService.transactions.add({
+      amount: 100, date: '2026-02-30', category: 'Food',
+      description: 'Invalid date', paymentMethod: 'Cash', type: 'expense'
+    }));
+    const validTransaction = await StorageService.transactions.add({
+      amount: 100, date: '2026-11-01', category: 'Food',
+      description: 'Storage validation', paymentMethod: 'Cash', type: 'expense'
+    });
+    await assert.rejects(StorageService.transactions.update(validTransaction.id, { amount: -1 }));
+    await assert.rejects(StorageService.transactions.update(validTransaction.id, { date: '2026-02-30' }));
+    await StorageService.transactions.update(validTransaction.id, {
+      amount: 125,
+      id: 'attempted-id-overwrite',
+      createdAt: '1999-01-01T00:00:00.000Z'
+    });
+    const persistedTransaction = await db.transactions.get(validTransaction.id);
+    check(
+      persistedTransaction.amount === 125 &&
+      persistedTransaction.id === validTransaction.id &&
+      persistedTransaction.createdAt === validTransaction.createdAt &&
+      !(await db.transactions.get('attempted-id-overwrite')),
+      'Transaction storage enforces amount/date invariants and protects record identity'
+    );
+
+    // 17. Habit, Goal and Task updates must preserve record identity.
+    const identityStamp = new Date().toISOString();
+
+    await db.habits.add({
+      id: 'habit-identity', name: 'Original habit',
+      frequency: 'daily', color: '#123456', createdAt: identityStamp
+    });
+    await StorageService.habits.update('habit-identity', {
+      id: 'overwritten-habit', createdAt: 'tampered', name: 'Updated habit'
+    });
+    const updatedHabit = await db.habits.get('habit-identity');
+
+    check(
+      updatedHabit?.id === 'habit-identity' &&
+      updatedHabit?.createdAt === identityStamp &&
+      updatedHabit?.name === 'Updated habit' &&
+      !(await db.habits.get('overwritten-habit')),
+      'Habit update preserves id and createdAt while applying mutable fields'
+    );
+
+    await db.goals.add({
+      id: 'goal-identity', title: 'Original goal',
+      category: 'Education', targetValue: 10, currentValue: 2,
+      startDate: '2026-11-01', targetDate: '2027-01-01',
+      priority: 'High', status: 'In Progress', createdAt: identityStamp
+    });
+    await StorageService.goals.update('goal-identity', {
+      id: 'overwritten-goal', createdAt: 'tampered', title: 'Updated goal'
+    });
+    const updatedGoal = await db.goals.get('goal-identity');
+
+    check(
+      updatedGoal?.id === 'goal-identity' &&
+      updatedGoal?.createdAt === identityStamp &&
+      updatedGoal?.title === 'Updated goal' &&
+      !(await db.goals.get('overwritten-goal')),
+      'Goal update preserves id and createdAt while applying mutable fields'
+    );
+
+    await db.tasks.add({
+      id: 'task-identity', title: 'Original task',
+      createdAt: identityStamp, completed: false
+    });
+    await StorageService.tasks.update('task-identity', {
+      id: 'overwritten-task', createdAt: 'tampered', title: 'Updated task'
+    });
+    const updatedTask = await db.tasks.get('task-identity');
+
+    check(
+      updatedTask?.id === 'task-identity' &&
+      updatedTask?.createdAt === identityStamp &&
+      updatedTask?.title === 'Updated task' &&
+      !(await db.tasks.get('overwritten-task')),
+      'Task update preserves id and createdAt while applying mutable fields'
+    );
+
+    // 18. Concurrent first-run category initialization is atomic.
+    await db.categories.clear();
+    const categoryLoads = await Promise.all([
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll()
+    ]);
+    const persistedCategories = await db.categories.toArray();
+    const categoryIds = persistedCategories.map(category => category.id);
+    check(
+      categoryLoads.every(rows => rows.length === categoryLoads[0].length) &&
+      persistedCategories.length === categoryLoads[0].length &&
+      new Set(categoryIds).size === categoryIds.length &&
+      persistedCategories.length > 0,
+      'Concurrent first-run category initialization seeds one complete, duplicate-free category set'
+    );
+
+    // 18. Category deletion must preserve budget references and transaction history.
+    const protectedCategory = await StorageService.categories.add({
+      name: 'Protected budget category',
+      type: 'expense',
+      color: '#123456'
+    });
+
+    await StorageService.budgets.upsert({
+      monthYear: '2099-01',
+      categoryId: protectedCategory.id,
+      monthlyAmount: 500
+    });
+
+    const historicalTransaction = await StorageService.transactions.add({
+      amount: 75,
+      date: '2026-11-01',
+      category: protectedCategory.name,
+      description: 'Historical category reference',
+      paymentMethod: 'Cash',
+      type: 'expense'
+    });
+
+    await assert.rejects(
+      StorageService.categories.delete(protectedCategory.id),
+      /linked to one or more budgets/i
+    );
+
+    check(
+      Boolean(await db.categories.get(protectedCategory.id)) &&
+      await db.budgets.where('categoryId').equals(protectedCategory.id).count() === 1,
+      'Category deletion is blocked while a budget references it'
+    );
+
+    await db.budgets.where('categoryId').equals(protectedCategory.id).delete();
+    await StorageService.categories.delete(protectedCategory.id);
+
+    check(
+      !(await db.categories.get(protectedCategory.id)) &&
+      Boolean(await db.transactions.get(historicalTransaction.id)),
+      'Category can be deleted after budget removal without deleting historical transactions'
+    );
+
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/22 PASSED`);
   } finally {
     await db.delete();
   }

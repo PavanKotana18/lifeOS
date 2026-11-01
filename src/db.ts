@@ -43,6 +43,7 @@ export class LifeOSDatabase extends Dexie {
   }
 }
 
+
 export const db = new LifeOSDatabase();
 
 let recordIdSequence = 0;
@@ -412,6 +413,8 @@ export const StorageService: IDataStorage = {
       return db.transaction('rw', db.categories, async () => {
         const cats = await db.categories.toArray();
         if (cats.length > 0) return cats;
+
+        // Seed default categories atomically so concurrent app starts cannot race.
         const defaultCats: Category[] = [
           { id: 'cat_sal', name: 'Salary', type: 'income', color: '#10b981', isDefault: true },
           { id: 'cat_free', name: 'Freelance', type: 'income', color: '#3b82f6', isDefault: true },
@@ -440,14 +443,26 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      await db.categories.update(id, updates);
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      await db.categories.update(id, safeUpdates);
     },
     async delete(id) {
       await db.transaction('rw', db.categories, db.budgets, async () => {
-        const linked = await db.budgets.where('categoryId').equals(id).count();
-        if (linked > 0) {
-          throw new Error('Category is linked to one or more budgets and cannot be deleted');
+        const category = await db.categories.get(id);
+        if (!category) return;
+
+        const linkedBudgets = await db.budgets
+          .where('categoryId')
+          .equals(id)
+          .count();
+
+        if (linkedBudgets > 0) {
+          throw new Error(
+            'Category is linked to one or more budgets. Remove or reassign those budgets before deleting it.'
+          );
         }
+
         await db.categories.delete(id);
       });
     }
@@ -464,12 +479,17 @@ export const StorageService: IDataStorage = {
         const existing = await db.budgets
           .filter(b => b.monthYear === budget.monthYear && b.categoryId === budget.categoryId)
           .first();
+
         if (existing) {
           await db.budgets.update(existing.id, { monthlyAmount: budget.monthlyAmount });
           return { ...existing, monthlyAmount: budget.monthlyAmount };
         }
-        const id = createRecordId('b');
-        const record: Budget = { ...budget, id, createdAt: new Date().toISOString() };
+
+        const record: Budget = {
+          ...budget,
+          id: createRecordId('b'),
+          createdAt: new Date().toISOString()
+        };
         await db.budgets.add(record);
         return record;
       });
@@ -489,7 +509,10 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async updateGoal(id, updates) {
-      await db.savingsGoals.update(id, updates);
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.createdAt;
+      await db.savingsGoals.update(id, safeUpdates);
     },
     async deleteGoal(id) {
       await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
@@ -529,7 +552,10 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      await db.habits.update(id, updates);
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.createdAt;
+      await db.habits.update(id, safeUpdates);
     },
     async delete(id) {
       await db.transaction('rw', db.habits, db.habitLogs, async () => {
@@ -592,7 +618,13 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      await db.goals.update(id, { ...updates, updatedAt: new Date().toISOString() });
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.createdAt;
+      await db.goals.update(id, {
+        ...safeUpdates,
+        updatedAt: new Date().toISOString()
+      });
     },
     async delete(id) {
       await db.transaction('rw', db.goals, db.milestones, async () => {
@@ -630,7 +662,13 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      await db.tasks.update(id, { ...updates, updatedAt: new Date().toISOString() });
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.createdAt;
+      await db.tasks.update(id, {
+        ...safeUpdates,
+        updatedAt: new Date().toISOString()
+      });
     },
     async delete(id) {
       await db.tasks.delete(id);
