@@ -355,9 +355,11 @@ export const StorageService: IDataStorage = {
   },
   categories: {
     async getAll() {
-      const cats = await db.categories.toArray();
-      if (cats.length === 0) {
-        // Seed default categories only
+      return db.transaction('rw', db.categories, async () => {
+        const cats = await db.categories.toArray();
+        if (cats.length > 0) return cats;
+
+        // Seed default categories atomically so concurrent app starts cannot race.
         const defaultCats: Category[] = [
           { id: 'cat_sal', name: 'Salary', type: 'income', color: '#10b981', isDefault: true },
           { id: 'cat_free', name: 'Freelance', type: 'income', color: '#3b82f6', isDefault: true },
@@ -377,8 +379,7 @@ export const StorageService: IDataStorage = {
         ];
         await db.categories.bulkAdd(defaultCats);
         return defaultCats;
-      }
-      return cats;
+      });
     },
     async add(cat) {
       const id = createRecordId('cat');

@@ -287,7 +287,25 @@ async function main() {
       Date.now = originalNow;
     }
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/15 PASSED`);
+    // 16. Concurrent first-run category initialization is atomic.
+    await db.categories.clear();
+    const categoryLoads = await Promise.all([
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll()
+    ]);
+    const persistedCategories = await db.categories.toArray();
+    const categoryIds = persistedCategories.map(category => category.id);
+    check(
+      categoryLoads.every(rows => rows.length === categoryLoads[0].length) &&
+      persistedCategories.length === categoryLoads[0].length &&
+      new Set(categoryIds).size === categoryIds.length &&
+      persistedCategories.length > 0,
+      'Concurrent first-run category initialization seeds one complete, duplicate-free category set'
+    );
+
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/16 PASSED`);
   } finally {
     await db.delete();
   }
