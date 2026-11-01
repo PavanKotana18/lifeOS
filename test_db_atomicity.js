@@ -149,7 +149,83 @@ async function main() {
       'Savings-goal deletion rolls back when contribution deletion fails'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/5 PASSED`);
+
+    // 6. Concurrent completion requests must resolve to one habit/date row.
+    await db.habits.add({
+      id: 'habit-log-race', name: 'Concurrent habit',
+      frequency: 'daily', color: '#123456', createdAt: stamp
+    });
+
+    await Promise.all([
+      StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true),
+      StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true)
+    ]);
+
+    const raceLogs = await db.habitLogs
+      .where('[habitId+date]')
+      .equals(['habit-log-race', '2026-11-02'])
+      .toArray();
+
+    check(
+      raceLogs.length === 1 &&
+      raceLogs[0].completed === true &&
+      typeof raceLogs[0].completedAt === 'string',
+      'Concurrent habit completion creates exactly one completed log'
+    );
+
+    // 7. Invalid dates and missing habits must not create records.
+    await assert.rejects(
+      StorageService.habits.logCompletion('habit-log-race', '2026-02-30', true)
+    );
+    await assert.rejects(
+      StorageService.habits.logCompletion('missing-habit', '2026-11-02', true)
+    );
+    await assert.rejects(
+      StorageService.habits.logCompletion('habit-log-race', '02-11-2026', true)
+    );
+
+    check(
+      await db.habitLogs.where('habitId').equals('habit-log-race').count() === 1,
+      'Invalid dates and missing habits create no additional logs'
+    );
+
+    // 8. A failed insert must leave no partial habit log.
+    await db.habits.add({
+      id: 'habit-log-rollback', name: 'Rollback habit',
+      frequency: 'daily', color: '#123456', createdAt: stamp
+    });
+
+    const logInsertFailure = () => { throw new Error('Injected habit-log insert failure'); };
+    db.habitLogs.hook('creating').subscribe(logInsertFailure);
+
+    try {
+      await assert.rejects(
+        StorageService.habits.logCompletion('habit-log-rollback', '2026-11-03', true)
+      );
+    } finally {
+      db.habitLogs.hook('creating').unsubscribe(logInsertFailure);
+    }
+
+    check(
+      await db.habitLogs.where('habitId').equals('habit-log-rollback').count() === 0,
+      'Failed habit-log insertion leaves no partial record'
+    );
+
+    // 9. Repeated completion toggles update the same record.
+    await StorageService.habits.logCompletion('habit-log-race', '2026-11-02', false);
+    await StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true);
+
+    const toggledLogs = await db.habitLogs
+      .where('[habitId+date]')
+      .equals(['habit-log-race', '2026-11-02'])
+      .toArray();
+
+    check(
+      toggledLogs.length === 1 && toggledLogs[0].completed === true,
+      'Repeated completion toggles update one existing log'
+    );
+
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/9 PASSED`);
   } finally {
     await db.delete();
   }

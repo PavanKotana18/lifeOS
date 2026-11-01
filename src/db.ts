@@ -467,22 +467,43 @@ export const StorageService: IDataStorage = {
       return db.habitLogs.toArray();
     },
     async logCompletion(habitId, date, completed) {
-      const existing = await db.habitLogs.filter(l => l.habitId === habitId && l.date === date).first();
-      if (existing) {
-        await db.habitLogs.update(existing.id, {
-          completed,
-          completedAt: completed ? new Date().toISOString() : undefined
-        });
-      } else {
-        const id = 'hl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-        await db.habitLogs.add({
-          id,
-          habitId,
-          date,
-          completed,
-          completedAt: completed ? new Date().toISOString() : undefined
-        });
+      if (typeof habitId !== 'string' || !habitId.trim()) {
+        throw new Error('Habit ID is required');
       }
+      if (typeof date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
+        throw new Error('Habit log date must use YYYY-MM-DD format');
+      }
+      const [year, month, day] = date.split('-').map(Number);
+      const parsedDate = new Date(Date.UTC(year, month - 1, day));
+      if (
+        parsedDate.getUTCFullYear() !== year ||
+        parsedDate.getUTCMonth() !== month - 1 ||
+        parsedDate.getUTCDate() !== day
+      ) {
+        throw new Error('Habit log date must be a valid calendar date');
+      }
+      if (typeof completed !== 'boolean') {
+        throw new Error('Habit completion status must be boolean');
+      }
+
+      await db.transaction('rw', db.habits, db.habitLogs, async () => {
+        const habit = await db.habits.get(habitId);
+        if (!habit) throw new Error('Habit not found');
+
+        const existing = await db.habitLogs
+          .where('[habitId+date]')
+          .equals([habitId, date])
+          .first();
+
+        const completedAt = completed ? new Date().toISOString() : undefined;
+
+        if (existing) {
+          await db.habitLogs.update(existing.id, { completed, completedAt });
+        } else {
+          const id = 'hl_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+          await db.habitLogs.add({ id, habitId, date, completed, completedAt });
+        }
+      });
     }
   },
   goals: {
