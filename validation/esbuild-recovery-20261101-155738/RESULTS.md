@@ -1,0 +1,62 @@
+Recovery state after interrupted esbuild remediation
+Branch: fix/lifeos-data-integrity-20261101-123130
+HEAD: 89545638d1c94412e4503069870176ec3a2a3504
+
+Dependency file status:
+ M package-lock.json
+ M package.json
+
+Full working tree status:
+ M dist/index.html
+ M package-lock.json
+ M package.json
+ M src/services/authCoordinator.ts
+ M validation/habit-analytics-correction/checks.log
+ M validation/habit-analytics-final/checks.log
+?? LIFEOS_FINAL_AUDIT.md
+?? audit-dry-run.json
+?? lifeos-npm-audit.json
+?? package-lock.json.pre-glob-fix
+?? package-lock.json.pre-tar-fix
+?? package-lock.json.pre-vite-security
+?? package.json.pre-cap-tar-fix
+?? package.json.pre-glob-fix
+?? package.json.pre-tar-fix
+?? package.json.pre-vite-security
+?? src/db.ts.pre-p0-backup-fix
+?? validation/app-lifecycle-resilience-20261101-143458/
+?? validation/app-lifecycle-resilience-20261101-143739/
+?? validation/backup-offline-safety-20261101-141858/commit.log
+?? validation/backup-offline-safety-20261101-141858/push.log
+?? validation/backup-offline-safety-20261101-141858/staged-diff-check.log
+?? validation/esbuild-recovery-20261101-155738/
+?? validation/esbuild-remediation-20261101-155331/
+?? validation/habit-analytics-regression-20261101-132627/staged-diff.log
+?? validation/habit-analytics-test-fix-20261101-133001/staged-diff.log
+?? validation/habit-log-integrity-20261101-135528/git_results.log
+?? validation/habit-log-integrity-20261101-135528/staged_diff_check.log
+?? validation/habit-log-regex-fix-20261101-135911/git_results.log
+?? validation/habit-log-regex-fix-20261101-135911/staged_diff_check.log
+?? validation/habit-ui-resilience-20261101-141312/commit.log
+?? validation/habit-ui-resilience-20261101-141312/git_status.log
+?? validation/habit-ui-resilience-20261101-141312/push.log
+?? validation/offline-resilience-20261101-142513/commit.log
+?? validation/offline-resilience-20261101-142513/push.log
+?? validation/offline-resilience-20261101-142513/staged-diff-check.log
+?? validation/weekly-habit-calendar-20261101-133955/commit.exit
+?? validation/weekly-habit-calendar-20261101-133955/commit.log
+?? validation/weekly-habit-calendar-20261101-133955/push.exit
+?? validation/weekly-habit-calendar-20261101-133955/push.log
+?? validation/weekly-habit-calendar-20261101-133955/staged_diff.exit
+?? validation/weekly-habit-calendar-20261101-133955/staged_diff.log
+?? validation/weekly-habit-mirror-cleanup-20261101-134547/commit.exit
+?? validation/weekly-habit-mirror-cleanup-20261101-134547/commit.log
+?? validation/weekly-habit-mirror-cleanup-20261101-134547/push.exit
+?? validation/weekly-habit-mirror-cleanup-20261101-134547/push.log
+?? validation/weekly-habit-mirror-cleanup-20261101-134547/staged_diff.exit
+?? validation/weekly-habit-mirror-cleanup-20261101-134547/staged_diff.log
+?? validation/weekly-habit-mirror-regex-fix-20261101-135200/git_results.log
+?? validation/weekly-habit-mirror-regex-fix-20261101-135200/staged_diff_check.log
+
+Existing remediation reports:
+validation/esbuild-remediation-20261101-155331
