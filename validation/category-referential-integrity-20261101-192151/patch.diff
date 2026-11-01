@@ -1,0 +1,84 @@
+diff --git a/src/db.ts b/src/db.ts
+index bf56376..d248a9d 100644
+--- a/src/db.ts
++++ b/src/db.ts
+@@ -439,7 +439,23 @@ export const StorageService: IDataStorage = {
+       await db.categories.update(id, updates);
+     },
+     async delete(id) {
+-      await db.categories.delete(id);
++      await db.transaction('rw', db.categories, db.budgets, async () => {
++        const category = await db.categories.get(id);
++        if (!category) return;
++
++        const linkedBudgets = await db.budgets
++          .where('categoryId')
++          .equals(id)
++          .count();
++
++        if (linkedBudgets > 0) {
++          throw new Error(
++            'Category is linked to one or more budgets. Remove or reassign those budgets before deleting it.'
++          );
++        }
++
++        await db.categories.delete(id);
++      });
+     }
+   },
+   budgets: {
+diff --git a/test_db_atomicity.js b/test_db_atomicity.js
+index af97cbe..1d478d9 100644
+--- a/test_db_atomicity.js
++++ b/test_db_atomicity.js
+@@ -334,7 +334,49 @@ async function main() {
+       'Concurrent first-run category initialization seeds one complete, duplicate-free category set'
+     );
+ 
+-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/17 PASSED`);
++    // 18. Category deletion must preserve budget references and transaction history.
++    const protectedCategory = await StorageService.categories.add({
++      name: 'Protected budget category',
++      type: 'expense',
++      color: '#123456'
++    });
++
++    await StorageService.budgets.upsert({
++      monthYear: '2099-01',
++      categoryId: protectedCategory.id,
++      monthlyAmount: 500
++    });
++
++    const historicalTransaction = await StorageService.transactions.add({
++      amount: 75,
++      date: '2026-11-01',
++      category: protectedCategory.name,
++      description: 'Historical category reference',
++      paymentMethod: 'Cash',
++      type: 'expense'
++    });
++
++    await assert.rejects(
++      StorageService.categories.delete(protectedCategory.id),
++      /linked to one or more budgets/i
++    );
++
++    check(
++      Boolean(await db.categories.get(protectedCategory.id)) &&
++      await db.budgets.where('categoryId').equals(protectedCategory.id).count() === 1,
++      'Category deletion is blocked while a budget references it'
++    );
++
++    await db.budgets.where('categoryId').equals(protectedCategory.id).delete();
++    await StorageService.categories.delete(protectedCategory.id);
++
++    check(
++      !(await db.categories.get(protectedCategory.id)) &&
++      Boolean(await db.transactions.get(historicalTransaction.id)),
++      'Category can be deleted after budget removal without deleting historical transactions'
++    );
++
++    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/18 PASSED`);
+   } finally {
+     await db.delete();
+   }

@@ -1,0 +1,21 @@
+PASS: Contribution failure rolls back the goal balance and contribution record
+PASS: Invalid amounts and missing goals create no financial records
+PASS: Habit deletion rolls back when dependent-log deletion fails
+PASS: Goal deletion rolls back when milestone deletion fails
+PASS: Savings-goal deletion rolls back when contribution deletion fails
+PASS: Valid YYYY-MM-DD date is accepted and persisted
+PASS: Concurrent habit completion creates exactly one completed log
+PASS: Invalid dates and missing habits create no additional logs
+PASS: Failed habit-log insertion leaves no partial record
+PASS: Repeated completion toggles update one existing log
+PASS: Rapid habit creation generates distinct IDs within one millisecond
+PASS: Rapid savings-goal creation preserves both records
+PASS: Rapid goal creation generates distinct IDs
+PASS: Rapid milestone creation generates distinct IDs
+PASS: Concurrent monthly budget upserts serialize into one budget record
+PASS: Transaction storage enforces amount/date invariants and protects record identity
+PASS: Concurrent first-run category initialization seeds one complete, duplicate-free category set
+PASS: Category deletion is blocked while a budget references it
+PASS: Category can be deleted after budget removal without deleting historical transactions
+
+DATABASE ATOMICITY TESTS: 19/18 PASSED

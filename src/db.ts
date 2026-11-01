@@ -439,7 +439,23 @@ export const StorageService: IDataStorage = {
       await db.categories.update(id, updates);
     },
     async delete(id) {
-      await db.categories.delete(id);
+      await db.transaction('rw', db.categories, db.budgets, async () => {
+        const category = await db.categories.get(id);
+        if (!category) return;
+
+        const linkedBudgets = await db.budgets
+          .where('categoryId')
+          .equals(id)
+          .count();
+
+        if (linkedBudgets > 0) {
+          throw new Error(
+            'Category is linked to one or more budgets. Remove or reassign those budgets before deleting it.'
+          );
+        }
+
+        await db.categories.delete(id);
+      });
     }
   },
   budgets: {
