@@ -141,5 +141,41 @@ check(
   'Habit UI displays scheduled-day denominator'
 );
 
-console.log(`PRODUCTION HABIT ANALYTICS TESTS: ${passed}/22 PASSED`);
-if (passed !== 22) process.exitCode = 1;
+// Habit UI write paths must be centralised and surface persistence/refresh failures.
+check(
+  (app.match(/StorageService\.habits\.logCompletion\(/g) || []).length === 1 &&
+  app.includes('const handleHabitCompletion = async'),
+  'Habit completion writes are centralised in one UI handler'
+);
+check(
+  app.includes("showToast(error instanceof Error ? error.message : 'Could not update habit completion', 'danger')"),
+  'Habit persistence failures are visible to the user'
+);
+check(
+  app.includes('was saved, but the screen could not refresh'),
+  'Successful saves with failed UI refresh are reported accurately'
+);
+check(
+  app.includes('was saved, but notification schedules could not refresh'),
+  'Notification refresh failures do not misreport the habit save as failed'
+);
+check(
+  app.includes('handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)'),
+  'Dashboard and Habits tab use the shared completion handler'
+);
+check(
+  (app.match(/StorageService\.habits\.delete\(/g) || []).length === 1 &&
+  app.includes('const handleHabitDeletion = async'),
+  'Habit deletion is centralised in one UI handler'
+);
+check(
+  app.includes("showToast(error instanceof Error ? error.message : 'Could not delete habit', 'danger')"),
+  'Habit deletion failures are visible to the user'
+);
+check(
+  app.includes('handleHabitDeletion(h)'),
+  'Habits tab uses the shared deletion handler'
+);
+
+console.log(`PRODUCTION HABIT ANALYTICS TESTS: ${passed}/30 PASSED`);
+if (passed !== 30) process.exitCode = 1;

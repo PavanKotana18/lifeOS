@@ -504,6 +504,70 @@ export default function App() {
     return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
   };
 
+  const handleHabitCompletion = async (
+    habitId: string,
+    habitName: string,
+    date: string,
+    currentlyCompleted: boolean
+  ) => {
+    try {
+      await StorageService.habits.logCompletion(habitId, date, !currentlyCompleted);
+    } catch (error) {
+      console.error('LifeOS could not save habit completion.', error);
+      showToast(error instanceof Error ? error.message : 'Could not update habit completion', 'danger');
+      return;
+    }
+
+    let records;
+    try {
+      records = await reloadAllData();
+    } catch (error) {
+      console.error('Habit was saved, but LifeOS could not refresh its data.', error);
+      showToast(`${habitName} was saved, but the screen could not refresh. Reopen Habits to verify.`, 'danger');
+      return;
+    }
+
+    try {
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+    } catch (error) {
+      console.error('Habit was saved, but notification schedules could not refresh.', error);
+      showToast(`${habitName} was saved, but notification schedules could not refresh.`, 'danger');
+      return;
+    }
+
+    showToast(currentlyCompleted ? 'Habit unmarked' : 'Habit finished!', 'success');
+  };
+
+  const handleHabitDeletion = async (habit: Habit) => {
+    try {
+      await StorageService.habits.delete(habit.id);
+    } catch (error) {
+      console.error('LifeOS could not delete habit.', error);
+      showToast(error instanceof Error ? error.message : 'Could not delete habit', 'danger');
+      return;
+    }
+
+    let records;
+    try {
+      records = await reloadAllData();
+    } catch (error) {
+      console.error('Habit was deleted, but LifeOS could not refresh its data.', error);
+      showToast(`${habit.name} was deleted, but the screen could not refresh. Reopen Habits to verify.`, 'danger');
+      return;
+    }
+
+    try {
+      await NotificationService.cancelHabit(habit);
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+    } catch (error) {
+      console.error('Habit was deleted, but notification schedules could not refresh.', error);
+      showToast(`${habit.name} was deleted, but notification schedules could not refresh.`, 'danger');
+      return;
+    }
+
+    showToast('Habit removed', 'info');
+  };
+
   const toggleTheme = async () => {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
@@ -976,11 +1040,7 @@ export default function App() {
                       <div key={h.id} className="p-3 rounded-xl bg-slate-800/60 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <button
-                            onClick={async () => {
-                              await StorageService.habits.logCompletion(h.id, todayStr, !stats.completedToday);
-                              const records = await reloadAllData();
-                              await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
-                            }}
+                            onClick={() => handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}
                             className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs transition ${stats.completedToday ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600'}`}
                           >
                             {stats.completedToday ? '✓' : ''}
@@ -1228,7 +1288,7 @@ export default function App() {
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={async event => { event.stopPropagation(); await StorageService.habits.logCompletion(h.id, todayStr, !stats.completedToday); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast(stats.completedToday ? 'Habit unmarked' : 'Habit finished!', 'success'); }} className={`h-9 w-9 shrink-0 rounded-full border-2 text-sm ${stats.completedToday ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-600'}`}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-slate-500' : ''}`}>{h.name}</span><span className="block text-[10px] text-amber-400">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button onClick={async event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; await NotificationService.cancelHabit(h); await StorageService.habits.delete(h.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Habit removed', 'info'); }} className="rounded-lg px-2 py-1 text-xs text-slate-400">Delete</button></div>
+                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`h-9 w-9 shrink-0 rounded-full border-2 text-sm ${stats.completedToday ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-600'}`}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-slate-500' : ''}`}>{h.name}</span><span className="block text-[10px] text-amber-400">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button onClick={event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; void handleHabitDeletion(h); }} className="rounded-lg px-2 py-1 text-xs text-slate-400">Delete</button></div>
                       <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400"><span>Weekly completion</span><span>{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} className={`h-2 flex-1 rounded-full ${done ? 'bg-emerald-500' : 'bg-slate-700'}`} />; })}</div>
                       {h.reminderTime && <p className="mt-2 text-[10px] text-slate-400">Reminder · {h.reminderTime} local</p>}
                     </div>
