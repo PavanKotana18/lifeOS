@@ -57,6 +57,42 @@ export function createRecordId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${(recordIdSequence++).toString(36)}_${randomPart}`;
 }
 
+function validateTransactionRecord(
+  record: Partial<Transaction>,
+  requireComplete: boolean
+): void {
+  if (requireComplete || record.amount !== undefined) {
+    if (typeof record.amount !== 'number' || !Number.isFinite(record.amount) || record.amount <= 0) {
+      throw new Error('Transaction amount must be a positive finite number');
+    }
+  }
+
+  if (requireComplete || record.date !== undefined) {
+    if (typeof record.date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(record.date)) {
+      throw new Error('Transaction date must use YYYY-MM-DD format');
+    }
+    const [year, month, day] = record.date.split('-').map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) {
+      throw new Error('Transaction date must be a valid calendar date');
+    }
+  }
+
+  if (record.type !== undefined && record.type !== 'income' && record.type !== 'expense') {
+    throw new Error('Transaction type must be income or expense');
+  }
+  for (const field of ['category', 'description', 'paymentMethod'] as const) {
+    const value = record[field];
+    if (value !== undefined && (typeof value !== 'string' || !value.trim())) {
+      throw new Error(`Transaction ${field} is required`);
+    }
+  }
+}
+
 // Clean Database Abstraction Layer Interface
 export interface IDataStorage {
   transactions: {
@@ -314,6 +350,7 @@ export const StorageService: IDataStorage = {
       return db.transactions.get(id);
     },
     async add(tx) {
+      validateTransactionRecord(tx, true);
       const id = createRecordId('tx');
       const createdAt = new Date().toISOString();
       const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
@@ -321,7 +358,18 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      await db.transactions.update(id, { ...updates, updatedAt: new Date().toISOString() });
+      await db.transaction('rw', db.transactions, async () => {
+        const existing = await db.transactions.get(id);
+        if (!existing) return;
+        validateTransactionRecord({ ...existing, ...updates }, true);
+        const safeUpdates = { ...updates };
+        delete safeUpdates.id;
+        delete safeUpdates.createdAt;
+        await db.transactions.update(id, {
+          ...safeUpdates,
+          updatedAt: new Date().toISOString()
+        });
+      });
     },
     async delete(id) {
       await db.transactions.delete(id);

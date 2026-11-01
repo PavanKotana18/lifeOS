@@ -287,7 +287,36 @@ async function main() {
       Date.now = originalNow;
     }
 
-    // 16. Concurrent first-run category initialization is atomic.
+    // 16. Transaction storage rejects invalid records and preserves identity fields.
+    await assert.rejects(StorageService.transactions.add({
+      amount: 0, date: '2026-11-01', category: 'Food',
+      description: 'Invalid amount', paymentMethod: 'Cash', type: 'expense'
+    }));
+    await assert.rejects(StorageService.transactions.add({
+      amount: 100, date: '2026-02-30', category: 'Food',
+      description: 'Invalid date', paymentMethod: 'Cash', type: 'expense'
+    }));
+    const validTransaction = await StorageService.transactions.add({
+      amount: 100, date: '2026-11-01', category: 'Food',
+      description: 'Storage validation', paymentMethod: 'Cash', type: 'expense'
+    });
+    await assert.rejects(StorageService.transactions.update(validTransaction.id, { amount: -1 }));
+    await assert.rejects(StorageService.transactions.update(validTransaction.id, { date: '2026-02-30' }));
+    await StorageService.transactions.update(validTransaction.id, {
+      amount: 125,
+      id: 'attempted-id-overwrite',
+      createdAt: '1999-01-01T00:00:00.000Z'
+    });
+    const persistedTransaction = await db.transactions.get(validTransaction.id);
+    check(
+      persistedTransaction.amount === 125 &&
+      persistedTransaction.id === validTransaction.id &&
+      persistedTransaction.createdAt === validTransaction.createdAt &&
+      !(await db.transactions.get('attempted-id-overwrite')),
+      'Transaction storage enforces amount/date invariants and protects record identity'
+    );
+
+    // 17. Concurrent first-run category initialization is atomic.
     await db.categories.clear();
     const categoryLoads = await Promise.all([
       StorageService.categories.getAll(),
@@ -305,7 +334,7 @@ async function main() {
       'Concurrent first-run category initialization seeds one complete, duplicate-free category set'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/16 PASSED`);
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/17 PASSED`);
   } finally {
     await db.delete();
   }
