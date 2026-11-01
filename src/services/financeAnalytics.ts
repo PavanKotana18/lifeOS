@@ -1,4 +1,4 @@
-export function buildFinanceAnalytics(transactions: Array<{ date: string; amount: number; type: string; category?: string }>, budgets: Array<{ monthYear?: string; categoryId?: string; monthlyAmount: number }>, month: string, range = 6) {
+export function buildFinanceAnalytics(transactions: Array<{ date: string; amount: number; type: string; category?: string }>, budgets: Array<{ monthYear?: string; categoryId?: string; monthlyAmount: number }>, month: string, range = 6, categoryRecords: Array<{ id: string; name: string }> = []) {
   const [year, monthNumber] = month.split('-').map(Number);
   const monthDate = new Date(year, monthNumber - 1, 1);
   const count = Math.max(2, range);
@@ -27,8 +27,18 @@ export function buildFinanceAnalytics(transactions: Array<{ date: string; amount
   }));
   const monthBudgets = budgets.filter(budget => !budget.monthYear || budget.monthYear === month);
   const budgetRows = monthBudgets.map(budget => {
-    const amountSpent = budget.categoryId ? categoryExpenses[budget.categoryId] || 0 : totalExpenses;
-    return { category: budget.categoryId || 'Overall', allocated: Number(budget.monthlyAmount) || 0, spent: amountSpent, remaining: (Number(budget.monthlyAmount) || 0) - amountSpent };
+    const categoryName = budget.categoryId
+      ? categoryRecords.find(category => category.id === budget.categoryId)?.name
+      : undefined;
+    const amountSpent = budget.categoryId
+      ? (categoryName ? categoryExpenses[categoryName] || 0 : 0)
+      : totalExpenses;
+    return {
+      category: budget.categoryId ? (categoryName || 'Unknown category') : 'Overall',
+      allocated: Number(budget.monthlyAmount) || 0,
+      spent: amountSpent,
+      remaining: (Number(budget.monthlyAmount) || 0) - amountSpent,
+    };
   });
   const expenseChange = previous.hasRecords ? ((previous.expenses || 0) === 0 ? (totalExpenses === 0 ? 0 : null) : (totalExpenses - (previous.expenses || 0)) / (previous.expenses || 0) * 100) : null;
   return {

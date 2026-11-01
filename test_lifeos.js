@@ -432,9 +432,20 @@ async function runTestSuite() {
     { date: '2026-10-01', amount: 1000, type: 'income', category: 'Salary' },
     { date: '2026-10-02', amount: 100, type: 'expense', category: 'Food' },
     { date: '2026-10-03', amount: 50, type: 'expense', category: 'Rent' },
-  ], [{ monthYear: '2026-10', categoryId: 'Food', monthlyAmount: 150 }, { monthYear: '2026-10', monthlyAmount: 200 }], '2026-10');
+  ], [
+    { monthYear: '2026-10', categoryId: 'cat-food', monthlyAmount: 150 },
+    { monthYear: '2026-10', categoryId: 'cat-rent', monthlyAmount: 100 },
+    { monthYear: '2026-10', categoryId: 'cat-missing', monthlyAmount: 75 },
+    { monthYear: '2026-10', monthlyAmount: 200 },
+  ], '2026-10', 6, [
+    { id: 'cat-food', name: 'Food' },
+    { id: 'cat-rent', name: 'Rent' },
+  ]);
   assert(analyticsRows.totalIncome === 1000 && analyticsRows.totalExpenses === 150 && analyticsRows.netSavings === 850 && analyticsRows.savingsRate === 85 && analyticsRows.expenseChange === 25, 'Finance analytics totals, savings rate, and month comparison derive from stored records');
-  assert(analyticsRows.largestCategory.name === 'Food' && analyticsRows.largestCategory.percentage > 66 && analyticsRows.budgetRows[0].spent === 100 && analyticsRows.budgetRows[0].remaining === 50, 'Expense category ranking and category budget insights are accurate');
+  assert(analyticsRows.largestCategory.name === 'Food' && analyticsRows.largestCategory.percentage > 66 && analyticsRows.budgetRows[0].category === 'Food' && analyticsRows.budgetRows[0].spent === 100 && analyticsRows.budgetRows[0].remaining === 50, 'Category budget resolves category ID to its display name and calculates spending');
+  assert(analyticsRows.budgetRows[1].category === 'Rent' && analyticsRows.budgetRows[1].spent === 50 && analyticsRows.budgetRows[1].remaining === 50, 'A second category budget resolves and calculates independently');
+  assert(analyticsRows.budgetRows[2].category === 'Unknown category' && analyticsRows.budgetRows[2].spent === 0 && analyticsRows.budgetRows[2].remaining === 75, 'Missing category references fail safely without misattributing spending');
+  assert(analyticsRows.budgetRows[3].category === 'Overall' && analyticsRows.budgetRows[3].spent === 150, 'Overall budgets continue to use total expenses');
   const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');

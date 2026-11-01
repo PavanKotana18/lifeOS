@@ -840,7 +840,7 @@ export default function App() {
     };
   }, [transactions, budgets, financeMonth]);
 
-  const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange), [transactions, budgets, financeMonth, financeAnalyticsRange]);
+  const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange, categories), [transactions, budgets, financeMonth, financeAnalyticsRange, categories]);
 
   // Habit Streak Calculation Helper
   const getHabitStreaks = (habitId: string, targetDate: string) => {
