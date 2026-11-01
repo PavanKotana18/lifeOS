@@ -1,7 +1,5 @@
-===== PATCH =====
-PATCH exit=1
-===== PACKAGE_UPDATE =====
-PACKAGE_UPDATE exit=0
+===== PATCH_STATUS =====
+PATCH_STATUS exit=1
 ===== DIFF_CHECK =====
 DIFF_CHECK exit=0
 ===== TESTS =====
@@ -161,7 +159,7 @@ AssertionError [ERR_ASSERTION]: Daily recurrence creates the next day occurrence
 TESTS exit=1
 ===== TYPESCRIPT =====
 TYPESCRIPT exit=0
-===== PRODUCTION_BUILD =====
+===== BUILD =====
 
 > lifeos-personal@1.0.0 build
 > vite build
@@ -181,8 +179,8 @@ dist/assets/index-Z08MLC7h.js   825.06 kB │ gzip: 232.96 kB
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-✓ built in 7.17s
-PRODUCTION_BUILD exit=0
+✓ built in 7.63s
+BUILD exit=0
 ===== DEPENDENCY_AUDIT =====
 found 0 vulnerabilities
 DEPENDENCY_AUDIT exit=0
