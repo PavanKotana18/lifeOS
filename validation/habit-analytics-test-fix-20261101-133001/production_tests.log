@@ -1,0 +1,21 @@
+PASS: Monday scheduled for weekdays
+PASS: Friday scheduled for weekdays
+PASS: Saturday excluded from weekdays
+PASS: Sunday excluded from weekdays
+PASS: Saturday scheduled for weekends
+PASS: Sunday scheduled for weekends
+PASS: Monday excluded from weekends
+PASS: Daily frequency remains scheduled independent of weekday
+PASS: Impossible date rejected
+PASS: Invalid date format rejected
+PASS: Weekday rate uses five scheduled days
+PASS: Weekend rate uses two scheduled days
+PASS: Weekday streak crosses Saturday and Sunday
+PASS: Weekend streak counts Saturday and Sunday
+PASS: Weekly frequency accepts one completion in rolling seven days
+PASS: Weekly streak counts consecutive Monday-start weeks
+PASS: App passes frequency into streak calculation
+PASS: App passes frequency into weekly rate calculation
+PASS: Productivity score respects unscheduled days
+PASS: Habit UI displays scheduled-day denominator
+PRODUCTION HABIT ANALYTICS TESTS: 20/20 PASSED
