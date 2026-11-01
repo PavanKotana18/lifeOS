@@ -97,22 +97,38 @@ export function calculateWeeklyHabitRate(
     logs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)
   );
 
+  if (frequency === 'weekly') {
+    // Weekly habits follow Monday-to-Sunday calendar weeks,
+    // matching calculateStreaks rather than using a rolling window.
+    const todayStart = new Date(
+      today.getFullYear(), today.getMonth(), today.getDate()
+    );
+    const mondayOffset = (todayStart.getDay() + 6) % 7;
+    const weekStart = new Date(
+      todayStart.getFullYear(),
+      todayStart.getMonth(),
+      todayStart.getDate() - mondayOffset
+    );
+    const weekEnd = new Date(
+      weekStart.getFullYear(),
+      weekStart.getMonth(),
+      weekStart.getDate() + 6,
+      23, 59, 59, 999
+    );
+
+    const completed = [...completedDates].some(date => {
+      const parsed = parseLocalDateTime(date, '00:00');
+      return parsed !== null && parsed >= weekStart && parsed <= weekEnd;
+    }) ? 1 : 0;
+
+    return { completed, scheduled: 1, rate: completed ? 100 : 0 };
+  }
+
   const eligibleDates: string[] = [];
   for (let offset = 0; offset < 7; offset++) {
     const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
     const key = formatLocalDate(day);
     if (isHabitScheduledOnDate(frequency, key)) eligibleDates.push(key);
-  }
-
-  if (frequency === 'weekly') {
-    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
-    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
-    const completed = [...completedDates].some(date => {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
-      const d = new Date(`${date}T00:00:00`);
-      return !Number.isNaN(d.getTime()) && d >= start && d <= end;
-    }) ? 1 : 0;
-    return { completed, scheduled: 1, rate: completed ? 100 : 0 };
   }
 
   const completed = eligibleDates.filter(date => completedDates.has(date)).length;

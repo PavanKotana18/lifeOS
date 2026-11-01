@@ -97,6 +97,24 @@ check(
   'Weekly frequency accepts one completion in rolling seven days'
 );
 
+const priorWeekOnlyRate = calculateWeeklyHabitRate(
+  [{ habitId: 'weekly-boundary', date: '2026-11-01', completed: true }],
+  'weekly-boundary', new Date(2026, 10, 8), 'weekly'
+);
+check(
+  priorWeekOnlyRate.completed === 0 && priorWeekOnlyRate.rate === 0,
+  'Previous Sunday does not count in the new Monday-Sunday week'
+);
+
+const nextWeekOnlyRate = calculateWeeklyHabitRate(
+  [{ habitId: 'weekly-boundary', date: '2026-11-09', completed: true }],
+  'weekly-boundary', new Date(2026, 10, 8), 'weekly'
+);
+check(
+  nextWeekOnlyRate.completed === 0 && nextWeekOnlyRate.rate === 0,
+  'Next Monday does not count in the current calendar week'
+);
+
 const weeklyStreak = calculateStreaks([
   { habitId: 'weekly-streak', date: '2026-10-26', completed: true },
   { habitId: 'weekly-streak', date: '2026-11-04', completed: true }
@@ -123,5 +141,5 @@ check(
   'Habit UI displays scheduled-day denominator'
 );
 
-console.log(`PRODUCTION HABIT ANALYTICS TESTS: ${passed}/20 PASSED`);
-if (passed !== 20) process.exitCode = 1;
+console.log(`PRODUCTION HABIT ANALYTICS TESTS: ${passed}/22 PASSED`);
+if (passed !== 22) process.exitCode = 1;
