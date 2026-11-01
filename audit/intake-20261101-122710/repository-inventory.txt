@@ -1,0 +1,86 @@
+===== REPOSITORY =====
+origin	https://github.com/PavanKotana18/lifeOS.git (fetch)
+origin	https://github.com/PavanKotana18/lifeOS.git (push)
+lifeos/autonomous-remediation-20261101-115555
+6eb039e54960afe9675c8cc1e04120d8fce72ed9
+ M dist/index.html
+ M package-lock.json
+ M src/services/authCoordinator.ts
+ M src/services/domainUtils.ts
+?? LIFEOS_FINAL_AUDIT.md
+?? audit-dry-run.json
+?? lifeos-npm-audit.json
+?? package-lock.json.pre-glob-fix
+?? package-lock.json.pre-tar-fix
+?? package-lock.json.pre-vite-security
+?? package.json.pre-cap-tar-fix
+?? package.json.pre-glob-fix
+?? package.json.pre-tar-fix
+?? package.json.pre-vite-security
+?? src/db.ts.pre-p0-backup-fix
+
+===== CHANGE SUMMARY =====
+ dist/index.html                 | 3410 +--------------------------------------
+ package-lock.json               |    1 +
+ src/services/authCoordinator.ts |   20 +-
+ src/services/domainUtils.ts     |    1 +
+ 4 files changed, 35 insertions(+), 3397 deletions(-)
+
+===== TRACKED FILES =====
+.github/workflows/build-apk.yml
+.github/workflows/extract-project.yml
+.gitignore
+CHANGELOG.md
+LifeOS-Android-Capacitor_New.zip
+README.md
+RELEASING.md
+android/app/build.gradle
+android/app/src/main/AndroidManifest.xml
+android/app/src/main/java/com/lifeos/personal/BiometricAuthPlugin.java
+android/app/src/main/java/com/lifeos/personal/MainActivity.java
+android/app/src/main/java/com/lifeos/personal/NotificationSettingsPlugin.java
+android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png
+android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
+android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+android/app/src/main/res/values/colors.xml
+android/app/src/main/res/values/strings.xml
+android/app/src/main/res/values/styles.xml
+android/app/src/main/res/xml/file_paths.xml
+android/build.gradle
+android/gradle.properties
+android/settings.gradle
+android/variables.gradle
+capacitor.config.ts
+dist/index.html
+index.html
+package-lock.json
+package.json
+postcss.config.cjs
+scripts/patch-capacitor-tar.js
+src/App.tsx
+src/components/Onboarding.tsx
+src/db.ts
+src/index.css
+src/main.tsx
+src/services/authCoordinator.ts
+src/services/biometricService.ts
+src/services/domainUtils.ts
+src/services/financeAnalytics.ts
+src/services/notificationService.ts
+src/services/tabHistory.ts
+src/services/userPreferences.ts
+src/types.ts
+src_core_logic.js
+tailwind.config.cjs
+test_backup_indexeddb.js
+test_backup_validation.js
+test_lifeos.js
+tsconfig.json
+vite.config.ts
