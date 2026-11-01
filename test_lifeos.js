@@ -372,6 +372,26 @@ async function runTestSuite() {
   const dstLogs = ['2026-03-07', '2026-03-08', '2026-03-09'].map(date => ({ habitId: 'dst', date, completed: true }));
   assert(calculateStreaks(dstLogs, 'dst', '2026-03-09').currentStreak === 3, 'Habit streak remains continuous across the daylight-saving transition');
   assert(calculateWeeklyHabitRate(dstLogs, 'dst', new Date(2026, 2, 9)).rate === 43, 'Weekly completion rate uses local calendar days');
+  // Frequency-aware habit analytics regression tests
+  const weekdayLogs = ['2026-10-26','2026-10-27','2026-10-28','2026-10-29','2026-10-30']
+    .map(date => ({ habitId: 'weekday', date, completed: true }));
+  assert(calculateWeeklyHabitRate(weekdayLogs, 'weekday', new Date(2026, 9, 30), 'weekdays').rate === 100,
+    'Weekday habit rate uses five scheduled weekdays, not seven calendar days');
+  const weekendLogs = ['2026-10-24','2026-10-25']
+    .map(date => ({ habitId: 'weekend', date, completed: true }));
+  assert(calculateWeeklyHabitRate(weekendLogs, 'weekend', new Date(2026, 9, 25), 'weekends').rate === 100,
+    'Weekend habit rate uses scheduled weekend days');
+  assert(calculateWeeklyHabitRate([{ habitId: 'weekly', date: '2026-10-28', completed: true }],
+    'weekly', new Date(2026, 9, 30), 'weekly').rate === 100,
+    'Weekly habit needs one completion in the rolling seven-day window');
+  const weekdayStreakLogs = ['2026-10-26','2026-10-27','2026-10-28','2026-10-29','2026-10-30']
+    .map(date => ({ habitId: 'weekday-streak', date, completed: true }));
+  assert(calculateStreaks(weekdayStreakLogs, 'weekday-streak', '2026-11-02', 'weekdays').currentStreak === 5,
+    'Weekday streak continues across Saturday and Sunday');
+  const weeklyStreakLogs = ['2026-10-19','2026-10-28']
+    .map(date => ({ habitId: 'weekly-streak', date, completed: true }));
+  assert(calculateStreaks(weeklyStreakLogs, 'weekly-streak', '2026-10-30', 'weekly').currentStreak === 2,
+    'Weekly streak counts consecutive calendar weeks');
   assert(getGoalProgress(125, 100) === 100 && getGoalProgress(-2, 100) === 0, 'Goal progress is bounded between zero and one hundred percent');
   const localNow = new Date(2026, 6, 4, 8, 5, 6, 7);
   const entry = buildFinanceEntry(formatLocalDateTime(localNow), localNow);

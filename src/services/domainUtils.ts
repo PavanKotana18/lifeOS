@@ -54,6 +54,7 @@ export const formatLocalDateTime = (date: Date) => `${formatLocalDate(date)}T${S
 export function parseLocalDateTime(date: string, time = '00:00', endOfDay = false): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!match) return null;
+  if (!endOfDay && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) return null;
   const [year, month, day] = match.slice(1).map(Number);
   const [hour, minute] = endOfDay ? [23, 59] : time.split(':').map(Number);
   const result = new Date(year, month - 1, day, hour, minute, endOfDay ? 59 : 0, endOfDay ? 999 : 0);
