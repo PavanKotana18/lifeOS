@@ -10,3 +10,6 @@ dependency_audit exit=0
 ===== diff_check =====
 diff_check exit=0
 PRODUCTION_REGEX=PASS
+STAGED_DIFF_EXIT=0
+COMMIT_EXIT=0
+PUSH_EXIT=0
