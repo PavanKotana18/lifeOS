@@ -12,7 +12,7 @@ import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
 
 type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -766,14 +766,18 @@ export default function App() {
 
   // Habit Streak Calculation Helper
   const getHabitStreaks = (habitId: string, targetDate: string) => {
-    const stats = calculateStreaks(habitLogs, habitId, targetDate);
+    const stats = calculateStreaks(habitLogs, habitId, targetDate, habits.find(h => h.id === habitId)?.frequency || 'daily');
     return { ...stats, totalCount: new Set(habitLogs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)).size };
   };
 
   // Productivity Score Calculation
   const productivityScore = useMemo(() => {
     const todayStr = formatLocalDate(clockNow);
-    const completedHabits = habits.filter(h => getHabitStreaks(h.id, todayStr).completedToday).length;
+    const completedHabits = habits.filter(h => {
+      if (h.frequency === 'weekly') return calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency).completed > 0;
+      if (!isHabitScheduledOnDate(h.frequency, todayStr)) return true;
+      return getHabitStreaks(h.id, todayStr).completedToday;
+    }).length;
     const habitWeight = habits.length > 0 ? (completedHabits / habits.length) * 50 : 50;
 
     const todayTasks = tasks.filter(t => t.dueDate === todayStr || (!t.dueDate && !t.completed));
@@ -1220,12 +1224,12 @@ export default function App() {
                 habits.map(h => {
                   const todayStr = habitsSelectedDate;
                   const stats = getHabitStreaks(h.id, todayStr);
-                  const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow);
+                  const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency);
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
                       <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={async event => { event.stopPropagation(); await StorageService.habits.logCompletion(h.id, todayStr, !stats.completedToday); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast(stats.completedToday ? 'Habit unmarked' : 'Habit finished!', 'success'); }} className={`h-9 w-9 shrink-0 rounded-full border-2 text-sm ${stats.completedToday ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-600'}`}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-slate-500' : ''}`}>{h.name}</span><span className="block text-[10px] text-amber-400">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button onClick={async event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; await NotificationService.cancelHabit(h); await StorageService.habits.delete(h.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Habit removed', 'info'); }} className="rounded-lg px-2 py-1 text-xs text-slate-400">Delete</button></div>
-                      <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400"><span>Weekly completion</span><span>{weekly.completed}/7 days · {weekly.rate}%</span></div><div className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} className={`h-2 flex-1 rounded-full ${done ? 'bg-emerald-500' : 'bg-slate-700'}`} />; })}</div>
+                      <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400"><span>Weekly completion</span><span>{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} className={`h-2 flex-1 rounded-full ${done ? 'bg-emerald-500' : 'bg-slate-700'}`} />; })}</div>
                       {h.reminderTime && <p className="mt-2 text-[10px] text-slate-400">Reminder · {h.reminderTime} local</p>}
                     </div>
                   );
