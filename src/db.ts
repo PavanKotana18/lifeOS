@@ -470,7 +470,7 @@ export const StorageService: IDataStorage = {
       if (typeof habitId !== 'string' || !habitId.trim()) {
         throw new Error('Habit ID is required');
       }
-      if (typeof date !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         throw new Error('Habit log date must use YYYY-MM-DD format');
       }
       const [year, month, day] = date.split('-').map(Number);

@@ -150,6 +150,18 @@ async function main() {
     );
 
 
+    // Valid calendar dates must be accepted by the production write path.
+    await StorageService.habits.logCompletion('habit-atomic', '2026-11-02', true);
+    const validDateLog = await db.habitLogs
+      .where('[habitId+date]')
+      .equals(['habit-atomic', '2026-11-02'])
+      .first();
+
+    check(
+      Boolean(validDateLog) && validDateLog.completed === true,
+      'Valid YYYY-MM-DD date is accepted and persisted'
+    );
+
     // 6. Concurrent completion requests must resolve to one habit/date row.
     await db.habits.add({
       id: 'habit-log-race', name: 'Concurrent habit',
@@ -225,7 +237,7 @@ async function main() {
       'Repeated completion toggles update one existing log'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/9 PASSED`);
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/10 PASSED`);
   } finally {
     await db.delete();
   }
