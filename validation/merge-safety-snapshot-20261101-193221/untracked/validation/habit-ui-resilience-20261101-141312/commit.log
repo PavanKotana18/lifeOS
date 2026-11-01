@@ -1,0 +1,13 @@
+[fix/lifeos-data-integrity-20261101-123130 d0d914b] fix(habits): make UI writes resilient
+ 13 files changed, 2041 insertions(+), 8 deletions(-)
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/App.before.tsx
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/RESULTS.md
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/build.log
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/checks.log
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/diff_check.log
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/full_tests.log
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/habit-tests.before.js
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/production_audit.log
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/staged_diff_check.log
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/typescript.log
+ create mode 100644 validation/habit-ui-resilience-20261101-141312/ui_wiring.log

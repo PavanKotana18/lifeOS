@@ -1,0 +1,21 @@
+[fix/lifeos-data-integrity-20261101-123130 27efe06] Align habit analytics mirror and calendar tests
+ 22 files changed, 1143 insertions(+), 12 deletions(-)
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/RESULTS.md
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/build.exit
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/build.log
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/checks.log
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/diff_check.exit
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/diff_check.log
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/full_tests.exit
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/full_tests.log
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/habit-wiring.before.js
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/mirror_patch.exit
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/production_audit.exit
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/production_audit.log
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/src_core_logic.before.js
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/stale_wording.log
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/test_lifeos.before.js
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/test_patch.exit
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/typescript.exit
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/typescript.log
+ create mode 100644 validation/weekly-habit-mirror-cleanup-20261101-134547/wording_check.exit

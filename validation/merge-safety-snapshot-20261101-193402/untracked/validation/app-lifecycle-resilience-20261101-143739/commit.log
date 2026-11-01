@@ -1,0 +1,57 @@
+On branch fix/lifeos-data-integrity-20261101-123130
+Your branch is up to date with 'origin/fix/lifeos-data-integrity-20261101-123130'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   dist/index.html
+	modified:   src/services/authCoordinator.ts
+	modified:   validation/habit-analytics-correction/checks.log
+	modified:   validation/habit-analytics-final/checks.log
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	LIFEOS_FINAL_AUDIT.md
+	audit-dry-run.json
+	lifeos-npm-audit.json
+	package-lock.json.pre-glob-fix
+	package-lock.json.pre-tar-fix
+	package-lock.json.pre-vite-security
+	package.json.pre-cap-tar-fix
+	package.json.pre-glob-fix
+	package.json.pre-tar-fix
+	package.json.pre-vite-security
+	src/db.ts.pre-p0-backup-fix
+	validation/app-lifecycle-resilience-20261101-143458/
+	validation/app-lifecycle-resilience-20261101-143739/
+	validation/backup-offline-safety-20261101-141858/commit.log
+	validation/backup-offline-safety-20261101-141858/push.log
+	validation/backup-offline-safety-20261101-141858/staged-diff-check.log
+	validation/habit-analytics-regression-20261101-132627/staged-diff.log
+	validation/habit-analytics-test-fix-20261101-133001/staged-diff.log
+	validation/habit-log-integrity-20261101-135528/git_results.log
+	validation/habit-log-integrity-20261101-135528/staged_diff_check.log
+	validation/habit-log-regex-fix-20261101-135911/git_results.log
+	validation/habit-log-regex-fix-20261101-135911/staged_diff_check.log
+	validation/habit-ui-resilience-20261101-141312/commit.log
+	validation/habit-ui-resilience-20261101-141312/git_status.log
+	validation/habit-ui-resilience-20261101-141312/push.log
+	validation/offline-resilience-20261101-142513/commit.log
+	validation/offline-resilience-20261101-142513/push.log
+	validation/offline-resilience-20261101-142513/staged-diff-check.log
+	validation/weekly-habit-calendar-20261101-133955/commit.exit
+	validation/weekly-habit-calendar-20261101-133955/commit.log
+	validation/weekly-habit-calendar-20261101-133955/push.exit
+	validation/weekly-habit-calendar-20261101-133955/push.log
+	validation/weekly-habit-calendar-20261101-133955/staged_diff.exit
+	validation/weekly-habit-calendar-20261101-133955/staged_diff.log
+	validation/weekly-habit-mirror-cleanup-20261101-134547/commit.exit
+	validation/weekly-habit-mirror-cleanup-20261101-134547/commit.log
+	validation/weekly-habit-mirror-cleanup-20261101-134547/push.exit
+	validation/weekly-habit-mirror-cleanup-20261101-134547/push.log
+	validation/weekly-habit-mirror-cleanup-20261101-134547/staged_diff.exit
+	validation/weekly-habit-mirror-cleanup-20261101-134547/staged_diff.log
+	validation/weekly-habit-mirror-regex-fix-20261101-135200/git_results.log
+	validation/weekly-habit-mirror-regex-fix-20261101-135200/staged_diff_check.log
+
+no changes added to commit (use "git add" and/or "git commit -a")

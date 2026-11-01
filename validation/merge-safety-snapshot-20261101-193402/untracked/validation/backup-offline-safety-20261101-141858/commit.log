@@ -1,0 +1,9 @@
+[fix/lifeos-data-integrity-20261101-123130 91a70a1] Harden backup export and atomic data clearing
+ 10 files changed, 2866 insertions(+), 43 deletions(-)
+ create mode 100644 validation/backup-offline-safety-20261101-141858/App.tsx.before
+ create mode 100644 validation/backup-offline-safety-20261101-141858/RESULTS.md
+ create mode 100644 validation/backup-offline-safety-20261101-141858/checks.log
+ create mode 100644 validation/backup-offline-safety-20261101-141858/db.ts.before
+ create mode 100644 validation/backup-offline-safety-20261101-141858/patch.exit
+ create mode 100644 validation/backup-offline-safety-20261101-141858/test_backup_indexeddb.js.before
+ create mode 100644 validation/backup-offline-safety-20261101-141858/test_patch.exit

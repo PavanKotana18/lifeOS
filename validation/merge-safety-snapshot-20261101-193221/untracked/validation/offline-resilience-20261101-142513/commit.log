@@ -1,0 +1,8 @@
+[fix/lifeos-data-integrity-20261101-123130 8080e29] Add offline connectivity status and resilience checks
+ 8 files changed, 2007 insertions(+), 1 deletion(-)
+ create mode 100644 test_offline_resilience.js
+ create mode 100644 validation/offline-resilience-20261101-142513/App.tsx.before
+ create mode 100644 validation/offline-resilience-20261101-142513/RESULTS.md
+ create mode 100644 validation/offline-resilience-20261101-142513/checks.log
+ create mode 100644 validation/offline-resilience-20261101-142513/package.json.before
+ create mode 100644 validation/offline-resilience-20261101-142513/patch.exit
