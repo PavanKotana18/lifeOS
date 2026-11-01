@@ -527,9 +527,9 @@ public class LifeOSCryptoPlugin extends Plugin {
             if (recoveryCode == null ||
                 !recoveryCode.matches("[A-Za-z0-9_-]{43}") ||
                 envelope == null ||
-                envelope.getInt("version", -1) != 1 ||
+                envelope.optInt("version", -1) != 1 ||
                 !"PBKDF2-HMAC-SHA-256".equals(envelope.getString("kdf")) ||
-                envelope.getInt("iterations", -1) != RECOVERY_KDF_ITERATIONS) {
+                envelope.optInt("iterations", -1) != RECOVERY_KDF_ITERATIONS) {
                 throw new IllegalArgumentException("Unsupported recovery envelope");
             }
 
