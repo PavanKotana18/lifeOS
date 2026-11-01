@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(BiometricAuthPlugin.class);
         registerPlugin(LifeOSCryptoPlugin.class);
+        registerPlugin(LifeOSBackupPlugin.class);
         registerPlugin(NotificationSettingsPlugin.class);
         super.onCreate(savedInstanceState);
 

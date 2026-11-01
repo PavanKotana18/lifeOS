@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js && node test_offline_resilience.js && node test_tasks_recurrence_edges.js && node test_goal_status_ui.js && node test_auth_lifecycle.js && node test_session_manager.js && node test_crypto_service.js && node test_encrypted_record_codec.js && node test_encrypted_dexie_store.js && node test_crypto_native_source.js && node test_crypto_key_state_api.js",
+    "test": "node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js && node test_offline_resilience.js && node test_tasks_recurrence_edges.js && node test_goal_status_ui.js && node test_auth_lifecycle.js && node test_session_manager.js && node test_crypto_service.js && node test_encrypted_record_codec.js && node test_encrypted_dexie_store.js && node test_crypto_native_source.js && node test_crypto_key_state_api.js && node test_backup_export_service.js",
     "cap:sync": "cap sync",
     "cap:open": "cap open android",
     "postinstall": "node scripts/patch-capacitor-tar.js"

@@ -4,6 +4,7 @@ import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Go
 import { App as CapacitorApp } from '@capacitor/app';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { StorageService, sessionManager } from './db';
+import { exportBackupFile } from './services/backupExportService';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
 import { DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
@@ -1592,21 +1593,24 @@ export default function App() {
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
-                    let downloadUrl: string | null = null;
                     try {
                       const json = await StorageService.backup.exportData();
-                      const blob = new Blob([json], { type: 'application/json' });
-                      downloadUrl = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = downloadUrl;
-                      a.download = `lifeos-backup-${formatLocalDate(new Date())}.json`;
-                      a.click();
-                      showToast('Backup JSON exported', 'success');
+                      const result = await exportBackupFile({
+                        contents: json,
+                        fileName: `lifeos-backup-${formatLocalDate(new Date())}.json`,
+                        mimeType: 'application/json'
+                      });
+
+                      if (result.status === 'saved') {
+                        showToast(`Backup saved successfully (${result.bytesWritten} bytes).`, 'success');
+                      } else if (result.status === 'cancelled') {
+                        showToast('Backup export cancelled. No file was saved.', 'info');
+                      } else {
+                        showToast('Backup download started. Check your browser downloads.', 'success');
+                      }
                     } catch (error) {
                       console.error('LifeOS backup export failed:', error);
                       showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
-                    } finally {
-                      if (downloadUrl) window.setTimeout(() => URL.revokeObjectURL(downloadUrl!), 1000);
                     }
                   }}
                   className="flex-1 py-2.5 rounded-xl bg-slate-800 text-white text-xs font-semibold"
@@ -1616,11 +1620,28 @@ export default function App() {
                 <button onClick={() => document.getElementById('lifeos-backup-import')?.click()} className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white">Restore JSON</button>
               </div>
               <input id="lifeos-backup-import" type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackupFile(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} />
-              <button onClick={() => {
-                const rows = transactions.map(tx => [tx.id, tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);
-                const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-                const csv = [['id', 'type', 'description', 'amount', 'category', 'date', 'entry_time', 'payment_method'], ...rows].map(row => row.map(quote).join(',')).join('\n');
-                const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = `lifeos-transactions-${formatLocalDate(new Date())}.csv`; a.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); showToast('Transactions CSV exported', 'success');
+              <button onClick={async () => {
+                try {
+                  const rows = transactions.map(tx => [tx.id, tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);
+                  const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+                  const csv = [['id', 'type', 'description', 'amount', 'category', 'date', 'entry_time', 'payment_method'], ...rows].map(row => row.map(quote).join(',')).join('\n');
+
+                  const result = await exportBackupFile({
+                    contents: csv,
+                    fileName: `lifeos-transactions-${formatLocalDate(new Date())}.csv`,
+                    mimeType: 'text/csv'
+                  });
+
+                  if (result.status === 'saved') {
+                    showToast(`Transactions CSV saved (${result.bytesWritten} bytes).`, 'success');
+                  } else if (result.status === 'cancelled') {
+                    showToast('CSV export cancelled. No file was saved.', 'info');
+                  } else {
+                    showToast('CSV download started. Check your browser downloads.', 'success');
+                  }
+                } catch (error) {
+                  showToast(error instanceof Error ? error.message : 'Transactions CSV export failed.', 'danger');
+                }
               }} className="w-full rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white">Export transactions CSV</button>
             </div>
 
