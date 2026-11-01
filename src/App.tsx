@@ -57,6 +57,7 @@ export default function App() {
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [displayName, setDisplayName] = useState('');
   const [clockNow, setClockNow] = useState(() => new Date());
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [logoPhase, setLogoPhase] = useState<'brand' | 'rest'>('brand');
   const logoIntroPlayed = useRef(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
@@ -169,6 +170,19 @@ export default function App() {
     }
     setShowExitConfirmation(true);
   };
+
+  // Connectivity is informational only; LifeOS records remain in local IndexedDB.
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    setIsOnline(typeof navigator === 'undefined' || navigator.onLine);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Load Initial Settings & Data
   useEffect(() => {
@@ -957,6 +971,14 @@ export default function App() {
         </div>
         <button onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
       </header>
+
+      {!isOnline && (
+        <div role="status" aria-live="polite" className="mx-auto max-w-md px-4 pt-2">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            Offline — LifeOS records remain stored on this device. Internet-dependent services may be unavailable.
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="max-w-md mx-auto p-4 space-y-4">
