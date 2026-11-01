@@ -540,44 +540,89 @@ export const StorageService: IDataStorage = {
       await db.tasks.delete(id);
     },
     async toggleCompleted(id, completed) {
-      const task = await db.tasks.get(id);
-      if (!task) return;
-      await db.tasks.update(id, {
-        completed,
-        completedAt: completed ? new Date().toISOString() : undefined
-      });
+      await db.transaction('rw', db.tasks, async () => {
+        const task = await db.tasks.get(id);
+        if (!task) return;
 
-      // Handle recurrence auto-generation
-      if (completed && task.recurring && task.recurring !== 'None') {
-        const [year, month, day] = (task.dueDate || new Date().toISOString().slice(0, 10)).split('-').map(Number);
-        const nextDate = new Date(year, month - 1, day);
-        if (task.recurring === 'Daily') nextDate.setDate(nextDate.getDate() + 1);
-        else if (task.recurring === 'Weekly') nextDate.setDate(nextDate.getDate() + 7);
-        else if (task.recurring === 'Monthly') {
-          const originalDay = nextDate.getDate();
-          nextDate.setDate(1);
-          nextDate.setMonth(nextDate.getMonth() + 1);
-          nextDate.setDate(Math.min(originalDay, new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate()));
+        if (!completed) {
+          if (task.completed) {
+            await db.tasks.update(id, {
+              completed: false,
+              completedAt: undefined,
+              updatedAt: new Date().toISOString()
+            });
+          }
+          return;
         }
 
-        const yyyy = nextDate.getFullYear();
-        const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
-        const dd = String(nextDate.getDate()).padStart(2, '0');
+        if (task.recurring && task.recurring !== 'None') {
+          const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(task.dueDate);
+          if (!match) throw new Error('Invalid recurring task due date');
 
-        await db.tasks.add({
-          id: 't_' + Date.now() + '_rec_' + Math.random().toString(36).slice(2, 6),
-          title: task.title,
-          description: task.description,
-          dueDate: `${yyyy}-${mm}-${dd}`,
-          dueTime: task.dueTime,
-          priority: task.priority,
-          category: task.category,
-          notes: task.notes,
-          recurring: task.recurring,
-          completed: false,
-          createdAt: new Date().toISOString()
-        });
-      }
+          const year = Number(match[1]);
+          const month = Number(match[2]);
+          const day = Number(match[3]);
+          const nextDate = new Date(Date.UTC(year, month - 1, day));
+
+          if (
+            nextDate.getUTCFullYear() !== year ||
+            nextDate.getUTCMonth() !== month - 1 ||
+            nextDate.getUTCDate() !== day
+          ) {
+            throw new Error('Invalid recurring task due date');
+          }
+
+          if (task.recurring === 'Daily') {
+            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+          } else if (task.recurring === 'Weekly') {
+            nextDate.setUTCDate(nextDate.getUTCDate() + 7);
+          } else if (task.recurring === 'Monthly') {
+            const originalDay = nextDate.getUTCDate();
+            nextDate.setUTCDate(1);
+            nextDate.setUTCMonth(nextDate.getUTCMonth() + 1);
+            const lastDay = new Date(Date.UTC(
+              nextDate.getUTCFullYear(),
+              nextDate.getUTCMonth() + 1,
+              0
+            )).getUTCDate();
+            nextDate.setUTCDate(Math.min(originalDay, lastDay));
+          } else {
+            throw new Error('Unsupported recurrence frequency');
+          }
+
+          const nextDueDate = [
+            nextDate.getUTCFullYear(),
+            String(nextDate.getUTCMonth() + 1).padStart(2, '0'),
+            String(nextDate.getUTCDate()).padStart(2, '0')
+          ].join('-');
+
+          const nextTaskId = `rec_${task.id}_${nextDueDate}`;
+          if (!(await db.tasks.get(nextTaskId))) {
+            await db.tasks.add({
+              id: nextTaskId,
+              title: task.title,
+              description: task.description,
+              dueDate: nextDueDate,
+              dueTime: task.dueTime,
+              priority: task.priority,
+              category: task.category,
+              notes: task.notes,
+              recurring: task.recurring,
+              completed: false,
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+
+        if (!task.completed) {
+          const now = new Date().toISOString();
+          await db.tasks.update(id, {
+            completed: true,
+            completedAt: now,
+            updatedAt: now
+          });
+        }
+      });
     }
   },
   settings: {

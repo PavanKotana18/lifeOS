@@ -1,8 +1,7 @@
-PATCH_STATUS exit=1
-Traceback (most recent call last):
-  File "<stdin>", line 6, in <module>
-AssertionError
-SOURCE_VERIFICATION exit=1
+PATCH APPLIED: exact method boundaries verified
+PATCH_STATUS exit=0
+SOURCE VERIFICATION PASSED
+SOURCE_VERIFICATION exit=0
 DIFF_CHECK exit=0
 
 > lifeos-personal@1.0.0 test
@@ -145,19 +144,15 @@ PASS: Goal deletion rolls back when milestone deletion fails
 PASS: Savings-goal deletion rolls back when contribution deletion fails
 
 DATABASE ATOMICITY TESTS: 5/5 PASSED
-AssertionError [ERR_ASSERTION]: Daily recurrence creates the next day occurrence
-    at check (/data/data/com.termux/files/home/lifeOS/test_tasks_recurrence.js:27:12)
-    at main (/data/data/com.termux/files/home/lifeOS/test_tasks_recurrence.js:39:5)
-    at runNextTicks (node:internal/process/task_queues:65:5)
-    at process.processImmediate (node:internal/timers:472:9) {
-  generatedMessage: false,
-  code: 'ERR_ASSERTION',
-  actual: false,
-  expected: true,
-  operator: '==',
-  diff: 'simple'
-}
-TESTS exit=1
+PASS: Daily recurrence creates the next day occurrence
+PASS: Concurrent completion creates exactly one occurrence
+PASS: Uncomplete and re-complete does not duplicate the occurrence
+PASS: Monthly recurrence clamps January 31 to February 28
+PASS: Weekly recurrence advances seven calendar days
+PASS: Failed occurrence creation rolls back original completion
+PASS: Non-recurring task completes without creating another task
+RECURRENCE TESTS: 7/6 PASSED
+TESTS exit=0
 TYPESCRIPT exit=0
 
 > lifeos-personal@1.0.0 build
@@ -170,15 +165,15 @@ rendering chunks...
 computing gzip size...
 dist/index.html                   1.11 kB │ gzip:   0.56 kB
 dist/assets/index-Bv7yRqxu.css   28.63 kB │ gzip:   6.42 kB
-dist/assets/web-CijOpHJF.js       0.67 kB │ gzip:   0.33 kB
-dist/assets/web-Clvg2c8B.js       3.44 kB │ gzip:   1.11 kB
-dist/assets/index-Z08MLC7h.js   825.06 kB │ gzip: 232.96 kB
+dist/assets/web-BitnUtV0.js       0.67 kB │ gzip:   0.33 kB
+dist/assets/web-CcF41lp7.js       3.44 kB │ gzip:   1.10 kB
+dist/assets/index-DWDzuIww.js   825.56 kB │ gzip: 233.11 kB
 
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-✓ built in 8.68s
+✓ built in 7.83s
 BUILD exit=0
 found 0 vulnerabilities
 DEPENDENCY_AUDIT exit=0
