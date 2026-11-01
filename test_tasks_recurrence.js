@@ -98,7 +98,7 @@ async function main() {
       'Non-recurring task completes without creating another task'
     );
 
-    console.log(`RECURRENCE TESTS: ${passed}/6 PASSED`);
+    console.log(`RECURRENCE TESTS: ${passed}/7 PASSED`);
   } finally {
     await db.delete();
   }
