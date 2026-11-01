@@ -494,7 +494,9 @@ export default function App() {
     if (!availability.isAvailable) return { success: false, message: availability.code === 'NOT_ENROLLED' ? 'No fingerprint or device screen lock is enrolled. Set one up in Android settings, then try again.' : 'Device authentication is not available on this device.' };
     const result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
     if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
-    setBiometricEnabled(true); setBiometricVerified(true);
+    setBiometricEnabled(true);
+    biometricEnabledRef.current = true;
+    setBiometricVerified(true);
     biometricAuthenticated.current = true;
     authCoordinator.markAuthenticated();
     await StorageService.settings.set('biometricLockEnabled', true);
@@ -616,6 +618,7 @@ export default function App() {
       setIsLocked(true);
       setBiometricMessage('Confirm your identity to open LifeOS.');
       const availability = await BiometricService.isAvailable();
+      if (sessionGeneration.current !== authGen) return false;
       if (!availability.isAvailable) {
         const message = availability.code === 'NOT_ENROLLED'
           ? 'No biometric or device screen lock is enrolled. Set one up in Android settings, then retry.'
@@ -635,8 +638,10 @@ export default function App() {
         captureGeneration: authGen,
       });
       if (!stillValid) {
-        biometricAuthenticated.current = false;
-        clearSensitiveState();
+        if (sessionGeneration.current === authGen) {
+          biometricAuthenticated.current = false;
+          clearSensitiveState();
+        }
         return false;
       }
       biometricAuthenticated.current = true;
@@ -646,11 +651,13 @@ export default function App() {
       await hydrateAuthenticatedData();
       return true;
     })().catch(error => {
-      const message = error instanceof Error ? error.message : 'Device authentication failed. Your data remains locked.';
-      biometricAuthenticated.current = false;
-      setBiometricMessage(message);
-      clearSensitiveState();
-      console.error('LifeOS biometric startup authentication failed.', error);
+      if (sessionGeneration.current === authGen) {
+        const message = error instanceof Error ? error.message : 'Device authentication failed. Your data remains locked.';
+        biometricAuthenticated.current = false;
+        setBiometricMessage(message);
+        clearSensitiveState();
+        console.error('LifeOS biometric startup authentication failed.', error);
+      }
       return false;
     }).finally(() => {
       if (biometricAuthInFlight.current?.promise === inFlightPromise) biometricAuthInFlight.current = null;
@@ -1567,7 +1574,7 @@ export default function App() {
             <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
               <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-slate-400">Device-level authentication for the app.</p></div>
               <p className="text-xs text-slate-400">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
-              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-800/60 p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-slate-400">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-10 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-800/60 p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-slate-400">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); biometricEnabledRef.current = false; biometricAuthenticated.current = false; authCoordinator.resetForBackground(); sessionGeneration.current++; hydrationInFlight.current = null; biometricAuthInFlight.current = null; setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-10 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className={`flex items-center gap-1 text-[11px] ${biometricVerified ? 'text-emerald-300' : 'text-amber-300'}`}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
             </section>
 
