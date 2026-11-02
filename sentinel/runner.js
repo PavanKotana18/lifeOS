@@ -22,7 +22,7 @@ async function runAllSentinelSuites() {
 
   const suites = [
     { id: 'DB_INTEGRITY', name: 'Real Dexie Database Integrity Suite', fn: runDatabaseIntegrityTests, mandatory: true },
-    { id: 'AND_RESILIENCE', name: 'Android Lifecycle & Resilience Suite', fn: runAndroidResilienceTests, mandatory: true },
+    { id: 'AND_RESILIENCE', name: 'Lifecycle Simulation Suite (mock bridge; not device validation)', fn: runAndroidResilienceTests, mandatory: true },
     { id: 'APP_SECURITY', name: 'Application Security & Manifest Audit Suite', fn: runSecurityTests, mandatory: true },
     { id: 'DOMAIN_LOGIC', name: 'Domain Models & CSV Injection Defense Suite', fn: runDomainTests, mandatory: true },
     { id: 'CRYPTO_REGRESSION', name: 'Production Crypto & Backup Hardening Suite', fn: runCryptoRegressionTests, mandatory: true },

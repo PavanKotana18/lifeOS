@@ -43,6 +43,9 @@ jobs:
       - name: Run Automated LifeOS Verification Tests
         run: npm test
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
       - name: Run Sentinel QA and Security Verification Suite
         run: npm run test:sentinel
 

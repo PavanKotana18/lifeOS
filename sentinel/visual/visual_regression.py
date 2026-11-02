@@ -362,7 +362,7 @@ def capture_checkpoints(driver):
 
 
 
-def run_visual_regression(generate_baselines_if_missing=True):
+def run_visual_regression(generate_baselines_if_missing=False):
 
     print("--- Running Sentinel Visual Regression & Pixel Diff Analysis ---")
 
@@ -518,7 +518,7 @@ def run_visual_regression(generate_baselines_if_missing=True):
 
 if __name__ == "__main__":
 
-    res = run_visual_regression(generate_baselines_if_missing=True)
+    res = run_visual_regression(generate_baselines_if_missing=False)
 
     if res["failed"] > 0:
 

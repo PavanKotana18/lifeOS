@@ -378,7 +378,7 @@ async function runAndroidResilienceTests() {
 
 
 
-  console.log(`Android Resilience Tests Completed: ${results.passed}/${results.total} passed.\n`);
+  console.log(`Lifecycle Simulation Tests Completed: ${results.passed}/${results.total} passed.\n`);
 
   return results;
 
