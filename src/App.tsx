@@ -1,3 +1,5 @@
+import { StorageAccessService } from './services/storageAccessService.ts';
+import { BackupPersistenceService } from './services/backupPersistenceService.ts';
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
@@ -470,23 +472,39 @@ export default function App() {
     setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; activeTabRef.current = 'dashboard'; setActiveTab('dashboard');
   };
 
+  const restoreBackupContent = async (text: string) => {
+    let passphrase: string | undefined;
+    try {
+      const peek = JSON.parse(text);
+      if (peek && (peek.encrypted || peek.cipher === 'AES-256-GCM')) {
+        const input = window.prompt('This backup is encrypted. Enter the backup passphrase to unlock:');
+        if (!input) {
+          showToast('Passphrase required to restore encrypted backup', 'danger');
+          return;
+        }
+        passphrase = input;
+      }
+    } catch (_) {}
+    const hasRecords = await Promise.all([
+      db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(),
+      db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(), db.settings.count(),
+    ]).then(counts => counts.some(count => count > 0));
+    if (hasRecords && !window.confirm('This backup will replace the existing LifeOS data on this device. Export a backup first if you need a copy. Continue?')) return;
+    await StorageService.backup.importData(text, { replaceExisting: true, passphrase });
+    const records = await reloadAllData();
+    const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+    const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
+    setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...prefs });
+    setNotificationsEnabled(master);
+    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
+    showToast('Backup restored successfully', 'success');
+  };
+
   const importBackupFile = async (file?: File) => {
     if (!file) return;
     try {
       const text = await file.text();
-      const hasRecords = await Promise.all([
-        db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(),
-        db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(), db.settings.count(),
-      ]).then(counts => counts.some(count => count > 0));
-      if (hasRecords && !window.confirm('This backup will replace the existing LifeOS data on this device. Export a backup first if you need a copy. Continue?')) return;
-      await StorageService.backup.importData(text, { replaceExisting: true });
-      const records = await reloadAllData();
-      const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
-      const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
-      setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...prefs });
-      setNotificationsEnabled(master);
-      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
-      showToast('Backup restored successfully', 'success');
+      await restoreBackupContent(text);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not restore this backup', 'danger');
     }
@@ -1520,29 +1538,85 @@ export default function App() {
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
-                    let downloadUrl: string | null = null;
                     try {
-                      const json = await StorageService.backup.exportData();
-                      const blob = new Blob([json], { type: 'application/json' });
-                      downloadUrl = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = downloadUrl;
-                      a.download = `lifeos-backup-${formatLocalDate(new Date())}.json`;
-                      a.click();
-                      showToast('Backup JSON exported', 'success');
+                      const passphrase = window.prompt('Enter an optional passphrase to encrypt your backup (leave empty for standard unencrypted JSON):');
+                      if (passphrase === null) return;
+                      const json = await StorageService.backup.exportData(passphrase || undefined);
+                      const fileName = `lifeos-backup-${formatLocalDate(new Date())}${passphrase ? '.enc.json' : '.json'}`;
+                      const result = await StorageAccessService.exportFile(fileName, json, 'application/json');
+                      if (result.cancelled) {
+                        return;
+                      }
+                      if (result.success) {
+                        showToast(passphrase ? 'Encrypted backup exported' : 'Backup JSON exported', 'success');
+                        if (passphrase) {
+                          try {
+                            const container = JSON.parse(json);
+                            await BackupPersistenceService.persistBackup(container);
+                          } catch (_) {}
+                        }
+                      } else {
+                        showToast(`Backup export failed: ${result.message || 'Storage write failed'}`, 'danger');
+                      }
                     } catch (error) {
                       console.error('LifeOS backup export failed:', error);
                       showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
-                    } finally {
-                      if (downloadUrl) window.setTimeout(() => URL.revokeObjectURL(downloadUrl!), 1000);
                     }
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-white text-xs font-semibold"
+                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-white text-xs font-semibold hover:bg-slate-700 transition"
                 >
                   Export JSON
                 </button>
-                <button onClick={() => document.getElementById('lifeos-backup-import')?.click()} className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white">Restore JSON</button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const result = await StorageAccessService.importFile('application/json');
+                      if (result.cancelled) {
+                        return;
+                      }
+                      if (!result.success || !result.content) {
+                        if (result.message) {
+                          showToast(`Restore failed: ${result.message}`, 'danger');
+                        }
+                        return;
+                      }
+                      await restoreBackupContent(result.content);
+                    } catch (error) {
+                      showToast(error instanceof Error ? error.message : 'Could not restore this backup', 'danger');
+                    }
+                  }}
+                  className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white hover:bg-slate-700 transition"
+                >
+                  Restore JSON
+                </button>
               </div>
+              <button
+                onClick={async () => {
+                  const oldPass = window.prompt('Enter current backup passphrase:');
+                  if (oldPass === null) return;
+                  if (!oldPass) {
+                    showToast('Current passphrase is required', 'danger');
+                    return;
+                  }
+                  const newPass = window.prompt('Enter new backup passphrase (minimum 8 characters):');
+                  if (newPass === null) return;
+                  if (!newPass || newPass.length < 8) {
+                    showToast('New passphrase must be at least 8 characters', 'danger');
+                    return;
+                  }
+                  try {
+                    const res = await BackupPersistenceService.rotatePersistedBackup(oldPass, newPass);
+                    if (res.success) {
+                      showToast('Backup passphrase rotated and persisted successfully', 'success');
+                    }
+                  } catch (err: any) {
+                    showToast(`Passphrase rotation failed: ${err?.message || 'Rotation error'}`, 'danger');
+                  }
+                }}
+                className="w-full rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white hover:bg-slate-700 transition"
+              >
+                Rotate Backup Passphrase
+              </button>
               <input id="lifeos-backup-import" type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackupFile(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} />
               <button onClick={() => {
                 const rows = transactions.map(tx => [tx.id, tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);

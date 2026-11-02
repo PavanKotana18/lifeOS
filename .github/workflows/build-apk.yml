@@ -43,6 +43,9 @@ jobs:
       - name: Run Automated LifeOS Verification Tests
         run: npm test
 
+      - name: Run Sentinel QA and Security Verification Suite
+        run: npm run test:sentinel
+
       - name: Check TypeScript
         run: npx tsc --noEmit
 
@@ -84,7 +87,7 @@ jobs:
             echo "::error::Android sdkmanager not found."
             exit 1
           fi
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          yes | "$SDKMANAGER" --licenses >/dev/null
           "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-34" \

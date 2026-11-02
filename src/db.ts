@@ -1,3 +1,4 @@
+import { CryptoService } from './services/cryptoService.ts';
 import Dexie, { Table } from 'dexie';
 import {
   Transaction,
@@ -153,8 +154,8 @@ export interface IDataStorage {
     set(key: string, value: any): Promise<void>;
   };
   backup: {
-    exportData(): Promise<string>;
-    importData(jsonData: string, options?: { replaceExisting?: boolean }): Promise<{ success: boolean; counts: Record<string, number> }>;
+    exportData(passphrase?: string): Promise<string>;
+    importData(jsonData: string, options?: { replaceExisting?: boolean; passphrase?: string }): Promise<{ success: boolean; counts: Record<string, number> }>;
     clearAll(): Promise<void>;
     seedDemoData(): Promise<void>;
   };
@@ -540,7 +541,10 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      await db.habits.update(id, updates);
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.createdAt;
+      await db.habits.update(id, safeUpdates);
     },
     async delete(id) {
       await db.transaction('rw', db.habits, db.habitLogs, async () => {
@@ -603,7 +607,13 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      await db.goals.update(id, { ...updates, updatedAt: new Date().toISOString() });
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.createdAt;
+      await db.goals.update(id, {
+        ...safeUpdates,
+        updatedAt: new Date().toISOString()
+      });
     },
     async delete(id) {
       await db.transaction('rw', db.goals, db.milestones, async () => {
@@ -641,7 +651,13 @@ export const StorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      await db.tasks.update(id, { ...updates, updatedAt: new Date().toISOString() });
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.createdAt;
+      await db.tasks.update(id, {
+        ...safeUpdates,
+        updatedAt: new Date().toISOString()
+      });
     },
     async delete(id) {
       await db.tasks.delete(id);
@@ -742,7 +758,7 @@ export const StorageService: IDataStorage = {
     }
   },
   backup: {
-    async exportData() {
+    async exportData(passphrase?: string): Promise<string> {
       const tables = [
         db.transactions, db.categories, db.budgets, db.savingsGoals,
         db.savingsContributions, db.habits, db.habitLogs, db.goals,
@@ -767,15 +783,35 @@ export const StorageService: IDataStorage = {
             settings: await db.settings.toArray()
           }
         };
+        if (passphrase && passphrase.trim()) {
+          const container = await CryptoService.encryptPayload(exportObj, passphrase.trim());
+          return JSON.stringify({
+            app: 'LifeOS',
+            format: 'lifeos-encrypted-backup-v1',
+            encrypted: true,
+            ...container
+          }, null, 2);
+        }
         return JSON.stringify(exportObj, null, 2);
       });
     },
-    async importData(jsonData: string, options: { replaceExisting?: boolean } = {}) {
+    async importData(jsonData: string, options: { replaceExisting?: boolean; passphrase?: string } = {}) {
       let parsed: any;
       try {
         parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
       } catch (e) {
         throw new Error('Invalid JSON format');
+      }
+
+      if (parsed && (parsed.encrypted === true || parsed.cipher === 'AES-256-GCM')) {
+        if (!options.passphrase || !options.passphrase.trim()) {
+          throw new Error('Encrypted backup detected: Passphrase required to decrypt and restore.');
+        }
+        try {
+          parsed = await CryptoService.decryptPayload(parsed, options.passphrase.trim());
+        } catch (err: any) {
+          throw new Error(`Failed to decrypt backup: ${err.message || 'Incorrect passphrase or corrupted backup container'}`);
+        }
       }
 
       if (!parsed || (!parsed.tables && !parsed.data)) {

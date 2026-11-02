@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(BiometricAuthPlugin.class);
         registerPlugin(NotificationSettingsPlugin.class);
+        registerPlugin(StorageAccessPlugin.class);
         super.onCreate(savedInstanceState);
     }
 
