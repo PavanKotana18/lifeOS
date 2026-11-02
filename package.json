@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js && node test_offline_resilience.js && node test_tasks_recurrence_edges.js",
+    "test": "node -r ./scripts/register-ts-test-loader.cjs test_lifeos.js && node -r ./scripts/register-ts-test-loader.cjs test_backup_validation.js && node -r ./scripts/register-ts-test-loader.cjs test_backup_indexeddb.js && node -r ./scripts/register-ts-test-loader.cjs test_db_atomicity.js && node -r ./scripts/register-ts-test-loader.cjs test_tasks_recurrence.js && node -r ./scripts/register-ts-test-loader.cjs test_habit_analytics_wiring.js && node -r ./scripts/register-ts-test-loader.cjs test_offline_resilience.js && node -r ./scripts/register-ts-test-loader.cjs test_tasks_recurrence_edges.js",
     "test:sentinel": "node sentinel/runner.js",
     "test:all": "npm test && npm run test:sentinel",
     "cap:sync": "cap sync",
