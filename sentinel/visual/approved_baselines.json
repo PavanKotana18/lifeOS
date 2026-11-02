@@ -1,0 +1,42 @@
+{
+  "approvedBy": "Sentinel QA Architect",
+  "approvedAt": "2026-11-01T20:27:04.475801Z",
+  "baselines": {
+    "01_dashboard.png": {
+      "sha256": "ba4b6e31323579fdc472b3b5adb94714ff5ff6d4e8713e734ae0af4e079d247b",
+      "sizeBytes": 79930
+    },
+    "02_finance_overview.png": {
+      "sha256": "a615c96441071e109dff874f915f7a1ada0e6e88207f21fae70db3218ee95383",
+      "sizeBytes": 59784
+    },
+    "03_finance_transactions.png": {
+      "sha256": "72ae8b96620c4afa12b44423ca9086a51341c33ad74c940a6ce2f551751867b0",
+      "sizeBytes": 40375
+    },
+    "04_habits_checklist.png": {
+      "sha256": "f9e9d7cd1576de8f9d51cd49814a14e5b4b660aa5dcd881af6e228cd8f8a82df",
+      "sizeBytes": 39933
+    },
+    "05_goals_active.png": {
+      "sha256": "f02d229a8ac0d0f3d8a81d2cb6a493757de4d6bb3b8683681ff9c45a7df66168",
+      "sizeBytes": 37744
+    },
+    "06_planner_agenda.png": {
+      "sha256": "36dea650a16e6bbfc8464026360846f1019f834e744b5af8b908c873f02c352e",
+      "sizeBytes": 33198
+    },
+    "07_settings_main.png": {
+      "sha256": "ce217354c9b5c87d86126404642651ccfcf5751db1df6ba02aab566ea084905d",
+      "sizeBytes": 61134
+    },
+    "08_modal_add_transaction.png": {
+      "sha256": "d72ef8d6fdfc311eb2ac8f62e552705a98cc18d7e98ab24ac404d6583bdcc031",
+      "sizeBytes": 44212
+    },
+    "09_theme_light.png": {
+      "sha256": "ee0fe4ff3d2bf6ec7fa6d5ba3883d437bd84a8982b65d0324904632d3c858ff8",
+      "sizeBytes": 79883
+    }
+  }
+}

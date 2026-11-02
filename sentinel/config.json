@@ -1,0 +1,59 @@
+{
+  "project": "LifeOS",
+  "version": "1.0.0",
+  "system": "LIFEOS SENTINEL",
+  "branch": "cleanup/habit-planner-quality-20261101",
+  "deviceTarget": "iQOO Neo 9 Pro (Android 16)",
+  "viewport": {
+    "width": 412,
+    "height": 915,
+    "deviceScaleFactor": 2.625,
+    "isMobile": true
+  },
+  "qualityGates": {
+    "failOnBuildError": true,
+    "failOnTypeScriptError": true,
+    "failOnUnitFailure": true,
+    "failOnDatabaseIntegrityFailure": true,
+    "failOnSecurityRegression": true,
+    "failOnCriticalJourneyFailure": true,
+    "visualDiffThresholdPercent": 0.1,
+    "minAccessibilityScorePercent": 85,
+    "minControlCoveragePercent": 90
+  },
+  "modules": [
+    "dashboard",
+    "finance",
+    "categories",
+    "budgets",
+    "savings",
+    "habits",
+    "goals",
+    "planner",
+    "settings",
+    "profile",
+    "biometrics",
+    "crypto",
+    "backup_restore",
+    "storage_access_framework"
+  ],
+  "visualCheckpoints": [
+    { "id": "01_dashboard_empty", "tab": "dashboard", "state": "empty" },
+    { "id": "02_dashboard_populated", "tab": "dashboard", "state": "populated" },
+    { "id": "03_finance_overview", "tab": "finance", "subtab": "overview" },
+    { "id": "04_finance_transactions", "tab": "finance", "subtab": "transactions" },
+    { "id": "05_habits_checklist", "tab": "habits", "subtab": "checklist" },
+    { "id": "06_goals_active", "tab": "goals", "subtab": "active" },
+    { "id": "07_planner_agenda", "tab": "planner", "subtab": "agenda" },
+    { "id": "08_settings_main", "tab": "settings", "state": "default" },
+    { "id": "09_modal_transaction", "tab": "finance", "modal": "add_transaction" },
+    { "id": "10_theme_light", "tab": "dashboard", "theme": "light" }
+  ],
+  "security": {
+    "cipher": "AES-256-GCM",
+    "keyDerivation": "PBKDF2-SHA256 (Domain-Separated)",
+    "kdfIterations": 100000,
+    "hmacHash": "SHA-256",
+    "keyStates": ["UNINITIALIZED", "ACTIVE", "QUARANTINED", "ROTATED", "DESTROYED"]
+  }
+}

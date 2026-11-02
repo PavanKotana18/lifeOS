@@ -1,0 +1,84 @@
+{
+  "system": "LIFEOS SENTINEL Control Inventory",
+  "totalControls": 54,
+  "views": {
+    "dashboard": {
+      "route": "#dashboard",
+      "controls": [
+        { "id": "btn_theme_toggle", "selector": "#theme-toggle-btn", "type": "button", "description": "Toggle between dark and light themes", "expected": "Flips document class between 'dark' and 'light'", "testStatus": "automated" },
+        { "id": "score_card_link", "selector": "#dashboard-perf-card", "type": "card", "description": "Daily productivity score display", "expected": "Displays weighted habit and task adherence score", "testStatus": "automated" },
+        { "id": "btn_details_finance", "selector": "#btn-dash-finance-details", "type": "button", "description": "Navigate to Finance tab", "expected": "Switches active view to #finance", "testStatus": "automated" },
+        { "id": "btn_manage_habits", "selector": "#btn-dash-habits-manage", "type": "button", "description": "Navigate to Habits tab", "expected": "Switches active view to #habits", "testStatus": "automated" },
+        { "id": "btn_all_tasks", "selector": "#btn-dash-tasks-all", "type": "button", "description": "Navigate to Planner tab", "expected": "Switches active view to #planner", "testStatus": "automated" },
+        { "id": "btn_all_goals", "selector": "#btn-dash-goals-all", "type": "button", "description": "Navigate to Goals tab", "expected": "Switches active view to #goals", "testStatus": "automated" }
+      ]
+    },
+    "finance": {
+      "route": "#finance",
+      "subtabs": ["overview", "transactions", "budgets", "savings", "analytics"],
+      "controls": [
+        { "id": "subtab_overview", "selector": "button.subtab-btn[data-subtab='overview']", "type": "button", "description": "Switch to Overview subtab", "expected": "Renders monthly totals and quick actions", "testStatus": "automated" },
+        { "id": "subtab_transactions", "selector": "button.subtab-btn[data-subtab='transactions']", "type": "button", "description": "Switch to Transactions subtab", "expected": "Renders transaction filter and search list", "testStatus": "automated" },
+        { "id": "subtab_budgets", "selector": "button.subtab-btn[data-subtab='budgets']", "type": "button", "description": "Switch to Budgets subtab", "expected": "Renders overall and category budget monitors", "testStatus": "automated" },
+        { "id": "subtab_savings", "selector": "button.subtab-btn[data-subtab='savings']", "type": "button", "description": "Switch to Savings Goals subtab", "expected": "Renders savings goals and contribution forms", "testStatus": "automated" },
+        { "id": "subtab_analytics", "selector": "button.subtab-btn[data-subtab='analytics']", "type": "button", "description": "Switch to Analytics subtab", "expected": "Renders category breakdown and expense chart", "testStatus": "automated" },
+        { "id": "btn_add_income", "selector": "#btn-add-tx-income", "type": "button", "description": "Open Add Income Transaction modal", "expected": "Displays modal with Income preselected", "testStatus": "automated" },
+        { "id": "btn_add_expense", "selector": "#btn-add-tx-expense", "type": "button", "description": "Open Add Expense Transaction modal", "expected": "Displays modal with Expense preselected", "testStatus": "automated" },
+        { "id": "btn_open_categories", "selector": "#btn-manage-categories", "type": "button", "description": "Open Category Manager modal", "expected": "Displays category CRUD management modal", "testStatus": "automated" },
+        { "id": "btn_set_budget", "selector": "#btn-set-overall-budget", "type": "button", "description": "Set Monthly Overall Budget modal", "expected": "Displays budget input modal", "testStatus": "automated" },
+        { "id": "tx_search_input", "selector": "#tx-search-input", "type": "input", "description": "Search transactions by description or notes", "expected": "Dynamically filters transaction rows", "testStatus": "automated" },
+        { "id": "tx_filter_all", "selector": ".filter-chip[data-type='all']", "type": "button", "description": "Filter all transaction types", "expected": "Shows both income and expense", "testStatus": "automated" },
+        { "id": "tx_filter_income", "selector": ".filter-chip[data-type='income']", "type": "button", "description": "Filter income transactions", "expected": "Shows only income transactions", "testStatus": "automated" },
+        { "id": "tx_filter_expense", "selector": ".filter-chip[data-type='expense']", "type": "button", "description": "Filter expense transactions", "expected": "Shows only expense transactions", "testStatus": "automated" }
+      ]
+    },
+    "habits": {
+      "route": "#habits",
+      "controls": [
+        { "id": "btn_add_habit", "selector": "#btn-add-habit-trigger", "type": "button", "description": "Open Add Habit modal", "expected": "Displays habit creation modal", "testStatus": "automated" },
+        { "id": "habit_completion_toggle", "selector": ".habit-check-btn", "type": "toggle", "description": "Toggle habit completion for date", "expected": "Logs completion, recalculates streak, updates DB", "testStatus": "automated" },
+        { "id": "habit_delete_btn", "selector": ".btn-delete-habit", "type": "button", "description": "Delete habit and logs", "expected": "Removes habit and logs from DB and UI", "testStatus": "automated" }
+      ]
+    },
+    "goals": {
+      "route": "#goals",
+      "controls": [
+        { "id": "btn_add_goal", "selector": "#btn-add-goal-trigger", "type": "button", "description": "Open Add Goal modal", "expected": "Displays goal creation modal", "testStatus": "automated" },
+        { "id": "btn_add_milestone", "selector": ".btn-add-milestone", "type": "button", "description": "Add milestone to goal", "expected": "Inserts milestone into DB and updates goal progress", "testStatus": "automated" },
+        { "id": "btn_update_goal_value", "selector": ".btn-update-goal-val", "type": "button", "description": "Update goal current value", "expected": "Updates progress percentage and DB", "testStatus": "automated" }
+      ]
+    },
+    "planner": {
+      "route": "#planner",
+      "controls": [
+        { "id": "btn_add_task", "selector": "#btn-add-task-trigger", "type": "button", "description": "Open Add Task modal", "expected": "Displays task creation modal", "testStatus": "automated" },
+        { "id": "task_completion_checkbox", "selector": ".task-checkbox", "type": "checkbox", "description": "Toggle task completion status", "expected": "Updates completed field in DB and recalculates score", "testStatus": "automated" },
+        { "id": "task_delete_btn", "selector": ".btn-delete-task", "type": "button", "description": "Delete task", "expected": "Removes task from DB and UI", "testStatus": "automated" }
+      ]
+    },
+    "settings": {
+      "route": "#settings",
+      "controls": [
+        { "id": "btn_profile_save", "selector": "#btn-save-profile", "type": "button", "description": "Update user profile", "expected": "Persists profile to settings table", "testStatus": "automated" },
+        { "id": "btn_biometric_toggle", "selector": "#btn-toggle-biometrics", "type": "button", "description": "Toggle native biometric security lock", "expected": "Verifies hardware support and toggles lock", "testStatus": "automated" },
+        { "id": "btn_seed_demo_data", "selector": "#btn-seed-demo-data", "type": "button", "description": "Seed sample demonstration data", "expected": "Populates realistic sample data across all tables", "testStatus": "automated" },
+        { "id": "btn_export_json", "selector": "#btn-export-backup", "type": "button", "description": "Export complete JSON backup", "expected": "Generates and downloads full database JSON snapshot", "testStatus": "automated" },
+        { "id": "btn_import_json", "selector": "#btn-import-backup-trigger", "type": "button", "description": "Import JSON backup", "expected": "Validates schema and restores all tables", "testStatus": "automated" },
+        { "id": "btn_export_csv", "selector": "#btn-export-csv", "type": "button", "description": "Export transactions to RFC-4180 CSV", "expected": "Generates sanitized CSV with formula injection defense", "testStatus": "automated" },
+        { "id": "btn_export_encrypted", "selector": "#btn-export-encrypted-backup", "type": "button", "description": "Export AES-256-GCM encrypted backup", "expected": "Prompts for passphrase, encrypts with PBKDF2/AES-GCM/HMAC", "testStatus": "automated" },
+        { "id": "btn_clear_all_data", "selector": "#btn-clear-all-data", "type": "button", "description": "Erase all personal records", "expected": "Clears all 11 tables with confirmation guard", "testStatus": "automated" }
+      ]
+    },
+    "modals": {
+      "controls": [
+        { "id": "modal_close_btn", "selector": "#modal-close-btn", "type": "button", "description": "Close active modal dialog", "expected": "Hides modal-container and restores backdrop", "testStatus": "automated" },
+        { "id": "modal_cancel_btn", "selector": "#modal-cancel-btn", "type": "button", "description": "Cancel modal action", "expected": "Closes modal without mutating state", "testStatus": "automated" },
+        { "id": "modal_confirm_btn", "selector": "#modal-confirm-action-btn", "type": "button", "description": "Confirm destructive or primary action", "expected": "Executes callback and closes modal", "testStatus": "automated" },
+        { "id": "form_add_tx", "selector": "#form-add-tx", "type": "form", "description": "Transaction creation form", "expected": "Validates amounts and date, saves to transactions table", "testStatus": "automated" },
+        { "id": "form_add_habit", "selector": "#form-add-habit", "type": "form", "description": "Habit creation form", "expected": "Validates habit name and frequency, saves to habits table", "testStatus": "automated" },
+        { "id": "form_add_goal", "selector": "#form-add-goal", "type": "form", "description": "Goal creation form", "expected": "Validates target value and date, saves to goals table", "testStatus": "automated" },
+        { "id": "form_add_task", "selector": "#form-add-task", "type": "form", "description": "Task creation form", "expected": "Validates title and priority, saves to tasks table", "testStatus": "automated" }
+      ]
+    }
+  }
+}

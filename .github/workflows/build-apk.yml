@@ -11,7 +11,7 @@ on:
       - "release/**"
       - "hotfix/**"
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, fix/lifeos-data-integrity-20261101-123130]
   workflow_dispatch:
 
 permissions:
@@ -43,6 +43,12 @@ jobs:
       - name: Run Automated LifeOS Verification Tests
         run: npm test
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Run Sentinel QA and Security Verification Suite
+        run: npm run test:sentinel
+
       - name: Check TypeScript
         run: npx tsc --noEmit
 
@@ -57,8 +63,8 @@ jobs:
     needs: checks
     if: >-
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/'))) ||
-      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
-      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/feature/')))
+      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop' || github.base_ref == 'fix/lifeos-data-integrity-20261101-123130')) ||
+      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/feature/') || github.ref == 'refs/heads/integration/lifeos-sentinel-candidate-20261102'))
     runs-on: ubuntu-latest
 
     steps:
@@ -84,7 +90,11 @@ jobs:
             echo "::error::Android sdkmanager not found."
             exit 1
           fi
-          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          # sdkmanager may finish successfully before `yes` does.
+          # Use sdkmanager's exit status, not yes's expected SIGPIPE.
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
           "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-34" \

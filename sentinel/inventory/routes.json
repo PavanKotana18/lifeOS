@@ -1,0 +1,62 @@
+{
+  "system": "LIFEOS SENTINEL Route & Navigation Graph",
+  "entrypoint": "dashboard",
+  "routes": [
+    {
+      "name": "dashboard",
+      "selector": "[aria-current='page'][data-tab='dashboard']",
+      "description": "Daily productivity score, quick glance metrics, urgent tasks, and navigation hubs",
+      "transitions": ["finance", "habits", "goals", "planner", "settings"]
+    },
+    {
+      "name": "finance",
+      "selector": "[aria-current='page'][data-tab='finance']",
+      "subtabs": [
+        { "name": "overview", "description": "Monthly income/expense summary, remaining balance, quick add buttons" },
+        { "name": "transactions", "description": "Paginated, searchable transaction registry with type filtering" },
+        { "name": "budgets", "description": "Category and monthly overall budget tracking against actual expenditures" },
+        { "name": "savings", "description": "Savings goals progress and incremental contribution logging" },
+        { "name": "analytics", "description": "Spending breakdown by category and historical month-over-month trends" }
+      ],
+      "transitions": ["dashboard", "habits", "goals", "planner", "settings"]
+    },
+    {
+      "name": "habits",
+      "selector": "[aria-current='page'][data-tab='habits']",
+      "subtabs": [
+        { "name": "checklist", "description": "Daily and weekly habit completion checklists and streak counters" },
+        { "name": "analytics", "description": "Weekly completion rate, streak history, and habit adherence" }
+      ],
+      "transitions": ["dashboard", "finance", "goals", "planner", "settings"]
+    },
+    {
+      "name": "goals",
+      "selector": "[aria-current='page'][data-tab='goals']",
+      "subtabs": [
+        { "name": "active", "description": "In-progress goals, milestone checklists, and progress indicators" },
+        { "name": "completed", "description": "Achieved milestones and archived goals" }
+      ],
+      "transitions": ["dashboard", "finance", "habits", "planner", "settings"]
+    },
+    {
+      "name": "planner",
+      "selector": "[aria-current='page'][data-tab='planner']",
+      "subtabs": [
+        { "name": "agenda", "description": "Daily scheduled tasks, priority grouping, due times, and overdue alerts" },
+        { "name": "calendar", "description": "Monthly planner grid with leap day and adjacent month boundary support" }
+      ],
+      "transitions": ["dashboard", "finance", "habits", "goals", "settings"]
+    },
+    {
+      "name": "settings",
+      "selector": "[aria-current='page'][data-tab='settings']",
+      "sections": [
+        { "name": "profile", "description": "User display name, avatar initials, and biometric configuration" },
+        { "name": "notifications", "description": "Notification permissions, quiet hours, and category toggles" },
+        { "name": "preferences", "description": "Theme (Dark/Light/System), currency, time format, and units" },
+        { "name": "data_management", "description": "Encrypted backup export, restore verification, and local database wipe" }
+      ],
+      "transitions": ["dashboard", "finance", "habits", "goals", "planner"]
+    }
+  ]
+}
