@@ -5,13 +5,13 @@ All notable LifeOS changes are documented here. Versions follow Semantic Version
 ## [Unreleased]
 
 ### Added
-- Release process documentation for protected main, develop, and testing branches.
+- Release process documentation describing the intended main, develop, and testing branch workflow.
 
 ### Changed
-- Release guidance aligned with current CI and branch protections.
+- Release guidance aligned with the current CI workflow and documented branch roles.
 
 ### Fixed
-- Corrected outdated CI job and branch-protection guidance.
+- Corrected outdated CI job and branch-protection guidance without assuming protections are enabled.
 
 ### Security
 - No security behavior changes in this documentation update.

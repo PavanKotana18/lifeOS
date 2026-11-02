@@ -1,13 +1,13 @@
 # LifeOS development and release process
 
-## Protected branches
+## Branch roles and safeguards
 
 - `main`: production-ready baseline.
 - `develop`: integration branch for the next release.
 - `testing`: validation branch for candidate changes.
 - `archive/develop-pre-sanitization-20261102`: preserved historical branch; never use as an integration base.
 
-All three active branches require pull requests, the `Automated checks` and `Android debug build` status checks, and up-to-date branches. Force pushes and branch deletion are disabled. The current rules require zero approving reviews, so maintainers must still perform their own code review.
+The branch roles above describe the intended workflow; they do not confirm that GitHub branch protection rules are enabled. Verify the repository's Rulesets or Branch protection settings before relying on enforced restrictions. The intended safeguards are pull requests, successful `Automated checks` and `Android debug build` checks, up-to-date branches, and restrictions on force pushes and branch deletion. Until these safeguards are verified and enabled, maintainers must enforce the workflow manually and review changes before merging.
 
 ## Feature workflow
 
