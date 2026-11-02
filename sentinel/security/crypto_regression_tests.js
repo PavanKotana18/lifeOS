@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { CryptoService, CryptoManager } = require('../../src/services/cryptoService.js');
-const { BackupPersistenceManager, FileStorageAdapter } = require('../../src/services/backupPersistenceService.js');
+const { BackupPersistenceManager, FileStorageAdapter, LocalStorageAdapter } = require('../../src/services/backupPersistenceService.js');
 
 async function runCryptoRegressionTests() {
   console.log('--- Running Sentinel Production Crypto & Backup Hardening Regression Tests ---');
@@ -319,6 +319,167 @@ async function runCryptoRegressionTests() {
     } finally {
       if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
     }
+  });
+
+
+  // 11. LocalStorage adapter explicitly reports unavailable storage and I/O errors.
+  await check('11. LocalStorage Adapter: unavailable storage and read/write/remove failures are explicit', async () => {
+    const adapter = new LocalStorageAdapter();
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+
+    try {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        writable: true,
+        value: undefined
+      });
+
+      await assert.rejects(
+        () => adapter.getItem('lifeos_test'),
+        /Backup storage read failed: localStorage is unavailable/
+      );
+      await assert.rejects(
+        () => adapter.setItem('lifeos_test', 'value'),
+        /Backup storage write failed: localStorage is unavailable/
+      );
+      await assert.rejects(
+        () => adapter.removeItem('lifeos_test'),
+        /Backup storage removal failed: localStorage is unavailable/
+      );
+
+      const failingStorage = {
+        getItem() { throw new Error('simulated read denial'); },
+        setItem() { throw new Error('simulated quota exceeded'); },
+        removeItem() { throw new Error('simulated remove denial'); }
+      };
+
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        writable: true,
+        value: failingStorage
+      });
+
+      await assert.rejects(
+        () => adapter.getItem('lifeos_test'),
+        /Backup storage read failed: simulated read denial/
+      );
+      await assert.rejects(
+        () => adapter.setItem('lifeos_test', 'value'),
+        /Backup storage write failed: simulated quota exceeded/
+      );
+      await assert.rejects(
+        () => adapter.removeItem('lifeos_test'),
+        /Backup storage removal failed: simulated remove denial/
+      );
+    } finally {
+      if (previous) {
+        Object.defineProperty(globalThis, 'localStorage', previous);
+      } else {
+        delete globalThis.localStorage;
+      }
+    }
+  });
+
+  // 12. Successful browser storage writes are read back and verified.
+  await check('12. LocalStorage Persistence: successful backup write is verified by read-back', async () => {
+    const values = new Map();
+    const mockStorage = {
+      getItem(key) {
+        return values.has(key) ? values.get(key) : null;
+      },
+      setItem(key, value) {
+        values.set(key, String(value));
+      },
+      removeItem(key) {
+        values.delete(key);
+      }
+    };
+
+    const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+
+    try {
+      Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true,
+        writable: true,
+        value: mockStorage
+      });
+
+      const container = {
+        ciphertext: 'test-ciphertext',
+        salt: 'test-salt',
+        hmac: 'test-hmac',
+        iv: 'test-iv'
+      };
+
+      const manager = new BackupPersistenceManager(new LocalStorageAdapter());
+      await manager.persistBackup(container, 'localstorage_success_test');
+
+      assert.deepStrictEqual(
+        JSON.parse(values.get('localstorage_success_test')),
+        container
+      );
+      assert.deepStrictEqual(
+        await manager.loadPersistedBackup('localstorage_success_test'),
+        container
+      );
+    } finally {
+      if (previous) {
+        Object.defineProperty(globalThis, 'localStorage', previous);
+      } else {
+        delete globalThis.localStorage;
+      }
+    }
+  });
+
+  // 13. Corrupt or mismatched storage read-back must never be reported as success.
+  await check('13. Persistence Verification: rejects malformed and mismatched read-back data', async () => {
+    const container = {
+      ciphertext: 'expected-ciphertext',
+      salt: 'expected-salt',
+      hmac: 'expected-hmac',
+      iv: 'expected-iv'
+    };
+
+    const malformedAdapter = {
+      async setItem() {},
+      async getItem() { return '{invalid-json'; },
+      async removeItem() {}
+    };
+
+    const malformedManager = new BackupPersistenceManager(malformedAdapter);
+    await assert.rejects(
+      () => malformedManager.persistBackup(container, 'malformed_readback'),
+      /stored data is not valid JSON/
+    );
+
+    const mismatchAdapter = {
+      async setItem() {},
+      async getItem() {
+        return JSON.stringify({
+          ...container,
+          ciphertext: 'different-ciphertext'
+        });
+      },
+      async removeItem() {}
+    };
+
+    const mismatchManager = new BackupPersistenceManager(mismatchAdapter);
+    await assert.rejects(
+      () => mismatchManager.persistBackup(container, 'mismatched_readback'),
+      /read-back data does not match/
+    );
+
+    const missingAdapter = {
+      async setItem() {},
+      async getItem() { return null; },
+      async removeItem() {}
+    };
+
+    const missingManager = new BackupPersistenceManager(missingAdapter);
+    await assert.rejects(
+      () => missingManager.persistBackup(container, 'missing_readback'),
+      /saved data could not be read back/
+    );
   });
 
   console.log(`Production Crypto & Backup Hardening Tests Completed: ${passed}/${total} passed.\n`);

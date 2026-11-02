@@ -59,27 +59,35 @@ class FileStorageAdapter {
  */
 class LocalStorageAdapter {
   async getItem(key) {
-    if (typeof localStorage !== 'undefined') {
-      try {
-        return localStorage.getItem(key);
-      } catch (_) {}
+    try {
+      if (typeof localStorage === 'undefined') {
+        throw new Error('localStorage is unavailable');
+      }
+      return localStorage.getItem(key);
+    } catch (error) {
+      throw new Error(`Backup storage read failed: ${error.message}`);
     }
-    return null;
   }
 
   async setItem(key, value) {
-    if (typeof localStorage !== 'undefined') {
-      try {
-        localStorage.setItem(key, value);
-      } catch (_) {}
+    try {
+      if (typeof localStorage === 'undefined') {
+        throw new Error('localStorage is unavailable');
+      }
+      localStorage.setItem(key, value);
+    } catch (error) {
+      throw new Error(`Backup storage write failed: ${error.message}`);
     }
   }
 
   async removeItem(key) {
-    if (typeof localStorage !== 'undefined') {
-      try {
-        localStorage.removeItem(key);
-      } catch (_) {}
+    try {
+      if (typeof localStorage === 'undefined') {
+        throw new Error('localStorage is unavailable');
+      }
+      localStorage.removeItem(key);
+    } catch (error) {
+      throw new Error(`Backup storage removal failed: ${error.message}`);
     }
   }
 }
@@ -113,6 +121,21 @@ class BackupPersistenceManager {
       throw new Error('Cannot persist invalid or empty backup container');
     }
     await this.adapter.setItem(storageKey, JSON.stringify(container));
+    const persisted = await this.adapter.getItem(storageKey);
+    if (!persisted) {
+      throw new Error('Backup persistence verification failed: saved data could not be read back');
+    }
+
+    let verified;
+    try {
+      verified = JSON.parse(persisted);
+    } catch (_) {
+      throw new Error('Backup persistence verification failed: stored data is not valid JSON');
+    }
+
+    if (JSON.stringify(verified) !== JSON.stringify(container)) {
+      throw new Error('Backup persistence verification failed: read-back data does not match');
+    }
   }
 
   async loadPersistedBackup(storageKey = 'lifeos_encrypted_backup_primary') {
