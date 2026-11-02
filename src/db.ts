@@ -171,6 +171,40 @@ function validateTransactionRecord(
   }
 }
 
+async function assertTransactionCategory(
+  categoryName: string,
+  type: 'income' | 'expense',
+  existing?: Transaction
+): Promise<void> {
+  const normalized = categoryName.trim().toLowerCase();
+
+  if (!normalized) {
+    throw new Error('Choose a transaction category.');
+  }
+
+  const categories = await db.categories.toArray();
+  const matching = categories.find(
+    category => category.name.trim().toLowerCase() === normalized
+  );
+
+  if (matching) {
+    if (matching.name !== categoryName.trim()) {
+      throw new Error('Choose the exact category name from the category list.');
+    }
+    if (matching.type !== type) {
+      throw new Error('The selected category does not match the transaction type.');
+    }
+    return;
+  }
+
+  // Allow an unchanged historical category, but not a new reference to it.
+  if (existing && existing.category === categoryName && existing.type === type) {
+    return;
+  }
+
+  throw new Error('The selected category does not exist. Choose an available category.');
+}
+
 // Clean Database Abstraction Layer Interface
 export interface IDataStorage {
   transactions: {
@@ -432,18 +466,23 @@ const rawStorageService: IDataStorage = {
       return db.transactions.get(id);
     },
     async add(tx) {
-      validateTransactionRecord(tx, true);
-      const id = createRecordId('tx');
-      const createdAt = new Date().toISOString();
-      const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
-      await db.transactions.add(record);
-      return record;
+      return db.transaction('rw', db.transactions, db.categories, async () => {
+        validateTransactionRecord(tx, true);
+        await assertTransactionCategory(tx.category, tx.type);
+        const id = createRecordId('tx');
+        const createdAt = new Date().toISOString();
+        const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
+        await db.transactions.add(record);
+        return record;
+      });
     },
     async update(id, updates) {
-      await db.transaction('rw', db.transactions, async () => {
+      await db.transaction('rw', db.transactions, db.categories, async () => {
         const existing = await db.transactions.get(id);
         if (!existing) return;
-        validateTransactionRecord({ ...existing, ...updates }, true);
+        const updated = { ...existing, ...updates };
+        validateTransactionRecord(updated, true);
+        await assertTransactionCategory(updated.category, updated.type, existing);
         const safeUpdates = { ...updates };
         delete safeUpdates.id;
         delete safeUpdates.createdAt;
@@ -518,12 +557,35 @@ const rawStorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      const safeUpdates = { ...updates };
-      delete safeUpdates.id;
-      await db.categories.update(id, safeUpdates);
+      await db.transaction('rw', db.categories, db.transactions, async () => {
+        const existing = await db.categories.get(id);
+        if (!existing) return;
+
+        const safeUpdates = { ...updates };
+        delete safeUpdates.id;
+
+        const identityChanged =
+          (safeUpdates.name !== undefined && safeUpdates.name !== existing.name) ||
+          (safeUpdates.type !== undefined && safeUpdates.type !== existing.type);
+
+        if (identityChanged) {
+          const linkedTransactions = await db.transactions
+            .where('category')
+            .equals(existing.name)
+            .count();
+
+          if (linkedTransactions > 0) {
+            throw new Error(
+              'Category is used by existing transactions. Reassign those transactions before changing its name or type.'
+            );
+          }
+        }
+
+        await db.categories.update(id, safeUpdates);
+      });
     },
     async delete(id) {
-      await db.transaction('rw', db.categories, db.budgets, async () => {
+      await db.transaction('rw', db.categories, db.budgets, db.transactions, async () => {
         const category = await db.categories.get(id);
         if (!category) return;
 
@@ -535,6 +597,17 @@ const rawStorageService: IDataStorage = {
         if (linkedBudgets > 0) {
           throw new Error(
             'Category is linked to one or more budgets. Remove or reassign those budgets before deleting it.'
+          );
+        }
+
+        const linkedTransactions = await db.transactions
+          .where('category')
+          .equals(category.name)
+          .count();
+
+        if (linkedTransactions > 0) {
+          throw new Error(
+            'Category is used by existing transactions. Reassign or remove those transactions before deleting it.'
           );
         }
 

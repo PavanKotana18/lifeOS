@@ -74,6 +74,62 @@ check(
   'Overall budget continues to calculate against total expenses'
 );
 
+// F-04: Transaction categories must be checked against stored categories.
+check(
+  db.includes('async function assertTransactionCategory(') &&
+  db.includes('The selected category does not match the transaction type.') &&
+  db.includes('The selected category does not exist. Choose an available category.'),
+  'Transaction storage validates category existence and transaction type'
+);
+
+// F-04: Add and update must validate category references atomically.
+check(
+  db.includes("db.transaction('rw', db.transactions, db.categories") &&
+  db.includes('await assertTransactionCategory(tx.category, tx.type);') &&
+  db.includes('await assertTransactionCategory(updated.category, updated.type, existing);'),
+  'Transaction add and update validate category references within Dexie transactions'
+);
+
+// F-04: Category identity changes must protect existing transaction references.
+check(
+  db.includes('Category is used by existing transactions. Reassign those transactions before changing its name or type.'),
+  'Category rename and type changes are blocked while transactions reference the category'
+);
+
+// F-04: Category deletion must protect both budget and transaction references.
+check(
+  db.includes("db.transaction('rw', db.categories, db.budgets, db.transactions") &&
+  db.includes('Category is used by existing transactions. Reassign or remove those transactions before deleting it.'),
+  'Category deletion is blocked while budgets or transactions reference it'
+);
+
+// F-04: New transactions should default to an available expense category.
+check(
+  app.includes("kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '')"),
+  'New transactions default to the first available expense category'
+);
+
+// F-04: Transaction category options must be filtered by transaction type.
+check(
+  app.includes('categories.filter(category => category.type === createDraft.type).map(category => (') &&
+  app.includes('<option value="">Select category</option>'),
+  'Transaction category dropdown displays only categories matching its type'
+);
+
+// F-04: Switching transaction type must select a category of the new type.
+check(
+  app.includes("const type = e.target.value as 'income' | 'expense';") &&
+  app.includes('const category = categories.find(item => item.type === type)?.name || \'\';'),
+  'Changing transaction type resets the category to a valid matching category'
+);
+
+// F-04: Editing historical transactions must preserve an unavailable legacy category.
+check(
+  app.includes('Legacy category: {createDraft.category}') &&
+  app.includes('!categories.some(category => category.name === createDraft.category && category.type === createDraft.type)'),
+  'Transaction edit form preserves unchanged legacy category values'
+);
+
 // F-05: Reminder must propagate to generated recurring tasks.
 check(
   db.includes('reminderAt: task.reminderAt'),
@@ -102,4 +158,4 @@ check(
   'Existing productivity scoring remains active for non-empty days'
 );
 
-console.log(`AUDIT REGRESSION SOURCE TESTS: ${passed}/12 PASSED`);
+console.log(`AUDIT REGRESSION SOURCE TESTS: ${passed}/20 PASSED`);

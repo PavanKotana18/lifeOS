@@ -701,7 +701,7 @@ export default function App() {
     const now = new Date();
     const today = formatLocalDate(now);
     setCreateDraft({
-      title: '', amount: '', category: kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
+      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
       goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
@@ -1693,9 +1693,21 @@ export default function App() {
               <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm text-white" />
             </label>}
             {createKind === 'transaction' && <>
-              <label className="mb-3 block text-xs text-slate-300">Type<select value={createDraft.type} onChange={e => setCreateDraft({ ...createDraft, type: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+              <label className="mb-3 block text-xs text-slate-300">Type<select value={createDraft.type} onChange={e => {
+                const type = e.target.value as 'income' | 'expense';
+                const category = categories.find(item => item.type === type)?.name || '';
+                setCreateDraft({ ...createDraft, type, category });
+              }} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
               <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Category<input required maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Category<select required value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">
+                <option value="">Select category</option>
+                {createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type) && (
+                  <option value={createDraft.category}>Legacy category: {createDraft.category}</option>
+                )}
+                {categories.filter(category => category.type === createDraft.type).map(category => (
+                  <option key={category.id} value={category.name}>{category.name}</option>
+                ))}
+              </select></label>
               <label className="mb-3 block text-xs text-slate-300">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>

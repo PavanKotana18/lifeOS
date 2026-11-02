@@ -109,6 +109,14 @@ async function main() {
     'Explicit session unlock restores authorized access'
   );
 
+  // Seed a valid category for the session lock-and-drain transaction fixture.
+  await StorageService.categories.getAll();
+  const sessionTestCategory = await StorageService.categories.add({
+    name: 'Session Drain Test',
+    type: 'expense',
+    color: '#123456'
+  });
+
   // Delay one admitted IndexedDB write to verify lock-and-drain behavior.
   const originalTransactionAdd = db.transactions.add;
   let releaseDelayedWrite;
@@ -129,7 +137,7 @@ async function main() {
     admittedWrite = StorageService.transactions.add({
       type: 'expense',
       amount: 123,
-      category: 'Test',
+      category: sessionTestCategory.name,
       description: 'Session drain integration test',
       date: '2026-11-01',
       paymentMethod: 'Cash'
@@ -174,6 +182,8 @@ async function main() {
     if (admittedWrite) await admittedWrite.catch(() => {});
     await sessionManager.waitForIdle();
     if (!sessionManager.isUnlocked()) sessionManager.unlock();
+    await StorageService.transactions.delete(savedDuringDrain?.id).catch(() => {});
+    await StorageService.categories.delete(sessionTestCategory.id);
   }
 
   const stamp = '2026-11-01T10:00:00.000Z';
@@ -569,15 +579,28 @@ async function main() {
     );
 
     await db.budgets.where('categoryId').equals(protectedCategory.id).delete();
+
+    await assert.rejects(
+      StorageService.categories.delete(protectedCategory.id),
+      /used by existing transactions/i
+    );
+
+    check(
+      Boolean(await db.categories.get(protectedCategory.id)) &&
+      Boolean(await db.transactions.get(historicalTransaction.id)),
+      'Category deletion is blocked while a transaction references it'
+    );
+
+    await StorageService.transactions.delete(historicalTransaction.id);
     await StorageService.categories.delete(protectedCategory.id);
 
     check(
       !(await db.categories.get(protectedCategory.id)) &&
-      Boolean(await db.transactions.get(historicalTransaction.id)),
-      'Category can be deleted after budget removal without deleting historical transactions'
+      !(await db.transactions.get(historicalTransaction.id)),
+      'Category can be deleted after its budget and transaction references are removed'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/33 PASSED`);
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/34 PASSED`);
   } finally {
     await db.delete();
   }
