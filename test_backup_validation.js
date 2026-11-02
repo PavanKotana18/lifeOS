@@ -198,6 +198,22 @@ test('Rejects invalid task time', () => {
   rejects(d, /tasks.*dueTime/);
 });
 
+test('Accepts valid recurrence metadata in task backups', () => {
+  const d = sample();
+  d.tasks[0].recurrenceRootId = 'root-task';
+  d.tasks[0].spawnedTaskId = 'rec_root-task_2026-11-03';
+  assert.strictEqual(validate(d).length, 11);
+});
+
+test('Rejects non-string recurrence metadata in task backups', () => {
+  const d = sample();
+  d.tasks[0].recurrenceRootId = 123;
+  rejects(d, /tasks.*recurrenceRootId/);
+  const e = sample();
+  e.tasks[0].spawnedTaskId = false;
+  rejects(e, /tasks.*spawnedTaskId/);
+});
+
 test('Rejects duplicate settings keys', () => {
   const d = sample(); d.settings.push({ ...d.settings[0] });
   rejects(d, /duplicate key/);
@@ -222,4 +238,4 @@ test('Accepts demo-style Food budget with the seeded cat_food reference', () => 
   assert.strictEqual(validate(d).length, 11);
 });
 
-console.log(`\nBackup validation tests: ${passed}/17 passed`);
+console.log(`\nBackup validation tests: ${passed}/19 passed`);

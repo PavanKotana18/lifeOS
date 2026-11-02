@@ -6,6 +6,18 @@ const ts = require('typescript');
 const assert = require('assert');
 
 async function main() {
+  const RealDate = Date;
+  const fixedNow = RealDate.parse('2024-01-01T12:00:00.000Z');
+  global.Date = class extends RealDate {
+    constructor(...args) {
+      if (args.length) super(...args);
+      else super(fixedNow);
+    }
+    static now() { return fixedNow; }
+    static parse(value) { return RealDate.parse(value); }
+    static UTC(...args) { return RealDate.UTC(...args); }
+  };
+
   const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -57,7 +69,7 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const { db, StorageService, sessionManager } = loaded.exports;
+  const { db, StorageService, sessionManager, getNextRecurringTaskDate, getRecurrenceRootId } = loaded.exports;
   sessionManager.unlock();
   await db.open();
   let passed = 0;
@@ -106,11 +118,12 @@ async function main() {
     );
 
     const secondReminderOccurrence =
-      await db.tasks.get('rec_rec_reminder-source_2026-11-03_2026-11-04');
+      await db.tasks.get('rec_reminder-source_2026-11-04');
 
     check(
-      secondReminderOccurrence?.reminderAt === reminderAt,
-      'Reminder timestamp survives a second recurrence generation'
+      secondReminderOccurrence?.reminderAt === reminderAt &&
+      secondReminderOccurrence?.recurrenceRootId === 'reminder-source',
+      'Second recurrence keeps the stable root ID and reminder timestamp'
     );
 
     await add('parallel', '2026-11-03', 'Daily');
@@ -170,7 +183,35 @@ async function main() {
       'Non-recurring task completes without creating another task'
     );
 
-    console.log(`RECURRENCE TESTS: ${passed}/9 PASSED`);
+    check(
+      getNextRecurringTaskDate('2026-10-20', 'Daily', '2026-11-02') === '2026-11-03',
+      'Overdue daily recurrence advances to the next future day'
+    );
+    check(
+      getNextRecurringTaskDate('2026-10-20', 'Weekly', '2026-11-02') === '2026-11-03',
+      'Overdue weekly recurrence preserves its weekly schedule'
+    );
+    check(
+      getNextRecurringTaskDate('2026-10-20', 'Monthly', '2026-11-02') === '2026-11-20',
+      'Overdue monthly recurrence advances to the next scheduled month date'
+    );
+    check(
+      getRecurrenceRootId({ id: 'rec_rec_source_2026-11-03_2026-11-04' }) === 'source',
+      'Legacy nested recurrence IDs resolve to their original root'
+    );
+
+    await add('undo-source', '2026-11-05', 'Daily');
+    await StorageService.tasks.toggleCompleted('undo-source', true);
+    const undoChildId = 'rec_undo-source_2026-11-06';
+    await StorageService.tasks.toggleCompleted('undo-source', false);
+    check(
+      !(await db.tasks.get(undoChildId)) &&
+      (await db.tasks.get('undo-source'))?.completed === false &&
+      !(await db.tasks.get('undo-source'))?.spawnedTaskId,
+      'Undo removes an untouched generated child and clears its parent reference'
+    );
+
+    console.log(`RECURRENCE TESTS: ${passed}/14 PASSED`);
   } finally {
     await db.delete();
   }

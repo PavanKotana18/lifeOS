@@ -122,6 +122,8 @@ export interface Task {
   completedAt?: string;
   createdAt: string;
   updatedAt?: string;
+  recurrenceRootId?: string;
+  spawnedTaskId?: string;
 }
 
 export interface NotificationPreferences {

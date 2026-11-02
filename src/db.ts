@@ -58,6 +58,76 @@ export function createRecordId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${(recordIdSequence++).toString(36)}_${randomPart}`;
 }
 
+export function getRecurrenceRootId(
+  task: Pick<Task, 'id' | 'recurrenceRootId'>
+): string {
+  if (task.recurrenceRootId) return task.recurrenceRootId;
+
+  let rootId = task.id;
+  while (rootId.startsWith('rec_')) {
+    const match = /^rec_(.+)_\d{4}-\d{2}-\d{2}$/.exec(rootId);
+    if (!match) break;
+    rootId = match[1];
+  }
+  return rootId;
+}
+
+export function getNextRecurringTaskDate(
+  dueDate: string,
+  recurring: Task['recurring'],
+  todayLocalDate = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })()
+): string {
+  const parseDate = (value: string) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) throw new Error('Invalid recurring task due date');
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) throw new Error('Invalid recurring task due date');
+    return date;
+  };
+
+  const nextDate = parseDate(dueDate);
+  const today = parseDate(todayLocalDate);
+
+  const advance = () => {
+    if (recurring === 'Daily') {
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    } else if (recurring === 'Weekly') {
+      nextDate.setUTCDate(nextDate.getUTCDate() + 7);
+    } else if (recurring === 'Monthly') {
+      const originalDay = nextDate.getUTCDate();
+      nextDate.setUTCDate(1);
+      nextDate.setUTCMonth(nextDate.getUTCMonth() + 1);
+      const lastDay = new Date(Date.UTC(
+        nextDate.getUTCFullYear(),
+        nextDate.getUTCMonth() + 1,
+        0
+      )).getUTCDate();
+      nextDate.setUTCDate(Math.min(originalDay, lastDay));
+    } else {
+      throw new Error('Unsupported recurrence frequency');
+    }
+  };
+
+  advance();
+  while (nextDate.getTime() <= today.getTime()) advance();
+
+  return [
+    nextDate.getUTCFullYear(),
+    String(nextDate.getUTCMonth() + 1).padStart(2, '0'),
+    String(nextDate.getUTCDate()).padStart(2, '0')
+  ].join('-');
+}
+
 function validateTransactionRecord(
   record: Partial<Transaction>,
   requireComplete: boolean
@@ -341,6 +411,8 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'reminderAt', 'tasks', i);
     optionalInstant(r, 'completedAt', 'tasks', i);
     optionalInstant(r, 'updatedAt', 'tasks', i);
+    optionalString(r, 'recurrenceRootId', 'tasks', i);
+    optionalString(r, 'spawnedTaskId', 'tasks', i);
   });
 
   check('settings', (r, i) => {
@@ -686,58 +758,29 @@ const rawStorageService: IDataStorage = {
 
         if (!completed) {
           if (task.completed) {
+            if (task.spawnedTaskId) {
+              const spawnedTask = await db.tasks.get(task.spawnedTaskId);
+              if (spawnedTask && !spawnedTask.updatedAt) {
+                await db.tasks.delete(task.spawnedTaskId);
+              }
+            }
             await db.tasks.update(id, {
               completed: false,
               completedAt: undefined,
+              spawnedTaskId: undefined,
               updatedAt: new Date().toISOString()
             });
           }
           return;
         }
 
-        if (task.recurring && task.recurring !== 'None') {
-          const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(task.dueDate);
-          if (!match) throw new Error('Invalid recurring task due date');
+        if (task.recurring && task.recurring !== 'None' && !task.completed) {
+          const nextDueDate = getNextRecurringTaskDate(task.dueDate, task.recurring);
+          const rootId = getRecurrenceRootId(task);
+          const nextTaskId = `rec_${rootId}_${nextDueDate}`;
+          const existingOccurrence = await db.tasks.get(nextTaskId);
 
-          const year = Number(match[1]);
-          const month = Number(match[2]);
-          const day = Number(match[3]);
-          const nextDate = new Date(Date.UTC(year, month - 1, day));
-
-          if (
-            nextDate.getUTCFullYear() !== year ||
-            nextDate.getUTCMonth() !== month - 1 ||
-            nextDate.getUTCDate() !== day
-          ) {
-            throw new Error('Invalid recurring task due date');
-          }
-
-          if (task.recurring === 'Daily') {
-            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-          } else if (task.recurring === 'Weekly') {
-            nextDate.setUTCDate(nextDate.getUTCDate() + 7);
-          } else if (task.recurring === 'Monthly') {
-            const originalDay = nextDate.getUTCDate();
-            nextDate.setUTCDate(1);
-            nextDate.setUTCMonth(nextDate.getUTCMonth() + 1);
-            const lastDay = new Date(Date.UTC(
-              nextDate.getUTCFullYear(),
-              nextDate.getUTCMonth() + 1,
-              0
-            )).getUTCDate();
-            nextDate.setUTCDate(Math.min(originalDay, lastDay));
-          } else {
-            throw new Error('Unsupported recurrence frequency');
-          }
-
-          const nextDueDate = [
-            nextDate.getUTCFullYear(),
-            String(nextDate.getUTCMonth() + 1).padStart(2, '0'),
-            String(nextDate.getUTCDate()).padStart(2, '0')
-          ].join('-');
-
-          const nextTaskId = `rec_${task.id}_${nextDueDate}`;
-          if (!(await db.tasks.get(nextTaskId))) {
+          if (!existingOccurrence) {
             await db.tasks.add({
               id: nextTaskId,
               title: task.title,
@@ -749,10 +792,13 @@ const rawStorageService: IDataStorage = {
               category: task.category,
               notes: task.notes,
               recurring: task.recurring,
+              recurrenceRootId: rootId,
               completed: false,
               createdAt: new Date().toISOString()
             });
           }
+
+          await db.tasks.update(id, { spawnedTaskId: nextTaskId });
         }
 
         if (!task.completed) {
