@@ -17,7 +17,46 @@ const compiled = ts.transpileModule(source, {
 const loaded = new Module(path.join(__dirname, 'src/db.validation.test.cjs'), module);
 loaded.filename = path.join(__dirname, 'src/db.validation.test.cjs');
 loaded.paths = module.paths;
-loaded._compile(compiled, loaded.filename);
+
+const sessionSource = fs.readFileSync(
+  path.join(__dirname, 'src/services/sessionManager.ts'),
+  'utf8'
+);
+
+const sessionCompiled = ts.transpileModule(sessionSource, {
+  compilerOptions: {
+    module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2020,
+    esModuleInterop: true
+  }
+}).outputText;
+
+const sessionLoaded = new Module(
+  path.join(__dirname, 'src/services/sessionManager.cjs'),
+  module
+);
+sessionLoaded.filename = path.join(__dirname, 'src/services/sessionManager.cjs');
+sessionLoaded.paths = module.paths;
+sessionLoaded._compile(sessionCompiled, sessionLoaded.filename);
+
+const originalModuleLoad = Module._load;
+Module._load = function (request, parent, isMain) {
+  if (
+    request === './services/sessionManager' &&
+    parent &&
+    parent.filename === loaded.filename
+  ) {
+    return sessionLoaded.exports;
+  }
+  return originalModuleLoad.apply(this, arguments);
+};
+
+try {
+  loaded._compile(compiled, loaded.filename);
+} finally {
+  Module._load = originalModuleLoad;
+}
+
 
 const validate = loaded.exports.validateBackupTables;
 assert.strictEqual(typeof validate, 'function');

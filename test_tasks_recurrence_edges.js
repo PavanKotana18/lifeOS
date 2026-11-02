@@ -6,7 +6,7 @@ const ts = require('typescript');
 const assert = require('assert');
 
 async function main() {
-  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -18,9 +18,47 @@ async function main() {
   const loaded = new Module(path.join(__dirname, 'src/db.recurrence-edges.cjs'), module);
   loaded.filename = path.join(__dirname, 'src/db.recurrence-edges.cjs');
   loaded.paths = module.paths;
-  loaded._compile(compiled, loaded.filename);
+  const sessionSource = fs.readFileSync(
+    path.join(__dirname, 'src/services/sessionManager.ts'),
+    'utf8'
+  );
 
-  const { db, StorageService } = loaded.exports;
+  const sessionCompiled = ts.transpileModule(sessionSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true
+    }
+  }).outputText;
+
+  const sessionLoaded = new Module(
+    path.join(__dirname, 'src/services/sessionManager.cjs'),
+    module
+  );
+  sessionLoaded.filename = path.join(__dirname, 'src/services/sessionManager.cjs');
+  sessionLoaded.paths = module.paths;
+  sessionLoaded._compile(sessionCompiled, sessionLoaded.filename);
+
+  const originalModuleLoad = Module._load;
+  Module._load = function (request, parent, isMain) {
+    if (
+      request === './services/sessionManager' &&
+      parent &&
+      parent.filename === loaded.filename
+    ) {
+      return sessionLoaded.exports;
+    }
+    return originalModuleLoad.apply(this, arguments);
+  };
+
+  try {
+    loaded._compile(compiled, loaded.filename);
+  } finally {
+    Module._load = originalModuleLoad;
+  }
+
+  const { db, StorageService, sessionManager } = loaded.exports;
+  sessionManager.unlock();
   await db.open();
 
   let passed = 0;

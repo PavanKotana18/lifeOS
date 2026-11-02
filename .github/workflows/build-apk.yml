@@ -53,10 +53,10 @@ jobs:
         run: npx cap sync android
 
   android-build:
-    name: Android integration and release verification
+    name: Android debug build
     needs: checks
     if: >-
-      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/'))) ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/'))) ||
       (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
       (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/feature/')))
     runs-on: ubuntu-latest
@@ -112,16 +112,5 @@ jobs:
         with:
           name: LifeOS-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Build Release APK
-        run: gradle -p android assembleRelease --stacktrace
-
-      - name: Upload Release APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: LifeOS-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
