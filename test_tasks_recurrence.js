@@ -79,6 +79,40 @@ async function main() {
       'Daily recurrence creates the next day occurrence'
     );
 
+    const reminderAt = '2026-11-02T08:00:00.000Z';
+    await db.tasks.add({
+      id: 'reminder-source',
+      title: 'Reminder recurrence',
+      dueDate: '2026-11-02',
+      dueTime: '09:00',
+      reminderAt,
+      priority: 'Medium',
+      recurring: 'Daily',
+      completed: false,
+      createdAt: '2026-11-01T00:00:00.000Z'
+    });
+
+    await StorageService.tasks.toggleCompleted('reminder-source', true);
+    const firstReminderOccurrence =
+      await db.tasks.get('rec_reminder-source_2026-11-03');
+
+    check(
+      firstReminderOccurrence?.reminderAt === reminderAt,
+      'Recurring occurrence preserves the original reminder timestamp'
+    );
+
+    await StorageService.tasks.toggleCompleted(
+      'rec_reminder-source_2026-11-03', true
+    );
+
+    const secondReminderOccurrence =
+      await db.tasks.get('rec_rec_reminder-source_2026-11-03_2026-11-04');
+
+    check(
+      secondReminderOccurrence?.reminderAt === reminderAt,
+      'Reminder timestamp survives a second recurrence generation'
+    );
+
     await add('parallel', '2026-11-03', 'Daily');
     await Promise.all([
       StorageService.tasks.toggleCompleted('parallel', true),
@@ -136,7 +170,7 @@ async function main() {
       'Non-recurring task completes without creating another task'
     );
 
-    console.log(`RECURRENCE TESTS: ${passed}/7 PASSED`);
+    console.log(`RECURRENCE TESTS: ${passed}/9 PASSED`);
   } finally {
     await db.delete();
   }

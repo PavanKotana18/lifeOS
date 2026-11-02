@@ -744,6 +744,7 @@ const rawStorageService: IDataStorage = {
               description: task.description,
               dueDate: nextDueDate,
               dueTime: task.dueTime,
+              reminderAt: task.reminderAt,
               priority: task.priority,
               category: task.category,
               notes: task.notes,
@@ -907,7 +908,7 @@ const rawStorageService: IDataStorage = {
       for (const tx of demoTxs) await rawStorageService.transactions.add(tx);
 
       await rawStorageService.budgets.upsert({ monthlyAmount: 60000, monthYear: curMonth });
-      await rawStorageService.budgets.upsert({ categoryId: 'Food', monthlyAmount: 12000, monthYear: curMonth });
+      await rawStorageService.budgets.upsert({ categoryId: 'cat_food', monthlyAmount: 12000, monthYear: curMonth });
 
       const goal = await rawStorageService.savings.addGoal({
         title: 'Emergency Reserve Fund',

@@ -203,4 +203,23 @@ test('Rejects duplicate settings keys', () => {
   rejects(d, /duplicate key/);
 });
 
-console.log(`\nBackup validation tests: ${passed}/16 passed`);
+test('Accepts demo-style Food budget with the seeded cat_food reference', () => {
+  const d = sample();
+  d.categories.push({
+    id: 'cat_food',
+    name: 'Food',
+    type: 'expense',
+    color: '#f59e0b',
+    isDefault: true
+  });
+  d.budgets.push({
+    id: 'bud-demo-food',
+    categoryId: 'cat_food',
+    monthlyAmount: 12000,
+    monthYear: '2026-11',
+    createdAt: '2026-11-01T00:00:00.000Z'
+  });
+  assert.strictEqual(validate(d).length, 11);
+});
+
+console.log(`\nBackup validation tests: ${passed}/17 passed`);
