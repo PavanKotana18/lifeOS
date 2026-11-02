@@ -1,46 +1,96 @@
-# LifeOS — Personal Life Management Android Application
+# LifeOS
 
-An offline-first, private personal management system engineered specifically for **iQOO Neo 9 Pro (Android 16)**.
+LifeOS is an Android personal life-management application built with React,
+TypeScript, Vite and Capacitor.
 
----
+The application includes personal planning and tracking features, local data
+persistence, backup and restore functionality, and native Android security
+integrations.
 
-## 📱 How to Build & Install the APK on Your Android Smartphone (Zero Computer Needed)
+## Technology
 
-You do **not** need Android Studio or a computer to compile and install LifeOS. All remote compilation is automated using GitHub Actions.
+- React and TypeScript
+- Vite
+- Capacitor 6
+- Dexie / IndexedDB
+- Native Android Java plugins
+- Android BiometricPrompt and Android Keystore integration
 
-### Step 1: Upload Project to GitHub from Your Smartphone
-1. Open Chrome or your preferred mobile browser on your **iQOO Neo 9 Pro** and navigate to [github.com/new](https://github.com/new).
-2. Name the repository `lifeos`, set it to **Private**, and tap **Create repository**.
-3. Extract the downloaded `LifeOS-Android-Capacitor.zip` archive on your phone (using your phone's default Files app or ZArchiver).
-4. On your new GitHub repository page, tap **Add file** &rarr; **Upload files**, select all the unzipped files and directories (including `.github`), and commit directly to the `main` branch.
-   *(Or if using Termux / Git on Android: `git init`, `git add .`, `git commit -m "feat: complete LifeOS"`, `git push origin main`)*.
+## Repository
 
-### Step 2: Automatic Cloud Compilation
-1. In your GitHub repository, tap the **Actions** tab.
-2. The **Build LifeOS Android APK** workflow will trigger automatically.
-3. It installs Node 20, runs the automated LifeOS test suite (34 verification checks), builds the React/TypeScript frontend, syncs Capacitor assets, and invokes Gradle 8.2 to build both Debug and Release APKs.
-4. The workflow uploads separate `LifeOS-debug-apk` and `LifeOS-release-apk` artifacts. The Debug APK can be installed directly. The Release APK is currently unsigned because no signing credentials are configured.
+- `main`: production baseline
+- `develop`: integration branch
+- `testing`: dedicated QA and release-candidate validation
+- `feature/*`, `bugfix/*`, `hotfix/*`: isolated development work
 
-### Step 3: Download & Install on iQOO Neo 9 Pro
-1. When the run finishes with a green checkmark ✅, tap on the completed workflow run.
-2. Scroll to the **Artifacts** section at the bottom of the summary screen.
-3. Tap **LifeOS-debug-apk** to download `app-debug.apk` directly to your phone. The Release artifact is intended for a future signed distribution build.
-4. Open the downloaded file from your Android notification bar or Files app and tap **Install**.
-   *(If prompted by Android 16 to allow installs from your browser/files app, toggle 'Allow from this source')*.
-5. Launch **LifeOS** from your phone's launcher!
+Changes should be submitted through pull requests. Do not push directly to
+protected branches.
 
----
+## Local development
 
-## 🔒 Actual Android Biometric Security
-- **Native Android BiometricPrompt**: LifeOS implements genuine biometric verification (`BiometricAuthPlugin.java`) using Android's `androidx.biometric.BiometricPrompt`.
-- **Supported Biometrics**: In-display optical fingerprint scanner (standard on iQOO Neo 9 Pro) and device credentials (phone PIN/pattern fallback).
-- **Auto-Relock**: If enabled in Settings, the application automatically locks whenever it is sent to the background and requires biometric authentication to reveal personal records upon resume.
+Requirements:
 
----
+- Node.js 20
+- npm
+- Java 17
+- Android SDK and Gradle for Android builds
 
-## 💾 Offline Database & Zero-Telemetry Privacy
-- **Dexie.js IndexedDB**: Your single source of truth on-device. Data survives device reboots, app restarts, and system updates.
-- **Clean First Launch**: First run starts with a clean database and zero hardcoded demo data.
-- **Optional Demo Data**: Sample records can be populated anytime via the clearly labelled **Load Sample Demo Data** button in Settings.
-- **Complete JSON Backup**: Full export and verified import with schema validation and conflict warnings.
-- **100% Offline**: No remote accounts, no cloud sync, no tracking, and no external analytics.
+Install dependencies:
+
+    npm ci
+
+Run the application:
+
+    npm run dev
+
+Run application regression tests:
+
+    npm test
+
+Run Sentinel verification:
+
+    npm run test:sentinel
+
+Run all test suites:
+
+    npm run test:all
+
+Type-check:
+
+    npx tsc --noEmit
+
+Build the web application:
+
+    npm run build
+
+Synchronise the Android project:
+
+    npx cap sync android
+
+Build a debug APK:
+
+    cd android
+    gradle assembleDebug
+
+## Continuous integration
+
+The GitHub Actions workflow runs application tests, dependency auditing,
+Sentinel verification, TypeScript checks, the web build and Capacitor
+synchronisation. Eligible branch and pull-request builds also produce an
+Android debug APK artifact.
+
+The workflow does not currently produce a signed production release APK.
+
+## Security
+
+- Never commit credentials, signing keys, personal databases, backups or
+  private user data.
+- Keep Android signing credentials outside the repository.
+- Review changes to cryptography, backup/restore, authentication and native
+  Android plugins carefully.
+- Report suspected security issues privately to the repository maintainer.
+
+## Licensing
+
+This repository currently has no open-source licence. Public visibility does
+not itself grant permission to reuse, distribute or modify its contents.

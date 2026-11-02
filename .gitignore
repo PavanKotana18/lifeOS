@@ -11,3 +11,36 @@ android/app/src/main/res/xml/config.xml
 dist/
 validation/
 audit/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*credentials*
+*secret*
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+google-services.json
+GoogleService-Info.plist
+
+# Local databases, backups and generated reports
+*.db
+*.sqlite
+*.sqlite3
+*.backup
+*.bak
+*.log
+*.apk
+*.aab
+*.mapping
+
+# Generated frontend and test output
+dist/
+coverage/
+playwright-report/
+test-results/
