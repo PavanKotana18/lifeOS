@@ -87,7 +87,11 @@ jobs:
             echo "::error::Android sdkmanager not found."
             exit 1
           fi
+          # sdkmanager may finish successfully before `yes` does.
+          # Use sdkmanager's exit status, not yes's expected SIGPIPE.
+          set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
           "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-34" \
