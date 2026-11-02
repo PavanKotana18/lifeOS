@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LifeOSCryptoPlugin.class);
         registerPlugin(LifeOSBackupPlugin.class);
         registerPlugin(NotificationSettingsPlugin.class);
+        registerPlugin(StorageAccessPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Prevent screenshots, screen recording and sensitive recent-app previews.

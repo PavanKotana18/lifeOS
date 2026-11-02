@@ -13,7 +13,7 @@ import {
   Task
 } from './types';
 
-class LifeOSDatabase extends Dexie {
+export class LifeOSDatabase extends Dexie {
   transactions!: Table<Transaction, string>;
   categories!: Table<Category, string>;
   budgets!: Table<Budget, string>;

@@ -1,0 +1,65 @@
+{
+  "system": "LIFEOS SENTINEL Database Schema Specification",
+  "database": "LifeOS_Database",
+  "version": 1,
+  "tables": {
+    "transactions": {
+      "keyPath": "id",
+      "indexes": ["date", "category", "type", "createdAt"],
+      "requiredFields": ["id", "type", "amount", "category", "date", "createdAt"]
+    },
+    "categories": {
+      "keyPath": "id",
+      "indexes": ["type", "name"],
+      "requiredFields": ["id", "name", "type", "color"]
+    },
+    "budgets": {
+      "keyPath": "id",
+      "indexes": ["monthYear", "categoryId"],
+      "requiredFields": ["id", "monthlyAmount", "monthYear", "createdAt"]
+    },
+    "savingsGoals": {
+      "keyPath": "id",
+      "indexes": ["targetDate"],
+      "requiredFields": ["id", "title", "targetAmount", "currentAmount", "targetDate", "createdAt"]
+    },
+    "savingsContributions": {
+      "keyPath": "id",
+      "indexes": ["goalId", "date"],
+      "requiredFields": ["id", "goalId", "amount", "date", "createdAt"],
+      "foreignKeys": [{ "field": "goalId", "references": "savingsGoals.id" }]
+    },
+    "habits": {
+      "keyPath": "id",
+      "indexes": ["frequency", "createdAt"],
+      "requiredFields": ["id", "name", "frequency", "color", "createdAt"]
+    },
+    "habitLogs": {
+      "keyPath": "id",
+      "indexes": ["habitId", "date", "[habitId+date]"],
+      "requiredFields": ["id", "habitId", "date", "completed"],
+      "foreignKeys": [{ "field": "habitId", "references": "habits.id" }]
+    },
+    "goals": {
+      "keyPath": "id",
+      "indexes": ["category", "priority", "status", "targetDate"],
+      "requiredFields": ["id", "title", "targetValue", "currentValue", "targetDate", "priority", "status", "createdAt"]
+    },
+    "milestones": {
+      "keyPath": "id",
+      "indexes": ["goalId"],
+      "requiredFields": ["id", "goalId", "title", "completed"],
+      "foreignKeys": [{ "field": "goalId", "references": "goals.id" }]
+    },
+    "tasks": {
+      "keyPath": "id",
+      "indexes": ["dueDate", "priority", "completed"],
+      "requiredFields": ["id", "title", "priority", "completed", "createdAt"]
+    },
+    "settings": {
+      "keyPath": "key",
+      "indexes": [],
+      "requiredFields": ["key", "value"]
+    }
+  }
+}
