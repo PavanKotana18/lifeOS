@@ -11,7 +11,7 @@ on:
       - "release/**"
       - "hotfix/**"
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, fix/lifeos-data-integrity-20261101-123130]
   workflow_dispatch:
 
 permissions:
@@ -60,7 +60,7 @@ jobs:
     needs: checks
     if: >-
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/'))) ||
-      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop')) ||
+      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop' || github.base_ref == 'fix/lifeos-data-integrity-20261101-123130')) ||
       (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/feature/')))
     runs-on: ubuntu-latest
 
