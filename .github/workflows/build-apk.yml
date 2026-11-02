@@ -61,7 +61,7 @@ jobs:
     if: >-
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/'))) ||
       (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop' || github.base_ref == 'fix/lifeos-data-integrity-20261101-123130')) ||
-      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/feature/') || github.ref == 'refs/heads/integration/lifeos-sentinel-candidate-20261102')))
+      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/feature/') || github.ref == 'refs/heads/integration/lifeos-sentinel-candidate-20261102'))
     runs-on: ubuntu-latest
 
     steps:
