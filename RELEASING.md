@@ -1,39 +1,47 @@
-# LifeOS branch and release process
+# LifeOS development and release process
 
-## Branches
+## Branch roles and safeguards
 
-- `main` contains production-ready releases. Do not develop directly on it.
-- `develop` is the integration branch for the next release.
-- Start `feature/<name>` and `bugfix/<name>` from `develop`; merge them through pull requests.
-- Create `release/<MAJOR.MINOR.PATCH>` from `develop` for release preparation and QA.
-- Use `hotfix/<name>` from `main` only for urgent production corrections. After its reviewed production merge, merge the fix back into `develop` as well.
+- `main`: production-ready baseline.
+- `develop`: integration branch for the next release.
+- `testing`: validation branch for candidate changes.
+- `archive/develop-pre-sanitization-20261102`: preserved historical branch; never use as an integration base.
 
-Keep branches current with their base before opening a pull request. Resolve conflicts on the topic branch; do not force-push shared branches.
+The branch roles above describe the intended workflow; they do not confirm that GitHub branch protection rules are enabled. Verify the repository's Rulesets or Branch protection settings before relying on enforced restrictions. The intended safeguards are pull requests, successful `Automated checks` and `Android debug build` checks, up-to-date branches, and restrictions on force pushes and branch deletion. Until these safeguards are verified and enabled, maintainers must enforce the workflow manually and review changes before merging.
+
+## Feature workflow
+
+1. Create `feature/<name>` or `bugfix/<name>` from `develop`.
+2. Implement one focused change and add regression tests.
+3. Push the topic branch and wait for CI.
+4. Use a pull request into `testing` when device or integration validation is needed.
+5. Promote validated changes into `develop` through a pull request.
+6. Promote release-ready changes from `develop` to `main` through a pull request after release QA.
+
+Recover archived work selectively after comparing it with current code and tests. Never merge the archived branch wholesale.
 
 ## Versioning
 
-`package.json` is the authoritative Semantic Version (`MAJOR.MINOR.PATCH`). `package-lock.json` is updated with it by npm. The Profile screen reads the package version, and Android Gradle reads the same package version for `versionName`.
+`package.json` is the authoritative Semantic Version (`MAJOR.MINOR.PATCH`); keep `package-lock.json` synchronized. Android Gradle derives `versionName` and `versionCode` from this version and the GitHub Actions run number. Keep MINOR and PATCH below 1000. Do not change the Android application ID (`com.lifeos.personal`) without a migration plan.
 
-Android `versionCode` uses `MAJOR * 1,000,000 + MINOR * 1,000 + PATCH + GITHUB_RUN_NUMBER`. The workflow run number increases for each run of this workflow, so distributable APKs from later runs receive higher codes. MINOR and PATCH must each remain below 1000. Produce distributable APKs through GitHub Actions; local Gradle builds without a run number use only the SemVer-derived base code.
-
-Use a PATCH bump for compatible fixes, MINOR for backward-compatible features, and MAJOR for breaking changes. Do not change the Android application ID (`com.lifeos.personal`).
+Use PATCH for compatible fixes, MINOR for backward-compatible features, and MAJOR for breaking changes.
 
 ## Release checklist
 
-1. Merge reviewed feature and bug-fix pull requests into `develop`; wait for its integration build and tests.
-2. Create `release/<version>` from the tested `develop` commit and push it.
-3. Set the release version with `npm version <version> --no-git-tag-version` (this updates `package.json` and `package-lock.json`). Update `CHANGELOG.md` with the date and the `Added`, `Changed`, `Fixed`, `Security`, and `Removed` sections. Commit these release-preparation changes on the release branch.
-4. Run and review the `Automated checks` and `Android integration and release verification` jobs on the release branch. Confirm Debug and Release APK artifacts exist, inspect them on the target device, and complete release QA. Do not publish merely because CI passed.
-5. Open a pull request from the release branch to `main`. Merge only after review, required checks, and QA approval.
-6. On the resulting production commit, create an annotated tag `v<version>` (for example, `v1.2.0`) and push the tag. Publish a GitHub Release manually from that tag, attach the reviewed APKs, and use the changelog entry as release notes. The current workflow builds artifacts; it does not automatically publish releases or sign APKs.
-7. Merge the release branch back into `develop` through a pull request so version and changelog updates are retained. Delete the release branch only after both merges and the published release are verified.
+1. Confirm the target commit passed CI on `develop` and complete functional, security, backup/restore, and physical-device QA.
+2. Create `release/<MAJOR.MINOR.PATCH>` from validated `develop`.
+3. Update `package.json`, `package-lock.json`, and this changelog on the release branch.
+4. Run CI and inspect the debug APK on a physical Android device.
+5. Open a pull request from the release branch to `main`. Merge only after checks and release QA pass.
+6. Tag the production commit `v<MAJOR.MINOR.PATCH>`. Publish a GitHub Release manually only after distributable review and signing requirements are satisfied.
+7. Merge release changes back into `develop` through a pull request.
 
-For a hotfix, use a PATCH release unless the correction requires a different SemVer increment; apply the production fix to `develop` after the main merge.
+For an urgent production fix, branch from `main`, validate and merge through a pull request, then port the fix back into `develop` and `testing` as appropriate.
 
 ## CI behavior
 
-`.github/workflows/build-apk.yml` runs checks (tests, TypeScript, web build, and Capacitor sync) on `feature/**`, `bugfix/**`, `develop`, `release/**`, `hotfix/**`, and `main` pushes. Pull requests targeting `develop` or `main` run checks. Android Debug and Release builds run on `develop`, `release/**`, `hotfix/**`, and `main`, and for pull requests into `develop` or `main`. Artifacts are uploaded for 30 days. No job merges branches, creates tags, or publishes a release.
+The current `.github/workflows/build-apk.yml` runs `Automated checks` on pushes to `main`, `develop`, `testing`, and configured `feature/**`, `bugfix/**`, `release/**`, and `hotfix/**` branches. It also runs for pull requests targeting `main`, `develop`, or `testing`.
 
-## Recommended GitHub protection
+Checks include project tests, dependency audit, Sentinel verification, TypeScript checking, web build, and Capacitor sync. The `Android debug build` job builds and uploads a debug APK for configured branch and pull-request events. Artifacts are retained for 30 days.
 
-Configure repository rulesets (or branch protection) for `main` and `develop`: require pull requests, require the `Automated checks` status, require `Android integration and release verification` for merges into `main` and `develop`, block force pushes and branch deletion, and require at least one approving review for `main` where the plan supports it. Consider requiring linear history and dismissing stale approvals after new commits. These are recommendations; repository settings must be checked separately and are not changed by this document.
+The workflow does not sign production APKs, publish GitHub Releases, create tags, or automatically merge branches. The executable workflow takes precedence over this document.

@@ -1,51 +1,41 @@
 # Changelog
 
-Notable LifeOS changes are documented here. Versions follow Semantic Versioning.
+All notable LifeOS changes are documented here. Versions follow Semantic Versioning.
 
 ## [Unreleased]
 
 ### Added
-
-- Calendar-first Planner with selected-day task agendas and task details.
-- Onboarding step persistence so interrupted setup resumes where it stopped.
-- Android system appearance monitoring while LifeOS is open.
-- Previous-page navigation history with modal-first Android Back handling.
+- Release process documentation describing the intended main, develop, and testing branch workflow.
 
 ### Changed
-
-- Personalized time-of-day header greeting and a more readable light-theme palette.
-- Profile notification preferences open as a nested settings view.
+- Release guidance aligned with the current CI workflow and documented branch roles.
 
 ### Fixed
-
-- Fresh-install onboarding detection no longer persists a default theme before checking for legacy data.
+- Corrected outdated CI job and branch-protection guidance without assuming protections are enabled.
 
 ### Security
-
-- _None._
-
-### Removed
-
-- _None._
+- No security behavior changes in this documentation update.
 
 ## [1.0.0] - 2026-10-31
 
 ### Added
-
-- Established the existing LifeOS application as the documented 1.0.0 baseline. Earlier history is preserved and is not reconstructed here.
+- Calendar-first Planner with selected-day task agendas and task details.
+- Resumable onboarding with persisted setup progress.
+- System appearance monitoring, including native Android theme updates.
+- Nested tab navigation and modal-first Android Back handling.
+- Finance analytics, category budgets, and user display preferences.
 
 ### Changed
-
-- _None recorded._
+- Personalized time-of-day greeting and improved light-theme presentation.
+- Profile notification preferences use a nested settings view.
 
 ### Fixed
-
-- _None recorded._
+- Fresh-install onboarding detection and theme bootstrap behavior.
+- Biometric startup coordination for overlapping and stale authentication attempts.
+- Finance budget analytics resolve stored category IDs to category names.
 
 ### Security
-
-- _None recorded._
+- Existing biometric and native security integrations retained; no new security claims.
 
 ### Removed
-
-- _None recorded._
+- Gender collection from onboarding.
