@@ -234,6 +234,20 @@ async function runTestSuite() {
   assert(finMetrics.remainingBalance === 70000, `Verify remaining balance: expected 70000, got ${finMetrics.remainingBalance}`);
   assert(finMetrics.budgetUtilisation === 83.3, `Verify budget utilisation: expected 83.3%, got ${finMetrics.budgetUtilisation}%`);
 
+  // F-08: A linked savings transfer must reduce the month's remaining cash flow.
+  const f08CashFlowTransactions = [
+    { type: 'income', amount: 100000, category: 'Salary', date: '2026-10-05' },
+    { type: 'expense', amount: 30000, category: 'Rent', date: '2026-10-06' },
+    { type: 'expense', amount: 50000, category: 'Investments', date: '2026-10-07' }
+  ];
+  const f08Metrics = calculateFinanceMetrics(f08CashFlowTransactions, [], '2026-10');
+  assert(
+    f08Metrics.totalIncome === 100000 &&
+    f08Metrics.totalExpenses === 80000 &&
+    f08Metrics.remainingBalance === 20000,
+    `F-08: linked savings transfer reduces remaining balance to 20000 (got ${f08Metrics.remainingBalance})`
+  );
+
   // Edit transaction
   await db.update('transactions', txExpense2Id, { amount: 18000, notes: 'Added weekend grocery run' });
   const updatedTx = await db.get('transactions', txExpense2Id);

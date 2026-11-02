@@ -158,4 +158,31 @@ check(
   'Existing productivity scoring remains active for non-empty days'
 );
 
-console.log(`AUDIT REGRESSION SOURCE TESTS: ${passed}/20 PASSED`);
+
+// F-08: Savings contributions can create a linked expense in the same storage operation.
+check(
+  db.includes('linkedExpense?: Omit<Transaction') &&
+  db.includes('async addContribution(contribution, linkedExpense)') &&
+  db.includes('db.transactions.add(transactionRecord)'),
+  'Savings contribution storage supports a linked cash-flow expense'
+);
+
+// F-08: Linked expense and savings records must share one Dexie transaction.
+check(
+  db.includes('db.savingsGoals,') &&
+  db.includes('db.savingsContributions,') &&
+  db.includes('db.transactions,') &&
+  db.includes('db.categories,') &&
+  db.includes('await assertTransactionCategory(linkedExpense.category, \'expense\');'),
+  'Linked savings expense is category-validated within the atomic savings transaction'
+);
+
+// F-08: UI exposes the optional link and defaults it on for new contributions.
+check(
+  app.includes("linkTransfer: 'yes'") &&
+  app.includes("createDraft.linkTransfer !== 'no'") &&
+  app.includes('Record this contribution as an expense in monthly cash flow'),
+  'Savings contribution UI enables an optional linked cash-flow expense by default'
+);
+
+console.log(`AUDIT REGRESSION SOURCE TESTS: ${passed}/23 PASSED`);

@@ -232,7 +232,7 @@ export interface IDataStorage {
     addGoal(goal: Omit<SavingsGoal, 'id' | 'createdAt'>): Promise<SavingsGoal>;
     updateGoal(id: string, updates: Partial<SavingsGoal>): Promise<void>;
     deleteGoal(id: string): Promise<void>;
-    addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>): Promise<void>;
+    addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>, linkedExpense?: Omit<Transaction, 'id' | 'createdAt'>): Promise<void>;
     getContributions(goalId: string): Promise<SavingsContribution[]>;
   };
   habits: {
@@ -668,22 +668,53 @@ const rawStorageService: IDataStorage = {
         await db.savingsContributions.where('goalId').equals(id).delete();
       });
     },
-    async addContribution(contribution) {
+    async addContribution(contribution, linkedExpense) {
       if (!Number.isFinite(contribution.amount) || contribution.amount <= 0) {
         throw new Error('Savings contribution amount must be a positive finite number');
       }
-      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
-        const goal = await db.savingsGoals.get(contribution.goalId);
-        if (!goal) throw new Error('Savings goal not found');
 
-        const id = createRecordId('sc');
-        await db.savingsGoals.update(goal.id, {
-          currentAmount: (goal.currentAmount || 0) + contribution.amount
-        });
-        await db.savingsContributions.add({
-          ...contribution, id, createdAt: new Date().toISOString()
-        });
-      });
+      await db.transaction(
+        'rw',
+        db.savingsGoals,
+        db.savingsContributions,
+        db.transactions,
+        db.categories,
+        async () => {
+          const goal = await db.savingsGoals.get(contribution.goalId);
+          if (!goal) throw new Error('Savings goal not found');
+
+          if (linkedExpense) {
+            if (
+              linkedExpense.type !== 'expense' ||
+              linkedExpense.amount !== contribution.amount ||
+              linkedExpense.date !== contribution.date
+            ) {
+              throw new Error('Linked savings transfer must match the contribution amount and date');
+            }
+
+            validateTransactionRecord(linkedExpense, true);
+            await assertTransactionCategory(linkedExpense.category, 'expense');
+
+            const transactionId = createRecordId('tx');
+            const createdAt = new Date().toISOString();
+            const transactionRecord: Transaction = {
+              ...linkedExpense,
+              id: transactionId,
+              createdAt,
+              occurredAt: linkedExpense.occurredAt || createdAt
+            };
+            await db.transactions.add(transactionRecord);
+          }
+
+          const id = createRecordId('sc');
+          await db.savingsGoals.update(goal.id, {
+            currentAmount: (goal.currentAmount || 0) + contribution.amount
+          });
+          await db.savingsContributions.add({
+            ...contribution, id, createdAt: new Date().toISOString()
+          });
+        }
+      );
     },
     async getContributions(goalId) {
       return db.savingsContributions.where('goalId').equals(goalId).reverse().sortBy('date');

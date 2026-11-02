@@ -231,7 +231,70 @@ async function main() {
       'Invalid amounts and missing goals create no financial records'
     );
 
-    // 3. Habit deletion must roll back if dependent-log deletion fails.
+    // 3. A linked savings transfer must create a cash-flow expense atomically.
+    await db.categories.add({
+      id: 'cat-savings-transfer-test',
+      name: 'Savings Transfer Test',
+      type: 'expense',
+      color: '#10b981'
+    });
+
+    await StorageService.savings.addContribution(
+      { goalId: 'sg-atomic', amount: 250, date: '2026-11-01', notes: 'Atomic linked transfer test' },
+      {
+        type: 'expense',
+        amount: 250,
+        category: 'Savings Transfer Test',
+        description: 'Savings contribution: Emergency fund',
+        date: '2026-11-01',
+        paymentMethod: 'Savings transfer',
+        notes: 'Atomic linked transfer test'
+      }
+    );
+
+    const linkedTransaction = (await db.transactions.toArray())
+      .find(tx => tx.description === 'Savings contribution: Emergency fund');
+
+    check(
+      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
+      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
+      Boolean(linkedTransaction) &&
+      linkedTransaction.type === 'expense' &&
+      linkedTransaction.amount === 250,
+      'Linked savings contribution updates the goal and creates a matching expense'
+    );
+
+    // A linked expense failure must roll back both savings records.
+    const linkedExpenseFailure = () => { throw new Error('Injected linked transaction failure'); };
+    db.transactions.hook('creating').subscribe(linkedExpenseFailure);
+
+    try {
+      await assert.rejects(StorageService.savings.addContribution(
+        { goalId: 'sg-atomic', amount: 300, date: '2026-11-01' },
+        {
+          type: 'expense',
+          amount: 300,
+          category: 'Savings Transfer Test',
+          description: 'Savings contribution: Emergency fund rollback',
+          date: '2026-11-01',
+          paymentMethod: 'Savings transfer'
+        }
+      ));
+    } finally {
+      db.transactions.hook('creating').unsubscribe(linkedExpenseFailure);
+    }
+
+    check(
+      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
+      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
+      !(await db.transactions.toArray()).some(tx => tx.description === 'Savings contribution: Emergency fund rollback'),
+      'Linked expense failure rolls back the contribution and goal balance'
+    );
+
+    await StorageService.transactions.delete(linkedTransaction.id);
+    await db.categories.delete('cat-savings-transfer-test');
+
+    // 4. Habit deletion must roll back if dependent-log deletion fails.
     await db.habits.add({
       id: 'habit-atomic', name: 'Read',
       frequency: 'daily', color: '#123456', createdAt: stamp
@@ -600,7 +663,7 @@ async function main() {
       'Category can be deleted after its budget and transaction references are removed'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/34 PASSED`);
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/36 PASSED`);
   } finally {
     await db.delete();
   }

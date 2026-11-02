@@ -797,7 +797,36 @@ export default function App() {
       } else if (createKind === 'contribution') {
         const amount = Number(value('amount'));
         if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a contribution greater than zero.');
-        await StorageService.savings.addContribution({ goalId: value('goalId'), amount, date: value('date'), notes: value('notes') || undefined });
+
+        const contribution = {
+          goalId: value('goalId'),
+          amount,
+          date: value('date'),
+          notes: value('notes') || undefined
+        };
+
+        let linkedExpense: Omit<Transaction, 'id' | 'createdAt'> | undefined;
+        if (value('linkTransfer') === 'yes') {
+          const goal = savingsGoals.find(item => item.id === value('goalId'));
+          if (!goal) throw new Error('Choose an available savings goal.');
+
+          const transferCategory = value('transferCategory');
+          if (!transferCategory || !categories.some(category => category.name === transferCategory && category.type === 'expense')) {
+            throw new Error('Choose an available expense category for the savings transfer.');
+          }
+
+          linkedExpense = {
+            type: 'expense',
+            amount,
+            category: transferCategory,
+            description: `Savings contribution: ${goal.title}`,
+            date: value('date'),
+            paymentMethod: 'Savings transfer',
+            notes: value('notes') || `Linked savings contribution to ${goal.title}`
+          };
+        }
+
+        await StorageService.savings.addContribution(contribution, linkedExpense);
       } else if (createKind === 'milestone') {
         await StorageService.goals.addMilestone({ goalId: value('goalId'), title: value('title'), targetDate: value('date') || undefined, completed: false });
       } else if (createKind === 'goal-progress') {
@@ -1379,7 +1408,19 @@ export default function App() {
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-slate-400">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900 py-8 text-center text-sm text-slate-400">No savings goals yet.</div> : savingsGoals.map(goal => {
                 const pct = goal.targetAmount > 0 ? Math.min(100, Math.round(goal.currentAmount / goal.targetAmount * 100)) : 0;
-                return <div key={goal.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-slate-400">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold text-indigo-400">{pct}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => { setCreateDraft({ goalId: goal.id, date: new Date().toISOString().slice(0, 10), amount: '', notes: '' }); setCreateKind('contribution'); }} className="text-xs font-semibold text-indigo-400">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-slate-400">Delete</button></div></div>;
+                return <div key={goal.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-slate-400">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold text-indigo-400">{pct}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => {
+                  const expenseCategories = categories.filter(category => category.type === 'expense');
+                  const preferredCategory = expenseCategories.find(category => category.name === 'Investments') || expenseCategories[0];
+                  setCreateDraft({
+                    goalId: goal.id,
+                    date: new Date().toISOString().slice(0, 10),
+                    amount: '',
+                    notes: '',
+                    linkTransfer: 'yes',
+                    transferCategory: preferredCategory?.name || ''
+                  });
+                  setCreateKind('contribution');
+                }} className="text-xs font-semibold text-indigo-400">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-slate-400">Delete</button></div></div>;
               })}
             </div>}
 
@@ -1741,6 +1782,33 @@ export default function App() {
               <label className="mb-3 block text-xs text-slate-300">Savings goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{savingsGoals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>
               <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={createDraft.linkTransfer !== 'no'}
+                  onChange={e => setCreateDraft({ ...createDraft, linkTransfer: e.target.checked ? 'yes' : 'no' })}
+                />
+                Record this contribution as an expense in monthly cash flow
+              </label>
+              {createDraft.linkTransfer !== 'no' && <>
+                <label className="mb-2 block text-xs text-slate-300">
+                  Expense category
+                  <select
+                    required
+                    value={createDraft.transferCategory || ''}
+                    onChange={e => setCreateDraft({ ...createDraft, transferCategory: e.target.value })}
+                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"
+                  >
+                    <option value="">Select expense category</option>
+                    {categories.filter(category => category.type === 'expense').map(category => (
+                      <option key={category.id} value={category.name}>{category.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <p className="mb-3 text-[11px] text-slate-400">
+                  When enabled, this transfer is recorded as an expense and reduces the remaining balance for the selected month. The savings goal is updated at the same time.
+                </p>
+              </>}
             </>}
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-slate-300">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-slate-300">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-slate-300">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></>}
