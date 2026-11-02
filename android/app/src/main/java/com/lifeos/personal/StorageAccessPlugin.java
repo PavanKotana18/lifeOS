@@ -160,7 +160,7 @@ public class StorageAccessPlugin extends Plugin {
 
                 // Resolve only after stream close succeeded
                 if (readCompleted) {
-                    String content = baos.toString(StandardCharsets.UTF_8.name());
+                    String content = new String(baos.toByteArray(), StandardCharsets.UTF_8);
                     JSObject ret = new JSObject();
                     ret.put("success", true);
                     ret.put("content", content);
