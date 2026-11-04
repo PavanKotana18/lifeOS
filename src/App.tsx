@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+
 import { StorageService, sessionManager } from './db';
 import { exportBackupFile } from './services/backupExportService';
 import { BiometricService } from './services/biometricService';
@@ -14,6 +14,8 @@ import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type Notificatio
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
+
+const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 
 type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -144,6 +146,7 @@ export default function App() {
     const state = backState.current;
     const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileNotificationsOpen) }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
+    if (action === 'exit-app') { void CapacitorApp.exitApp(); return; }
     if (action === 'dismiss-dialog') { requestCloseForm(); setModalContent(null); return; }
     if (action === 'dismiss-exit-dialog') { setShowExitConfirmation(false); return; }
     if (action === 'close-task-details') { setPlannerDetailTaskId(null); return; }
@@ -1429,14 +1432,17 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2.5">
                 {[['Income', financeAnalytics.totalIncome, 'text-emerald-400'], ['Expenses', financeAnalytics.totalExpenses, 'text-rose-400'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-rose-400' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'text-indigo-400']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><p className="text-xs text-slate-400">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
               </div>
-              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <div className="mb-3 flex items-center justify-between gap-2"><div><h4 className="text-sm font-semibold">Income & expenses</h4><p className="text-xs text-slate-400">Monthly totals</p></div><select aria-label="Analytics time range" value={financeAnalyticsRange} onChange={event => setFinanceAnalyticsRange(Number(event.target.value) as 3 | 6 | 12)} className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-2 text-xs"><option value={3}>3 months</option><option value={6}>6 months</option><option value={12}>12 months</option></select></div>
-                <div className="h-56 w-full">{financeAnalytics.periodRows.some(row => row.hasRecords) ? <ResponsiveContainer width="100%" height="100%"><BarChart data={financeAnalytics.periodRows} margin={{ top: 8, right: 4, left: -18, bottom: 2 }}><CartesianGrid vertical={false} stroke={theme === 'dark' ? '#263244' : '#dbe3ed'} /><XAxis dataKey="month" tick={{ fill: theme === 'dark' ? '#aebbd0' : '#475569', fontSize: 11 }} tickLine={false} axisLine={false} /><YAxis tickFormatter={value => Number(value).toLocaleString(userPrefs.locale === 'system' ? undefined : userPrefs.locale)} tick={{ fill: theme === 'dark' ? '#aebbd0' : '#475569', fontSize: 10 }} tickLine={false} axisLine={false} /><Tooltip contentStyle={{ background: theme === 'dark' ? '#111827' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#cbd5e1', borderRadius: 12 }} formatter={(value: number | null, name: string) => [value === null ? 'No records' : formatMoney(value), name]} labelFormatter={(_, rows) => rows?.[0]?.payload?.key || ''} /><Legend /><Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} /><Bar dataKey="expenses" name="Expenses" fill="#f97316" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center text-center text-sm text-slate-400">Add transactions to see monthly trends.</div>}</div>
-                <p className="mt-2 text-[11px] text-slate-500">Months without transactions are shown as missing data; a recorded month with zero income or expenses is a real zero.</p>
-              </section>
-              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="mb-2"><h4 className="text-sm font-semibold">Expense categories</h4><p className="text-xs text-slate-400">{financeMonth} · {formatMoney(financeAnalytics.totalExpenses)} total</p></div>
-                {financeAnalytics.categories.length === 0 ? <div className="py-7 text-center text-sm text-slate-400">No expense records for this month.</div> : <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><div className="h-52"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={financeAnalytics.categories} dataKey="amount" nameKey="name" innerRadius={50} outerRadius={78} paddingAngle={2}><Cell fill="#4f46e5" />{financeAnalytics.categories.slice(1).map((entry, index) => <Cell key={entry.name} fill={['#0f766e', '#d97706', '#0284c7', '#7c3aed', '#be123c', '#475569'][index % 6]} />)}</Pie><Tooltip contentStyle={{ background: theme === 'dark' ? '#111827' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#cbd5e1', borderRadius: 12 }} formatter={(value: number) => formatMoney(value)} /></PieChart></ResponsiveContainer></div><div className="space-y-2">{financeAnalytics.categories.map((entry, index) => <div key={entry.name} className="flex items-center justify-between gap-3 text-xs"><span className="flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: ['#4f46e5', '#0f766e', '#d97706', '#0284c7', '#7c3aed', '#be123c', '#475569'][index % 7] }} /><span className="truncate">{entry.name}</span></span><span className="shrink-0 text-right text-secondary">{formatMoney(entry.amount)} · {entry.percentage.toFixed(1)}%</span></div>)}</div></div>}
-              </section>
+              <Suspense fallback={<div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center text-sm text-slate-400">Loading financial charts…</div>}>
+                <FinanceCharts
+                  analytics={financeAnalytics}
+                  theme={theme}
+                  locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
+                  formatMoney={formatMoney}
+                  month={financeMonth}
+                  range={financeAnalyticsRange}
+                  onRangeChange={setFinanceAnalyticsRange}
+                />
+              </Suspense>
               <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-slate-400">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${pct >= 100 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-rose-400' : ''}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
               <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
             </div>}

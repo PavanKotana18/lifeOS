@@ -48,7 +48,41 @@ async function main() {
     ) {
       return sessionLoaded.exports;
     }
-    return originalModuleLoad.apply(this, arguments);
+    if (
+    parent &&
+    parent.filename &&
+    parent.filename.endsWith('/src/db.atomicity.cjs')
+  ) {
+    if (request === './services/encryptedStorageRuntime') {
+      return {
+        createLifeOSEncryptedRuntime: () => ({
+          repositories: {},
+          transactionCoordinator: {},
+          storage: {},
+          migrateExistingRecords: async () => ({ migrated: 0, skipped: 0 })
+        })
+      };
+    }
+
+    if (request === './services/cryptoService.ts') {
+      return {
+        CryptoService: {
+          getKeyState: async () => ({
+            keyProvisioned: false,
+            recoveryProvisioned: false,
+            recoveryNeedsRebind: false,
+            metadataConsistent: true,
+            keystoreAliasPresent: false,
+            unlocked: false
+          }),
+          isUnlocked: async () => false,
+          lock: async () => {}
+        }
+      };
+    }
+  }
+
+  return originalModuleLoad.apply(this, arguments);
   };
 
   try {
@@ -492,6 +526,93 @@ async function main() {
       ]);
       check(milestones[0].id !== milestones[1].id, 'Rapid milestone creation generates distinct IDs');
 
+      // F12: Goal closure requires 100% numeric progress and all milestones.
+      const closureGoal = await StorageService.goals.add({
+        title: 'F12 all milestones', category: 'Education',
+        targetValue: 10, currentValue: 10,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'In Progress'
+      });
+      const closureMilestones = await Promise.all([
+        StorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step A', completed: false }),
+        StorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step B', completed: false })
+      ]);
+      await StorageService.goals.toggleMilestone(closureMilestones[0].id, true);
+      check(
+        (await db.goals.get(closureGoal.id)).status === 'In Progress',
+        'F12: one incomplete milestone prevents goal closure'
+      );
+      await StorageService.goals.toggleMilestone(closureMilestones[1].id, true);
+      check(
+        (await db.goals.get(closureGoal.id)).status === 'Completed',
+        'F12 RUNTIME: final milestone closes a fully funded goal'
+      );
+
+      const numericGoal = await StorageService.goals.add({
+        title: 'F12 numeric threshold', category: 'Education',
+        targetValue: 10, currentValue: 9,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'In Progress'
+      });
+      const numericMilestone = await StorageService.goals.addMilestone({
+        goalId: numericGoal.id, title: 'Complete step', completed: false
+      });
+      await StorageService.goals.toggleMilestone(numericMilestone.id, true);
+      check(
+        (await db.goals.get(numericGoal.id)).status === 'In Progress',
+        'F12: completed milestones cannot compensate for numeric progress below 100%'
+      );
+      await StorageService.goals.update(numericGoal.id, { currentValue: 10 });
+      check(
+        (await db.goals.get(numericGoal.id)).status === 'Completed',
+        'F12: reaching the numeric target closes a goal with all milestones complete'
+      );
+
+      const pausedGoal = await StorageService.goals.add({
+        title: 'F12 paused goal', category: 'Education',
+        targetValue: 10, currentValue: 10,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'Paused'
+      });
+      const pausedMilestone = await StorageService.goals.addMilestone({
+        goalId: pausedGoal.id, title: 'Paused step', completed: false
+      });
+      await StorageService.goals.toggleMilestone(pausedMilestone.id, true);
+      await StorageService.goals.update(pausedGoal.id, { currentValue: 10 });
+      check(
+        (await db.goals.get(pausedGoal.id)).status === 'Paused',
+        'F12: progress and milestone updates preserve Paused status'
+      );
+
+      const reopenGoal = await StorageService.goals.add({
+        title: 'F12 reopen goal', category: 'Education',
+        targetValue: 10, currentValue: 10,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'In Progress'
+      });
+      const reopenMilestone = await StorageService.goals.addMilestone({
+        goalId: reopenGoal.id, title: 'Reopen step', completed: true
+      });
+      await StorageService.goals.update(reopenGoal.id, { currentValue: 10 });
+      await StorageService.goals.toggleMilestone(reopenMilestone.id, false);
+      check(
+        (await db.goals.get(reopenGoal.id)).status === 'In Progress',
+        'F12: reopening a milestone reopens a completed goal'
+      );
+
+      const zeroTargetGoal = await StorageService.goals.add({
+        title: 'F12 zero target', category: 'Education',
+        targetValue: 0, currentValue: 0,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'In Progress'
+      });
+      await StorageService.goals.update(zeroTargetGoal.id, { currentValue: 0 });
+      check(
+        (await db.goals.get(zeroTargetGoal.id)).status === 'In Progress',
+        'F12: zero target cannot qualify a goal for 100% closure'
+      );
+
+
       const budgets = await Promise.all([
         StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 100 }),
         StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 200 })
@@ -663,7 +784,7 @@ async function main() {
       'Category can be deleted after its budget and transaction references are removed'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/36 PASSED`);
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/43 PASSED`);
   } finally {
     await db.delete();
   }

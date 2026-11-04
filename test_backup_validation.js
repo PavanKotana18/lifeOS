@@ -41,13 +41,40 @@ sessionLoaded._compile(sessionCompiled, sessionLoaded.filename);
 
 const originalModuleLoad = Module._load;
 Module._load = function (request, parent, isMain) {
-  if (
-    request === './services/sessionManager' &&
-    parent &&
-    parent.filename === loaded.filename
-  ) {
-    return sessionLoaded.exports;
+  if (parent && parent.filename === loaded.filename) {
+    if (request === './services/sessionManager') {
+      return sessionLoaded.exports;
+    }
+
+    if (request === './services/encryptedStorageRuntime') {
+      return {
+        createLifeOSEncryptedRuntime: () => ({
+          repositories: {},
+          transactionCoordinator: {},
+          storage: {},
+          migrateExistingRecords: async () => ({ migrated: 0, skipped: 0 })
+        })
+      };
+    }
+
+    if (request === './services/cryptoService.ts') {
+      return {
+        CryptoService: {
+          getKeyState: async () => ({
+            keyProvisioned: false,
+            recoveryProvisioned: false,
+            recoveryNeedsRebind: false,
+            metadataConsistent: true,
+            keystoreAliasPresent: false,
+            unlocked: false
+          }),
+          isUnlocked: async () => false,
+          lock: async () => {}
+        }
+      };
+    }
   }
+
   return originalModuleLoad.apply(this, arguments);
 };
 

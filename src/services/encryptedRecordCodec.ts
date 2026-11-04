@@ -1,4 +1,4 @@
-import type { EncryptedRecord } from './cryptoService';
+import type { EncryptedRecord } from './cryptoService.ts';
 
 export const ENCRYPTED_RECORD_SCHEMA_VERSION = 1;
 

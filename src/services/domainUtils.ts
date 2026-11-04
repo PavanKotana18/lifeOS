@@ -6,7 +6,8 @@ export const resolveAppearance = (preference: AppearancePreference, systemDark: 
 export const shouldShowOnboarding = (completed: boolean, hasLegacyData: boolean, started = false) => started ? !completed : !completed && !hasLegacyData;
 export const shouldAnimateNavigation = (prefersReducedMotion: boolean) => !prefersReducedMotion;
 export function resolveBackAction(state: { appReady: boolean; onboarding: boolean; locked: boolean; dialogOpen: boolean; exitDialogOpen: boolean; taskDetailsOpen: boolean; tab: string; childViewOpen: boolean }, hasPreviousTab: boolean) {
-  if (!state.appReady || state.onboarding || state.locked) return 'ignore';
+  if (!state.appReady || state.onboarding) return 'ignore';
+  if (state.locked) return 'exit-app';
   if (state.dialogOpen) return 'dismiss-dialog';
   if (state.exitDialogOpen) return 'dismiss-exit-dialog';
   if (state.taskDetailsOpen) return 'close-task-details';

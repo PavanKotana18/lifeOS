@@ -1,5 +1,11 @@
 import Dexie, { Table } from 'dexie';
 import { createSessionManager } from './services/sessionManager';
+import { createLifeOSEncryptedRuntime } from './services/encryptedStorageRuntime';
+import type {
+  LifeOSRawDatabase,
+  LifeOSDatabaseWithTransactions,
+} from './services/encryptedStorageIntegration';
+import { CryptoService } from './services/cryptoService.ts';
 import {
   Transaction,
   Category,
@@ -45,7 +51,9 @@ export class LifeOSDatabase extends Dexie {
 }
 
 
-const db = new LifeOSDatabase();
+// Shared database instance for the existing storage layer and encrypted integration.
+export const lifeOSDatabase = new LifeOSDatabase();
+const db = lifeOSDatabase;
 
 let recordIdSequence = 0;
 
@@ -128,7 +136,7 @@ export function getNextRecurringTaskDate(
   ].join('-');
 }
 
-function validateTransactionRecord(
+export function validateTransactionRecord(
   record: Partial<Transaction>,
   requireComplete: boolean
 ): void {
@@ -803,9 +811,28 @@ const rawStorageService: IDataStorage = {
       const safeUpdates = { ...updates };
       delete safeUpdates.id;
       delete safeUpdates.createdAt;
-      await db.goals.update(id, {
-        ...safeUpdates,
-        updatedAt: new Date().toISOString()
+
+      await db.transaction('rw', db.goals, db.milestones, async () => {
+        const current = await db.goals.get(id);
+        if (!current) return;
+
+        const next = {
+          ...current,
+          ...safeUpdates,
+          updatedAt: new Date().toISOString()
+        };
+        const milestones = await db.milestones.where('goalId').equals(id).toArray();
+        const eligible =
+          Number(next.targetValue) > 0 &&
+          Number(next.currentValue) >= Number(next.targetValue) &&
+          milestones.every(item => item.completed);
+
+        if (next.status !== 'Paused') {
+          next.status = eligible ? 'Completed' :
+            (next.status === 'Completed' ? 'In Progress' : next.status);
+        }
+
+        await db.goals.put(next);
       });
     },
     async delete(id) {
@@ -824,9 +851,37 @@ const rawStorageService: IDataStorage = {
       return record;
     },
     async toggleMilestone(id, completed) {
-      await db.milestones.update(id, {
-        completed,
-        completedAt: completed ? new Date().toISOString() : undefined
+      await db.transaction('rw', db.milestones, db.goals, async () => {
+        const milestone = await db.milestones.get(id);
+        if (!milestone) return;
+
+        await db.milestones.update(id, {
+          completed,
+          completedAt: completed ? new Date().toISOString() : undefined
+        });
+
+        const goal = await db.goals.get(milestone.goalId);
+        if (!goal) return;
+
+        const milestones = await db.milestones
+          .where('goalId').equals(milestone.goalId).toArray();
+
+        const eligible =
+          Number(goal.targetValue) > 0 &&
+          Number(goal.currentValue) >= Number(goal.targetValue) &&
+          milestones.every(item => item.completed);
+
+        if (goal.status !== 'Paused') {
+          const nextStatus = eligible ? 'Completed' :
+            (goal.status === 'Completed' ? 'In Progress' : goal.status);
+
+          if (nextStatus !== goal.status) {
+            await db.goals.update(goal.id, {
+              status: nextStatus,
+              updatedAt: new Date().toISOString()
+            });
+          }
+        }
       });
     },
     async deleteMilestone(id) {
@@ -1106,6 +1161,24 @@ const rawStorageService: IDataStorage = {
   }
 };
 
+/**
+ * Separately constructed encrypted runtime.
+ *
+ * Construction does not provision keys, unlock encryption, migrate records,
+ * or replace the active StorageService.
+ */
+export const encryptedStorageRuntime = createLifeOSEncryptedRuntime(
+  db as unknown as LifeOSRawDatabase & LifeOSDatabaseWithTransactions,
+  {
+    createRecordId,
+    validateTransactionRecord,
+    validateBackupTables,
+    getNextRecurringTaskDate: (task, fromDate) =>
+      getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate),
+    getRecurrenceRootId,
+  }
+);
+
 
 /**
  * Application-level authorization guard.
@@ -1117,6 +1190,89 @@ const rawStorageService: IDataStorage = {
  * possible to code executing inside a compromised WebView.
  */
 export const sessionManager = createSessionManager();
+
+/**
+ * Active storage target. Raw storage remains active until explicit,
+ * successful encrypted migration.
+ */
+let activeStorageTarget: IDataStorage = rawStorageService;
+let encryptedStorageActivated = false;
+
+/**
+ * Migrate existing records and activate encrypted storage.
+ *
+ * The native key must already be unlocked and the caller must have completed
+ * recovery provisioning. This function never provisions a key or falls back
+ * to raw storage after migration failure.
+ */
+export async function activateEncryptedStorage(): Promise<void> {
+  if (encryptedStorageActivated) return;
+
+  if (!sessionManager.isUnlocked()) {
+    throw new Error('LifeOS session must be authenticated before encrypted storage activation.');
+  }
+
+  // Native Android Keystore state is authoritative; never trust an in-memory
+  // activation flag or silently fall back to plaintext storage after restart.
+  const keyState = await CryptoService.getKeyState();
+
+  if (!keyState.metadataConsistent || keyState.recoveryNeedsRebind) {
+    throw new Error('Encryption metadata is inconsistent. Recover or rebind the encryption key before opening LifeOS data.');
+  }
+
+  if (!keyState.keyProvisioned || !keyState.keystoreAliasPresent) {
+    throw new Error('The LifeOS encryption key is not available in Android Keystore.');
+  }
+
+  if (!keyState.recoveryProvisioned) {
+    throw new Error('Recovery protection has not been confirmed. Complete recovery setup before activating encrypted storage.');
+  }
+
+  if (!keyState.unlocked || !(await CryptoService.isUnlocked())) {
+    throw new Error('The native encryption key is locked. Authenticate before activating encrypted storage.');
+  }
+
+  sessionManager.lock();
+  await sessionManager.waitForIdle();
+
+  try {
+    // Migration is idempotent and resumes partially migrated databases.
+    await encryptedStorageRuntime.migrateExistingRecords();
+
+    // Recheck the native key before switching the application storage target.
+    const verifiedState = await CryptoService.getKeyState();
+    if (
+      !verifiedState.metadataConsistent ||
+      !verifiedState.keyProvisioned ||
+      !verifiedState.recoveryProvisioned ||
+      !verifiedState.keystoreAliasPresent ||
+      !verifiedState.unlocked ||
+      !(await CryptoService.isUnlocked())
+    ) {
+      throw new Error('Native encryption state changed during migration. Storage activation was blocked.');
+    }
+
+    activeStorageTarget = encryptedStorageRuntime.storage as IDataStorage;
+    encryptedStorageActivated = true;
+    sessionManager.unlock();
+  } catch (error) {
+    // Fail closed. Do not leave the native key available after failed migration.
+    activeStorageTarget = rawStorageService;
+    encryptedStorageActivated = false;
+    sessionManager.lock();
+
+    try {
+      await CryptoService.lock();
+    } catch {
+      // Preserve the original migration/activation error.
+    }
+
+    throw error;
+  }
+}
+export function isEncryptedStorageActivated(): boolean {
+  return encryptedStorageActivated;
+}
 
 const BOOTSTRAP_SETTING_KEYS = new Set([
   'theme',
@@ -1138,13 +1294,32 @@ const READ_OPERATIONS: Record<string, Set<string>> = {
   backup: new Set(['hasData', 'exportData'])
 };
 
-function protectStorage<T extends object>(target: T, namespace = ''): T {
-  return new Proxy(target, {
-    get(object, property, receiver) {
-      const value = Reflect.get(object, property, receiver);
+function protectStorage<T extends object>(namespace = ''): T {
+  const resolveTarget = (): object => {
+    const segments = namespace ? namespace.split('.') : [];
+    let current: object = activeStorageTarget as object;
+
+    for (const segment of segments) {
+      const next = Reflect.get(current, segment, current);
+      if (!next || (typeof next !== 'object' && typeof next !== 'function')) {
+        throw new Error(`Storage namespace unavailable: ${namespace}`);
+      }
+      current = next as object;
+    }
+
+    return current;
+  };
+
+  return new Proxy({} as T, {
+    get(_proxyTarget, property) {
+      const object = resolveTarget();
+      const value = Reflect.get(object, property, object);
 
       if (value && typeof value === 'object') {
-        return protectStorage(value, String(property));
+        const childNamespace = namespace
+          ? `${namespace}.${String(property)}`
+          : String(property);
+        return protectStorage(childNamespace);
       }
 
       if (typeof value !== 'function') return value;
@@ -1161,14 +1336,29 @@ function protectStorage<T extends object>(target: T, namespace = ''): T {
           : sessionManager.beginOperation();
 
         try {
-          const result = await Reflect.apply(value, object, args);
+          // Resolve again at invocation time so calls use the active backend.
+          const currentObject = resolveTarget();
+          const currentMethod = Reflect.get(
+            currentObject,
+            property,
+            currentObject
+          );
+
+          if (typeof currentMethod !== 'function') {
+            throw new Error(`Storage operation unavailable: ${String(property)}`);
+          }
+
+          const result = await Reflect.apply(
+            currentMethod,
+            currentObject,
+            args
+          );
 
           const isRead =
             typeof property === 'string' &&
             READ_OPERATIONS[namespace]?.has(property) === true;
 
-          // Private reads cannot return stale data after the session locks.
-          // Admitted writes finish normally and are drained before lock completion.
+          // Prevent private reads from returning stale data after lock.
           if (token !== null && isRead) {
             sessionManager.assertCurrent(token);
           }
@@ -1182,4 +1372,4 @@ function protectStorage<T extends object>(target: T, namespace = ''): T {
   });
 }
 
-export const StorageService: IDataStorage = protectStorage(rawStorageService);
+export const StorageService: IDataStorage = protectStorage();

@@ -60,7 +60,41 @@ async function main() {
     ) {
       return sessionLoaded.exports;
     }
-    return originalModuleLoad.apply(this, arguments);
+    if (
+    parent &&
+    parent.filename &&
+    parent.filename.endsWith('/src/db.recurrence.cjs')
+  ) {
+    if (request === './services/encryptedStorageRuntime') {
+      return {
+        createLifeOSEncryptedRuntime: () => ({
+          repositories: {},
+          transactionCoordinator: {},
+          storage: {},
+          migrateExistingRecords: async () => ({ migrated: 0, skipped: 0 })
+        })
+      };
+    }
+
+    if (request === './services/cryptoService.ts') {
+      return {
+        CryptoService: {
+          getKeyState: async () => ({
+            keyProvisioned: false,
+            recoveryProvisioned: false,
+            recoveryNeedsRebind: false,
+            metadataConsistent: true,
+            keystoreAliasPresent: false,
+            unlocked: false
+          }),
+          isUnlocked: async () => false,
+          lock: async () => {}
+        }
+      };
+    }
+  }
+
+  return originalModuleLoad.apply(this, arguments);
   };
 
   try {
