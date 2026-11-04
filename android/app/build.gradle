@@ -21,7 +21,23 @@ if (lifeosVersionCode <= 0 || lifeosVersionCode > 2100000000) {
     throw new GradleException("Calculated Android versionCode is out of range: ${lifeosVersionCode}")
 }
 
+def lifeosReleaseSigningReady =
+    ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD',
+     'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'].every {
+        System.getenv(it)?.trim()
+    }
+
 android {
+    signingConfigs {
+        if (lifeosReleaseSigningReady) {
+            release {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
     namespace "com.lifeos.personal"
     compileSdkVersion rootProject.ext.compileSdkVersion
     defaultConfig {
@@ -37,6 +53,7 @@ android {
     }
     buildTypes {
         release {
+            if (lifeosReleaseSigningReady) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
