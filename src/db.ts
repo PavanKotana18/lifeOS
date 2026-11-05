@@ -1,5 +1,11 @@
 import Dexie, { Table } from 'dexie';
 import { createSessionManager } from './services/sessionManager';
+import { createLifeOSEncryptedRuntime } from './services/encryptedStorageRuntime';
+import type {
+  LifeOSRawDatabase,
+  LifeOSDatabaseWithTransactions,
+} from './services/encryptedStorageIntegration';
+import { CryptoService } from './services/cryptoService.ts';
 import {
   Transaction,
   Category,
@@ -45,7 +51,9 @@ export class LifeOSDatabase extends Dexie {
 }
 
 
-const db = new LifeOSDatabase();
+// Shared database instance for the existing storage layer and encrypted integration.
+export const lifeOSDatabase = new LifeOSDatabase();
+const db = lifeOSDatabase;
 
 let recordIdSequence = 0;
 
@@ -58,7 +66,77 @@ export function createRecordId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${(recordIdSequence++).toString(36)}_${randomPart}`;
 }
 
-function validateTransactionRecord(
+export function getRecurrenceRootId(
+  task: Pick<Task, 'id' | 'recurrenceRootId'>
+): string {
+  if (task.recurrenceRootId) return task.recurrenceRootId;
+
+  let rootId = task.id;
+  while (rootId.startsWith('rec_')) {
+    const match = /^rec_(.+)_\d{4}-\d{2}-\d{2}$/.exec(rootId);
+    if (!match) break;
+    rootId = match[1];
+  }
+  return rootId;
+}
+
+export function getNextRecurringTaskDate(
+  dueDate: string,
+  recurring: Task['recurring'],
+  todayLocalDate = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })()
+): string {
+  const parseDate = (value: string) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) throw new Error('Invalid recurring task due date');
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) throw new Error('Invalid recurring task due date');
+    return date;
+  };
+
+  const nextDate = parseDate(dueDate);
+  const today = parseDate(todayLocalDate);
+
+  const advance = () => {
+    if (recurring === 'Daily') {
+      nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+    } else if (recurring === 'Weekly') {
+      nextDate.setUTCDate(nextDate.getUTCDate() + 7);
+    } else if (recurring === 'Monthly') {
+      const originalDay = nextDate.getUTCDate();
+      nextDate.setUTCDate(1);
+      nextDate.setUTCMonth(nextDate.getUTCMonth() + 1);
+      const lastDay = new Date(Date.UTC(
+        nextDate.getUTCFullYear(),
+        nextDate.getUTCMonth() + 1,
+        0
+      )).getUTCDate();
+      nextDate.setUTCDate(Math.min(originalDay, lastDay));
+    } else {
+      throw new Error('Unsupported recurrence frequency');
+    }
+  };
+
+  advance();
+  while (nextDate.getTime() <= today.getTime()) advance();
+
+  return [
+    nextDate.getUTCFullYear(),
+    String(nextDate.getUTCMonth() + 1).padStart(2, '0'),
+    String(nextDate.getUTCDate()).padStart(2, '0')
+  ].join('-');
+}
+
+export function validateTransactionRecord(
   record: Partial<Transaction>,
   requireComplete: boolean
 ): void {
@@ -101,6 +179,40 @@ function validateTransactionRecord(
   }
 }
 
+async function assertTransactionCategory(
+  categoryName: string,
+  type: 'income' | 'expense',
+  existing?: Transaction
+): Promise<void> {
+  const normalized = categoryName.trim().toLowerCase();
+
+  if (!normalized) {
+    throw new Error('Choose a transaction category.');
+  }
+
+  const categories = await db.categories.toArray();
+  const matching = categories.find(
+    category => category.name.trim().toLowerCase() === normalized
+  );
+
+  if (matching) {
+    if (matching.name !== categoryName.trim()) {
+      throw new Error('Choose the exact category name from the category list.');
+    }
+    if (matching.type !== type) {
+      throw new Error('The selected category does not match the transaction type.');
+    }
+    return;
+  }
+
+  // Allow an unchanged historical category, but not a new reference to it.
+  if (existing && existing.category === categoryName && existing.type === type) {
+    return;
+  }
+
+  throw new Error('The selected category does not exist. Choose an available category.');
+}
+
 // Clean Database Abstraction Layer Interface
 export interface IDataStorage {
   transactions: {
@@ -128,7 +240,7 @@ export interface IDataStorage {
     addGoal(goal: Omit<SavingsGoal, 'id' | 'createdAt'>): Promise<SavingsGoal>;
     updateGoal(id: string, updates: Partial<SavingsGoal>): Promise<void>;
     deleteGoal(id: string): Promise<void>;
-    addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>): Promise<void>;
+    addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>, linkedExpense?: Omit<Transaction, 'id' | 'createdAt'>): Promise<void>;
     getContributions(goalId: string): Promise<SavingsContribution[]>;
   };
   habits: {
@@ -341,6 +453,8 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'reminderAt', 'tasks', i);
     optionalInstant(r, 'completedAt', 'tasks', i);
     optionalInstant(r, 'updatedAt', 'tasks', i);
+    optionalString(r, 'recurrenceRootId', 'tasks', i);
+    optionalString(r, 'spawnedTaskId', 'tasks', i);
   });
 
   check('settings', (r, i) => {
@@ -360,18 +474,23 @@ const rawStorageService: IDataStorage = {
       return db.transactions.get(id);
     },
     async add(tx) {
-      validateTransactionRecord(tx, true);
-      const id = createRecordId('tx');
-      const createdAt = new Date().toISOString();
-      const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
-      await db.transactions.add(record);
-      return record;
+      return db.transaction('rw', db.transactions, db.categories, async () => {
+        validateTransactionRecord(tx, true);
+        await assertTransactionCategory(tx.category, tx.type);
+        const id = createRecordId('tx');
+        const createdAt = new Date().toISOString();
+        const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
+        await db.transactions.add(record);
+        return record;
+      });
     },
     async update(id, updates) {
-      await db.transaction('rw', db.transactions, async () => {
+      await db.transaction('rw', db.transactions, db.categories, async () => {
         const existing = await db.transactions.get(id);
         if (!existing) return;
-        validateTransactionRecord({ ...existing, ...updates }, true);
+        const updated = { ...existing, ...updates };
+        validateTransactionRecord(updated, true);
+        await assertTransactionCategory(updated.category, updated.type, existing);
         const safeUpdates = { ...updates };
         delete safeUpdates.id;
         delete safeUpdates.createdAt;
@@ -446,12 +565,35 @@ const rawStorageService: IDataStorage = {
       return record;
     },
     async update(id, updates) {
-      const safeUpdates = { ...updates };
-      delete safeUpdates.id;
-      await db.categories.update(id, safeUpdates);
+      await db.transaction('rw', db.categories, db.transactions, async () => {
+        const existing = await db.categories.get(id);
+        if (!existing) return;
+
+        const safeUpdates = { ...updates };
+        delete safeUpdates.id;
+
+        const identityChanged =
+          (safeUpdates.name !== undefined && safeUpdates.name !== existing.name) ||
+          (safeUpdates.type !== undefined && safeUpdates.type !== existing.type);
+
+        if (identityChanged) {
+          const linkedTransactions = await db.transactions
+            .where('category')
+            .equals(existing.name)
+            .count();
+
+          if (linkedTransactions > 0) {
+            throw new Error(
+              'Category is used by existing transactions. Reassign those transactions before changing its name or type.'
+            );
+          }
+        }
+
+        await db.categories.update(id, safeUpdates);
+      });
     },
     async delete(id) {
-      await db.transaction('rw', db.categories, db.budgets, async () => {
+      await db.transaction('rw', db.categories, db.budgets, db.transactions, async () => {
         const category = await db.categories.get(id);
         if (!category) return;
 
@@ -463,6 +605,17 @@ const rawStorageService: IDataStorage = {
         if (linkedBudgets > 0) {
           throw new Error(
             'Category is linked to one or more budgets. Remove or reassign those budgets before deleting it.'
+          );
+        }
+
+        const linkedTransactions = await db.transactions
+          .where('category')
+          .equals(category.name)
+          .count();
+
+        if (linkedTransactions > 0) {
+          throw new Error(
+            'Category is used by existing transactions. Reassign or remove those transactions before deleting it.'
           );
         }
 
@@ -523,22 +676,53 @@ const rawStorageService: IDataStorage = {
         await db.savingsContributions.where('goalId').equals(id).delete();
       });
     },
-    async addContribution(contribution) {
+    async addContribution(contribution, linkedExpense) {
       if (!Number.isFinite(contribution.amount) || contribution.amount <= 0) {
         throw new Error('Savings contribution amount must be a positive finite number');
       }
-      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
-        const goal = await db.savingsGoals.get(contribution.goalId);
-        if (!goal) throw new Error('Savings goal not found');
 
-        const id = createRecordId('sc');
-        await db.savingsGoals.update(goal.id, {
-          currentAmount: (goal.currentAmount || 0) + contribution.amount
-        });
-        await db.savingsContributions.add({
-          ...contribution, id, createdAt: new Date().toISOString()
-        });
-      });
+      await db.transaction(
+        'rw',
+        db.savingsGoals,
+        db.savingsContributions,
+        db.transactions,
+        db.categories,
+        async () => {
+          const goal = await db.savingsGoals.get(contribution.goalId);
+          if (!goal) throw new Error('Savings goal not found');
+
+          if (linkedExpense) {
+            if (
+              linkedExpense.type !== 'expense' ||
+              linkedExpense.amount !== contribution.amount ||
+              linkedExpense.date !== contribution.date
+            ) {
+              throw new Error('Linked savings transfer must match the contribution amount and date');
+            }
+
+            validateTransactionRecord(linkedExpense, true);
+            await assertTransactionCategory(linkedExpense.category, 'expense');
+
+            const transactionId = createRecordId('tx');
+            const createdAt = new Date().toISOString();
+            const transactionRecord: Transaction = {
+              ...linkedExpense,
+              id: transactionId,
+              createdAt,
+              occurredAt: linkedExpense.occurredAt || createdAt
+            };
+            await db.transactions.add(transactionRecord);
+          }
+
+          const id = createRecordId('sc');
+          await db.savingsGoals.update(goal.id, {
+            currentAmount: (goal.currentAmount || 0) + contribution.amount
+          });
+          await db.savingsContributions.add({
+            ...contribution, id, createdAt: new Date().toISOString()
+          });
+        }
+      );
     },
     async getContributions(goalId) {
       return db.savingsContributions.where('goalId').equals(goalId).reverse().sortBy('date');
@@ -627,9 +811,28 @@ const rawStorageService: IDataStorage = {
       const safeUpdates = { ...updates };
       delete safeUpdates.id;
       delete safeUpdates.createdAt;
-      await db.goals.update(id, {
-        ...safeUpdates,
-        updatedAt: new Date().toISOString()
+
+      await db.transaction('rw', db.goals, db.milestones, async () => {
+        const current = await db.goals.get(id);
+        if (!current) return;
+
+        const next = {
+          ...current,
+          ...safeUpdates,
+          updatedAt: new Date().toISOString()
+        };
+        const milestones = await db.milestones.where('goalId').equals(id).toArray();
+        const eligible =
+          Number(next.targetValue) > 0 &&
+          Number(next.currentValue) >= Number(next.targetValue) &&
+          milestones.every(item => item.completed);
+
+        if (next.status !== 'Paused') {
+          next.status = eligible ? 'Completed' :
+            (next.status === 'Completed' ? 'In Progress' : next.status);
+        }
+
+        await db.goals.put(next);
       });
     },
     async delete(id) {
@@ -648,9 +851,37 @@ const rawStorageService: IDataStorage = {
       return record;
     },
     async toggleMilestone(id, completed) {
-      await db.milestones.update(id, {
-        completed,
-        completedAt: completed ? new Date().toISOString() : undefined
+      await db.transaction('rw', db.milestones, db.goals, async () => {
+        const milestone = await db.milestones.get(id);
+        if (!milestone) return;
+
+        await db.milestones.update(id, {
+          completed,
+          completedAt: completed ? new Date().toISOString() : undefined
+        });
+
+        const goal = await db.goals.get(milestone.goalId);
+        if (!goal) return;
+
+        const milestones = await db.milestones
+          .where('goalId').equals(milestone.goalId).toArray();
+
+        const eligible =
+          Number(goal.targetValue) > 0 &&
+          Number(goal.currentValue) >= Number(goal.targetValue) &&
+          milestones.every(item => item.completed);
+
+        if (goal.status !== 'Paused') {
+          const nextStatus = eligible ? 'Completed' :
+            (goal.status === 'Completed' ? 'In Progress' : goal.status);
+
+          if (nextStatus !== goal.status) {
+            await db.goals.update(goal.id, {
+              status: nextStatus,
+              updatedAt: new Date().toISOString()
+            });
+          }
+        }
       });
     },
     async deleteMilestone(id) {
@@ -686,72 +917,47 @@ const rawStorageService: IDataStorage = {
 
         if (!completed) {
           if (task.completed) {
+            if (task.spawnedTaskId) {
+              const spawnedTask = await db.tasks.get(task.spawnedTaskId);
+              if (spawnedTask && !spawnedTask.updatedAt) {
+                await db.tasks.delete(task.spawnedTaskId);
+              }
+            }
             await db.tasks.update(id, {
               completed: false,
               completedAt: undefined,
+              spawnedTaskId: undefined,
               updatedAt: new Date().toISOString()
             });
           }
           return;
         }
 
-        if (task.recurring && task.recurring !== 'None') {
-          const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(task.dueDate);
-          if (!match) throw new Error('Invalid recurring task due date');
+        if (task.recurring && task.recurring !== 'None' && !task.completed) {
+          const nextDueDate = getNextRecurringTaskDate(task.dueDate, task.recurring);
+          const rootId = getRecurrenceRootId(task);
+          const nextTaskId = `rec_${rootId}_${nextDueDate}`;
+          const existingOccurrence = await db.tasks.get(nextTaskId);
 
-          const year = Number(match[1]);
-          const month = Number(match[2]);
-          const day = Number(match[3]);
-          const nextDate = new Date(Date.UTC(year, month - 1, day));
-
-          if (
-            nextDate.getUTCFullYear() !== year ||
-            nextDate.getUTCMonth() !== month - 1 ||
-            nextDate.getUTCDate() !== day
-          ) {
-            throw new Error('Invalid recurring task due date');
-          }
-
-          if (task.recurring === 'Daily') {
-            nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-          } else if (task.recurring === 'Weekly') {
-            nextDate.setUTCDate(nextDate.getUTCDate() + 7);
-          } else if (task.recurring === 'Monthly') {
-            const originalDay = nextDate.getUTCDate();
-            nextDate.setUTCDate(1);
-            nextDate.setUTCMonth(nextDate.getUTCMonth() + 1);
-            const lastDay = new Date(Date.UTC(
-              nextDate.getUTCFullYear(),
-              nextDate.getUTCMonth() + 1,
-              0
-            )).getUTCDate();
-            nextDate.setUTCDate(Math.min(originalDay, lastDay));
-          } else {
-            throw new Error('Unsupported recurrence frequency');
-          }
-
-          const nextDueDate = [
-            nextDate.getUTCFullYear(),
-            String(nextDate.getUTCMonth() + 1).padStart(2, '0'),
-            String(nextDate.getUTCDate()).padStart(2, '0')
-          ].join('-');
-
-          const nextTaskId = `rec_${task.id}_${nextDueDate}`;
-          if (!(await db.tasks.get(nextTaskId))) {
+          if (!existingOccurrence) {
             await db.tasks.add({
               id: nextTaskId,
               title: task.title,
               description: task.description,
               dueDate: nextDueDate,
               dueTime: task.dueTime,
+              reminderAt: task.reminderAt,
               priority: task.priority,
               category: task.category,
               notes: task.notes,
               recurring: task.recurring,
+              recurrenceRootId: rootId,
               completed: false,
               createdAt: new Date().toISOString()
             });
           }
+
+          await db.tasks.update(id, { spawnedTaskId: nextTaskId });
         }
 
         if (!task.completed) {
@@ -907,7 +1113,7 @@ const rawStorageService: IDataStorage = {
       for (const tx of demoTxs) await rawStorageService.transactions.add(tx);
 
       await rawStorageService.budgets.upsert({ monthlyAmount: 60000, monthYear: curMonth });
-      await rawStorageService.budgets.upsert({ categoryId: 'Food', monthlyAmount: 12000, monthYear: curMonth });
+      await rawStorageService.budgets.upsert({ categoryId: 'cat_food', monthlyAmount: 12000, monthYear: curMonth });
 
       const goal = await rawStorageService.savings.addGoal({
         title: 'Emergency Reserve Fund',
@@ -955,6 +1161,24 @@ const rawStorageService: IDataStorage = {
   }
 };
 
+/**
+ * Separately constructed encrypted runtime.
+ *
+ * Construction does not provision keys, unlock encryption, migrate records,
+ * or replace the active StorageService.
+ */
+export const encryptedStorageRuntime = createLifeOSEncryptedRuntime(
+  db as unknown as LifeOSRawDatabase & LifeOSDatabaseWithTransactions,
+  {
+    createRecordId,
+    validateTransactionRecord,
+    validateBackupTables,
+    getNextRecurringTaskDate: (task, fromDate) =>
+      getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate),
+    getRecurrenceRootId,
+  }
+);
+
 
 /**
  * Application-level authorization guard.
@@ -966,6 +1190,89 @@ const rawStorageService: IDataStorage = {
  * possible to code executing inside a compromised WebView.
  */
 export const sessionManager = createSessionManager();
+
+/**
+ * Active storage target. Raw storage remains active until explicit,
+ * successful encrypted migration.
+ */
+let activeStorageTarget: IDataStorage = rawStorageService;
+let encryptedStorageActivated = false;
+
+/**
+ * Migrate existing records and activate encrypted storage.
+ *
+ * The native key must already be unlocked and the caller must have completed
+ * recovery provisioning. This function never provisions a key or falls back
+ * to raw storage after migration failure.
+ */
+export async function activateEncryptedStorage(): Promise<void> {
+  if (encryptedStorageActivated) return;
+
+  if (!sessionManager.isUnlocked()) {
+    throw new Error('LifeOS session must be authenticated before encrypted storage activation.');
+  }
+
+  // Native Android Keystore state is authoritative; never trust an in-memory
+  // activation flag or silently fall back to plaintext storage after restart.
+  const keyState = await CryptoService.getKeyState();
+
+  if (!keyState.metadataConsistent || keyState.recoveryNeedsRebind) {
+    throw new Error('Encryption metadata is inconsistent. Recover or rebind the encryption key before opening LifeOS data.');
+  }
+
+  if (!keyState.keyProvisioned || !keyState.keystoreAliasPresent) {
+    throw new Error('The LifeOS encryption key is not available in Android Keystore.');
+  }
+
+  if (!keyState.recoveryProvisioned) {
+    throw new Error('Recovery protection has not been confirmed. Complete recovery setup before activating encrypted storage.');
+  }
+
+  if (!keyState.unlocked || !(await CryptoService.isUnlocked())) {
+    throw new Error('The native encryption key is locked. Authenticate before activating encrypted storage.');
+  }
+
+  sessionManager.lock();
+  await sessionManager.waitForIdle();
+
+  try {
+    // Migration is idempotent and resumes partially migrated databases.
+    await encryptedStorageRuntime.migrateExistingRecords();
+
+    // Recheck the native key before switching the application storage target.
+    const verifiedState = await CryptoService.getKeyState();
+    if (
+      !verifiedState.metadataConsistent ||
+      !verifiedState.keyProvisioned ||
+      !verifiedState.recoveryProvisioned ||
+      !verifiedState.keystoreAliasPresent ||
+      !verifiedState.unlocked ||
+      !(await CryptoService.isUnlocked())
+    ) {
+      throw new Error('Native encryption state changed during migration. Storage activation was blocked.');
+    }
+
+    activeStorageTarget = encryptedStorageRuntime.storage as IDataStorage;
+    encryptedStorageActivated = true;
+    sessionManager.unlock();
+  } catch (error) {
+    // Fail closed. Do not leave the native key available after failed migration.
+    activeStorageTarget = rawStorageService;
+    encryptedStorageActivated = false;
+    sessionManager.lock();
+
+    try {
+      await CryptoService.lock();
+    } catch {
+      // Preserve the original migration/activation error.
+    }
+
+    throw error;
+  }
+}
+export function isEncryptedStorageActivated(): boolean {
+  return encryptedStorageActivated;
+}
 
 const BOOTSTRAP_SETTING_KEYS = new Set([
   'theme',
@@ -987,13 +1294,32 @@ const READ_OPERATIONS: Record<string, Set<string>> = {
   backup: new Set(['hasData', 'exportData'])
 };
 
-function protectStorage<T extends object>(target: T, namespace = ''): T {
-  return new Proxy(target, {
-    get(object, property, receiver) {
-      const value = Reflect.get(object, property, receiver);
+function protectStorage<T extends object>(namespace = ''): T {
+  const resolveTarget = (): object => {
+    const segments = namespace ? namespace.split('.') : [];
+    let current: object = activeStorageTarget as object;
+
+    for (const segment of segments) {
+      const next = Reflect.get(current, segment, current);
+      if (!next || (typeof next !== 'object' && typeof next !== 'function')) {
+        throw new Error(`Storage namespace unavailable: ${namespace}`);
+      }
+      current = next as object;
+    }
+
+    return current;
+  };
+
+  return new Proxy({} as T, {
+    get(_proxyTarget, property) {
+      const object = resolveTarget();
+      const value = Reflect.get(object, property, object);
 
       if (value && typeof value === 'object') {
-        return protectStorage(value, String(property));
+        const childNamespace = namespace
+          ? `${namespace}.${String(property)}`
+          : String(property);
+        return protectStorage(childNamespace);
       }
 
       if (typeof value !== 'function') return value;
@@ -1010,14 +1336,29 @@ function protectStorage<T extends object>(target: T, namespace = ''): T {
           : sessionManager.beginOperation();
 
         try {
-          const result = await Reflect.apply(value, object, args);
+          // Resolve again at invocation time so calls use the active backend.
+          const currentObject = resolveTarget();
+          const currentMethod = Reflect.get(
+            currentObject,
+            property,
+            currentObject
+          );
+
+          if (typeof currentMethod !== 'function') {
+            throw new Error(`Storage operation unavailable: ${String(property)}`);
+          }
+
+          const result = await Reflect.apply(
+            currentMethod,
+            currentObject,
+            args
+          );
 
           const isRead =
             typeof property === 'string' &&
             READ_OPERATIONS[namespace]?.has(property) === true;
 
-          // Private reads cannot return stale data after the session locks.
-          // Admitted writes finish normally and are drained before lock completion.
+          // Prevent private reads from returning stale data after lock.
           if (token !== null && isRead) {
             sessionManager.assertCurrent(token);
           }
@@ -1031,4 +1372,4 @@ function protectStorage<T extends object>(target: T, namespace = ''): T {
   });
 }
 
-export const StorageService: IDataStorage = protectStorage(rawStorageService);
+export const StorageService: IDataStorage = protectStorage();

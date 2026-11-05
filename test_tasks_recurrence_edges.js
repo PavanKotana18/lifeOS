@@ -6,6 +6,18 @@ const ts = require('typescript');
 const assert = require('assert');
 
 async function main() {
+  const RealDate = Date;
+  const fixedNow = RealDate.parse('2024-01-01T12:00:00.000Z');
+  global.Date = class extends RealDate {
+    constructor(...args) {
+      if (args.length) super(...args);
+      else super(fixedNow);
+    }
+    static now() { return fixedNow; }
+    static parse(value) { return RealDate.parse(value); }
+    static UTC(...args) { return RealDate.UTC(...args); }
+  };
+
   const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
@@ -48,7 +60,41 @@ async function main() {
     ) {
       return sessionLoaded.exports;
     }
-    return originalModuleLoad.apply(this, arguments);
+    if (
+    parent &&
+    parent.filename &&
+    parent.filename.endsWith('/src/db.recurrence-edges.cjs')
+  ) {
+    if (request === './services/encryptedStorageRuntime') {
+      return {
+        createLifeOSEncryptedRuntime: () => ({
+          repositories: {},
+          transactionCoordinator: {},
+          storage: {},
+          migrateExistingRecords: async () => ({ migrated: 0, skipped: 0 })
+        })
+      };
+    }
+
+    if (request === './services/cryptoService.ts') {
+      return {
+        CryptoService: {
+          getKeyState: async () => ({
+            keyProvisioned: false,
+            recoveryProvisioned: false,
+            recoveryNeedsRebind: false,
+            metadataConsistent: true,
+            keystoreAliasPresent: false,
+            unlocked: false
+          }),
+          isUnlocked: async () => false,
+          lock: async () => {}
+        }
+      };
+    }
+  }
+
+  return originalModuleLoad.apply(this, arguments);
   };
 
   try {
@@ -150,7 +196,22 @@ async function main() {
       'Repeated completion after database reopen does not duplicate the occurrence'
     );
 
-    console.log(`RECURRENCE EDGE TESTS: ${passed}/8 PASSED`);
+    await add('undo-edited-source', '2027-07-01', 'Daily');
+    await StorageService.tasks.toggleCompleted('undo-edited-source', true);
+    const editedChildId = 'rec_undo-edited-source_2027-07-02';
+    await StorageService.tasks.update(editedChildId, {
+      title: 'Keep this edited occurrence'
+    });
+    await StorageService.tasks.toggleCompleted('undo-edited-source', false);
+    const retainedChild = await db.tasks.get(editedChildId);
+    check(
+      retainedChild?.title === 'Keep this edited occurrence' &&
+      Boolean(retainedChild?.updatedAt) &&
+      (await db.tasks.get('undo-edited-source'))?.completed === false,
+      'Undo preserves an edited generated child'
+    );
+
+    console.log(`RECURRENCE EDGE TESTS: ${passed}/9 PASSED`);
   } finally {
     db.close();
     await db.delete();

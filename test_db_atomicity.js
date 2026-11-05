@@ -48,7 +48,41 @@ async function main() {
     ) {
       return sessionLoaded.exports;
     }
-    return originalModuleLoad.apply(this, arguments);
+    if (
+    parent &&
+    parent.filename &&
+    parent.filename.endsWith('/src/db.atomicity.cjs')
+  ) {
+    if (request === './services/encryptedStorageRuntime') {
+      return {
+        createLifeOSEncryptedRuntime: () => ({
+          repositories: {},
+          transactionCoordinator: {},
+          storage: {},
+          migrateExistingRecords: async () => ({ migrated: 0, skipped: 0 })
+        })
+      };
+    }
+
+    if (request === './services/cryptoService.ts') {
+      return {
+        CryptoService: {
+          getKeyState: async () => ({
+            keyProvisioned: false,
+            recoveryProvisioned: false,
+            recoveryNeedsRebind: false,
+            metadataConsistent: true,
+            keystoreAliasPresent: false,
+            unlocked: false
+          }),
+          isUnlocked: async () => false,
+          lock: async () => {}
+        }
+      };
+    }
+  }
+
+  return originalModuleLoad.apply(this, arguments);
   };
 
   try {
@@ -109,6 +143,14 @@ async function main() {
     'Explicit session unlock restores authorized access'
   );
 
+  // Seed a valid category for the session lock-and-drain transaction fixture.
+  await StorageService.categories.getAll();
+  const sessionTestCategory = await StorageService.categories.add({
+    name: 'Session Drain Test',
+    type: 'expense',
+    color: '#123456'
+  });
+
   // Delay one admitted IndexedDB write to verify lock-and-drain behavior.
   const originalTransactionAdd = db.transactions.add;
   let releaseDelayedWrite;
@@ -129,7 +171,7 @@ async function main() {
     admittedWrite = StorageService.transactions.add({
       type: 'expense',
       amount: 123,
-      category: 'Test',
+      category: sessionTestCategory.name,
       description: 'Session drain integration test',
       date: '2026-11-01',
       paymentMethod: 'Cash'
@@ -174,6 +216,8 @@ async function main() {
     if (admittedWrite) await admittedWrite.catch(() => {});
     await sessionManager.waitForIdle();
     if (!sessionManager.isUnlocked()) sessionManager.unlock();
+    await StorageService.transactions.delete(savedDuringDrain?.id).catch(() => {});
+    await StorageService.categories.delete(sessionTestCategory.id);
   }
 
   const stamp = '2026-11-01T10:00:00.000Z';
@@ -221,7 +265,70 @@ async function main() {
       'Invalid amounts and missing goals create no financial records'
     );
 
-    // 3. Habit deletion must roll back if dependent-log deletion fails.
+    // 3. A linked savings transfer must create a cash-flow expense atomically.
+    await db.categories.add({
+      id: 'cat-savings-transfer-test',
+      name: 'Savings Transfer Test',
+      type: 'expense',
+      color: '#10b981'
+    });
+
+    await StorageService.savings.addContribution(
+      { goalId: 'sg-atomic', amount: 250, date: '2026-11-01', notes: 'Atomic linked transfer test' },
+      {
+        type: 'expense',
+        amount: 250,
+        category: 'Savings Transfer Test',
+        description: 'Savings contribution: Emergency fund',
+        date: '2026-11-01',
+        paymentMethod: 'Savings transfer',
+        notes: 'Atomic linked transfer test'
+      }
+    );
+
+    const linkedTransaction = (await db.transactions.toArray())
+      .find(tx => tx.description === 'Savings contribution: Emergency fund');
+
+    check(
+      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
+      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
+      Boolean(linkedTransaction) &&
+      linkedTransaction.type === 'expense' &&
+      linkedTransaction.amount === 250,
+      'Linked savings contribution updates the goal and creates a matching expense'
+    );
+
+    // A linked expense failure must roll back both savings records.
+    const linkedExpenseFailure = () => { throw new Error('Injected linked transaction failure'); };
+    db.transactions.hook('creating').subscribe(linkedExpenseFailure);
+
+    try {
+      await assert.rejects(StorageService.savings.addContribution(
+        { goalId: 'sg-atomic', amount: 300, date: '2026-11-01' },
+        {
+          type: 'expense',
+          amount: 300,
+          category: 'Savings Transfer Test',
+          description: 'Savings contribution: Emergency fund rollback',
+          date: '2026-11-01',
+          paymentMethod: 'Savings transfer'
+        }
+      ));
+    } finally {
+      db.transactions.hook('creating').unsubscribe(linkedExpenseFailure);
+    }
+
+    check(
+      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
+      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
+      !(await db.transactions.toArray()).some(tx => tx.description === 'Savings contribution: Emergency fund rollback'),
+      'Linked expense failure rolls back the contribution and goal balance'
+    );
+
+    await StorageService.transactions.delete(linkedTransaction.id);
+    await db.categories.delete('cat-savings-transfer-test');
+
+    // 4. Habit deletion must roll back if dependent-log deletion fails.
     await db.habits.add({
       id: 'habit-atomic', name: 'Read',
       frequency: 'daily', color: '#123456', createdAt: stamp
@@ -419,6 +526,93 @@ async function main() {
       ]);
       check(milestones[0].id !== milestones[1].id, 'Rapid milestone creation generates distinct IDs');
 
+      // F12: Goal closure requires 100% numeric progress and all milestones.
+      const closureGoal = await StorageService.goals.add({
+        title: 'F12 all milestones', category: 'Education',
+        targetValue: 10, currentValue: 10,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'In Progress'
+      });
+      const closureMilestones = await Promise.all([
+        StorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step A', completed: false }),
+        StorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step B', completed: false })
+      ]);
+      await StorageService.goals.toggleMilestone(closureMilestones[0].id, true);
+      check(
+        (await db.goals.get(closureGoal.id)).status === 'In Progress',
+        'F12: one incomplete milestone prevents goal closure'
+      );
+      await StorageService.goals.toggleMilestone(closureMilestones[1].id, true);
+      check(
+        (await db.goals.get(closureGoal.id)).status === 'Completed',
+        'F12 RUNTIME: final milestone closes a fully funded goal'
+      );
+
+      const numericGoal = await StorageService.goals.add({
+        title: 'F12 numeric threshold', category: 'Education',
+        targetValue: 10, currentValue: 9,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'In Progress'
+      });
+      const numericMilestone = await StorageService.goals.addMilestone({
+        goalId: numericGoal.id, title: 'Complete step', completed: false
+      });
+      await StorageService.goals.toggleMilestone(numericMilestone.id, true);
+      check(
+        (await db.goals.get(numericGoal.id)).status === 'In Progress',
+        'F12: completed milestones cannot compensate for numeric progress below 100%'
+      );
+      await StorageService.goals.update(numericGoal.id, { currentValue: 10 });
+      check(
+        (await db.goals.get(numericGoal.id)).status === 'Completed',
+        'F12: reaching the numeric target closes a goal with all milestones complete'
+      );
+
+      const pausedGoal = await StorageService.goals.add({
+        title: 'F12 paused goal', category: 'Education',
+        targetValue: 10, currentValue: 10,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'Paused'
+      });
+      const pausedMilestone = await StorageService.goals.addMilestone({
+        goalId: pausedGoal.id, title: 'Paused step', completed: false
+      });
+      await StorageService.goals.toggleMilestone(pausedMilestone.id, true);
+      await StorageService.goals.update(pausedGoal.id, { currentValue: 10 });
+      check(
+        (await db.goals.get(pausedGoal.id)).status === 'Paused',
+        'F12: progress and milestone updates preserve Paused status'
+      );
+
+      const reopenGoal = await StorageService.goals.add({
+        title: 'F12 reopen goal', category: 'Education',
+        targetValue: 10, currentValue: 10,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'In Progress'
+      });
+      const reopenMilestone = await StorageService.goals.addMilestone({
+        goalId: reopenGoal.id, title: 'Reopen step', completed: true
+      });
+      await StorageService.goals.update(reopenGoal.id, { currentValue: 10 });
+      await StorageService.goals.toggleMilestone(reopenMilestone.id, false);
+      check(
+        (await db.goals.get(reopenGoal.id)).status === 'In Progress',
+        'F12: reopening a milestone reopens a completed goal'
+      );
+
+      const zeroTargetGoal = await StorageService.goals.add({
+        title: 'F12 zero target', category: 'Education',
+        targetValue: 0, currentValue: 0,
+        startDate: '2026-11-01', targetDate: '2027-01-01',
+        priority: 'High', status: 'In Progress'
+      });
+      await StorageService.goals.update(zeroTargetGoal.id, { currentValue: 0 });
+      check(
+        (await db.goals.get(zeroTargetGoal.id)).status === 'In Progress',
+        'F12: zero target cannot qualify a goal for 100% closure'
+      );
+
+
       const budgets = await Promise.all([
         StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 100 }),
         StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 200 })
@@ -569,15 +763,28 @@ async function main() {
     );
 
     await db.budgets.where('categoryId').equals(protectedCategory.id).delete();
+
+    await assert.rejects(
+      StorageService.categories.delete(protectedCategory.id),
+      /used by existing transactions/i
+    );
+
+    check(
+      Boolean(await db.categories.get(protectedCategory.id)) &&
+      Boolean(await db.transactions.get(historicalTransaction.id)),
+      'Category deletion is blocked while a transaction references it'
+    );
+
+    await StorageService.transactions.delete(historicalTransaction.id);
     await StorageService.categories.delete(protectedCategory.id);
 
     check(
       !(await db.categories.get(protectedCategory.id)) &&
-      Boolean(await db.transactions.get(historicalTransaction.id)),
-      'Category can be deleted after budget removal without deleting historical transactions'
+      !(await db.transactions.get(historicalTransaction.id)),
+      'Category can be deleted after its budget and transaction references are removed'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/33 PASSED`);
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/43 PASSED`);
   } finally {
     await db.delete();
   }

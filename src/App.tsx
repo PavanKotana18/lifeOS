@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+
 import { StorageService, sessionManager } from './db';
 import { exportBackupFile } from './services/backupExportService';
 import { BiometricService } from './services/biometricService';
@@ -14,6 +14,8 @@ import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type Notificatio
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
+
+const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 
 type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -144,6 +146,7 @@ export default function App() {
     const state = backState.current;
     const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileNotificationsOpen) }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
+    if (action === 'exit-app') { void CapacitorApp.exitApp(); return; }
     if (action === 'dismiss-dialog') { requestCloseForm(); setModalContent(null); return; }
     if (action === 'dismiss-exit-dialog') { setShowExitConfirmation(false); return; }
     if (action === 'close-task-details') { setPlannerDetailTaskId(null); return; }
@@ -701,7 +704,7 @@ export default function App() {
     const now = new Date();
     const today = formatLocalDate(now);
     setCreateDraft({
-      title: '', amount: '', category: kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
+      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
       goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
@@ -786,7 +789,7 @@ export default function App() {
       } else if (createKind === 'budget') {
         const monthlyAmount = Number(value('amount'));
         if (!Number.isFinite(monthlyAmount) || monthlyAmount <= 0) throw new Error('Enter a budget greater than zero.');
-        await StorageService.budgets.upsert({ monthlyAmount, monthYear: value('month') });
+        await StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount, monthYear: value('month') });
       } else if (createKind === 'savings') {
         const targetAmount = Number(value('target'));
         const currentAmount = Number(value('current'));
@@ -797,7 +800,36 @@ export default function App() {
       } else if (createKind === 'contribution') {
         const amount = Number(value('amount'));
         if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a contribution greater than zero.');
-        await StorageService.savings.addContribution({ goalId: value('goalId'), amount, date: value('date'), notes: value('notes') || undefined });
+
+        const contribution = {
+          goalId: value('goalId'),
+          amount,
+          date: value('date'),
+          notes: value('notes') || undefined
+        };
+
+        let linkedExpense: Omit<Transaction, 'id' | 'createdAt'> | undefined;
+        if (value('linkTransfer') === 'yes') {
+          const goal = savingsGoals.find(item => item.id === value('goalId'));
+          if (!goal) throw new Error('Choose an available savings goal.');
+
+          const transferCategory = value('transferCategory');
+          if (!transferCategory || !categories.some(category => category.name === transferCategory && category.type === 'expense')) {
+            throw new Error('Choose an available expense category for the savings transfer.');
+          }
+
+          linkedExpense = {
+            type: 'expense',
+            amount,
+            category: transferCategory,
+            description: `Savings contribution: ${goal.title}`,
+            date: value('date'),
+            paymentMethod: 'Savings transfer',
+            notes: value('notes') || `Linked savings contribution to ${goal.title}`
+          };
+        }
+
+        await StorageService.savings.addContribution(contribution, linkedExpense);
       } else if (createKind === 'milestone') {
         await StorageService.goals.addMilestone({ goalId: value('goalId'), title: value('title'), targetDate: value('date') || undefined, completed: false });
       } else if (createKind === 'goal-progress') {
@@ -968,6 +1000,7 @@ export default function App() {
     const completedTasks = todayTasks.filter(t => t.completed).length;
     const taskWeight = todayTasks.length > 0 ? (completedTasks / todayTasks.length) * 50 : 50;
 
+    if (habits.length === 0 && todayTasks.length === 0) return null;
     return Math.min(100, Math.round(habitWeight + taskWeight));
   }, [habits, habitLogs, tasks, clockNow]);
 
@@ -1095,6 +1128,12 @@ export default function App() {
             <div><p className="text-sm font-medium text-slate-500">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
 
             {/* Productivity Score Card */}
+            {productivityScore === null ? (
+              <div className="dashboard-score p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                <h3 className="text-lg font-bold">Productivity Score</h3>
+                <p className="mt-1 text-xs text-slate-400">No tasks or habits scheduled today.</p>
+              </div>
+            ) : (
             <div className="dashboard-score p-4 rounded-2xl bg-slate-900 border border-slate-800">
               <div className="flex justify-between items-center">
                 <div>
@@ -1110,6 +1149,7 @@ export default function App() {
                 <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${productivityScore}%` }} />
               </div>
             </div>
+            )}
 
             {/* Active Goals Summary */}
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
@@ -1360,9 +1400,10 @@ export default function App() {
             {financeSubtab === 'budgets' && <div className="space-y-3">
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Monthly budgets</h3><p className="text-xs text-slate-400">Track spending against a monthly limit</p></div><button onClick={() => openCreateForm('budget')} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">+ Add budget</button></div>
               {budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900 py-8 text-center text-sm text-slate-400">No budget set for {financeMonth}.</div> : budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).map(b => {
-                const spent = b.categoryId ? (financeMetrics.categoryExpenses[b.categoryId] || 0) : financeMetrics.totalExpenses;
+                const budgetCategoryName = b.categoryId ? categories.find(category => category.id === b.categoryId)?.name : undefined;
+                const spent = b.categoryId ? (budgetCategoryName ? financeMetrics.categoryExpenses[budgetCategoryName] || 0 : 0) : financeMetrics.totalExpenses;
                 const pct = b.monthlyAmount > 0 ? Math.min(100, Math.round(spent / b.monthlyAmount * 100)) : 0;
-                return <div key={b.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between text-sm"><strong>{b.categoryId || 'Overall budget'}</strong><span>{formatMoney(spent)} / {formatMoney(b.monthlyAmount)}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${pct >= 100 ? 'bg-rose-500' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{pct}% used</span><span>{formatMoney(Math.max(0, b.monthlyAmount - spent))} remaining</span></div><button onClick={async () => { await StorageService.budgets.delete(b.id); await reloadAllData(); showToast('Budget deleted', 'info'); }} className="mt-2 text-xs text-slate-400">Delete</button></div>;
+                return <div key={b.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between text-sm"><strong>{b.categoryId ? (budgetCategoryName || 'Unavailable category') : 'Overall budget'}</strong><span>{formatMoney(spent)} / {formatMoney(b.monthlyAmount)}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${pct >= 100 ? 'bg-rose-500' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{pct}% used</span><span>{formatMoney(Math.max(0, b.monthlyAmount - spent))} remaining</span></div><button onClick={async () => { await StorageService.budgets.delete(b.id); await reloadAllData(); showToast('Budget deleted', 'info'); }} className="mt-2 text-xs text-slate-400">Delete</button></div>;
               })}
             </div>}
 
@@ -1370,7 +1411,19 @@ export default function App() {
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-slate-400">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900 py-8 text-center text-sm text-slate-400">No savings goals yet.</div> : savingsGoals.map(goal => {
                 const pct = goal.targetAmount > 0 ? Math.min(100, Math.round(goal.currentAmount / goal.targetAmount * 100)) : 0;
-                return <div key={goal.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-slate-400">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold text-indigo-400">{pct}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => { setCreateDraft({ goalId: goal.id, date: new Date().toISOString().slice(0, 10), amount: '', notes: '' }); setCreateKind('contribution'); }} className="text-xs font-semibold text-indigo-400">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-slate-400">Delete</button></div></div>;
+                return <div key={goal.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-slate-400">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold text-indigo-400">{pct}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => {
+                  const expenseCategories = categories.filter(category => category.type === 'expense');
+                  const preferredCategory = expenseCategories.find(category => category.name === 'Investments') || expenseCategories[0];
+                  setCreateDraft({
+                    goalId: goal.id,
+                    date: new Date().toISOString().slice(0, 10),
+                    amount: '',
+                    notes: '',
+                    linkTransfer: 'yes',
+                    transferCategory: preferredCategory?.name || ''
+                  });
+                  setCreateKind('contribution');
+                }} className="text-xs font-semibold text-indigo-400">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-slate-400">Delete</button></div></div>;
               })}
             </div>}
 
@@ -1379,14 +1432,17 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2.5">
                 {[['Income', financeAnalytics.totalIncome, 'text-emerald-400'], ['Expenses', financeAnalytics.totalExpenses, 'text-rose-400'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-rose-400' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'text-indigo-400']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><p className="text-xs text-slate-400">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
               </div>
-              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                <div className="mb-3 flex items-center justify-between gap-2"><div><h4 className="text-sm font-semibold">Income & expenses</h4><p className="text-xs text-slate-400">Monthly totals</p></div><select aria-label="Analytics time range" value={financeAnalyticsRange} onChange={event => setFinanceAnalyticsRange(Number(event.target.value) as 3 | 6 | 12)} className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-2 text-xs"><option value={3}>3 months</option><option value={6}>6 months</option><option value={12}>12 months</option></select></div>
-                <div className="h-56 w-full">{financeAnalytics.periodRows.some(row => row.hasRecords) ? <ResponsiveContainer width="100%" height="100%"><BarChart data={financeAnalytics.periodRows} margin={{ top: 8, right: 4, left: -18, bottom: 2 }}><CartesianGrid vertical={false} stroke={theme === 'dark' ? '#263244' : '#dbe3ed'} /><XAxis dataKey="month" tick={{ fill: theme === 'dark' ? '#aebbd0' : '#475569', fontSize: 11 }} tickLine={false} axisLine={false} /><YAxis tickFormatter={value => Number(value).toLocaleString(userPrefs.locale === 'system' ? undefined : userPrefs.locale)} tick={{ fill: theme === 'dark' ? '#aebbd0' : '#475569', fontSize: 10 }} tickLine={false} axisLine={false} /><Tooltip contentStyle={{ background: theme === 'dark' ? '#111827' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#cbd5e1', borderRadius: 12 }} formatter={(value: number | null, name: string) => [value === null ? 'No records' : formatMoney(value), name]} labelFormatter={(_, rows) => rows?.[0]?.payload?.key || ''} /><Legend /><Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} /><Bar dataKey="expenses" name="Expenses" fill="#f97316" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center text-center text-sm text-slate-400">Add transactions to see monthly trends.</div>}</div>
-                <p className="mt-2 text-[11px] text-slate-500">Months without transactions are shown as missing data; a recorded month with zero income or expenses is a real zero.</p>
-              </section>
-              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="mb-2"><h4 className="text-sm font-semibold">Expense categories</h4><p className="text-xs text-slate-400">{financeMonth} · {formatMoney(financeAnalytics.totalExpenses)} total</p></div>
-                {financeAnalytics.categories.length === 0 ? <div className="py-7 text-center text-sm text-slate-400">No expense records for this month.</div> : <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><div className="h-52"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={financeAnalytics.categories} dataKey="amount" nameKey="name" innerRadius={50} outerRadius={78} paddingAngle={2}><Cell fill="#4f46e5" />{financeAnalytics.categories.slice(1).map((entry, index) => <Cell key={entry.name} fill={['#0f766e', '#d97706', '#0284c7', '#7c3aed', '#be123c', '#475569'][index % 6]} />)}</Pie><Tooltip contentStyle={{ background: theme === 'dark' ? '#111827' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#cbd5e1', borderRadius: 12 }} formatter={(value: number) => formatMoney(value)} /></PieChart></ResponsiveContainer></div><div className="space-y-2">{financeAnalytics.categories.map((entry, index) => <div key={entry.name} className="flex items-center justify-between gap-3 text-xs"><span className="flex min-w-0 items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: ['#4f46e5', '#0f766e', '#d97706', '#0284c7', '#7c3aed', '#be123c', '#475569'][index % 7] }} /><span className="truncate">{entry.name}</span></span><span className="shrink-0 text-right text-secondary">{formatMoney(entry.amount)} · {entry.percentage.toFixed(1)}%</span></div>)}</div></div>}
-              </section>
+              <Suspense fallback={<div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center text-sm text-slate-400">Loading financial charts…</div>}>
+                <FinanceCharts
+                  analytics={financeAnalytics}
+                  theme={theme}
+                  locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
+                  formatMoney={formatMoney}
+                  month={financeMonth}
+                  range={financeAnalyticsRange}
+                  onRangeChange={setFinanceAnalyticsRange}
+                />
+              </Suspense>
               <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-slate-400">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${pct >= 100 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-rose-400' : ''}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
               <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
             </div>}
@@ -1684,9 +1740,21 @@ export default function App() {
               <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm text-white" />
             </label>}
             {createKind === 'transaction' && <>
-              <label className="mb-3 block text-xs text-slate-300">Type<select value={createDraft.type} onChange={e => setCreateDraft({ ...createDraft, type: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+              <label className="mb-3 block text-xs text-slate-300">Type<select value={createDraft.type} onChange={e => {
+                const type = e.target.value as 'income' | 'expense';
+                const category = categories.find(item => item.type === type)?.name || '';
+                setCreateDraft({ ...createDraft, type, category });
+              }} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
               <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Category<input required maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-slate-300">Category<select required value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">
+                <option value="">Select category</option>
+                {createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type) && (
+                  <option value={createDraft.category}>Legacy category: {createDraft.category}</option>
+                )}
+                {categories.filter(category => category.type === createDraft.type).map(category => (
+                  <option key={category.id} value={category.name}>{category.name}</option>
+                ))}
+              </select></label>
               <label className="mb-3 block text-xs text-slate-300">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
@@ -1708,6 +1776,7 @@ export default function App() {
               <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'budget' && <>
+              <label className="mb-3 block text-xs text-slate-300">Budget category (optional)<select value={createDraft.categoryId || ''} onChange={e => setCreateDraft({ ...createDraft, categoryId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="">Overall budget</option>{categories.filter(category => category.type === 'expense').map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
               <label className="mb-3 block text-xs text-slate-300">Monthly limit<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-4 block text-xs text-slate-300">Month<input required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
             </>}
@@ -1719,6 +1788,33 @@ export default function App() {
               <label className="mb-3 block text-xs text-slate-300">Savings goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{savingsGoals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>
               <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={createDraft.linkTransfer !== 'no'}
+                  onChange={e => setCreateDraft({ ...createDraft, linkTransfer: e.target.checked ? 'yes' : 'no' })}
+                />
+                Record this contribution as an expense in monthly cash flow
+              </label>
+              {createDraft.linkTransfer !== 'no' && <>
+                <label className="mb-2 block text-xs text-slate-300">
+                  Expense category
+                  <select
+                    required
+                    value={createDraft.transferCategory || ''}
+                    onChange={e => setCreateDraft({ ...createDraft, transferCategory: e.target.value })}
+                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"
+                  >
+                    <option value="">Select expense category</option>
+                    {categories.filter(category => category.type === 'expense').map(category => (
+                      <option key={category.id} value={category.name}>{category.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <p className="mb-3 text-[11px] text-slate-400">
+                  When enabled, this transfer is recorded as an expense and reduces the remaining balance for the selected month. The savings goal is updated at the same time.
+                </p>
+              </>}
             </>}
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-slate-300">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-slate-300">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-slate-300">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></>}

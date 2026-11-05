@@ -86,7 +86,7 @@ export const NotificationService = {
       const now = new Date();
       const notifications = tasks.flatMap(task => buildTaskNotificationPlan(task, preferences, now).map(plan => ({
         id: taskNotificationId(task, plan.kind), title: labels[plan.kind] || 'LifeOS reminder', body: task.title,
-        schedule: { at: plan.at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+        schedule: { at: plan.at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: plan.kind, taskId: task.id },
       })));
       if (notifications.length) await schedule(notifications);
@@ -120,7 +120,7 @@ export const NotificationService = {
     await schedule(entries.map(({ habit, hour, minute, weekday }) => ({
       id: notificationId(`habit:${habit.id}:${weekday}`),
       title: 'Habit reminder', body: `Time for: ${habit.name}`,
-      schedule: { on: { weekday, hour, minute }, allowWhileIdle: false },
+      schedule: { on: { weekday, hour, minute }, allowWhileIdle: true },
       channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
       extra: { kind: 'habitReminder', habitId: habit.id },
     })));
@@ -151,7 +151,7 @@ export const NotificationService = {
       return [{
         id: notificationId(`milestone:${milestone.id}`),
         title: 'Goal milestone', body: `${milestone.title}${goal ? ` · ${goal.title}` : ''}`,
-        schedule: { at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+        schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: 'milestoneReminder', milestoneId: milestone.id },
       }];
     });
@@ -198,7 +198,7 @@ export const NotificationService = {
       await this.ensureChannel();
       await cancelIds([testId]);
       const at = new Date(Date.now() + 10_000);
-      await schedule([{ id: testId, title: 'LifeOS test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent', extra: { kind: 'test' } }]);
+      await schedule([{ id: testId, title: 'LifeOS test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent', extra: { kind: 'test' } }]);
       writeLastError('');
       return at;
     } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS test notification failed:', error); throw error; }

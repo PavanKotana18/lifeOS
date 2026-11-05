@@ -41,13 +41,40 @@ sessionLoaded._compile(sessionCompiled, sessionLoaded.filename);
 
 const originalModuleLoad = Module._load;
 Module._load = function (request, parent, isMain) {
-  if (
-    request === './services/sessionManager' &&
-    parent &&
-    parent.filename === loaded.filename
-  ) {
-    return sessionLoaded.exports;
+  if (parent && parent.filename === loaded.filename) {
+    if (request === './services/sessionManager') {
+      return sessionLoaded.exports;
+    }
+
+    if (request === './services/encryptedStorageRuntime') {
+      return {
+        createLifeOSEncryptedRuntime: () => ({
+          repositories: {},
+          transactionCoordinator: {},
+          storage: {},
+          migrateExistingRecords: async () => ({ migrated: 0, skipped: 0 })
+        })
+      };
+    }
+
+    if (request === './services/cryptoService.ts') {
+      return {
+        CryptoService: {
+          getKeyState: async () => ({
+            keyProvisioned: false,
+            recoveryProvisioned: false,
+            recoveryNeedsRebind: false,
+            metadataConsistent: true,
+            keystoreAliasPresent: false,
+            unlocked: false
+          }),
+          isUnlocked: async () => false,
+          lock: async () => {}
+        }
+      };
+    }
   }
+
   return originalModuleLoad.apply(this, arguments);
 };
 
@@ -198,9 +225,44 @@ test('Rejects invalid task time', () => {
   rejects(d, /tasks.*dueTime/);
 });
 
+test('Accepts valid recurrence metadata in task backups', () => {
+  const d = sample();
+  d.tasks[0].recurrenceRootId = 'root-task';
+  d.tasks[0].spawnedTaskId = 'rec_root-task_2026-11-03';
+  assert.strictEqual(validate(d).length, 11);
+});
+
+test('Rejects non-string recurrence metadata in task backups', () => {
+  const d = sample();
+  d.tasks[0].recurrenceRootId = 123;
+  rejects(d, /tasks.*recurrenceRootId/);
+  const e = sample();
+  e.tasks[0].spawnedTaskId = false;
+  rejects(e, /tasks.*spawnedTaskId/);
+});
+
 test('Rejects duplicate settings keys', () => {
   const d = sample(); d.settings.push({ ...d.settings[0] });
   rejects(d, /duplicate key/);
 });
 
-console.log(`\nBackup validation tests: ${passed}/16 passed`);
+test('Accepts demo-style Food budget with the seeded cat_food reference', () => {
+  const d = sample();
+  d.categories.push({
+    id: 'cat_food',
+    name: 'Food',
+    type: 'expense',
+    color: '#f59e0b',
+    isDefault: true
+  });
+  d.budgets.push({
+    id: 'bud-demo-food',
+    categoryId: 'cat_food',
+    monthlyAmount: 12000,
+    monthYear: '2026-11',
+    createdAt: '2026-11-01T00:00:00.000Z'
+  });
+  assert.strictEqual(validate(d).length, 11);
+});
+
+console.log(`\nBackup validation tests: ${passed}/19 passed`);
