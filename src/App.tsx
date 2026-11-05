@@ -390,9 +390,12 @@ export default function App() {
           throw new Error(unlocked?.message || 'Cryptographic authentication failed. Private data remains locked.');
         }
       } else {
+        // An orphaned Android Keystore alias is reusable when no database
+        // wrapper or recovery metadata exists. Native setup reuses that alias;
+        // it never deletes or replaces it. Inconsistent metadata and pending
+        // recovery are rejected above.
         const pristine =
           !keyState.recoveryProvisioned &&
-          !keyState.keystoreAliasPresent &&
           !keyState.unlocked;
 
         if (!pristine) {
