@@ -23,6 +23,7 @@ let ensureChannelPromise: Promise<void> | null = null;
 export interface NotificationDiagnostics {
   supported: boolean;
   permission: string;
+  exactAlarm: string;
   channel: string;
   pendingCount: number;
   lastError: string;
@@ -70,6 +71,24 @@ export const NotificationService = {
     return result.display;
   },
 
+  async checkExactAlarmPermission() {
+    if (!isNative()) return 'unsupported';
+    const status = await LocalNotifications.checkExactNotificationSetting();
+    return status.exact_alarm;
+  },
+
+  async requestExactAlarmPermission() {
+    if (!isNative()) return 'unsupported';
+    const status = await LocalNotifications.changeExactNotificationSetting();
+    return status.exact_alarm;
+  },
+
+  async canScheduleNotifications() {
+    if (!isNative()) return false;
+    if (await this.checkPermission() !== 'granted') return false;
+    return await this.checkExactAlarmPermission() === 'granted';
+  },
+
   async syncTasks(tasks: Task[], preferences: NotificationPreferences) {
     if (!isNative()) return;
     try {
@@ -78,7 +97,7 @@ export const NotificationService = {
       const taskKinds = new Set(['taskReminders', 'upcomingDeadlines', 'overdueAlerts']);
       const oldTaskNotifications = pending.notifications.filter(item => taskKinds.has(String(item.extra?.kind || '')));
       await cancelIds(oldTaskNotifications.map(item => item.id));
-      if (await this.checkPermission() !== 'granted') return;
+      if (!(await this.canScheduleNotifications())) return;
 
       const labels: Record<string, string> = {
         taskReminders: 'Task reminder', upcomingDeadlines: 'Upcoming deadline', overdueAlerts: 'Task overdue',
@@ -116,7 +135,7 @@ export const NotificationService = {
       return days.map(weekday => ({ habit, hour, minute, weekday }));
     });
     await cancelIds(habits.flatMap(habit => [1, 2, 3, 4, 5, 6, 7].map(day => notificationId(`habit:${habit.id}:${day}`))));
-    if (!preferences.habitReminders || await this.checkPermission() !== 'granted') return;
+    if (!preferences.habitReminders || !(await this.canScheduleNotifications())) return;
     await schedule(entries.map(({ habit, hour, minute, weekday }) => ({
       id: notificationId(`habit:${habit.id}:${weekday}`),
       title: 'Habit reminder', body: `Time for: ${habit.name}`,
@@ -141,7 +160,7 @@ export const NotificationService = {
     const activeMilestones = milestones.filter(milestone => !milestone.completed && milestone.targetDate && !completedGoalIds.has(milestone.goalId));
     const ids = milestones.map(milestone => notificationId(`milestone:${milestone.id}`));
     await cancelIds(ids);
-    if (!preferences.milestoneReminders || await this.checkPermission() !== 'granted') return;
+    if (!preferences.milestoneReminders || !(await this.canScheduleNotifications())) return;
     const goalById = new Map(goals.map(goal => [goal.id, goal]));
     const now = new Date();
     const notifications = activeMilestones.flatMap(milestone => {
@@ -174,19 +193,23 @@ export const NotificationService = {
   },
 
   async getDiagnostics(): Promise<NotificationDiagnostics> {
-    if (!isNative()) return { supported: false, permission: 'unsupported', channel: 'unavailable', pendingCount: 0, lastError: readLastError() };
+    if (!isNative()) return { supported: false, permission: 'unsupported', exactAlarm: 'unsupported', channel: 'unavailable', pendingCount: 0, lastError: readLastError() };
     try {
-      const permission = await this.checkPermission();
-      const [channels, pending] = await Promise.all([LocalNotifications.listChannels(), LocalNotifications.getPending()]);
+      const [permission, exactAlarm, channels, pending] = await Promise.all([
+        this.checkPermission(),
+        this.checkExactAlarmPermission(),
+        LocalNotifications.listChannels(),
+        LocalNotifications.getPending()
+      ]);
       const channel = channels.channels.find(item => item.id === 'lifeos-reminders');
       return {
-        supported: true, permission,
+        supported: true, permission, exactAlarm,
         channel: channel ? Number(channel.importance) === 0 ? 'blocked (importance 0)' : `available (importance ${channel.importance ?? 'unknown'})` : 'not created',
         pendingCount: pending.notifications.length, lastError: readLastError(),
       };
     } catch (error) {
       writeLastError(errorMessage(error));
-      return { supported: true, permission: 'error', channel: 'unavailable', pendingCount: 0, lastError: errorMessage(error) };
+      return { supported: true, permission: 'error', exactAlarm: 'error', channel: 'unavailable', pendingCount: 0, lastError: errorMessage(error) };
     }
   },
 
@@ -194,6 +217,10 @@ export const NotificationService = {
     if (!isNative()) throw new Error('Local notifications are available only in the installed Android app.');
     const permission = await this.checkPermission();
     if (permission !== 'granted') throw new Error(`Android notification permission is ${permission}. Enable it in Android settings first.`);
+    const exactAlarm = await this.checkExactAlarmPermission();
+    if (exactAlarm !== 'granted') {
+      throw new Error(`Android exact-alarm access is ${exactAlarm}. Enable Alarms & reminders for LifeOS in Android settings.`);
+    }
     try {
       await this.ensureChannel();
       await cancelIds([testId]);

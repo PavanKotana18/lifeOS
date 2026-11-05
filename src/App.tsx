@@ -3,8 +3,11 @@ import packageInfo from '../package.json';
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
-import { StorageService, sessionManager } from './db';
+import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated } from './db';
+import { CryptoService, type PreparedRecovery } from './services/cryptoService.ts';
+import RecoverySetup from './components/RecoverySetup';
 import { exportBackupFile } from './services/backupExportService';
+import { encryptBackup, decryptBackup } from './services/backupCryptoService';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
 import { DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
@@ -66,12 +69,13 @@ export default function App() {
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', channel: 'unknown', pendingCount: 0, lastError: '' });
+  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', exactAlarm: 'checking', channel: 'unknown', pendingCount: 0, lastError: '' });
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [startupError, setStartupError] = useState('');
+  const [recoverySetup, setRecoverySetup] = useState<PreparedRecovery | null>(null);
   const [appReady, setAppReady] = useState(false);
 
   // Biometric Lock State
@@ -367,7 +371,62 @@ export default function App() {
       sessionManager.unlock();
     }
 
-    // Private preferences are read only after session authorization.
+    // Establish native, cryptographically authenticated storage before any
+    // private preference or record access. Never fall back to plaintext.
+    if (!isEncryptedStorageActivated()) {
+      const keyState = await CryptoService.getKeyState();
+
+      if (!keyState.metadataConsistent || keyState.recoveryNeedsRebind) {
+        throw new Error('LifeOS encryption metadata requires recovery. Private data remains locked.');
+      }
+
+      if (keyState.keyProvisioned) {
+        if (!keyState.keystoreAliasPresent) {
+          throw new Error('The LifeOS Android Keystore key is unavailable. Private data remains locked.');
+        }
+
+        const unlocked = await CryptoService.unlock();
+        if (!unlocked?.success || !(await CryptoService.isUnlocked())) {
+          throw new Error(unlocked?.message || 'Cryptographic authentication failed. Private data remains locked.');
+        }
+      } else {
+        const pristine =
+          !keyState.recoveryProvisioned &&
+          !keyState.keystoreAliasPresent &&
+          !keyState.unlocked;
+
+        if (!pristine) {
+          throw new Error('LifeOS encryption is partially provisioned. Automatic setup is blocked to protect existing data.');
+        }
+
+        const setup = await CryptoService.setup();
+        if (!setup?.success || !(await CryptoService.isUnlocked())) {
+          throw new Error(setup?.message || 'Android Keystore encryption setup failed.');
+        }
+      }
+
+      const verifiedState = await CryptoService.getKeyState();
+
+      if (!verifiedState.metadataConsistent || verifiedState.recoveryNeedsRebind) {
+        throw new Error('LifeOS encryption state changed during authentication. Storage activation was blocked.');
+      }
+
+      if (!verifiedState.recoveryProvisioned) {
+        const prepared = await CryptoService.prepareRecovery();
+        setRecoverySetup(prepared);
+        startupComplete.current = true;
+        setAppReady(true);
+        return;
+      }
+
+      await activateEncryptedStorage();
+    }
+
+    if (!isEncryptedStorageActivated() || !sessionManager.isUnlocked()) {
+      throw new Error('Encrypted LifeOS storage is not active. Private data remains locked.');
+    }
+
+    // Private preferences are read only after session and encrypted-storage authorization.
     const storedCurrency = await StorageService.settings.get<UserPreferences['currency']>('currency', 'INR');
     const savedUserPrefs = await StorageService.settings.get<Partial<UserPreferences>>('userPreferences', {});
     setUserPrefs(mergeUserPreferences(savedUserPrefs, storedCurrency));
@@ -540,6 +599,24 @@ export default function App() {
     return { success: true };
   };
 
+  const confirmRecoverySetup = async (enteredCode: string) => {
+    if (!recoverySetup) throw new Error('No pending recovery setup exists.');
+    if (enteredCode !== recoverySetup.recoveryCode) {
+      throw new Error('The recovery code does not match. Check the saved code and try again.');
+    }
+
+    await CryptoService.confirmRecovery();
+    await activateEncryptedStorage();
+
+    if (!isEncryptedStorageActivated() || !sessionManager.isUnlocked()) {
+      throw new Error('Encrypted storage activation could not be verified.');
+    }
+
+    setRecoverySetup(null);
+    setAppReady(false);
+    await initApp();
+  };
+
   const finishOnboarding = async () => {
     await StorageService.settings.set('onboardingCompleted', true);
     await StorageService.settings.set('onboardingStarted', false);
@@ -552,9 +629,13 @@ export default function App() {
     if (!file) return;
     try {
       const text = await file.text();
+      const passphrase = window.prompt('Enter the backup passphrase. LifeOS cannot recover it if lost.');
+      if (passphrase === null) return;
+      if (!passphrase.trim()) throw new Error('A backup passphrase is required.');
+      const plaintext = await decryptBackup(text, passphrase);
       const hasRecords = await StorageService.backup.hasData();
       if (hasRecords && !window.confirm('This backup will replace the existing LifeOS data on this device. Export a backup first if you need a copy. Continue?')) return;
-      await StorageService.backup.importData(text, { replaceExisting: true });
+      await StorageService.backup.importData(plaintext, { replaceExisting: true });
       const records = await reloadAllData();
       const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
       const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
@@ -1049,6 +1130,11 @@ export default function App() {
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
 
   if (!appReady) return <div className={`fixed inset-0 flex items-center justify-center px-6 ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-slate-300">{startupError}</p><button className="mt-5 min-h-11 rounded-xl bg-indigo-600 px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-400" />}</div>;
+
+  if (recoverySetup) return <RecoverySetup
+    recovery={recoverySetup}
+    onConfirm={confirmRecoverySetup}
+  />;
 
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
@@ -1645,15 +1731,22 @@ export default function App() {
             {/* Backup & Restore */}
             <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
               <h3 className="text-sm font-semibold">Backup & Restore</h3>
-              <p className="text-xs text-slate-400">Export or restore your full database as a validated JSON file.</p>
+              <p className="text-xs text-slate-400">Export or restore your full database as a passphrase-protected encrypted backup.</p>
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
                     try {
+                      const passphrase = window.prompt('Create a backup passphrase (minimum 12 characters). Keep it safe; LifeOS cannot recover it.');
+                      if (passphrase === null) return;
+                      if (passphrase.length < 12) throw new Error('Use a backup passphrase with at least 12 characters.');
+                      const confirmation = window.prompt('Re-enter the backup passphrase to confirm.');
+                      if (confirmation === null) return;
+                      if (passphrase !== confirmation) throw new Error('The passphrases do not match.');
                       const json = await StorageService.backup.exportData();
+                      const encrypted = await encryptBackup(json, passphrase);
                       const result = await exportBackupFile({
-                        contents: json,
-                        fileName: `lifeos-backup-${formatLocalDate(new Date())}.json`,
+                        contents: encrypted,
+                        fileName: `lifeos-encrypted-backup-${formatLocalDate(new Date())}.lifeosbackup.json`,
                         mimeType: 'application/json'
                       });
 
@@ -1673,7 +1766,7 @@ export default function App() {
                 >
                   Export JSON
                 </button>
-                <button onClick={() => document.getElementById('lifeos-backup-import')?.click()} className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white">Restore JSON</button>
+                <button onClick={() => document.getElementById('lifeos-backup-import')?.click()} className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white">Restore encrypted backup</button>
               </div>
               <input id="lifeos-backup-import" type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackupFile(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} />
               <button onClick={async () => {

@@ -273,36 +273,48 @@ function stableNotificationId(key) {
 
 // Financial Analytics Engine
 function calculateFinanceMetrics(transactions, budgets, currentMonthStr) {
-  // currentMonthStr: 'YYYY-MM'
+  // Accumulate monetary values as integer cents to avoid binary float drift.
+  const toCents = value => Math.round((Number(value) || 0) * 100);
+  const fromCents = cents => cents / 100;
   const monthlyTx = transactions.filter(t => t.date.startsWith(currentMonthStr));
-  
-  let totalIncome = 0;
-  let totalExpenses = 0;
-  const categoryExpenses = {};
+
+  let totalIncomeCents = 0;
+  let totalExpensesCents = 0;
+  const categoryExpenseCents = {};
 
   for (const tx of monthlyTx) {
-    const amt = Number(tx.amount) || 0;
+    const cents = toCents(tx.amount);
     if (tx.type === 'income') {
-      totalIncome += amt;
+      totalIncomeCents += cents;
     } else if (tx.type === 'expense') {
-      totalExpenses += amt;
-      categoryExpenses[tx.category] = (categoryExpenses[tx.category] || 0) + amt;
+      totalExpensesCents += cents;
+      categoryExpenseCents[tx.category] = (categoryExpenseCents[tx.category] || 0) + cents;
     }
   }
 
-  const remainingBalance = totalIncome - totalExpenses;
-  const savingsRate = totalIncome > 0 ? Math.max(0, ((totalIncome - totalExpenses) / totalIncome) * 100) : 0;
+  const totalIncome = fromCents(totalIncomeCents);
+  const totalExpenses = fromCents(totalExpensesCents);
+  const remainingBalance = fromCents(totalIncomeCents - totalExpensesCents);
+  const savingsRate = totalIncomeCents > 0
+    ? Math.max(0, ((totalIncomeCents - totalExpensesCents) / totalIncomeCents) * 100)
+    : 0;
 
-  // Budget calculations
-  let totalBudget = 0;
-  for (const b of budgets) {
-    if (!b.monthYear || b.monthYear === currentMonthStr) {
-      totalBudget += Number(b.monthlyAmount) || 0;
+  let totalBudgetCents = 0;
+  for (const budget of budgets) {
+    if (!budget.monthYear || budget.monthYear === currentMonthStr) {
+      totalBudgetCents += toCents(budget.monthlyAmount);
     }
   }
 
-  const budgetUtilisation = totalBudget > 0 ? (totalExpenses / totalBudget) * 100 : 0;
-  const remainingBudget = totalBudget - totalExpenses;
+  const totalBudget = fromCents(totalBudgetCents);
+  const remainingBudget = fromCents(totalBudgetCents - totalExpensesCents);
+  const budgetUtilisation = totalBudgetCents > 0
+    ? (totalExpensesCents / totalBudgetCents) * 100
+    : 0;
+
+  const categoryExpenses = Object.fromEntries(
+    Object.entries(categoryExpenseCents).map(([category, cents]) => [category, fromCents(cents)])
+  );
 
   return {
     totalIncome,

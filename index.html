@@ -6,17 +6,12 @@
     <meta name="theme-color" content="#090d16" />
     <meta name="color-scheme" content="light dark" />
     <title>LifeOS</title>
-    <script>
-      const savedAppearance = localStorage.getItem('lifeos-appearance');
-      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const initialDark = savedAppearance === 'dark' || (savedAppearance !== 'light' && systemDark);
-      document.documentElement.classList.toggle('dark', initialDark);
-      document.documentElement.style.colorScheme = initialDark ? 'dark' : 'light';
-      document.querySelector('meta[name="theme-color"]').setAttribute('content', initialDark ? '#090d16' : '#f8fafc');
-    </script>
+    <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self';" />
   </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="/src/appearance-init.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
