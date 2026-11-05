@@ -10,6 +10,8 @@ import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleEventObserver;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -22,6 +24,7 @@ import java.security.KeyStore;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.lang.Runnable;
 import java.util.function.Consumer;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -284,7 +287,49 @@ public class LifeOSCryptoPlugin extends Plugin {
                     .setNegativeButtonText("Cancel")
                     .build();
 
-            prompt.authenticate(info, new BiometricPrompt.CryptoObject(cipher));
+            // Android may invoke setup/unlock while the Activity is still
+            // transitioning from launch. CryptoObject authentication must
+            // only be started after the Activity reaches RESUMED.
+            Runnable launchPrompt = () -> {
+                try {
+                    if (activity.isFinishing() || activity.isDestroyed()) {
+                        runFailure(onFailure);
+                        call.reject("Authentication activity is no longer available");
+                        return;
+                    }
+                    prompt.authenticate(info, new BiometricPrompt.CryptoObject(cipher));
+                } catch (Exception e) {
+                    runFailure(onFailure);
+                    call.reject(
+                        "Biometric cryptographic authentication failed: " +
+                        e.getClass().getSimpleName()
+                    );
+                }
+            };
+
+            if (activity.getLifecycle().getCurrentState()
+                    .isAtLeast(Lifecycle.State.RESUMED)) {
+                executor.execute(launchPrompt);
+            } else {
+                AtomicBoolean completed = new AtomicBoolean(false);
+                final LifecycleEventObserver[] observer =
+                    new LifecycleEventObserver[1];
+
+                observer[0] = (source, event) -> {
+                    if (event == Lifecycle.Event.ON_RESUME &&
+                        completed.compareAndSet(false, true)) {
+                        source.getLifecycle().removeObserver(observer[0]);
+                        executor.execute(launchPrompt);
+                    } else if (event == Lifecycle.Event.ON_DESTROY &&
+                               completed.compareAndSet(false, true)) {
+                        source.getLifecycle().removeObserver(observer[0]);
+                        runFailure(onFailure);
+                        call.reject("Authentication activity was destroyed before authentication");
+                    }
+                };
+
+                activity.getLifecycle().addObserver(observer[0]);
+            }
 
         } catch (Exception e) {
             runFailure(onFailure);
