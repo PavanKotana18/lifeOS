@@ -84,6 +84,9 @@ export default function App() {
   const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
   const [biometricMessage, setBiometricMessage] = useState('');
   const biometricAuthInFlight = useRef<Promise<boolean> | null>(null);
+  const pendingBackgroundLock = useRef<number | null>(null);
+  const appIsActive = useRef(true);
+
   const biometricAuthenticated = useRef(false);
   const startupComplete = useRef(false);
   const authCoordinator = useRef(createAuthCoordinator(async () => {
@@ -206,21 +209,47 @@ export default function App() {
     void CapacitorApp.addListener('appStateChange', async state => {
       if (disposed) return;
       if (!state.isActive) {
-        // Close admission immediately, then wait for admitted database work.
-        sessionManager.lock();
-        await sessionManager.waitForIdle();
+        appIsActive.current = false;
 
-        const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-        if (disposed) return;
-        if (isBio) {
-          biometricAuthenticated.current = false;
-          authCoordinator.resetForBackground();
-          setIsLocked(true);
-          setBiometricVerified(false);
-          setBiometricMessage('');
+        // Close database admission immediately. A short transient Activity
+        // transition caused by BiometricPrompt must not invalidate auth.
+        sessionManager.lock();
+
+        if (pendingBackgroundLock.current !== null) {
+          window.clearTimeout(pendingBackgroundLock.current);
         }
+
+        pendingBackgroundLock.current = window.setTimeout(() => {
+          pendingBackgroundLock.current = null;
+          if (disposed || appIsActive.current) return;
+
+          void (async () => {
+            await sessionManager.waitForIdle();
+            if (disposed || appIsActive.current) return;
+
+            const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
+            if (disposed || appIsActive.current || !isBio) return;
+
+            // Genuine backgrounding: invalidate any authentication started
+            // before the app left the foreground.
+            sessionManager.lock();
+            biometricAuthenticated.current = false;
+            authCoordinator.resetForBackground();
+            setIsLocked(true);
+            setBiometricVerified(false);
+            setBiometricMessage('');
+          })().catch(error => console.error('LifeOS background lock failed.', error));
+        }, 900);
+
         return;
       }
+
+      appIsActive.current = true;
+      if (pendingBackgroundLock.current !== null) {
+        window.clearTimeout(pendingBackgroundLock.current);
+        pendingBackgroundLock.current = null;
+      }
+
       if (resumeInProgress) return;
       resumeInProgress = true;
       try {
@@ -259,6 +288,10 @@ export default function App() {
     return () => {
       disposed = true;
       window.clearInterval(timer);
+      if (pendingBackgroundLock.current !== null) {
+        window.clearTimeout(pendingBackgroundLock.current);
+        pendingBackgroundLock.current = null;
+      }
       if (appStateListener) void appStateListener.remove().catch(error => console.error('LifeOS app-state listener cleanup failed.', error));
     };
   }, []);
@@ -515,14 +548,34 @@ export default function App() {
     try {
       if (!NotificationService.isSupported()) return { granted: false, status: 'unsupported', message: 'Install the updated Android build to enable local notifications.' };
       let status = await NotificationService.checkPermission();
-      if (status === 'granted') return { granted: true, status };
-      if (notificationPermissionRequested) return { granted: false, status, message: 'Permission was previously declined. Open Android notification settings to allow it.' };
-      setNotificationPermissionRequested(true);
-      await StorageService.settings.set('notificationPermissionRequested', true);
-      status = await NotificationService.requestPermission();
-      return status === 'granted'
-        ? { granted: true, status }
-        : { granted: false, status, message: 'Android did not grant notification permission. You can continue and enable it later in Profile.' };
+      if (status !== 'granted') {
+        if (notificationPermissionRequested) {
+          return { granted: false, status, message: 'Notification permission was previously declined. Open Android notification settings to allow it.' };
+        }
+        setNotificationPermissionRequested(true);
+        await StorageService.settings.set('notificationPermissionRequested', true);
+        status = await NotificationService.requestPermission();
+        if (status !== 'granted') {
+          return { granted: false, status, message: 'Android notification permission was not granted. Enable it in Android settings.' };
+        }
+      }
+
+      // LifeOS schedules reminders with allowWhileIdle; Android exact-alarm
+      // access is a separate permission from notification display access.
+      let exactAlarm = await NotificationService.checkExactAlarmPermission();
+      if (exactAlarm !== 'granted') {
+        exactAlarm = await NotificationService.requestExactAlarmPermission();
+      }
+      if (exactAlarm !== 'granted') {
+        return {
+          granted: false,
+          status: 'exact-alarm-' + exactAlarm,
+          message: 'Allow Alarms & reminders for LifeOS in Android settings to schedule reminders.'
+        };
+      }
+      return { granted: true, status: 'granted' };
+
+
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Android notification permission could not be checked.';
       return { granted: false, status: 'error', message };
@@ -709,6 +762,38 @@ export default function App() {
     setMilestones(mls);
     setTasks(tks);
     return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
+  };
+
+  const handleTaskCompletion = async (task: Task) => {
+    const completed = !task.completed;
+    try {
+      await StorageService.tasks.toggleCompleted(task.id, completed);
+    } catch (error) {
+      console.error('LifeOS could not save task completion.', error);
+      showToast(error instanceof Error ? error.message : 'Could not update task completion.', 'danger');
+      return;
+    }
+
+    // Refresh task state immediately after the successful database write.
+    let records;
+    try {
+      records = await reloadAllData();
+    } catch (error) {
+      console.error('Task was saved but the task list could not refresh.', error);
+      showToast('Task was saved, but the screen could not refresh. Reopen the planner to verify.', 'danger');
+      return;
+    }
+
+    try {
+      if (completed) await NotificationService.cancelTask(task);
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+    } catch (error) {
+      console.error('Task was saved but its notifications could not refresh.', error);
+      showToast('Task was saved. Its notification schedule could not be refreshed.', 'danger');
+      return;
+    }
+
+    showToast(completed ? 'Task completed' : 'Task reopened', 'success');
   };
 
   const handleHabitCompletion = async (
@@ -1331,13 +1416,7 @@ export default function App() {
                         <input
                           type="checkbox"
                           checked={t.completed}
-                          onChange={async () => {
-                            await StorageService.tasks.toggleCompleted(t.id, !t.completed);
-                            if (!t.completed) await NotificationService.cancelTask(t);
-                            const records = await reloadAllData();
-                            await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
-                            showToast('Task updated', 'success');
-                          }}
+                          onChange={() => { void handleTaskCompletion(t); }}
                           className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
                         />
                         <div>
@@ -1626,7 +1705,7 @@ export default function App() {
               <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-slate-500">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="min-h-10 rounded-lg border border-slate-700 px-3 text-xs font-semibold text-indigo-400">Quick add</button></div>
               <input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm" />
               <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
-              {plannerDetailTask && <article className="rounded-2xl border border-indigo-500/30 bg-slate-900 p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-10 rounded-lg px-3 text-xs text-slate-400">Back to agenda</button></div><p className="mt-2 text-sm text-slate-400">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-rose-300' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-emerald-300' : 'text-indigo-300'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-slate-700 text-sm font-semibold text-indigo-400">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
+              {plannerDetailTask && <article className="rounded-2xl border border-indigo-500/30 bg-slate-900 p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-10 rounded-lg px-3 text-xs text-slate-400">Back to agenda</button></div><p className="mt-2 text-sm text-slate-400">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-rose-300' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-emerald-300' : 'text-indigo-300'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-slate-700 text-sm font-semibold text-indigo-400">Edit task</button><button onClick={() => { void handleTaskCompletion(plannerDetailTask); }} className="min-h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
             {visiblePlannerTasks.length === 0 ? (
               <div className="rounded-2xl border border-slate-800 bg-slate-900 px-5 py-9 text-center"><div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-slate-400"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-slate-500">Choose another day or add a task when you’re ready.</p></div>
             ) : (
@@ -1639,12 +1718,7 @@ export default function App() {
                         type="checkbox"
                         checked={t.completed}
                         onClick={event => event.stopPropagation()}
-                        onChange={async () => {
-                          await StorageService.tasks.toggleCompleted(t.id, !t.completed);
-                          if (!t.completed) await NotificationService.cancelTask(t);
-                          const records = await reloadAllData();
-                          await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
-                        }}
+                        onChange={() => { void handleTaskCompletion(t); }}
                         className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
                       />
                       <div>
