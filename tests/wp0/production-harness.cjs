@@ -240,6 +240,7 @@ async function fixture() {
   function appDeps() {
     const deps = { ...domain, ...preferences, ...db, ...notificationModule, ...state,
       ...load('src/services/csvExportService.ts'),
+      reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
       encryptedSession: load('src/services/cryptoSessionCoordinator.ts').createProtectedSessionController(
         load('src/services/cryptoService.ts').CryptoService, db.sessionManager),
