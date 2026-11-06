@@ -1,0 +1,194 @@
+name: LifeOS coordinated integration
+
+on:
+  pull_request:
+    branches: [security/lifeos-encrypted-startup-20261107]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifeos-coordinated-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-apks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - run: npm run test:all
+      - run: node scripts/test-android-runner.cjs
+      - run: npx --no-install tsc --noEmit
+      - run: npm run build
+      - run: npx cap sync android
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.2.1"
+      - name: Test instrumentation report parser
+        run: node scripts/android-instrumentation-to-junit.cjs --self-test
+      - name: Verify pinned Gradle and compile app and instrumentation APKs
+        run: |
+          gradle --version
+          gradle -p android --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+      - name: Stage APK artifacts for emulator jobs
+        run: |
+          mkdir -p android-apks
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-apks/app-debug.apk
+          cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk android-apks/app-debug-androidTest.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  android-security-preflight:
+    needs: build-test-apks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - name: Enable KVM access for this ephemeral runner
+        run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 24
+          target: google_apis
+          arch: x86_64
+          profile: "Nexus 5X"
+          avd-name: lifeos-api24-recovery-preflight
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-boot-timeout: 300
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            ANDROID_TEST_FILTER='com.lifeos.personal.CryptoAcceptanceTest' ANDROID_REQUIRED_TEST='CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+      - name: Require completed native security tests
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse('qa-emulator-evidence/junit.xml').getroot()
+          tests = root.findall('.//testcase')
+          print(f"API 24 native security preflight: tests={len(tests)} failures={root.attrib.get('failures', '0')} skipped={root.attrib.get('skipped', '0')}")
+          if len(tests) < 7 or root.attrib.get('failures', '0') != '0' or root.attrib.get('skipped', '0') != '0':
+              sys.exit(1)
+          PY
+      - name: Capture sanitized emulator failure evidence
+        if: failure()
+        run: |
+          mkdir -p qa-api24-recovery-evidence
+          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-api24-recovery-evidence/boot-state.txt 2>&1
+          { timeout 5s adb devices -l || true; } > qa-api24-recovery-evidence/adb-devices.txt 2>&1
+          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-api24-recovery-evidence/logcat-errors.txt 2>&1
+          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-api24-recovery-evidence/failure.png 2>qa-api24-recovery-evidence/screenshot-error.txt
+          cp -R qa-emulator-evidence/. qa-api24-recovery-evidence/ 2>/dev/null || true
+      - name: Upload API 24 recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-api24-recovery-preflight-evidence
+          path: |
+            qa-emulator-evidence/**
+            qa-api24-recovery-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
+
+  android-device-matrix:
+    needs: [build-test-apks, android-security-preflight]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: compact-api24
+            api-level: 24
+            profile: "Nexus 5X"
+            ram-size: 2048M
+            heap-size: 256M
+          - id: standard-api34
+            api-level: 34
+            profile: pixel_6
+            ram-size: 3072M
+            heap-size: 512M
+          - id: large-api35
+            api-level: 35
+            profile: pixel_7_pro
+            ram-size: 4096M
+            heap-size: 512M
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - name: Enable KVM access for this ephemeral runner
+        run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          avd-name: lifeos-${{ matrix.id }}
+          cores: 2
+          ram-size: ${{ matrix.ram-size }}
+          heap-size: ${{ matrix.heap-size }}
+          emulator-boot-timeout: 300
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+      - name: Verify nonzero JUnit test count and passing smoke test
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          report = ET.parse('qa-emulator-evidence/junit.xml').getroot()
+          tests = int(report.attrib.get('tests', '0'))
+          failures = int(report.attrib.get('failures', '0'))
+          print("${{ matrix.id }} JUnit tests={} failures={} skipped={}".format(tests, failures, report.attrib.get('skipped', '0')))
+          if tests <= 0 or failures:
+              sys.exit(1)
+          PY
+      - name: Capture sanitized emulator failure evidence
+        if: failure()
+        run: |
+          mkdir -p qa-emulator-evidence
+          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-emulator-evidence/boot-state.txt 2>&1
+          { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
+          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-emulator-evidence/logcat-errors.txt 2>&1
+          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
+      - name: Upload JUnit and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-android-qa-${{ matrix.id }}
+          path: qa-emulator-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
