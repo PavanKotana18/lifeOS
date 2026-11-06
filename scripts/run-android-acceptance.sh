@@ -5,6 +5,10 @@ if [ -z "${LIFEOS_ACCEPTANCE_SERIAL:-}" ] || [ -z "${LIFEOS_APP_APK:-}" ] || [ -
   echo 'BLOCKED: set LIFEOS_ACCEPTANCE_SERIAL, LIFEOS_APP_APK and LIFEOS_TEST_APK for a fresh lifeos-acceptance-sprint3 AVD.' >&2
   exit 2
 fi
+case "${LIFEOS_NATIVE_MODE:-synthetic}" in
+  synthetic|biometric) ;;
+  *) echo 'BLOCKED: LIFEOS_NATIVE_MODE must be synthetic or biometric' >&2; exit 2 ;;
+esac
 command -v adb >/dev/null || { echo 'BLOCKED: adb unavailable' >&2; exit 2; }
 [ -f "$LIFEOS_APP_APK" ] && [ -f "$LIFEOS_TEST_APK" ] || { echo 'BLOCKED: APK artifacts missing' >&2; exit 2; }
 LIFEOS_AVD_NAME=$(adb -s "$LIFEOS_ACCEPTANCE_SERIAL" shell getprop ro.boot.qemu.avd_name | tr -d '\r')
@@ -18,8 +22,15 @@ sha256sum "$LIFEOS_APP_APK" "$LIFEOS_TEST_APK"
 adb -s "$LIFEOS_ACCEPTANCE_SERIAL" install -t "$LIFEOS_APP_APK"
 adb -s "$LIFEOS_ACCEPTANCE_SERIAL" install -t "$LIFEOS_TEST_APK"
 LIFEOS_NATIVE_LOG=$(mktemp "${TMPDIR:-/tmp}/lifeos-native-acceptance.XXXXXX")
-adb -s "$LIFEOS_ACCEPTANCE_SERIAL" shell am instrument -w -r -e class com.lifeos.personal.CryptoAcceptanceTest com.lifeos.personal.test/androidx.test.runner.AndroidJUnitRunner > "$LIFEOS_NATIVE_LOG" 2>&1
+LIFEOS_EXPECTED_TESTS=7
+if [ "${LIFEOS_NATIVE_MODE:-synthetic}" = biometric ]; then
+  LIFEOS_EXPECTED_TESTS=1
+  echo 'Actual prompts: ACCEPT setup, CANCEL first unlock, then ACCEPT three later unlock prompts.'
+  adb -s "$LIFEOS_ACCEPTANCE_SERIAL" shell am instrument -w -r -e class com.lifeos.personal.BiometricDeviceAcceptanceTest -e lifeosRealBiometricAcceptance yes com.lifeos.personal.test/androidx.test.runner.AndroidJUnitRunner > "$LIFEOS_NATIVE_LOG" 2>&1
+else
+  adb -s "$LIFEOS_ACCEPTANCE_SERIAL" shell am instrument -w -r -e class com.lifeos.personal.CryptoAcceptanceTest com.lifeos.personal.test/androidx.test.runner.AndroidJUnitRunner > "$LIFEOS_NATIVE_LOG" 2>&1
+fi
 cat "$LIFEOS_NATIVE_LOG"
 if grep -Eq 'FAILURES|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED' "$LIFEOS_NATIVE_LOG"; then exit 1; fi
-grep -Eq '^OK \(7 tests\)' "$LIFEOS_NATIVE_LOG" || { echo 'FAIL: missing complete seven-test execution evidence' >&2; exit 1; }
+grep -Eq "^OK \($LIFEOS_EXPECTED_TESTS tests?\)" "$LIFEOS_NATIVE_LOG" || { echo 'FAIL: missing complete requested native-test execution evidence' >&2; exit 1; }
 printf 'Synthetic native log retained: %s\n' "$LIFEOS_NATIVE_LOG"

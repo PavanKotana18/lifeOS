@@ -275,6 +275,13 @@
         "Android instrumentation required"
       ],
       "limitations": "Actual native plugin with synthetic in-memory fields and captured PluginCall; no real biometric/Keystore authentication, does not touch persisted preferences or production aliases. Compile is not execution."
+    },
+    {
+      "path": "android/app/src/androidTest/java/com/lifeos/personal/BiometricDeviceAcceptanceTest.java",
+      "categories": [
+        "Android instrumentation required"
+      ],
+      "limitations": "Opt-in real BiometricPrompt and Keystore with actual ActivityScenario on a fresh named AVD only; requires human accept/cancel actions. BLOCKED without selected device; never run as ordinary synthetic suite."
     }
   ],
   "required_device_cases": [
