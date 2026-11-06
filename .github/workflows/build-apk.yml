@@ -45,6 +45,20 @@ jobs:
       - name: Run Automated LifeOS Verification Tests
         run: npm test
 
+      # Known acceptance failures stay visible without making the existing gate red.
+      # The runner still fails for harness/dependency errors and unexpected passes.
+      - name: Observe known production defects (not release acceptance)
+        run: npm run test:regressions -- --json test-results/wp0-known-defects.json
+
+      - name: Upload WP0 regression observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WP0-known-defect-observations
+          path: test-results/wp0-known-defects.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
