@@ -73,7 +73,7 @@ export default function App() {
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', channel: 'unknown', pendingCount: 0, lastError: '' });
+  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', exactAlarm: 'checking', channel: 'unknown', pendingCount: 0, lastError: '' });
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
@@ -504,14 +504,34 @@ export default function App() {
     try {
       if (!NotificationService.isSupported()) return { granted: false, status: 'unsupported', message: 'Install the updated Android build to enable local notifications.' };
       let status = await NotificationService.checkPermission();
-      if (status === 'granted') return { granted: true, status };
-      if (notificationPermissionRequested) return { granted: false, status, message: 'Permission was previously declined. Open Android notification settings to allow it.' };
-      setNotificationPermissionRequested(true);
-      await StorageService.settings.set('notificationPermissionRequested', true);
-      status = await NotificationService.requestPermission();
-      return status === 'granted'
-        ? { granted: true, status }
-        : { granted: false, status, message: 'Android did not grant notification permission. You can continue and enable it later in Profile.' };
+      if (status !== 'granted') {
+        if (notificationPermissionRequested) {
+          return { granted: false, status, message: 'Notification permission was previously declined. Open Android notification settings to allow it.' };
+        }
+        setNotificationPermissionRequested(true);
+        await StorageService.settings.set('notificationPermissionRequested', true);
+        status = await NotificationService.requestPermission();
+        if (status !== 'granted') {
+          return { granted: false, status, message: 'Android notification permission was not granted. Enable it in Android settings.' };
+        }
+      }
+
+      // LifeOS schedules reminders with allowWhileIdle; Android exact-alarm
+      // access is a separate permission from notification display access.
+      let exactAlarm = await NotificationService.checkExactAlarmPermission();
+      if (exactAlarm !== 'granted') {
+        exactAlarm = await NotificationService.requestExactAlarmPermission();
+      }
+      if (exactAlarm !== 'granted') {
+        return {
+          granted: false,
+          status: 'exact-alarm-' + exactAlarm,
+          message: 'Allow Alarms & reminders for LifeOS in Android settings to schedule reminders.'
+        };
+      }
+      return { granted: true, status: 'granted' };
+
+
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Android notification permission could not be checked.';
       return { granted: false, status: 'error', message };
@@ -1705,7 +1725,7 @@ export default function App() {
               <p className="text-[11px] text-slate-400">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
               {!notificationDiagnostics.supported && <p className="text-[11px] text-amber-300">The native notification plugin is not available in this runtime.</p>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-slate-800 pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
-              <div className="space-y-1 rounded-xl border border-slate-800 p-3 text-[10px] text-slate-400"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-rose-300' : 'text-emerald-300'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
+              <div className="space-y-1 rounded-xl border border-slate-800 p-3 text-[10px] text-slate-400"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-rose-300' : 'text-emerald-300'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
               <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Test notification scheduled for ${at.toLocaleTimeString()}`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="min-h-11 rounded-xl bg-indigo-600 px-3 text-xs font-semibold text-white">Test notification · 10 sec</button><button onClick={() => void openNotificationSettings()} className="min-h-11 rounded-xl bg-slate-800 px-3 text-xs font-semibold">Android settings</button></div>
               <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-10 w-full rounded-xl border border-slate-700 text-xs font-medium text-slate-300">Refresh diagnostics</button>
             </section></div></div>}
@@ -1803,10 +1823,14 @@ export default function App() {
               <button
                 onClick={async () => {
                   if (!window.confirm('Permanently erase all LifeOS data stored on this device? This cannot be undone.')) return;
-                  await Promise.all([NotificationService.syncTasks([], DEFAULT_NOTIFICATION_PREFERENCES), NotificationService.syncHabits([], DEFAULT_NOTIFICATION_PREFERENCES), NotificationService.syncMilestones([], [], DEFAULT_NOTIFICATION_PREFERENCES)]);
-                  await StorageService.backup.clearAll();
-                  await reloadAllData();
-                  showToast('All personal records erased', 'info');
+                  try {
+                    await NotificationService.cancelAllRecordReminders();
+                    await StorageService.backup.clearAll();
+                    await reloadAllData();
+                    showToast('All personal records erased', 'info');
+                  } catch {
+                    showToast('Reset did not complete. Please retry; reminder cleanup must succeed before records are erased.', 'danger');
+                  }
                 }}
                 className="w-full py-2.5 rounded-xl bg-rose-600 text-white text-xs font-semibold"
               >

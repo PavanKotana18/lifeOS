@@ -5,8 +5,8 @@ const { spawnSync, execFileSync } = require('node:child_process');
 const { classify, failsGate } = require('../tests/wp0/result-policy.cjs');
 const root = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
-const ids = ['LOS-001', 'LOS-009', 'LOS-010'];
-const mandatory = ['CONTROL-INTEGRATION', 'LOS-002', 'LOS-003', 'LOS-007', 'LOS-008', 'SPRINT1-RESTORE', 'SPRINT1-RECOVERY', 'SPRINT1-IMPORT-RACE', 'LOS-023'];
+const ids = ['LOS-001', 'LOS-010'];
+const mandatory = ['LOS-009', 'CONTROL-INTEGRATION', 'LOS-002', 'LOS-003', 'LOS-007', 'LOS-008', 'SPRINT1-RESTORE', 'SPRINT1-RECOVERY', 'SPRINT1-IMPORT-RACE', 'LOS-023'];
 if (args[0] === '--worker') {
   // Require inside worker: any load failure exits nonzero without a success report.
   const h = require('../tests/wp0/production-harness.cjs');
