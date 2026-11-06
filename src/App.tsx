@@ -3,13 +3,14 @@ import packageInfo from '../package.json';
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
-import { StorageService, sessionManager, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords } from './db';
-import { CryptoService } from './services/cryptoService.ts';
+import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords } from './db';
+import { CryptoService, type PreparedRecovery } from './services/cryptoService.ts';
 import { createProtectedSessionController } from './services/cryptoSessionCoordinator';
 import { encryptBackup, MAX_BACKUP_FILE_BYTES } from './services/backupCryptoService';
 import { decodeBackupForRestore } from './services/backupImportService';
 import BackupPassphraseDialog from './components/BackupPassphraseDialog';
 import RecoveryDialog from './components/RecoveryDialog';
+import SecureSetupDialog from './components/SecureSetupDialog';
 import { createRecoveryController } from './services/recoveryService';
 import { quoteCsvCell } from './services/csvExportService.ts';
 import { exportBackupFile } from './services/backupExportService';
@@ -84,6 +85,20 @@ export default function App() {
   const [appReady, setAppReady] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const recoveryController = useRef(createRecoveryController(CryptoService, sessionManager, getRecoveryChallenge)).current;
+  const [secureSetup, setSecureSetup] = useState<{ prepared?: PreparedRecovery } | null>(null);
+  const secureSetupResolver = useRef<((accepted: boolean) => void) | null>(null);
+  const requestSecureSetup = (prepared?: PreparedRecovery): Promise<boolean> => {
+    if (secureSetupResolver.current) return Promise.reject(new Error('Secure setup is already open.'));
+    return new Promise(resolve => {
+      secureSetupResolver.current = accepted => {
+        secureSetupResolver.current = null;
+        setSecureSetup(null);
+        resolve(accepted);
+      };
+      setSecureSetup(prepared ? { prepared } : {});
+    });
+  };
+  useEffect(() => () => { secureSetupResolver.current?.(false); }, []);
   const [backupPrompt, setBackupPrompt] = useState<'export' | 'import' | null>(null);
   const backupPassphraseResolver = useRef<((value: string | null) => void) | null>(null);
   const backupOperation = useRef(false);
@@ -107,7 +122,13 @@ export default function App() {
   const biometricAuthInFlight = useRef<Promise<boolean> | null>(null);
   const biometricAuthenticated = useRef(false);
   const startupComplete = useRef(false);
-  const encryptedSession = useRef(createProtectedSessionController(CryptoService, sessionManager)).current;
+  const encryptedSession = useRef(createProtectedSessionController(CryptoService, sessionManager, {
+    hasEncryptedRecords,
+    requestInitialSetup: () => requestSecureSetup(),
+    confirmRecovery: prepared => requestSecureSetup(prepared),
+    activateStorage: activateEncryptedStorage,
+    isStorageActive: isEncryptedStorageActivated,
+  })).current;
   const authCoordinator = useRef(createAuthCoordinator(async () => {
     const result = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your identity to access your personal data');
     if (!result.success) setBiometricMessage(result.message || 'Authentication was not completed. Retry when you are ready.');
@@ -229,25 +250,14 @@ export default function App() {
       if (disposed) return;
       if (!state.isActive) {
         backupPassphraseResolver.current?.(null);
-        // Close admission immediately, then wait for admitted database work.
-        sessionManager.lock();
-        if (isEncryptedStorageActivated()) {
-          setIsLocked(true);
-          biometricAuthenticated.current = false;
-          try { await encryptedSession.lock(); }
-          catch { setBiometricMessage('The native key could not be locked. Access remains blocked.'); }
-        }
-        await sessionManager.waitForIdle();
-
-        const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-        if (disposed) return;
-        if (isBio) {
-          biometricAuthenticated.current = false;
-          authCoordinator.resetForBackground();
-          setIsLocked(true);
-          setBiometricVerified(false);
-          setBiometricMessage('');
-        }
+        secureSetupResolver.current?.(false);
+        setIsLocked(true);
+        setBiometricVerified(false);
+        biometricAuthenticated.current = false;
+        authCoordinator.resetForBackground();
+        // Close native admission even during setup, not only after migration.
+        try { await encryptedSession.lock(); }
+        catch { setBiometricMessage('The native key could not be locked. Access remains blocked.'); }
         return;
       }
       if (resumeInProgress) return;
@@ -258,20 +268,11 @@ export default function App() {
         if (disposed || !startupComplete.current) return;
 
         setClockNow(new Date());
-        if (isEncryptedStorageActivated()) {
-          await encryptedSession.open();
-          if (disposed) return;
-          setIsLocked(false);
-        } else {
-          const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-          if (disposed) return;
-          if (isBio && startupComplete.current && !biometricAuthenticated.current) {
-            const authenticated = await triggerBiometricAuth();
-            if (!authenticated || !biometricAuthenticated.current || disposed) return;
-          }
-          // Never reload protected records while the biometric session is locked.
-          if (!isBio) sessionManager.unlock();
-        }
+        await encryptedSession.open();
+        if (disposed || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
+        biometricAuthenticated.current = true;
+        setBiometricVerified(true);
+        setIsLocked(false);
         if (!sessionManager.isUnlocked()) return;
         const records = await reloadAllData();
         if (disposed) return;
@@ -405,27 +406,15 @@ export default function App() {
     const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
     let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
 
-    // Never reinterpret ciphertext through the legacy raw backend after restart.
-    // New encryption activation is deliberately deferred to the reviewed rollout.
-    if (!isEncryptedStorageActivated() && await hasEncryptedRecords()) {
-      sessionManager.lock();
-      throw new Error('Encrypted records were found. Data remains protected. Key recovery is available; opening encrypted data awaits the validated rollout.');
-    }
-
-    // Establish the application session before reading private preferences or records.
-    if (isEncryptedStorageActivated()) {
-      await encryptedSession.open();
-      setIsLocked(false);
-    } else if (lockSetting) {
-      const authenticated = await triggerBiometricAuth();
-      if (!authenticated || !biometricAuthenticated.current || !sessionManager.isUnlocked()) {
-        startupComplete.current = true;
-        setAppReady(true);
-        return;
-      }
-    } else {
-      sessionManager.unlock();
-    }
+    // The native key is authoritative on every process start. This owner
+    // explicitly provisions only databases without any ciphertext, confirms a
+    // memory-only recovery kit, then migrates/verifies before exposing records.
+    setIsLocked(true);
+    await encryptedSession.open();
+    if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Secure startup expired after app lock. Retry in the foreground.');
+    biometricAuthenticated.current = true;
+    setBiometricVerified(true);
+    setIsLocked(false);
 
     // Private preferences are read only after session authorization.
     const storedCurrency = await StorageService.settings.get<UserPreferences['currency']>('currency', 'INR');
@@ -676,50 +665,30 @@ export default function App() {
   };
 
   const triggerBiometricAuth = async () => {
-    if (isEncryptedStorageActivated()) {
+    if (biometricAuthInFlight.current) return biometricAuthInFlight.current;
+    const attempt = (async () => {
       try {
         await encryptedSession.open();
-        biometricAuthenticated.current = true;
-        setIsLocked(false);
-        setBiometricVerified(true);
-        return true;
-      } catch (error) {
-        setIsLocked(true);
-        setBiometricMessage(error instanceof Error ? error.message : 'Encryption authentication failed.');
-        return false;
-      }
-    }
-    if (biometricAuthInFlight.current) return biometricAuthInFlight.current;
-    if (biometricAuthenticated.current) return true;
-    const attempt = (async () => {
-      setIsLocked(true);
-      setBiometricMessage('Confirm your identity to open LifeOS.');
-      const availability = await BiometricService.isAvailable();
-      if (!availability.isAvailable) {
-        const message = availability.code === 'NOT_ENROLLED'
-          ? 'No biometric or device screen lock is enrolled. Set one up in Android settings, then retry.'
-          : 'Device authentication is unavailable. Your data remains locked until authentication is available.';
-        setBiometricMessage(message);
-        setBiometricAvailability(message);
-        return false;
-      }
-      const success = await authCoordinator.authenticate();
-      if (success) {
-        sessionManager.unlock();
+        if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Authentication expired after app lock.');
         biometricAuthenticated.current = true;
         setIsLocked(false);
         setBiometricVerified(true);
         setBiometricMessage('');
+        // Retry must complete all private startup hydration when startup was
+        // cancelled; native unlock alone never marks the application ready.
+        if (!startupComplete.current) await initApp();
+        else await reloadAllData();
         return true;
+      } catch (error) {
+        sessionManager.lock();
+        setIsLocked(true);
+        setBiometricVerified(false);
+        setBiometricMessage(error instanceof Error ? error.message : 'Encryption authentication failed.');
+        return false;
       }
-      return false;
-    })().catch(error => {
-      const message = error instanceof Error ? error.message : 'Device authentication failed. Your data remains locked.';
-      setBiometricMessage(message);
-      console.error('LifeOS biometric startup authentication failed.', error);
-      return false;
-    }).finally(() => { biometricAuthInFlight.current = null; });
+    })();
     biometricAuthInFlight.current = attempt;
+    void attempt.then(() => { biometricAuthInFlight.current = null; }, () => { biometricAuthInFlight.current = null; });
     return attempt;
   };
 
@@ -1066,7 +1035,7 @@ export default function App() {
     const monthlyTxs = transactions.filter(t => t.date && t.date.startsWith(financeMonth));
     let totalIncome = 0;
     let totalExpenses = 0;
-    const categoryExpenses: Record<string, number> = {};
+    const categoryExpenses: Record<string, number> = Object.create(null);
 
     for (const tx of monthlyTxs) {
       const amt = Number(tx.amount) || 0;
@@ -1177,7 +1146,9 @@ export default function App() {
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
 
-  if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit); }} onClose={() => setRecoveryOpen(false)} />;
+  if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared} onDecision={accepted => secureSetupResolver.current?.(accepted)} />;
+
+  if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit).then(async () => { setRecoveryOpen(false); setStartupError(''); await initApp(); }); }} onClose={() => setRecoveryOpen(false)} />;
 
   if (backupPrompt) return <BackupPassphraseDialog purpose={backupPrompt} onComplete={value => backupPassphraseResolver.current?.(value)} />;
 

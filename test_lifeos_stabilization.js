@@ -47,7 +47,7 @@ function financeRows(rows, sort = 'date-desc') {
 
   await test('Finance create, edit, reload and delete preserve entered local date-time without inventing legacy time', () => fixture(async f => {
     f.sessionManager.unlock();
-    await f.lifeOSDatabase.categories.add({ id: 'fixture-food', name: 'Food', type: 'expense', color: '#fff' });
+    await f.StorageService.categories.getAll();
     const older = await f.StorageService.transactions.add({
       type: 'expense', amount: 10, category: 'Food', description: 'Older', date: '2026-11-06',
       paymentMethod: 'Cash', occurredAt: '2026-11-06T10:00:00.000Z',
@@ -87,11 +87,12 @@ function financeRows(rows, sort = 'date-desc') {
       ...h.noopSetters(h.lifecycleCallback()),
       disposed: false,
       backupPassphraseResolver: { current: null },
+      secureSetupResolver: { current: null },
       sessionManager: { lock() {}, unlock() {}, isUnlocked: () => true, async waitForIdle() {} },
-      isEncryptedStorageActivated: () => false,
+      isEncryptedStorageActivated: () => true,
       setIsLocked() {}, setBiometricVerified() {}, setBiometricMessage() {},
       biometricAuthenticated,
-      encryptedSession: { async lock() {}, async open() {} },
+      encryptedSession: { async lock() {}, async open() { f.native.calls.push('biometric'); biometricAuthenticated.current = true; } },
       authCoordinator: { resetForBackground() {} },
       startupComplete: { current: true },
       setClockNow() {},

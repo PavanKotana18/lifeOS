@@ -44,7 +44,7 @@ function compile(source, filename) {
 }
 function loader(overrides) {
   const cache = new Map();
-  function load(relative) {
+  function load(relative, testOnlyExports = '') {
     const filename = path.resolve(ROOT, relative);
     assert.ok(filename.startsWith(ROOT + path.sep), 'Only this worktree can be loaded');
     if (cache.has(filename)) return cache.get(filename).exports;
@@ -64,7 +64,7 @@ function loader(overrides) {
       }
       return require(id);
     };
-    loaded._compile(compile(fs.readFileSync(filename, 'utf8'), filename), filename);
+    loaded._compile(compile(fs.readFileSync(filename, 'utf8') + testOnlyExports, filename), filename);
     return loaded.exports;
   }
   return load;
@@ -154,7 +154,7 @@ function memoryStorage() {
   const map = new Map();
   return { getItem: k => map.get(k) ?? null, setItem: (k, v) => map.set(k, String(v)), removeItem: k => map.delete(k) };
 }
-async function fixture() {
+async function fixture({ activate = true } = {}) {
   freezeClock();
   assert.ok(global.indexedDB instanceof IDBFactory, 'Disposable fake IndexedDB is required');
   global.localStorage = memoryStorage();
@@ -221,7 +221,7 @@ async function fixture() {
     async schedule({ notifications }) { notifications.forEach(n => pending.set(n.id, structuredClone(n))); }
   };
   const plugins = { LifeOSCrypto: native };
-  const load = loader({
+  const nativeOverrides = {
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true,
       isPluginAvailable: name => ['LifeOSCrypto', 'LocalNotifications'].includes(name) },
       registerPlugin: name => plugins[name] || new Proxy({}, { get: () => () => {
@@ -229,8 +229,10 @@ async function fixture() {
       } }) },
     '@capacitor/local-notifications': { LocalNotifications: notifications,
       Weekday: { Sunday: 1, Monday: 2, Tuesday: 3, Wednesday: 4, Thursday: 5, Friday: 6, Saturday: 7 } }
-  });
-  const db = load('src/db.ts');
+  };
+  const load = loader(nativeOverrides);
+  // Legacy internals are exported ONLY in this test host, never application code.
+  const db = load('src/db.ts', '\nexport { rawStorageService as legacyStorageService };');
   await db.lifeOSDatabase.open();
   equal(await db.lifeOSDatabase.transactions.count(), 0, 'Fixture must start empty');
   const notificationModule = load('src/services/notificationService.ts');
@@ -243,11 +245,17 @@ async function fixture() {
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
       encryptedSession: load('src/services/cryptoSessionCoordinator.ts').createProtectedSessionController(
-        load('src/services/cryptoService.ts').CryptoService, db.sessionManager),
+        load('src/services/cryptoService.ts').CryptoService, db.sessionManager, {
+          hasEncryptedRecords: db.hasEncryptedRecords,
+          requestInitialSetup: async () => { throw new Error('Explicit provisioning UI was not configured in fixture'); },
+          confirmRecovery: async () => { throw new Error('Recovery confirmation UI was not configured in fixture'); },
+          activateStorage: db.activateEncryptedStorage,
+          isStorageActive: db.isEncryptedStorageActivated,
+        }),
       localStorage: global.localStorage, window: { confirm: () => true },
       systemDarkPreference: () => false, applyDomTheme() {},
       BiometricService: { async isAvailable() { return { isAvailable: true }; } },
-      backupPassphraseResolver: { current: null },
+      backupPassphraseResolver: { current: null }, secureSetupResolver: { current: null },
       authCoordinator: { resetForBackground() {} }, notificationsEnabled: false,
       notificationPreferences: notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
       effectiveNotificationPreferences: (p, master = false) => master ? p : notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
@@ -259,7 +267,18 @@ async function fixture() {
     deps.syncNotificationSchedules = bind(sync, deps);
     return deps;
   }
+  // Default integration fixtures actually migrate through production APIs;
+  // security boundary tests explicitly request { activate: false }.
+  if (activate) { db.sessionManager.unlock(); await db.activateEncryptedStorage(); }
   return { ...db, native, pending, load, appDeps, ...notificationModule,
+    async restart() {
+      db.sessionManager.lock(); await db.sessionManager.waitForIdle();
+      db.lifeOSDatabase.close(); await native.lock();
+      const freshLoad = loader(nativeOverrides);
+      const fresh = freshLoad('src/db.ts');
+      await fresh.lifeOSDatabase.open();
+      return { ...fresh, load: freshLoad };
+    },
     async activate() { db.sessionManager.unlock(); await db.activateEncryptedStorage();
       check(db.isEncryptedStorageActivated(), 'Production encrypted activation must complete'); },
     async dispose() { db.sessionManager.lock(); await db.sessionManager.waitForIdle();
