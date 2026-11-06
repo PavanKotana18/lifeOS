@@ -17,11 +17,12 @@ import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
 import { DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
+import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 
@@ -276,7 +277,14 @@ export default function App() {
         if (disposed) return;
         const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
         const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
-        await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
+        const permissionResume = await reconcileNotificationOnboardingOnResume(StorageService.settings, NotificationService);
+        if (permissionResume.advanced) {
+          setNotificationPreferences(permissionResume.preferences);
+          setNotificationsEnabled(true);
+          setOnboardingStep(4);
+        }
+        await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
+          effectiveNotificationPreferences(permissionResume.advanced ? permissionResume.preferences : prefs, permissionResume.advanced || master));
         if (!disposed) await refreshNotificationDiagnostics();
       } catch (error) {
         if (isEncryptedStorageActivated()) {
@@ -395,7 +403,7 @@ export default function App() {
     // Onboarding progress is intentionally bootstrap-safe.
     const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
     const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
-    const savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
+    let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
 
     // Never reinterpret ciphertext through the legacy raw backend after restart.
     // New encryption activation is deliberately deferred to the reviewed rollout.
@@ -446,6 +454,15 @@ export default function App() {
       ...savedNotificationPreferences
     });
     setNotificationPermissionRequested(hasRequestedNotifications);
+    let notificationsEnabledAfterResume = notificationsOn;
+    const permissionResume = await reconcileNotificationOnboardingOnResume(StorageService.settings, NotificationService);
+    if (permissionResume.advanced) {
+      notificationsEnabledAfterResume = true;
+      savedOnboardingStep = 4;
+      setNotificationPreferences(permissionResume.preferences);
+      setNotificationsEnabled(true);
+      setOnboardingStep(4);
+    }
 
     // This operation inspects private tables, so it must follow authentication.
     const legacyState = await StorageService.backup.hasData();
@@ -477,7 +494,7 @@ export default function App() {
       records.milestones,
       effectiveNotificationPreferences(
         { ...DEFAULT_NOTIFICATION_PREFERENCES, ...savedNotificationPreferences },
-        notificationsOn
+        notificationsEnabledAfterResume
       )
     );
     await refreshNotificationDiagnostics();
@@ -504,13 +521,18 @@ export default function App() {
   const askNotificationPermission = async () => {
     try {
       if (!NotificationService.isSupported()) return { granted: false, status: 'unsupported', message: 'Install the updated Android build to enable local notifications.' };
+      // Persist the permission-flow intent before any native prompt can launch
+      // Android Settings, including the exact-alarm path when notifications are
+      // already allowed. Resume reconciliation uses this marker after return.
+      if (!notificationPermissionRequested) {
+        setNotificationPermissionRequested(true);
+        await StorageService.settings.set('notificationPermissionRequested', true);
+      }
       let status = await NotificationService.checkPermission();
       if (status !== 'granted') {
         if (notificationPermissionRequested) {
           return { granted: false, status, message: 'Notification permission was previously declined. Open Android notification settings to allow it.' };
         }
-        setNotificationPermissionRequested(true);
-        await StorageService.settings.set('notificationPermissionRequested', true);
         status = await NotificationService.requestPermission();
         if (status !== 'granted') {
           return { granted: false, status, message: 'Android notification permission was not granted. Enable it in Android settings.' };
@@ -539,9 +561,8 @@ export default function App() {
     }
   };
 
-  const saveNotificationSelection = async (preferences: NotificationPreferences) => {
+  const saveNotificationSelection = async (preferences: NotificationPreferences, enabled = Object.values(preferences).some(Boolean)) => {
     setNotificationPreferences(preferences);
-    const enabled = Object.values(preferences).some(Boolean);
     setNotificationsEnabled(enabled);
     await StorageService.settings.set('notificationPreferences', preferences);
     await StorageService.settings.set('notificationsEnabled', enabled);
@@ -820,7 +841,7 @@ export default function App() {
     setCreateDraft({
       title: transaction.description || '', amount: String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
-      dateTime: formatLocalDateTime(new Date(transaction.occurredAt || transaction.createdAt)),
+      dateTime: transaction.occurredAt ? formatLocalDateTime(new Date(transaction.occurredAt)) : '',
       notes: transaction.notes || '', isRecurring: transaction.isRecurring ? 'yes' : '',
     });
     setEditingTransactionId(transaction.id); setEditingTaskId(null); setEditingHabitId(null); setEditingGoalId(null); setCreateKind('transaction');
@@ -880,7 +901,9 @@ export default function App() {
         } else reminderCouldNotEnable = true;
       }
       if (createKind === 'transaction') {
-        const values = buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: Number(value('amount')), category: value('category'), description: value('title'), dateTime: value('dateTime'), paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' });
+        const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
+        const preserveUnknownTime = Boolean(existingTransaction && !existingTransaction.occurredAt && !value('dateTime'));
+        const values = buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: Number(value('amount')), category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' });
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
         else await StorageService.transactions.add(values);
       } else if (createKind === 'habit') {
@@ -1142,15 +1165,16 @@ export default function App() {
   const plannerDetailTask = plannerDetailTaskId ? tasks.find(task => task.id === plannerDetailTaskId) : undefined;
 
   const goalProgress = (goal: Goal) => getGoalProgress(goal.currentValue, goal.targetValue);
-  const filteredTransactions = useMemo(() => transactions.filter(tx => {
+  const editingLegacyDateOnly = Boolean(createKind === 'transaction' && editingTransactionId
+    && !transactions.find(tx => tx.id === editingTransactionId)?.occurredAt);
+  const filteredTransactions = useMemo(() => sortTransactions(transactions.filter(tx => {
     const query = financeSearch.trim().toLowerCase();
     const haystack = `${tx.description || ''} ${tx.category || ''} ${tx.notes || ''} ${tx.paymentMethod || ''}`.toLowerCase();
     return tx.date?.startsWith(financeMonth)
       && (financeTypeFilter === 'all' || tx.type === financeTypeFilter)
       && (financeCategoryFilter === 'all' || tx.category === financeCategoryFilter)
       && (!query || haystack.includes(query));
-  }).sort((a, b) => financeSort === 'date-asc' ? (a.date || '').localeCompare(b.date || '')
-    : financeSort === 'amount-desc' ? b.amount - a.amount : (b.date || '').localeCompare(a.date || '')),
+  }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
 
   if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit); }} onClose={() => setRecoveryOpen(false)} />;
@@ -1170,9 +1194,12 @@ export default function App() {
     onSkipBiometric={() => {}}
     onAppearance={applyAppearance}
     onEnableNotifications={async selected => {
+      // Preserve the user's category choices before Android can background the
+      // Activity for permission settings. Keep the master switch off until grants.
+      await saveNotificationSelection(selected, false);
       const permission = await askNotificationPermission();
       if (!permission.granted) return { granted: false, status: permission.status, message: permission.message };
-      await saveNotificationSelection(selected);
+      await saveNotificationSelection(selected, true);
       await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(selected, true));
       return { granted: true, status: 'granted' };
     }}
@@ -1878,7 +1905,7 @@ export default function App() {
               <label className="mb-3 block text-xs text-slate-300">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-slate-300">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
               <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
-              <label className="mb-4 block text-xs text-slate-300">Transaction date and time<input required type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-4 block text-xs text-slate-300">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-amber-300">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'habit' && <>
               <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>

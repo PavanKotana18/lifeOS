@@ -19,6 +19,7 @@ import type {
   EncryptedRepositories,
   PreparedMutation,
 } from './encryptedTransactionCoordinator';
+import { sortTransactions } from './domainUtils';
 
 export interface EncryptedStorageTransaction {
   run<T>(
@@ -179,7 +180,7 @@ export function createEncryptedStorageFacade(
 
   const storage = {
     transactions: {
-      getAll: async () => sortByDate(await readAll<Transaction>('transactions')),
+      getAll: async () => sortTransactions(await readAll<Transaction>('transactions')),
       getById: (id: string) => get<Transaction>('transactions', id),
 
       add: async (input: Omit<Transaction, 'id' | 'createdAt'>) => {
@@ -247,7 +248,7 @@ export function createEncryptedStorageFacade(
             (row.notes || '').toLowerCase().includes(q)
           );
         }
-        return sortByDate(rows);
+        return sortTransactions(rows);
       },
     },
 

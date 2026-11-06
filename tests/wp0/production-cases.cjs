@@ -208,7 +208,7 @@ const cases = [
       f.native.onStop(); // Android is unavailable: explicit simulated DEK eviction, never a Java pass.
       h.equal((await f.native.isUnlocked()).unlocked, false, 'Simulated onStop evicts key');
       await cb({ isActive: true });
-      h.check(errors.every(e => e === 'SIMULATED_NATIVE_KEY_LOCKED'), 'Unexpected lifecycle error is a harness failure');
+      h.check(errors.every(e => e === 'SIMULATED_NATIVE_KEY_LOCKED'), `Unexpected lifecycle error is a harness failure: ${JSON.stringify(errors)}`);
       h.contract({ nativeKeyAvailable: (await f.native.isUnlocked()).unlocked,
         protectedReloadCompleted: reloads > 0 }, { nativeKeyAvailable: true, protectedReloadCompleted: true });
     }); }

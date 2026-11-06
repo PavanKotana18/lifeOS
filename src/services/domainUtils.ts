@@ -1,4 +1,4 @@
-import type { NotificationPreferences, Task } from '../types';
+import type { NotificationPreferences, Task, Transaction } from '../types';
 export type AppearancePreference = 'dark' | 'light' | 'system';
 
 export const profileInitial = (name: string) => name.trim().charAt(0).toLocaleUpperCase() || '';
@@ -28,6 +28,38 @@ export function watchSystemTheme(media: ThemeMediaQuery, onTheme: (theme: 'dark'
   update();
   if (media.addEventListener) media.addEventListener('change', update); else media.addListener?.(update);
   return () => { if (media.removeEventListener) media.removeEventListener('change', update); else media.removeListener?.(update); };
+}
+type TransactionOrder = Pick<Transaction, 'id' | 'date' | 'occurredAt' | 'createdAt'>;
+function transactionInstant(value?: string) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+function compareTransactionOccurrence(a: TransactionOrder, b: TransactionOrder, direction: 'asc' | 'desc') {
+  const dateDelta = a.date.localeCompare(b.date);
+  if (dateDelta) return direction === 'asc' ? dateDelta : -dateDelta;
+
+  const aTime = transactionInstant(a.occurredAt);
+  const bTime = transactionInstant(b.occurredAt);
+  // A legacy date-only entry has unknown time. Keep it after known times on
+  // that day in either direction; never infer a time from its import/create time.
+  if (aTime === null && bTime !== null) return 1;
+  if (aTime !== null && bTime === null) return -1;
+  if (aTime !== null && bTime !== null && aTime !== bTime) {
+    return direction === 'asc' ? aTime - bTime : bTime - aTime;
+  }
+
+  const createdDelta = a.createdAt.localeCompare(b.createdAt);
+  return createdDelta || a.id.localeCompare(b.id);
+}
+export function sortTransactions<T extends TransactionOrder>(rows: T[], order: 'date-desc' | 'date-asc' | 'amount-desc' = 'date-desc'): T[] {
+  return [...rows].sort((a, b) => {
+    if (order === 'amount-desc' && 'amount' in a && 'amount' in b) {
+      const amountDelta = Number(b.amount) - Number(a.amount);
+      if (amountDelta) return amountDelta;
+    }
+    return compareTransactionOccurrence(a, b, order === 'date-asc' ? 'asc' : 'desc');
+  });
 }
 export const getTasksForDate = <T extends { dueDate?: string }>(tasks: T[], date: string) => tasks.filter(task => task.dueDate === date);
 export function getMonthCalendarDays(year: number, monthIndex: number, weekStartsOnMonday = true): string[] {
