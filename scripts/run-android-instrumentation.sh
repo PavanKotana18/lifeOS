@@ -5,6 +5,8 @@ APP_APK=${1:?expected app debug APK path}
 TEST_APK=${2:?expected Android instrumentation APK path}
 OUT=${3:-qa-emulator-evidence}
 SERIAL=${ANDROID_SERIAL:-emulator-5554}
+TEST_FILTER=${ANDROID_TEST_FILTER:-}
+REQUIRED_TEST=${ANDROID_REQUIRED_TEST:-${TEST_FILTER:-LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView}}
 mkdir -p "$OUT"
 
 adb -s "$SERIAL" get-state
@@ -23,7 +25,11 @@ adb -s "$SERIAL" shell pm list instrumentation
 adb -s "$SERIAL" logcat -c
 
 set +e
-timeout 480s adb -s "$SERIAL" shell am instrument -w -r \
+instrument_args=(-w -r)
+if [[ -n "$TEST_FILTER" ]]; then
+  instrument_args=(-e class "$TEST_FILTER" "${instrument_args[@]}")
+fi
+timeout 480s adb -s "$SERIAL" shell am instrument "${instrument_args[@]}" \
   com.lifeos.personal.test/androidx.test.runner.AndroidJUnitRunner \
   2>&1 | tee "$OUT/instrumentation-output.txt"
 pipe_status=("${PIPESTATUS[@]}")
@@ -32,7 +38,7 @@ set -e
 
 node scripts/android-instrumentation-to-junit.cjs \
   "$OUT/instrumentation-output.txt" "$OUT/junit.xml" \
-  'LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'
+  "$REQUIRED_TEST"
 if [ "$instrumentation_status" -ne 0 ]; then
   exit "$instrumentation_status"
 fi

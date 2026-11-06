@@ -14,9 +14,7 @@ import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import javax.crypto.Cipher;
-import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import static org.junit.Assert.*;
 
@@ -62,12 +60,17 @@ public class CryptoAcceptanceTest {
     @Test public void unavailableActivityFailsOnceAndReleasesGuard() throws Exception {
         int[] failures={0};Call c=new Call("unlock",new JSObject());authenticate(c,()->failures[0]++);assertNotNull(c.error);assertEquals(1,c.settlements);assertEquals(1,failures[0]);assertFalse(((AtomicBoolean)get("authenticationInProgress")).get());locked();
     }
-    private JSObject recoveryEnvelope(String code) throws Exception {
-        byte[] salt=new byte[16],iv=new byte[12];Arrays.fill(salt,(byte)3);Arrays.fill(iv,(byte)4);
-        PBEKeySpec spec=new PBEKeySpec(code.toCharArray(),salt,600000,256);byte[] wrapping=SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();spec.clearPassword();
-        try { Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,new SecretKeySpec(wrapping,"AES"),new GCMParameterSpec(128,iv));c.updateAAD("LifeOS recovery envelope v1".getBytes(StandardCharsets.UTF_8));
-            JSObject env=new JSObject();env.put("version",1);env.put("kdf","PBKDF2-HMAC-SHA-256");env.put("iterations",600000);env.put("salt",b64(salt));env.put("iv",b64(iv));env.put("wrappedKey",b64(c.doFinal(key())));return env;
-        } finally { Arrays.fill(wrapping,(byte)0); }
+    private JSObject recoveryEnvelope(String code) {
+        // Deterministic synthetic vector: password A*43, salt 0x03*16,
+        // AES-GCM IV 0x04*12, and wrapped key 0x2a*32. Generated with
+        // PBKDF2-HMAC-SHA-256 (600,000 iterations) and AES-256-GCM. Keeping
+        // fixture construction independent of Android's optional
+        // SecretKeyFactory providers exercises production KDF on API 24.
+        assertEquals("fixture recovery code changed", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", code);
+        JSObject env=new JSObject();env.put("version",1);env.put("kdf","PBKDF2-HMAC-SHA-256");env.put("iterations",600000);
+        env.put("salt","AwMDAwMDAwMDAwMDAwMDAw==");env.put("iv","BAQEBAQEBAQEBAQE");
+        env.put("wrappedKey","QncCnm9uIJeEajV2oWkL27BlawukL6h3HHtRHtnfM1gZdNzW4M+/Ls6AXDJSLym+");
+        return env;
     }
     @Test public void realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined() throws Exception {
         String code="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";JSObject a=new JSObject();a.put("envelope",recoveryEnvelope(code));a.put("recoveryCode","BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");

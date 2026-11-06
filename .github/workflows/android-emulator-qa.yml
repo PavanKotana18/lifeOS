@@ -54,8 +54,71 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  android-smoke:
+  android-api24-recovery-preflight:
     needs: build-test-apks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - name: Enable KVM access for this ephemeral runner
+        run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 24
+          target: google_apis
+          arch: x86_64
+          profile: "Nexus 5X"
+          avd-name: lifeos-api24-recovery-preflight
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-boot-timeout: 300
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            ANDROID_TEST_FILTER='com.lifeos.personal.CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' \
+            ANDROID_REQUIRED_TEST='CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' \
+            bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+      - name: Require exactly the recovery regression test
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse('qa-emulator-evidence/junit.xml').getroot()
+          tests = root.findall('.//testcase')
+          print(f"API 24 recovery preflight: tests={len(tests)} failures={root.attrib.get('failures', '0')} skipped={root.attrib.get('skipped', '0')}")
+          if len(tests) != 1 or root.attrib.get('failures', '0') != '0' or root.attrib.get('skipped', '0') != '0':
+              sys.exit(1)
+          PY
+      - name: Capture sanitized emulator failure evidence
+        if: failure()
+        run: |
+          mkdir -p qa-api24-recovery-evidence
+          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-api24-recovery-evidence/boot-state.txt 2>&1
+          { timeout 5s adb devices -l || true; } > qa-api24-recovery-evidence/adb-devices.txt 2>&1
+          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-api24-recovery-evidence/logcat-errors.txt 2>&1
+          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-api24-recovery-evidence/failure.png 2>qa-api24-recovery-evidence/screenshot-error.txt
+          cp -R qa-emulator-evidence/. qa-api24-recovery-evidence/ 2>/dev/null || true
+      - name: Upload API 24 recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-api24-recovery-preflight-evidence
+          path: |
+            qa-emulator-evidence/**
+            qa-api24-recovery-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
+
+  android-smoke:
+    needs: [build-test-apks, android-api24-recovery-preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
