@@ -314,7 +314,7 @@ const cases = [
       h.contract([...new Set(remaining)].sort(), []);
     }); }
   },
-  { id: 'LOS-010', category: 'Production AST-extracted export handler; simulated file export/browser', known: true,
+  { id: 'LOS-010', category: 'Production AST-extracted export handler; simulated file export/browser', known: false,
     async run() { await usingFixture(async f => {
       const expression = h.buttonHandler('Export transactions CSV');
       const payloads = ['=1+1', '+1+1', '-1+1', '@SUM(1)', '\t=1+1', '\r=1+1'];

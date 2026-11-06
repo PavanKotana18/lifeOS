@@ -260,6 +260,21 @@
         "Mocked native simulation"
       ],
       "limitations": "Production finance/notification services and App handlers, disposable Dexie; Android permission/alarm interfaces simulated."
+    },
+    {
+      "path": "test_sprint3_acceptance.js",
+      "categories": [
+        "Production integration",
+        "Unit"
+      ],
+      "limitations": "Actual CSV function and AST App save handler with disposable IndexedDB; no mounted React or Android UI."
+    },
+    {
+      "path": "android/app/src/androidTest/java/com/lifeos/personal/CryptoAcceptanceTest.java",
+      "categories": [
+        "Android instrumentation required"
+      ],
+      "limitations": "Actual native plugin with synthetic in-memory fields and captured PluginCall; no real biometric/Keystore authentication, does not touch persisted preferences or production aliases. Compile is not execution."
     }
   ],
   "required_device_cases": [
