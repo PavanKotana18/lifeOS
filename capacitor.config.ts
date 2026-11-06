@@ -4,6 +4,7 @@ const config: CapacitorConfig = {
   appId: 'com.lifeos.personal',
   appName: 'LifeOS',
   webDir: 'dist',
+  loggingBehavior: 'none',
   android: {
     allowMixedContent: false,
     captureInput: true,

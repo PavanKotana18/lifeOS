@@ -1,0 +1,264 @@
+{
+  "categories": [
+    "Production integration",
+    "Unit",
+    "Mocked native simulation",
+    "Static/source inspection",
+    "Android instrumentation required"
+  ],
+  "tests": [
+    {
+      "path": "sentinel/database/database_integrity_tests.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual production Dexie database in fake-indexeddb; no Android WebView."
+    },
+    {
+      "path": "sentinel/resilience/android_resilience_tests.js",
+      "categories": [
+        "Mocked native simulation",
+        "Unit"
+      ],
+      "limitations": "Test-side lifecycle bridge and legacy CJS disk-backup fixtures, not App/Java lifecycle."
+    },
+    {
+      "path": "sentinel/security/crypto_regression_tests.js",
+      "categories": [
+        "Unit"
+      ],
+      "limitations": "Legacy CJS crypto/storage fixtures, not shipped Android Keystore path."
+    },
+    {
+      "path": "sentinel/security/saf_regression_tests.js",
+      "categories": [
+        "Mocked native simulation",
+        "Static/source inspection"
+      ],
+      "limitations": "Bridge substitute and Java string checks; physical picker BLOCKED."
+    },
+    {
+      "path": "sentinel/security/security_tests.js",
+      "categories": [
+        "Unit",
+        "Static/source inspection"
+      ],
+      "limitations": "Legacy cryptoService.js plus manifest/source checks, not native CryptoService.ts."
+    },
+    {
+      "path": "sentinel/ui/e2e_journeys.py",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "NOT RUN; browser/device fixture writes/reset; never target personal profile."
+    },
+    {
+      "path": "sentinel/ui/ui_automation_runner.py",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "NOT RUN; external browser/device required, must use isolated fixture profile."
+    },
+    {
+      "path": "sentinel/unit_integration/domain_tests.js",
+      "categories": [
+        "Unit"
+      ],
+      "limitations": "src_core_logic.js and CJS CSV helper; App CSV export differs."
+    },
+    {
+      "path": "sentinel/visual/visual_regression.py",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "NOT RUN; stored images are not a current test pass."
+    },
+    {
+      "path": "test_audit_regressions.js",
+      "categories": [
+        "Static/source inspection"
+      ],
+      "limitations": "Text assertions and/or test-side simulations; not Java/React runtime coverage."
+    },
+    {
+      "path": "test_auth_lifecycle.js",
+      "categories": [
+        "Static/source inspection"
+      ],
+      "limitations": "Text assertions and/or test-side simulations; not Java/React runtime coverage."
+    },
+    {
+      "path": "test_backup_export_service.js",
+      "categories": [
+        "Mocked native simulation"
+      ],
+      "limitations": "Production TS bridge/coordinator with substitutes; not Keystore/biometric execution."
+    },
+    {
+      "path": "test_backup_indexeddb.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+    },
+    {
+      "path": "test_backup_validation.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+    },
+    {
+      "path": "test_crypto_key_state_api.js",
+      "categories": [
+        "Static/source inspection"
+      ],
+      "limitations": "Text assertions and/or test-side simulations; not Java/React runtime coverage."
+    },
+    {
+      "path": "test_crypto_native_source.js",
+      "categories": [
+        "Static/source inspection"
+      ],
+      "limitations": "Text assertions and/or test-side simulations; not Java/React runtime coverage."
+    },
+    {
+      "path": "test_crypto_service.js",
+      "categories": [
+        "Mocked native simulation"
+      ],
+      "limitations": "Production TS bridge/coordinator with substitutes; not Keystore/biometric execution."
+    },
+    {
+      "path": "test_crypto_session_coordinator.js",
+      "categories": [
+        "Mocked native simulation"
+      ],
+      "limitations": "Production TS bridge/coordinator with substitutes; not Keystore/biometric execution."
+    },
+    {
+      "path": "test_db_atomicity.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+    },
+    {
+      "path": "test_encrypted_dexie_store.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+    },
+    {
+      "path": "test_encrypted_record_codec.js",
+      "categories": [
+        "Unit"
+      ],
+      "limitations": "Some unit fixtures duplicate or mock business/data logic; no device assurance."
+    },
+    {
+      "path": "test_encrypted_storage_facade.js",
+      "categories": [
+        "Unit"
+      ],
+      "limitations": "Some unit fixtures duplicate or mock business/data logic; no device assurance."
+    },
+    {
+      "path": "test_encrypted_storage_migration.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+    },
+    {
+      "path": "test_encrypted_transaction_coordinator.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+    },
+    {
+      "path": "test_goal_status_ui.js",
+      "categories": [
+        "Static/source inspection"
+      ],
+      "limitations": "Text assertions and/or test-side simulations; not Java/React runtime coverage."
+    },
+    {
+      "path": "test_habit_analytics_wiring.js",
+      "categories": [
+        "Unit",
+        "Static/source inspection"
+      ],
+      "limitations": "Executes production domainUtils with esbuild; UI wiring portions inspect text."
+    },
+    {
+      "path": "test_lifeos.js",
+      "categories": [
+        "Unit"
+      ],
+      "limitations": "Some unit fixtures duplicate or mock business/data logic; no device assurance."
+    },
+    {
+      "path": "test_offline_resilience.js",
+      "categories": [
+        "Static/source inspection"
+      ],
+      "limitations": "Text assertions and/or test-side simulations; not Java/React runtime coverage."
+    },
+    {
+      "path": "test_session_manager.js",
+      "categories": [
+        "Unit"
+      ],
+      "limitations": "Some unit fixtures duplicate or mock business/data logic; no device assurance."
+    },
+    {
+      "path": "test_tasks_recurrence.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+    },
+    {
+      "path": "test_tasks_recurrence_edges.js",
+      "categories": [
+        "Production integration"
+      ],
+      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+    },
+    {
+      "path": "tests/wp0/harness-selftest.cjs",
+      "categories": [
+        "Unit"
+      ],
+      "limitations": "Result-policy/completion checks and actual child missing-dependency injection."
+    },
+    {
+      "path": "tests/wp0/production-cases.cjs",
+      "categories": [
+        "Production integration",
+        "Mocked native simulation"
+      ],
+      "limitations": "Real modules and AST-extracted handlers, no mounted React/Java; cases separately identified by finding."
+    },
+    {
+      "path": "test_sprint1_security.js",
+      "categories": [
+        "Unit",
+        "Mocked native simulation",
+        "Static/source inspection"
+      ],
+      "limitations": "Actual session/recovery/backup service behavior; Java guards static only, no native device validation."
+    }
+  ],
+  "required_device_cases": [
+    "LOS-003-ANDROID",
+    "LOS-001 physical persistence/startup",
+    "LOS-002 real crypto restore",
+    "LOS-009 actual alarm reset",
+    "biometric UI thread and recovery lifecycle"
+  ],
+  "device_status": "Android instrumentation required; not executed; see docs/testing/WP0_ANDROID_TEST_PLAN.md"
+}

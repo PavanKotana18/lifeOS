@@ -1,0 +1,309 @@
+{
+  "auditedMain": "d7882d29d68fa45ac026c1da490b80aa910cd0a0",
+  "publishedWP0": "370a445f19c843abe42b7d6450d4d521bbb07824",
+  "branch": "fix/lifeos-security-data-sprint1-20261106",
+  "verification": [
+    {
+      "name": "npm-test",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 25.94,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824"
+    },
+    {
+      "name": "sentinel",
+      "command": [
+        "npm",
+        "run",
+        "test:sentinel"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 3.7,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824"
+    },
+    {
+      "name": "test-all",
+      "command": [
+        "npm",
+        "run",
+        "test:all"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 29.89,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 5.32,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824"
+    },
+    {
+      "name": "build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 9.3,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824"
+    },
+    {
+      "name": "mandatory",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--controls",
+        "--json",
+        "<external-logs>/mandatory.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 10.01,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824"
+    },
+    {
+      "name": "known",
+      "command": [
+        "npm",
+        "run",
+        "test:regressions",
+        "--",
+        "--json",
+        "<external-logs>/known.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 4.25,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824"
+    },
+    {
+      "name": "strict",
+      "command": [
+        "npm",
+        "run",
+        "test:regressions:strict"
+      ],
+      "exit": 1,
+      "expected": 1,
+      "seconds": 4.3,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824"
+    },
+    {
+      "name": "final-mandatory",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--controls",
+        "--json",
+        "<external-logs>/mandatory.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 10.03,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final recovery UI cached-auth invalidation and source fingerprints"
+    },
+    {
+      "name": "final-known",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--json",
+        "<external-logs>/known.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 3.84,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final recovery UI cached-auth invalidation and source fingerprints"
+    },
+    {
+      "name": "final-typecheck",
+      "command": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 5.37,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final recovery UI cached-auth invalidation and source fingerprints"
+    },
+    {
+      "name": "final-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 9.06,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final recovery UI cached-auth invalidation and source fingerprints"
+    },
+    {
+      "name": "final-test-all",
+      "command": [
+        "npm",
+        "run",
+        "test:all"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 30.94,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final replacement race guard"
+    },
+    {
+      "name": "final-controls",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--controls",
+        "--json",
+        "<external-logs>/mandatory.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 11.07,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final replacement race guard"
+    },
+    {
+      "name": "final-observations",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--json",
+        "<external-logs>/known.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 4.21,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final replacement race guard"
+    },
+    {
+      "name": "final-ts",
+      "command": [
+        "npx",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 5.22,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final replacement race guard"
+    },
+    {
+      "name": "final-web",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 8.94,
+      "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+      "note": "Final replacement race guard"
+    }
+  ],
+  "mandatory": [
+    {
+      "id": "CONTROL-INTEGRATION",
+      "status": "PASS",
+      "checks": 20,
+      "category": "Production integration + mocked native simulation"
+    },
+    {
+      "id": "LOS-002",
+      "status": "PASS",
+      "checks": 16,
+      "category": "Production integration; real validator/facade/coordinator/Dexie; simulated native"
+    },
+    {
+      "id": "LOS-003",
+      "status": "PASS",
+      "checks": 18,
+      "category": "Mocked native lifecycle simulation + actual App callback / encrypted DB"
+    },
+    {
+      "id": "LOS-007",
+      "status": "PASS",
+      "checks": 4,
+      "category": "Production integration: raw/encrypted goal API parity; simulated native"
+    },
+    {
+      "id": "LOS-008",
+      "status": "PASS",
+      "checks": 16,
+      "category": "Production integration: raw/encrypted recurrence parity; fixed local clock; simulated native"
+    },
+    {
+      "id": "SPRINT1-RESTORE",
+      "status": "PASS",
+      "checks": 19,
+      "category": "Production integration; real import rollback/consent/relationships"
+    },
+    {
+      "id": "SPRINT1-RECOVERY",
+      "status": "PASS",
+      "checks": 20,
+      "category": "Production recovery/wrapper/DB; native proof AES-GCM SIMULATION"
+    },
+    {
+      "id": "SPRINT1-IMPORT-RACE",
+      "status": "PASS",
+      "checks": 5,
+      "category": "Actual App import handler and DB live replacement guard"
+    },
+    {
+      "id": "LOS-023",
+      "status": "PASS",
+      "checks": 22,
+      "category": "Production integration: WebCrypto, legacy conversion, actual restore"
+    }
+  ],
+  "remainingObservations": [
+    {
+      "id": "LOS-001",
+      "status": "KNOWN_DEFECT"
+    },
+    {
+      "id": "LOS-009",
+      "status": "KNOWN_DEFECT"
+    },
+    {
+      "id": "LOS-010",
+      "status": "KNOWN_DEFECT"
+    },
+    {
+      "id": "LOS-003-ANDROID",
+      "status": "BLOCKED"
+    }
+  ],
+  "securityServiceTests": 13,
+  "nativeHardware": "NOT RUN",
+  "nativeLocalBuild": "BLOCKED: no supported Gradle/SDK environment",
+  "remoteCI": "Pending publication; inspect live PR checks, not a device pass",
+  "originalWorktree": "Branch/HEAD/status/141 tracked hashes and untracked inventory unchanged; private backup contents untouched"
+}
