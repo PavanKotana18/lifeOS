@@ -8,6 +8,11 @@
   ],
   "tests": [
     {
+      "path": "test_encryption_admission.js",
+      "categories": ["Production integration", "Mocked native simulation"],
+      "limitations": "Real facade and migration with disposable IndexedDB and synthetic native AES-GCM; no genuine Keystore or provisioning UI."
+    },
+    {
       "path": "sentinel/database/database_integrity_tests.js",
       "categories": [
         "Production integration"

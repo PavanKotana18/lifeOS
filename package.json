@@ -16,7 +16,8 @@
     "test:encrypted": "node scripts/run-encrypted-tests.cjs",
     "test:wp0": "node tests/wp0/harness-selftest.cjs && node scripts/run-wp0-regressions.cjs --controls",
     "test:regressions": "node scripts/run-wp0-regressions.cjs",
-    "test:regressions:strict": "node scripts/run-wp0-regressions.cjs --strict"
+    "test:regressions:strict": "node scripts/run-wp0-regressions.cjs --strict",
+    "test:encryption-admission": "node test_encryption_admission.js"
   },
   "dependencies": {
     "@capacitor/android": "^6.0.0",
