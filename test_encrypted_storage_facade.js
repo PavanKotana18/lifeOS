@@ -111,9 +111,9 @@ function makeEnvironment() {
     },
     validateBackupTables(tables) {
       if (!tables || typeof tables !== 'object' || Array.isArray(tables)) {
-        return ['Invalid table payload'];
+        throw new Error('Invalid table payload');
       }
-      return [];
+      return TABLES;
     },
     getNextRecurringTaskDate(task) {
       const date = new Date(`${task.dueDate}T00:00:00.000Z`);

@@ -160,16 +160,38 @@ async function fixture() {
   global.localStorage = memoryStorage();
   let key = crypto.randomBytes(32); // Synthetic, process-local; never logged or persisted.
   let unlocked = true;
+  let recoveryKey = null, recoveryVerified = false;
   const calls = [];
   const native = {
     calls,
     onStop() { unlocked = false; }, // SIMULATED Android handleOnStop, not Java execution.
     async getKeyState() { calls.push('getKeyState'); return { keyProvisioned: true,
-      recoveryProvisioned: true, recoveryNeedsRebind: false, metadataConsistent: true,
+      recoveryProvisioned: true, recoveryNeedsRebind: recoveryKey !== null, metadataConsistent: true,
       keystoreAliasPresent: true, unlocked }; },
     async isUnlocked() { calls.push('isUnlocked'); return { unlocked }; },
     async unlock() { calls.push('unlock'); unlocked = true; return { success: true }; },
-    async lock() { calls.push('lock'); unlocked = false; return { success: true }; },
+    async lock() { calls.push('lock'); unlocked = false; recoveryVerified = false;
+      if (recoveryKey) recoveryKey.fill(0); recoveryKey = null; return { success: true }; },
+    // Explicit simulated recovery. The synthetic code selects the fixture key;
+    // it does NOT implement Android/PBKDF2 recovery and is never device evidence.
+    async recoverWithSecret({ recoveryCode }) {
+      calls.push('recover'); unlocked = false;
+      recoveryKey = recoveryCode === 'A'.repeat(43) ? Buffer.from(key) : crypto.randomBytes(32);
+      return { success: true };
+    },
+    async verifyRecoveryRecord({ iv, ciphertext, aad }) {
+      calls.push('proof'); assert.ok(recoveryKey, 'No simulated quarantined key');
+      const data = Buffer.from(ciphertext, 'base64');
+      const cipher = crypto.createDecipheriv('aes-256-gcm', recoveryKey, Buffer.from(iv, 'base64'));
+      cipher.setAAD(Buffer.from(aad)); cipher.setAuthTag(data.subarray(-16));
+      const plain = Buffer.concat([cipher.update(data.subarray(0, -16)), cipher.final()]);
+      plain.fill(0); recoveryVerified = true; return { verified: true };
+    },
+    async rebindLocalKey() {
+      calls.push('rebind'); assert.ok(recoveryVerified, 'No rebind without authenticated proof');
+      recoveryKey.fill(0); recoveryKey = null; recoveryVerified = false; unlocked = true;
+      return { success: true };
+    },
     async setup() { throw new Error('Unexpected setup in preprovisioned fixture'); },
     async encrypt({ plaintext, aad }) {
       calls.push('encrypt');
@@ -218,9 +240,12 @@ async function fixture() {
   function appDeps() {
     const deps = { ...domain, ...preferences, ...db, ...notificationModule, ...state,
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
+      encryptedSession: load('src/services/cryptoSessionCoordinator.ts').createProtectedSessionController(
+        load('src/services/cryptoService.ts').CryptoService, db.sessionManager),
       localStorage: global.localStorage, window: { confirm: () => true },
       systemDarkPreference: () => false, applyDomTheme() {},
       BiometricService: { async isAvailable() { return { isAvailable: true }; } },
+      backupPassphraseResolver: { current: null },
       authCoordinator: { resetForBackground() {} }, notificationsEnabled: false,
       notificationPreferences: notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
       effectiveNotificationPreferences: (p, master = false) => master ? p : notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
@@ -236,7 +261,7 @@ async function fixture() {
     async activate() { db.sessionManager.unlock(); await db.activateEncryptedStorage();
       check(db.isEncryptedStorageActivated(), 'Production encrypted activation must complete'); },
     async dispose() { db.sessionManager.lock(); await db.sessionManager.waitForIdle();
-      await db.lifeOSDatabase.delete(); key.fill(0); key = null; }
+      await db.lifeOSDatabase.delete(); key.fill(0); key = null; if (recoveryKey) recoveryKey.fill(0); }
   };
 }
 module.exports = { ROOT, TABLES, check, equal, contract, ContractFailure, fixture,

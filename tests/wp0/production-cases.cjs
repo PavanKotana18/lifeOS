@@ -25,6 +25,7 @@ const goal = { title: 'WP0 synthetic goal', category: 'Fitness', targetValue: 10
   currentValue: 0, unit: 'km', startDate: '2026-01-01', targetDate: '2026-12-31',
   priority: 'Medium', status: 'In Progress' };
 async function goalOutcomes(s) {
+  await assert.rejects(s.goals.addMilestone({ goalId: 'missing-parent', title: 'Orphan', completed: false }), /does not exist/);
   const read = async id => (await s.goals.getAll()).find(g => g.id === id).status;
   const a = await s.goals.add(goal);
   await s.goals.update(a.id, { currentValue: 10 });
@@ -77,6 +78,59 @@ function parseCsv(csv) {
   return rows;
 }
 const cases = [
+  { id: 'SPRINT1-IMPORT-RACE', category: 'Actual App import handler and DB live replacement guard', known: false,
+    async run() { await usingFixture(async f => {
+      f.sessionManager.unlock();
+      const importer = f.load('src/services/backupImportService.ts');
+      const codec = f.load('src/services/backupCryptoService.ts');
+      let before, replacement, rejected;
+      const backup = { ...f.StorageService.backup,
+        async hasData() {
+          h.equal(await f.StorageService.backup.hasData(), false, 'UI initially sees empty database');
+          await f.StorageService.categories.getAll();
+          await f.StorageService.transactions.add({ type: 'expense', amount: 1, category: 'Food',
+            description: 'Concurrent synthetic write', date: '2026-11-06', paymentMethod: 'Cash' });
+          before = await snapshot(f); return false;
+        },
+        async importData(text, options) {
+          replacement = options.replaceExisting;
+          try { return await f.StorageService.backup.importData(text, options); }
+          catch (error) { rejected = error; throw error; }
+        }
+      };
+      const expression = h.appFunction('importBackupFile');
+      await h.bind(expression, { ...f.appDeps(), ...h.noopSetters(expression),
+        StorageService: { backup }, backupOperation: { current: false },
+        decodeBackupForRestore: importer.decodeBackupForRestore,
+        MAX_BACKUP_FILE_BYTES: codec.MAX_BACKUP_FILE_BYTES,
+        requestBackupPassphrase: async () => { throw new Error('Legacy import must not request a passphrase'); },
+      })({ size: 300, text: async () => JSON.stringify({ tables: Object.fromEntries(h.TABLES.map(t => [t, []])) }) });
+      h.equal(replacement, false, 'Empty observation never grants unconfirmed replacement consent');
+      h.check(/Confirm replacement/.test(rejected?.message || ''), 'Actual live guard refused replacement');
+      h.equal(await snapshot(f), before, 'Concurrent write survives actual UI import attempt');
+    }); }
+  },
+  { id: 'SPRINT1-RECOVERY', category: 'Production recovery/wrapper/DB; native proof AES-GCM SIMULATION', known: false,
+    async run() { await usingFixture(async f => {
+      await seed(f); await f.activate();
+      const before = await snapshot(f);
+      const { createRecoveryController } = f.load('src/services/recoveryService.ts');
+      const controller = createRecoveryController(f.load('src/services/cryptoService.ts').CryptoService,
+        f.sessionManager, f.getRecoveryChallenge);
+      const kit = code => JSON.stringify({ product: 'LifeOS', format: 'lifeos-recovery-kit', version: 1,
+        recoveryCode: code, envelope: { version: 1, kdf: 'PBKDF2-HMAC-SHA-256', iterations: 600000,
+          salt: Buffer.alloc(16).toString('base64'), iv: Buffer.alloc(12).toString('base64'), wrappedKey: Buffer.alloc(48).toString('base64') } });
+      const rebinds = () => f.native.calls.filter(c => c === 'rebind').length;
+      await assert.rejects(controller.recover(kit('B'.repeat(43))));
+      h.equal(rebinds(), 0, 'Wrong simulated key fails actual AAD/GCM proof before rebind');
+      h.equal(await snapshot(f), before, 'Wrong kit leaves ciphertext unchanged');
+      await controller.recover(kit('A'.repeat(43)));
+      h.equal(rebinds(), 1, 'Matching simulated key completed proof before rebind');
+      h.equal(f.sessionManager.isUnlocked(), false, 'Recovery never opens JS admission');
+      h.equal((await f.native.isUnlocked()).unlocked, false, 'Recovery ends with native key locked');
+      h.equal(await snapshot(f), before, 'Successful recovery does not replace database records');
+    }); }
+  },
   { id: 'CONTROL-INTEGRATION', category: 'Production integration + mocked native simulation', known: false,
     async run() { await usingFixture(async f => {
       await assert.rejects(f.StorageService.transactions.getAll(), /locked/i);
@@ -123,7 +177,7 @@ const cases = [
       { activated: true, encrypted: true, plaintextFieldsAbsent: true });
     }); }
   },
-  { id: 'LOS-002', category: 'Production integration; real validator/facade/coordinator/Dexie; simulated native', known: true,
+  { id: 'LOS-002', category: 'Production integration; real validator/facade/coordinator/Dexie; simulated native', known: false,
     async run() { await usingFixture(async f => {
       await seed(f); await f.activate();
       const json = await f.StorageService.backup.exportData();
@@ -139,7 +193,7 @@ const cases = [
         'Accepted restore must roundtrip exact logical relationships');
     }); }
   },
-  { id: 'LOS-003', category: 'Mocked native lifecycle simulation + actual App callback / encrypted DB', known: true,
+  { id: 'LOS-003', category: 'Mocked native lifecycle simulation + actual App callback / encrypted DB', known: false,
     async run() { await usingFixture(async f => {
       await seed(f); await f.activate();
       const deps = f.appDeps(), errors = [];
@@ -159,7 +213,65 @@ const cases = [
         protectedReloadCompleted: reloads > 0 }, { nativeKeyAvailable: true, protectedReloadCompleted: true });
     }); }
   },
-  { id: 'LOS-007', category: 'Production integration: raw/encrypted goal API parity; simulated native', known: true,
+  { id: 'SPRINT1-RESTORE', category: 'Production integration; real import rollback/consent/relationships', known: false,
+    async run() { await usingFixture(async f => {
+      await seed(f); await f.activate();
+      const json = await f.StorageService.backup.exportData();
+      const before = await snapshot(f);
+      await assert.rejects(f.StorageService.backup.importData(json), /Existing data/);
+      h.equal(await snapshot(f), before, 'Replacement consent is mandatory and nondestructive');
+      const bad = JSON.parse(json); bad.tables.goals = [];
+      await assert.rejects(f.StorageService.backup.importData(JSON.stringify(bad), { replaceExisting: true }), /reference/);
+      h.equal(await snapshot(f), before, 'Orphaned backup relationships rejected unchanged');
+      const fail = () => { throw new Error('SPRINT1_INJECTED_COMMIT_FAILURE'); };
+      f.lifeOSDatabase.tasks.hook('creating', fail);
+      try {
+        await assert.rejects(f.StorageService.backup.importData(json, { replaceExisting: true }), /SPRINT1_INJECTED_COMMIT_FAILURE/);
+      } finally { f.lifeOSDatabase.tasks.hook('creating').unsubscribe(fail); }
+      h.equal(await snapshot(f), before, 'Actual restore rolled back earlier table writes after later table failure');
+      await f.StorageService.backup.importData(JSON.stringify({ data: JSON.parse(json).tables }), { replaceExisting: true });
+      h.equal(JSON.parse(await f.StorageService.backup.exportData()).tables, JSON.parse(json).tables,
+        'Legacy data alias restored through actual encrypted backend');
+      const writes = f.encryptedStorageRuntime.transactionCoordinator.run(async tx => {
+        const row = (await tx.getAll('transactions'))[0]; tx.put('transactions', { ...row, amount: 42 });
+      });
+      const exported = f.StorageService.backup.exportData();
+      await writes;
+      h.equal(JSON.parse(await exported).tables.transactions.find(t => t.amount === 42)?.amount, 42,
+        'Export queued behind admitted write observes committed transaction');
+    }); }
+  },
+  { id: 'LOS-023', category: 'Production integration: WebCrypto, legacy conversion, actual restore', known: false,
+    async run() { await usingFixture(async f => {
+      const original = await seed(f);
+      const crypto = f.load('src/services/backupCryptoService.ts');
+      const importer = f.load('src/services/backupImportService.ts');
+      const passphrase = 'synthetic-WP2-backup-passphrase';
+      let confirmations = 0;
+      const options = { requestPassphrase: async () => passphrase,
+        confirmLegacy: () => { confirmations++; return true; }, validateTables: f.validateBackupTables };
+      const modern = await crypto.encryptBackup(original, passphrase);
+      h.equal(await importer.decodeBackupForRestore(modern, options), original, 'Actual encrypted backup codec roundtrip');
+      h.equal(confirmations, 0, 'Encrypted format never uses plaintext fallback');
+      h.equal(await importer.decodeBackupForRestore(original, { ...options, confirmLegacy: () => false }), null,
+        'Legacy conversion requires explicit consent');
+      const converted = await importer.decodeBackupForRestore(original, options);
+      h.equal(confirmations, 1, 'User explicitly accepted legacy unencrypted file');
+      await f.activate();
+      await f.StorageService.backup.importData(converted, { replaceExisting: true });
+      h.equal(JSON.parse(await f.StorageService.backup.exportData()).tables, JSON.parse(original).tables,
+        'Old-main plaintext export restores into actual encrypted runtime');
+      h.check((await f.lifeOSDatabase.transactions.toArray()).every(r => r.__lifeosEncrypted === 1 && r.description === undefined),
+        'Legacy import never downgrades at-rest backend');
+      const snapshotBefore = await snapshot(f);
+      await assert.rejects(importer.decodeBackupForRestore(modern, { ...options, requestPassphrase: async () => 'wrong' }), /failed|incorrect|corrupt/i);
+      const corrupt = JSON.parse(modern); corrupt.ciphertext = (corrupt.ciphertext[0] === 'A' ? 'B' : 'A') + corrupt.ciphertext.slice(1);
+      await assert.rejects(importer.decodeBackupForRestore(JSON.stringify(corrupt), options), /failed|incorrect|corrupt/i);
+      h.equal(confirmations, 1, 'Wrong/corrupt encrypted files never fall back to legacy');
+      h.equal(await snapshot(f), snapshotBefore, 'Failed decryption made no database changes');
+    }); }
+  },
+  { id: 'LOS-007', category: 'Production integration: raw/encrypted goal API parity; simulated native', known: false,
     async run() { await usingFixture(async f => {
       f.sessionManager.unlock();
       const expected = await goalOutcomes(f.StorageService);
@@ -170,7 +282,7 @@ const cases = [
       h.contract(actual, expected);
     }); }
   },
-  { id: 'LOS-008', category: 'Production integration: raw/encrypted recurrence parity; fixed local clock; simulated native', known: true,
+  { id: 'LOS-008', category: 'Production integration: raw/encrypted recurrence parity; fixed local clock; simulated native', known: false,
     async run() { await usingFixture(async f => {
       f.sessionManager.unlock();
       const expected = await recurrenceOutcomes(f.StorageService);

@@ -1,0 +1,26 @@
+{
+  "baseCommit": "370a445f19c843abe42b7d6450d4d521bbb07824",
+  "phase": "Pre-commit verified source; final commit is the PR head",
+  "files": {
+    "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java": "ef0fc023bf4abdf9f284f0e9acde47487afcfa2d4e5778aed49658d051e58cc8",
+    "capacitor.config.ts": "9f34392ca0660ea3451a8c758422eaf0170a1a91710d4a3b3bcd40c112a662b4",
+    "docs/testing/WP0.md": "8ff5384ef7b61153b56c2c1de0722cda0db79ae11dee79d180a9730d8fb66a9e",
+    "package.json": "9136bcbcd4ec41d9cba34a6b89f5dc80aa78a0378b1557b1a6198f473fef757b",
+    "scripts/run-wp0-regressions.cjs": "10211142f890bdf5a897e8b90c9316de2d31a818cc0746fb66527fd4c0334fe0",
+    "src/App.tsx": "85cdceeab46cdd721b9c8103f06f5997c13ded224e510c4588acf284ecd269de",
+    "src/components/BackupPassphraseDialog.tsx": "0cd9602dc630578aa505721690e6982d4b737353a216ff66686f1c8b3f0e9962",
+    "src/components/RecoveryDialog.tsx": "d26112b344253b9fd27ebce74882850d3716c2da83890955f634a2ee8e1e8465",
+    "src/db.ts": "ccbfcb3efc8710189c79bb962e4c77ec1261486d335a43021ba009e8bc074f8e",
+    "src/services/backupCryptoService.ts": "d416b0b174fa70b9a0d5e317cf7d9c07a5a3bba98eae3976a41f6f9abdf85b24",
+    "src/services/backupImportService.ts": "43da91d2776ddc972844490f5802ce79a4707458b89734c2cb3c17883ad04c25",
+    "src/services/cryptoService.ts": "13c9b2db93589d2c0655ec17c1938f1717dd9f29184111357daf77c0d3a5d8fa",
+    "src/services/cryptoSessionCoordinator.ts": "7df6e328b01659c8c4f9c151fc7e0d5a93dbe01e8ebf4de83f2fce4cc52c407c",
+    "src/services/encryptedStorageFacade.ts": "7794f87088689aba6c25045e1229bb1580297de417d5db176eab7202f9e5ac21",
+    "src/services/recoveryService.ts": "d8bbf771e8acca08cad8eed374c61612a9de3dac2f96c0d78b7a27a244e4efb5",
+    "test_encrypted_storage_facade.js": "1b897d699f043925cceab3c960e1e24c758c0521235524fe2831795ac0773969",
+    "test_sprint1_security.js": "25c6df72215d9edcdff353b89eda86a71fa701d3ca1d03ba68430e80d9a9462b",
+    "tests/wp0/production-cases.cjs": "b642b4aff6722844cee063f5ca54fc9db077b798c6a730947cda7b3f8eb16209",
+    "tests/wp0/production-harness.cjs": "188d47282828bf817af3a0a8c8262c04df712e6f309596eb1e248ae08d965d1d",
+    "tests/wp0/test-inventory.json": "3bd1819ac4d6520bc2b0128de9826c7352242203bf336c4e8c0e872ba9880b9f"
+  }
+}

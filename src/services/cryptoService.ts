@@ -37,6 +37,7 @@ export interface CryptoKeyState {
 }
 
 interface NativeCryptoPlugin {
+  verifyRecoveryRecord(options: { iv: string; ciphertext: string; aad: string }): Promise<{ verified: boolean }>;
   prepareRecovery(): Promise<{
     success: boolean;
     recoveryCode: string;
@@ -200,6 +201,16 @@ export const CryptoService = Object.freeze({
   async rebindLocalKey(): Promise<CryptoOperationResult> {
     assertNativeCryptoAvailable();
     return nativeCrypto.rebindLocalKey();
+  },
+
+  async verifyRecoveryRecord(table: string, recordId: string, schemaVersion: number, encrypted: EncryptedRecord): Promise<void> {
+    assertNativeCryptoAvailable();
+    if (!encrypted || encrypted.keyVersion !== 1 || typeof encrypted.iv !== 'string' || typeof encrypted.ciphertext !== 'string') {
+      throw new Error('Invalid recovery verification record.');
+    }
+    const result = await nativeCrypto.verifyRecoveryRecord({ iv: encrypted.iv, ciphertext: encrypted.ciphertext,
+      aad: buildRecordAad(table, recordId, schemaVersion) });
+    if (result?.verified !== true) throw new Error('Recovery kit does not match the existing encrypted database.');
   },
 
   async setup(): Promise<CryptoOperationResult> {

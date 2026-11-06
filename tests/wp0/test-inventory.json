@@ -242,6 +242,15 @@
         "Mocked native simulation"
       ],
       "limitations": "Real modules and AST-extracted handlers, no mounted React/Java; cases separately identified by finding."
+    },
+    {
+      "path": "test_sprint1_security.js",
+      "categories": [
+        "Unit",
+        "Mocked native simulation",
+        "Static/source inspection"
+      ],
+      "limitations": "Actual session/recovery/backup service behavior; Java guards static only, no native device validation."
     }
   ],
   "required_device_cases": [
