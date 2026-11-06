@@ -1,0 +1,197 @@
+{
+  "baseline": "3e11619d612fc4207bf5972979a8583da069ea3e",
+  "implementationCommit": "6bd8f0e42bf90d50a1058ed8cf9856d12b15b2d3",
+  "sourceSha256": {
+    ".github/workflows/build-apk.yml": "50412db7db87e10834fcaa0e3927937f18f91818624e754ca415e1146c30b546",
+    "android/app/src/main/AndroidManifest.xml": "a224e7157545734234fe9ffe904a8ae7a0deb58b797e7356df5a03a298b3e3e2",
+    "package.json": "fa1071c8b3d582795e0fc29899b05deaa36afadfd6ff1781c1fc948adb7bd4a8",
+    "scripts/run-wp0-regressions.cjs": "8106f34c1d40b847e4dc548900f8a9bcd256e376a4f18906188c505f467f9ca4",
+    "src/App.tsx": "583d4c4b3060065b19fd4731875798abad219cee7faaea7404183b8f400e6b91",
+    "src/services/financeAnalytics.ts": "2f6beb85212833a0e90ddab8e050b0ab195edea18e8b94d612a746e5a7648b82",
+    "src/services/notificationService.ts": "a2ae86265374a03044661ce86f519e52a77bc5bfd19a6303fa65c81c115f3cc9",
+    "test_local_consolidation.js": "9d7608e52826f6198ce3e65dcc864ccf23f1ff5148396ca15d0bb2589f8769c7",
+    "tests/wp0/production-cases.cjs": "ca9e626deb25e7dbcd89be8c30de48c77ff28fda80dd1f585c1a3af50698c3f2",
+    "tests/wp0/test-inventory.json": "9aef1d59b6ca0c511123dfaaf0a1332b8c30a0c03b8f68977eb738d6d4b9aefd"
+  },
+  "checks": [
+    {
+      "name": "npm-test",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 29.77,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    },
+    {
+      "name": "sentinel",
+      "command": [
+        "npm",
+        "run",
+        "test:sentinel"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 4.42,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    },
+    {
+      "name": "test-all",
+      "command": [
+        "npm",
+        "run",
+        "test:all"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 84.05,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 5.12,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    },
+    {
+      "name": "build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 9.03,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    },
+    {
+      "name": "mandatory",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--controls",
+        "--json",
+        "/data/data/com.termux/files/home/lifeos-remediation-reports/local-consolidation/mandatory.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 12.15,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    },
+    {
+      "name": "known",
+      "command": [
+        "npm",
+        "run",
+        "test:regressions",
+        "--",
+        "--json",
+        "/data/data/com.termux/files/home/lifeos-remediation-reports/local-consolidation/known.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 2.88,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    },
+    {
+      "name": "strict",
+      "command": [
+        "npm",
+        "run",
+        "test:regressions:strict"
+      ],
+      "exit": 1,
+      "expected": 1,
+      "seconds": 3.04,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 0.02,
+      "baseCommit": "3e11619d612fc4207bf5972979a8583da069ea3e"
+    }
+  ],
+  "mandatory": [
+    {
+      "id": "LOS-009",
+      "status": "PASS",
+      "assertions": 19
+    },
+    {
+      "id": "CONTROL-INTEGRATION",
+      "status": "PASS",
+      "assertions": 20
+    },
+    {
+      "id": "LOS-002",
+      "status": "PASS",
+      "assertions": 16
+    },
+    {
+      "id": "LOS-003",
+      "status": "PASS",
+      "assertions": 18
+    },
+    {
+      "id": "LOS-007",
+      "status": "PASS",
+      "assertions": 4
+    },
+    {
+      "id": "LOS-008",
+      "status": "PASS",
+      "assertions": 16
+    },
+    {
+      "id": "SPRINT1-RESTORE",
+      "status": "PASS",
+      "assertions": 19
+    },
+    {
+      "id": "SPRINT1-RECOVERY",
+      "status": "PASS",
+      "assertions": 20
+    },
+    {
+      "id": "SPRINT1-IMPORT-RACE",
+      "status": "PASS",
+      "assertions": 5
+    },
+    {
+      "id": "LOS-023",
+      "status": "PASS",
+      "assertions": 22
+    }
+  ],
+  "observations": [
+    {
+      "id": "LOS-001",
+      "status": "KNOWN_DEFECT"
+    },
+    {
+      "id": "LOS-010",
+      "status": "KNOWN_DEFECT"
+    },
+    {
+      "id": "LOS-003-ANDROID",
+      "status": "BLOCKED"
+    }
+  ]
+}

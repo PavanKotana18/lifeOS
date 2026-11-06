@@ -291,7 +291,7 @@ const cases = [
       h.contract(await recurrenceOutcomes(f.StorageService), expected);
     }); }
   },
-  { id: 'LOS-009', category: 'Mocked native pending-alarm simulation + actual reset handler / Dexie', known: true,
+  { id: 'LOS-009', category: 'Mocked native pending-alarm simulation + actual reset handler / Dexie', known: false,
     async run() { await usingFixture(async f => {
       await seed(f);
       const s = f.StorageService, ns = f.NotificationService;
