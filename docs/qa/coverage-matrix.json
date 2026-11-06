@@ -1,0 +1,135 @@
+{
+  "baseline": "d186cec4a0df1f488c56e46438aa62d49487065d",
+  "coverage": [
+    {
+      "module": "Finance",
+      "testId": "FIN-ANALYTICS",
+      "risk": "MEDIUM",
+      "testType": "Unit/production analytics",
+      "environment": "Termux Node",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "analytics tests; sort report untested"
+    },
+    {
+      "module": "Planner",
+      "testId": "LOS-008",
+      "risk": "HIGH",
+      "testType": "Production integration + fake IndexedDB",
+      "environment": "Termux Node",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "WP0 controls"
+    },
+    {
+      "module": "Habits",
+      "testId": "HABIT-STREAK",
+      "risk": "MEDIUM",
+      "testType": "Production domain unit",
+      "environment": "Termux Node",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "test_lifeos.js / Sentinel"
+    },
+    {
+      "module": "Goals",
+      "testId": "LOS-007",
+      "risk": "HIGH",
+      "testType": "Production integration + fake IndexedDB",
+      "environment": "Termux Node",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "WP0 controls"
+    },
+    {
+      "module": "Onboarding and profile",
+      "testId": "ONBOARDING",
+      "risk": "HIGH",
+      "testType": "Static and handler",
+      "environment": "Node; UI unmounted",
+      "status": "NOT EXECUTED",
+      "lastObserved": "2026-11-06",
+      "evidence": "No mounted UI suite"
+    },
+    {
+      "module": "Settings and themes",
+      "testId": "THEME-COLD-LAUNCH",
+      "risk": "MEDIUM",
+      "testType": "Static/source",
+      "environment": "Node",
+      "status": "NOT EXECUTED",
+      "lastObserved": "2026-11-06",
+      "evidence": "Cold launch report lacks runtime reproduction"
+    },
+    {
+      "module": "Biometrics",
+      "testId": "LOS-003-ANDROID",
+      "risk": "CRITICAL",
+      "testType": "Android instrumentation; interactive opt-in",
+      "environment": "GitHub emulator / device",
+      "status": "BLOCKED",
+      "lastObserved": "2026-11-06",
+      "evidence": "Native tests compile; interactive prompt opt-in"
+    },
+    {
+      "module": "Android notifications",
+      "testId": "LOS-009",
+      "risk": "HIGH",
+      "testType": "Service/App handler + mocked OS",
+      "environment": "Node; emulator job added",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "WP0; real delivery not executed"
+    },
+    {
+      "module": "Backup and restore",
+      "testId": "LOS-002/023",
+      "risk": "CRITICAL",
+      "testType": "Production codec/validator/Dexie",
+      "environment": "Node",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "WP0 restore/legacy controls"
+    },
+    {
+      "module": "Database and migrations",
+      "testId": "DB-INTEGRITY",
+      "risk": "CRITICAL",
+      "testType": "Dexie/fake IndexedDB",
+      "environment": "Node",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "npm test; WP0"
+    },
+    {
+      "module": "Encryption and recovery",
+      "testId": "LOS-002/003",
+      "risk": "CRITICAL",
+      "testType": "JS production functions; native simulated",
+      "environment": "Node",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "Native Keystore proof BLOCKED"
+    },
+    {
+      "module": "Application lifecycle",
+      "testId": "LIFECYCLE",
+      "risk": "CRITICAL",
+      "testType": "JS simulated/static; native instrumentation",
+      "environment": "Node + Android",
+      "status": "BLOCKED",
+      "lastObserved": "2026-11-06",
+      "evidence": "Native Activity tests not run"
+    },
+    {
+      "module": "Release packaging",
+      "testId": "ANDROID-APK",
+      "risk": "HIGH",
+      "testType": "GitHub Gradle debug/test build",
+      "environment": "GitHub Actions",
+      "status": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "PR #16 run 42249311868"
+    }
+  ]
+}

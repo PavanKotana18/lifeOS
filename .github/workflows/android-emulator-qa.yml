@@ -1,0 +1,57 @@
+name: LifeOS Android emulator QA
+
+on:
+  push:
+    branches: [qa/lifeos-android-workflow-coverage-20261106]
+  pull_request:
+    branches: [qa/lifeos-android-workflow-coverage-20261106]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-emulator-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: lifeos-acceptance-sprint3
+          disable-animations: true
+          script: |
+            adb logcat -c
+            gradle -p android :app:connectedDebugAndroidTest --stacktrace
+      - name: Capture sanitized emulator failure evidence
+        if: failure()
+        run: |
+          mkdir -p qa-emulator-evidence
+          adb logcat -d -v brief AndroidRuntime:E System.err:E '*:S' > qa-emulator-evidence/logcat-errors.txt || true
+          adb exec-out screencap -p > qa-emulator-evidence/failure.png || true
+      - name: Upload JUnit and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-android-emulator-qa
+          path: |
+            android/app/build/outputs/androidTest-results/connected/debug/*.xml
+            qa-emulator-evidence/**
+          if-no-files-found: error
+          retention-days: 14
