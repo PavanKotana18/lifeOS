@@ -270,6 +270,15 @@
       "limitations": "Actual CSV function and AST App save handler with disposable IndexedDB; no mounted React or Android UI."
     },
     {
+      "path": "test_lifeos_stabilization.js",
+      "categories": [
+        "Production integration",
+        "Unit",
+        "Mocked native simulation"
+      ],
+      "limitations": "Actual transaction comparator and disposable Dexie storage; theme and permission lifecycle use production helpers with simulated Android bridge/grants. Android UI, Activity lifecycle and biometric prompt remain unverified."
+    },
+    {
       "path": "android/app/src/androidTest/java/com/lifeos/personal/CryptoAcceptanceTest.java",
       "categories": [
         "Android instrumentation required"

@@ -27,7 +27,8 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const ns=f.NotificationService;let requested=0;
   ns.checkExactAlarmPermission=async()=> 'denied'; ns.requestExactAlarmPermission=async()=>{ requested++;return 'denied'; };
   const fn=h.appFunction('askNotificationPermission');
-  const ask=h.bind(fn,{...f.appDeps(),notificationPermissionRequested:false,setNotificationPermissionRequested(){}});
+  const ask=h.bind(fn,{...f.appDeps(),notificationPermissionRequested:false,setNotificationPermissionRequested(){},
+   StorageService:{settings:{async set(){}}}});
   assert.equal((await ask()).granted,false);assert.equal(requested,1);
   ns.checkExactAlarmPermission=async()=> 'granted'; assert.equal((await ask()).granted,true);
  }));

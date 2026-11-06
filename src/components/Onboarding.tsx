@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bell, Check, Fingerprint, Moon, ShieldCheck, Sun } from 'lucide-react';
 import type { NotificationPreferences } from '../types';
 
@@ -33,6 +33,10 @@ export default function Onboarding(props: Props) {
   const [selected, setSelected] = useState(props.preferences);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    setStep(Math.max(0, Math.min(4, props.initialStep)));
+  }, [props.initialStep]);
 
   const advance = async (action: () => Promise<void>, next: number) => {
     setBusy(true); setMessage('');
