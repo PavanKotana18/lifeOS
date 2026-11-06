@@ -1,0 +1,29 @@
+{
+  "baseline": {
+    "pr": 17,
+    "branch": "qa/lifeos-android-workflow-coverage-20261106",
+    "commit": "3d05b3720863f9d029c3fa6dbeb4387ea62e5496",
+    "termuxBranch": "qa/lifeos-android-testing-infrastructure-20261106"
+  },
+  "inventory": [
+    {"item":"Node.js and npm","status":"INSTALLED","environment":"Termux; Node 24.17.0, npm 11.17.0. CI pins Node 20.","action":"No phone package changes."},
+    {"item":"React / TypeScript / Capacitor","status":"INSTALLED","environment":"Project lockfile; React 18, TypeScript 5.6, Capacitor 6.","action":"Existing dependency set reused."},
+    {"item":"Java","status":"INSTALLED","environment":"Termux OpenJDK 21. CI uses Temurin 17 required by AGP 8.2.","action":"Do not use Termux JDK 21 with the pinned Gradle 8.2.1 build."},
+    {"item":"Android SDK and build tools","status":"MISSING","environment":"Termux SDK manager/platform/build tools not present; hosted Ubuntu job provisions SDK components.","action":"Keep SDK installation on GitHub-hosted runners."},
+    {"item":"Android platform tools","status":"INSTALLED","environment":"Termux adb 1.0.41; connected device state was not inspected.","action":"No device APK installation performed."},
+    {"item":"Android emulator and system images","status":"MISSING","environment":"No Termux emulator binary or system images.","action":"Use isolated ephemeral GitHub-hosted AVDs only."},
+    {"item":"Gradle command","status":"MISSING","environment":"No Gradle installation in Termux; workflow installs Gradle 8.2.1 via gradle/actions/setup-gradle@v3.","action":"Pinned CI installation; no global/phone install."},
+    {"item":"Gradle wrapper","status":"MISSING","environment":"No android/gradlew or android/gradle/wrapper files.","action":"Workflow currently uses the pinned Gradle distribution; wrapper generation remains an optional follow-up."},
+    {"item":"Android Gradle Plugin","status":"INSTALLED","environment":"AGP 8.2.1 in android/build.gradle; compile/target SDK 34, min SDK 24.","action":"AGP 8.2.1 requires Gradle 8.2 and JDK 17."},
+    {"item":"JavaScript test runner","status":"INSTALLED","environment":"Node assert/custom CJS harnesses, fake-indexeddb and Sentinel; test:all passed on 2026-11-07.","action":"No duplicate Jest/Vitest runner added."},
+    {"item":"React component test runner","status":"MISSING","environment":"No Testing Library, jsdom or equivalent mounted React harness.","action":"Current tests use production functions/handlers; mounted component coverage is a documented gap."},
+    {"item":"Android instrumentation runner","status":"INSTALLED","environment":"JUnit 4.13.2, AndroidX Test runner 1.5.2 and AndroidJUnitRunner configured; test APK currently compiles only in CI.","action":"New workflow builds once, then runs APKs on AVDs."},
+    {"item":"Android UI automation","status":"PARTIAL","environment":"LifeOSLaunchSmokeTest exercises real Activity/WebView; Sentinel Selenium scripts exist but no pinned Python requirements/workflow.","action":"Use current Android smoke; Selenium journey/visual suites remain unexecuted."},
+    {"item":"Accessibility automation","status":"MISSING","environment":"No automated TalkBack/accessibility scanner or accessibility assertions.","action":"Documented follow-up; no scanner dependency installed."},
+    {"item":"Coverage reporting","status":"MISSING","environment":"No JaCoCo, Istanbul/nyc or LCOV gate configured.","action":"Avoid adding a report tool before behavioral test coverage is reliable."},
+    {"item":"Dependency security checks","status":"INSTALLED","environment":"npm audit --audit-level=high in build-apk.yml; Node/Sentinel security regression suites.","action":"Build workflow does not trigger for PRs targeting the QA branch, so emulator workflow runs local suites and Sentinel."},
+    {"item":"Android emulator runner","status":"INSTALLED","verification":"PENDING","previousStatus":"MISCONFIGURED","environment":"PR #17 used ubuntu-latest (resolved to ubuntu-26.04) without /dev/kvm runner access; x86_64 action fell back to -accel off.","action":"Pin ubuntu-24.04; grant ephemeral KVM access; require acceleration; cap boot at 300 seconds."},
+    {"item":"Gradle version selection","status":"INSTALLED","verification":"PENDING","previousStatus":"MISCONFIGURED","environment":"Run 42256209212 used Gradle 9.8.2 with AGP 8.2.1 and failed configuration mutation. PR #17 head 3d05b pins Gradle 8.2.1.","action":"Retain explicit 8.2.1 and compile both APKs before emulator launch."},
+    {"item":"Third-party paid device farm","status":"UNNECESSARY","environment":"No paid vendor configured or approved.","action":"Use GitHub-hosted runner minutes and representative emulator profiles."}
+  ]
+}
