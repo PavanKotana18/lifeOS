@@ -15,6 +15,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import static org.junit.Assert.*;
+import static org.junit.Assume.assumeTrue;
 
 /** OPT-IN actual prompts + Keystore on a fresh dedicated AVD. No forced success,
  * key extraction/deletion, enrollment bypass, recovery activation or alias reset. */
@@ -40,7 +41,7 @@ public class BiometricDeviceAcceptanceTest {
     private static void locked(LifeOSCryptoPlugin p) throws Exception { Call c=call("isUnlocked",p::isUnlocked);c.await();assertFalse(c.response.optBoolean("unlocked",true)); }
     private static void unlocked(LifeOSCryptoPlugin p) throws Exception { Call c=call("isUnlocked",p::isUnlocked);c.await();assertTrue(c.response.optBoolean("unlocked",false)); }
     @Test public void actualSetupCancelConcurrentResumeRecreateAndUnlock() throws Exception {
-        assertEquals("yes",InstrumentationRegistry.getArguments().getString("lifeosRealBiometricAcceptance"));
+        assumeTrue("Interactive biometric acceptance requires explicit opt-in", "yes".equals(InstrumentationRegistry.getArguments().getString("lifeosRealBiometricAcceptance")));
         assertEquals("1",property("ro.kernel.qemu"));assertEquals("lifeos-acceptance-sprint3",property("ro.boot.qemu.avd_name"));
         // Refuse any existing wrapper; this test never deletes or replaces keys.
         android.content.SharedPreferences prefs=InstrumentationRegistry.getInstrumentation().getTargetContext().getSharedPreferences("lifeos_crypto_v1",0);
