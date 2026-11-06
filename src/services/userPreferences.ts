@@ -85,15 +85,16 @@ export function formatTimePreference(date: Date, preference: UserPreferences['ti
   }).format(date);
 }
 
-export function buildTransactionUpdate(fields: { type: 'income' | 'expense'; amount: number; category: string; description: string; dateTime: string; paymentMethod: string; notes?: string; isRecurring?: boolean }) {
+export function buildTransactionUpdate(fields: { type: 'income' | 'expense'; amount: number; category: string; description: string; dateTime: string; date?: string; preserveUnknownTime?: boolean; paymentMethod: string; notes?: string; isRecurring?: boolean }) {
   const amount = Number(fields.amount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
-  const date = new Date(fields.dateTime);
-  if (Number.isNaN(date.getTime())) throw new Error('Choose a valid transaction date and time.');
+  const date = fields.dateTime ? new Date(fields.dateTime) : null;
+  if (date && Number.isNaN(date.getTime())) throw new Error('Choose a valid transaction date and time.');
+  if (!date && (!fields.preserveUnknownTime || !fields.date)) throw new Error('Choose a valid transaction date and time.');
   return {
     type: fields.type, amount, category: fields.category.trim(), description: fields.description.trim(),
-    date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-    occurredAt: date.toISOString(), paymentMethod: fields.paymentMethod.trim() || 'Other',
+    date: date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : fields.date!,
+    ...(date ? { occurredAt: date.toISOString() } : {}), paymentMethod: fields.paymentMethod.trim() || 'Other',
     notes: fields.notes?.trim() || undefined, isRecurring: Boolean(fields.isRecurring),
   };
 }
