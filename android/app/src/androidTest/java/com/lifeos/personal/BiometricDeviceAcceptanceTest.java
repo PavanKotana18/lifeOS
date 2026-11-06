@@ -27,7 +27,7 @@ public class BiometricDeviceAcceptanceTest {
         @Override public synchronized void resolve(JSObject data) { settlements++;response=data;done.countDown(); }
         @Override public synchronized void reject(String message) { settlements++;error=message;done.countDown(); }
         void await() throws Exception { assertTrue("Real biometric action timed out",done.await(90,TimeUnit.SECONDS));assertEquals(1,settlements);InstrumentationRegistry.getInstrumentation().waitForIdleSync(); }
-        void success() throws Exception { await();assertNull(error);assertNotNull(response);assertTrue(response.optBoolean("success")); }
+        void assertSuccess() throws Exception { await();assertNull(error);assertNotNull(response);assertTrue(response.optBoolean("success")); }
     }
     private static String property(String name) throws Exception {
         ParcelFileDescriptor fd=InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("getprop "+name);
@@ -48,19 +48,19 @@ public class BiometricDeviceAcceptanceTest {
         try(ActivityScenario<MainActivity> scenario=ActivityScenario.launch(MainActivity.class)) {
             LifeOSCryptoPlugin p=plugin(scenario);locked(p);
             try {
-                call("setup",p::setup).success();unlocked(p); // Human/emulator must ACCEPT strong biometric.
-                call("lock",p::lock).success();locked(p);
+                call("setup",p::setup).assertSuccess();unlocked(p); // Human/emulator must ACCEPT strong biometric.
+                call("lock",p::lock).assertSuccess();locked(p);
                 Call cancelled=call("unlock",p::unlock); // Human must CANCEL this prompt.
                 Call concurrent=call("unlock",p::unlock);concurrent.await();assertNotNull(concurrent.error);locked(p);
                 cancelled.await();assertTrue(cancelled.error!=null || !cancelled.response.optBoolean("success"));locked(p);
-                call("unlock",p::unlock).success();unlocked(p); // ACCEPT.
+                call("unlock",p::unlock).assertSuccess();unlocked(p); // ACCEPT.
                 scenario.moveToState(Lifecycle.State.CREATED);locked(p); // Actual Activity onStop, not direct callback.
                 scenario.moveToState(Lifecycle.State.RESUMED);locked(p);
-                call("unlock",p::unlock).success();unlocked(p); // ACCEPT; existing DEK wrapper must still work.
+                call("unlock",p::unlock).assertSuccess();unlocked(p); // ACCEPT; existing DEK wrapper must still work.
                 scenario.recreate();LifeOSCryptoPlugin recreated=plugin(scenario);locked(recreated);
-                try { call("unlock",recreated::unlock).success();unlocked(recreated); } // ACCEPT after real Activity recreation.
-                finally { call("lock",recreated::lock).success(); }
-            } finally { call("lock",p::lock).success(); }
+                try { call("unlock",recreated::unlock).assertSuccess();unlocked(recreated); } // ACCEPT after real Activity recreation.
+                finally { call("lock",recreated::lock).assertSuccess(); }
+            } finally { call("lock",p::lock).assertSuccess(); }
         }
         // Wrapper/alias intentionally retained in this disposable profile; no destructive cleanup.
     }
