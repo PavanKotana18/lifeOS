@@ -23,7 +23,7 @@ export default function RecoveryDialog({ onRecover, onClose }: {
       {message && <p role="status" className="text-sm text-amber-200">{message}</p>}
       <button disabled={busy || !kit} className="rounded bg-indigo-600 px-4 py-3 disabled:opacity-40"
         onClick={() => { if (inFlight.current) return; inFlight.current = true; setBusy(true); setMessage(''); void onRecover(kit).then(() => {
-          setMessage('The existing key was re-bound and locked. Encrypted data opening remains gated pending Android release validation. Your database was not changed.');
+          setMessage('The existing key was verified and re-bound. Your encrypted records can now reopen after authentication.');
         }, error => setMessage(error instanceof Error ? error.message : 'Recovery failed; data remains locked.'))
           .finally(() => { setKit(''); setBusy(false); inFlight.current = false; }); }}> {busy ? 'Verifying recovery…' : 'Verify kit and authenticate'}</button>
       <button disabled={busy} onClick={() => { setKit(''); onClose(); }} className="ml-3 rounded border px-4 py-3">Close</button>

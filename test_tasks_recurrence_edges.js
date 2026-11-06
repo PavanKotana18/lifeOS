@@ -1,3 +1,4 @@
+// Legacy raw-storage internals fixture ONLY. Production boundary coverage lives in test_encryption_admission.js and WP0.
 require('fake-indexeddb/auto');
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +19,7 @@ async function main() {
     static UTC(...args) { return RealDate.UTC(...args); }
   };
 
-  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
+  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db, rawStorageService as legacyStorageService };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -103,7 +104,7 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const { db, StorageService, sessionManager } = loaded.exports;
+  const { db, legacyStorageService: StorageService, sessionManager } = loaded.exports;
   sessionManager.unlock();
   await db.open();
 

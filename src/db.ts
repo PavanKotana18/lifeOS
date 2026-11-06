@@ -1254,7 +1254,7 @@ export async function activateEncryptedStorage(): Promise<void> {
     throw new Error('The native encryption key is locked. Authenticate before activating encrypted storage.');
   }
 
-  sessionManager.lock();
+  const migrationGeneration = sessionManager.lock();
   await sessionManager.waitForIdle();
 
   try {
@@ -1275,6 +1275,9 @@ export async function activateEncryptedStorage(): Promise<void> {
       throw new Error('Native encryption state changed during migration. Storage activation was blocked.');
     }
 
+    if (sessionManager.getGeneration() !== migrationGeneration) {
+      throw new Error('Encrypted migration expired after app lock. Retry in the foreground.');
+    }
     activeStorageTarget = encryptedStorageRuntime.storage as IDataStorage;
     encryptedStorageActivated = true;
     sessionManager.unlock();
