@@ -65,7 +65,7 @@ public class CryptoAcceptanceTest {
         // AES-GCM IV 0x04*12, and wrapped key 0x2a*32. Generated with
         // PBKDF2-HMAC-SHA-256 (600,000 iterations) and AES-256-GCM. Keeping
         // fixture construction independent of Android's optional
-        // SecretKeyFactory providers exercises production KDF on API 24.
+        // Exercise the production KDF on the minimum supported Android API.
         assertEquals("fixture recovery code changed", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", code);
         JSObject env=new JSObject();env.put("version",1);env.put("kdf","PBKDF2-HMAC-SHA-256");env.put("iterations",600000);
         env.put("salt","AwMDAwMDAwMDAwMDAwMDAw==");env.put("iv","BAQEBAQEBAQEBAQE");

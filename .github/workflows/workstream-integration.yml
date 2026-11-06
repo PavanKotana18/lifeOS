@@ -69,11 +69,11 @@ jobs:
         run: bash scripts/enable-github-runner-kvm.sh
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 24
+          api-level: 29
           target: google_apis
           arch: x86_64
           profile: "Nexus 5X"
-          avd-name: lifeos-api24-recovery-preflight
+          avd-name: lifeos-api29-recovery-preflight
           cores: 2
           ram-size: 2048M
           heap-size: 256M
@@ -89,24 +89,24 @@ jobs:
           import sys, xml.etree.ElementTree as ET
           root = ET.parse('qa-emulator-evidence/junit.xml').getroot()
           tests = root.findall('.//testcase')
-          print(f"API 24 native security preflight: tests={len(tests)} failures={root.attrib.get('failures', '0')} skipped={root.attrib.get('skipped', '0')}")
+          print(f"API 29 native security preflight: tests={len(tests)} failures={root.attrib.get('failures', '0')} skipped={root.attrib.get('skipped', '0')}")
           if len(tests) < 7 or root.attrib.get('failures', '0') != '0' or root.attrib.get('skipped', '0') != '0':
               sys.exit(1)
           PY
       - name: Capture runner setup failure metadata
         if: failure()
         run: |
-          mkdir -p qa-api24-recovery-evidence
-          { timeout 5s adb devices -l || true; } > qa-api24-recovery-evidence/post-action-adb.txt 2>&1
-          { stat /dev/kvm || true; } > qa-api24-recovery-evidence/runner-kvm.txt 2>&1
-      - name: Upload API 24 recovery evidence
+          mkdir -p qa-api29-recovery-evidence
+          { timeout 5s adb devices -l || true; } > qa-api29-recovery-evidence/post-action-adb.txt 2>&1
+          { stat /dev/kvm || true; } > qa-api29-recovery-evidence/runner-kvm.txt 2>&1
+      - name: Upload API 29 recovery evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lifeos-api24-recovery-preflight-evidence
+          name: lifeos-api29-recovery-preflight-evidence
           path: |
             qa-emulator-evidence/**
-            qa-api24-recovery-evidence/**
+            qa-api29-recovery-evidence/**
           if-no-files-found: warn
           retention-days: 7
 
@@ -119,8 +119,8 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - id: compact-api24
-            api-level: 24
+          - id: compact-api29
+            api-level: 29
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M

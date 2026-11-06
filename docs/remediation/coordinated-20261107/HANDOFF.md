@@ -58,6 +58,12 @@ The runner refuses physical devices/existing LifeOS installations. Bounded WebVi
 
 ## Next batch
 
+### Android support floor update (2026-11-07)
+
+LifeOS now declares Android 10 / API 29 as its minimum supported OS. The integrated app uses Capacitor Android 6, AndroidX Biometric, Keystore operations available before API 29, Storage Access Framework, and API-guarded Android notification/key APIs; inspection found no application code requiring API 30+. API 29/34/35 are the acceptance profiles. WebView remains independently checked because Android OS level does not guarantee an updated provider. The prior API 24 full-app failure (Chromium 69 below the app's Chromium 87 floor) is intentionally outside support and is not rerun as mandatory acceptance.
+
+The project toolchain is AGP 8.2.1 / Gradle 8.2.1 / compileSdk 34. Google Play's current new-app submission minimum is target API 36 from 2026-08-31. Current AGP does not support compiling API 36 (Android documentation lists AGP 8.9.1 as minimum); Play compliance therefore remains a separate release blocker requiring a deliberate, tested Gradle/AGP/SDK upgrade. No target SDK was lowered or changed here.
+
 1. Complete genuine biometric setup/confirmation, restart, key invalidation/recovery/rebind and encrypted at-rest inspection using a dedicated synthetic Android profile. Preserve failures as blockers.
 2. Implement an authenticated recovery-kit export/resume protocol before offering SAF during initial provisioning. Never retain plaintext secrets or disable key eviction to make it convenient.
 3. Use integrated provider/phase evidence to diagnose any remaining Android14 recreation failure and validate updated WebView on Android7. Retest only affected profiles after demonstrated fixes.
