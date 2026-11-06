@@ -1,0 +1,75 @@
+{
+  "sourceCommit": "0ec1a07fb04572b5dbbcf3f317b742ade7431fce",
+  "results": [
+    {
+      "name": "typecheck",
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit": 0,
+      "durationSec": 5.6,
+      "commit": "0ec1a07fb04572b5dbbcf3f317b742ade7431fce"
+    },
+    {
+      "name": "build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "durationSec": 9.7,
+      "commit": "0ec1a07fb04572b5dbbcf3f317b742ade7431fce"
+    },
+    {
+      "name": "test-all",
+      "command": [
+        "npm",
+        "run",
+        "test:all"
+      ],
+      "exit": 0,
+      "durationSec": 38.1,
+      "commit": "0ec1a07fb04572b5dbbcf3f317b742ade7431fce"
+    },
+    {
+      "name": "mandatory",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--controls"
+      ],
+      "exit": 0,
+      "durationSec": 14.1,
+      "commit": "0ec1a07fb04572b5dbbcf3f317b742ade7431fce"
+    },
+    {
+      "name": "strict-known",
+      "command": [
+        "npm",
+        "run",
+        "test:regressions:strict"
+      ],
+      "exit": 1,
+      "durationSec": 2.0,
+      "commit": "0ec1a07fb04572b5dbbcf3f317b742ade7431fce"
+    }
+  ],
+  "android": {
+    "adbDevices": [],
+    "localGradle": false,
+    "instrumentationExecution": "BLOCKED: no emulator/device; no Gradle or Android SDK installed locally",
+    "PR15CI": "PASS at 0ec1a07fb04572b5dbbcf3f317b742ade7431fce; AndroidTest APK compiled"
+  },
+  "release": {
+    "applicationId": "com.lifeos.personal",
+    "minSdk": 24,
+    "targetSdk": 34,
+    "compileSdk": 34,
+    "version": "package.json authoritative; CI appends run number",
+    "encryptionActivation": "not enabled"
+  }
+}
