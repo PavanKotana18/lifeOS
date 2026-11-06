@@ -1,0 +1,365 @@
+{
+  "codeCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9",
+  "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268",
+  "sourceSha256": {
+    ".github/workflows/build-apk.yml": "75c69f1e11ad1f1885e5bff86c5eee17a5c6303b02d7e2f0de4b4ce5a66b478c",
+    "android/app/build.gradle": "5e671dcbac2867391107dbfe780df7078af623415686033c8ba6e6851c54119d",
+    "android/app/src/androidTest/java/com/lifeos/personal/BiometricDeviceAcceptanceTest.java": "ae2e02d768a9df94f975fad22bc2afe08de7d62ac44aabd60f6edb5a45280ed0",
+    "android/app/src/androidTest/java/com/lifeos/personal/CryptoAcceptanceTest.java": "3e5321945b3856d34c451af71e9310693b071bfbb81a5475752b186e34599a3f",
+    "docs/testing/WP0.md": "a5c1fea11a71a679191108d6f52960d9ac0d42497d1d0c42030ef55d1030e59b",
+    "package.json": "4b5800a821e55d9e619393f1ae39f0a227a4a2a5ee5f2a83481caed588cbe34e",
+    "scripts/run-android-acceptance.sh": "8dc24903a330a637f3d7d4a4a71f78f6d768f45a3695e76313a3976e5e8ee977",
+    "scripts/run-wp0-regressions.cjs": "73abdd24f33a09ca09d4bea768135639912a138f3ebb73eeadf43631d81a872a",
+    "src/App.tsx": "83e7bce3a75fa90950771a24016df22594cf343d467974f69135f32a1baf4a85",
+    "src/services/csvExportService.ts": "93c30ffc0fea4f8585eb5c12c1debac034887d39038f9d91c769acebf2e5b672",
+    "test_sprint3_acceptance.js": "9eb1823d3438ebc82dae58d674d8d0602bf6cb20e2a8f76a444f07474c85b1ca",
+    "tests/wp0/production-cases.cjs": "1b3ce4540283413a458ff37372bd6cf8cd6a202816249e6c2244ac94c14054cc",
+    "tests/wp0/production-harness.cjs": "bf0da395368264807f27531fdbedb7543b936c151c6462b6a1fd97ff09e0be84",
+    "tests/wp0/test-inventory.json": "16575ff7cfd07bff25a395b249a6bec6483f0968eed90692201b12ee62d83714"
+  },
+  "checks": [
+    {
+      "name": "npm-test",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 32.55,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "sentinel",
+      "command": [
+        "npm",
+        "run",
+        "test:sentinel"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 3.74,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "test-all",
+      "command": [
+        "npm",
+        "run",
+        "test:all"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 37.35,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "typecheck",
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 5.01,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 1,
+      "expected": 0,
+      "seconds": 6.46,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "mandatory",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--controls",
+        "--json",
+        "/data/data/com.termux/files/home/lifeos-remediation-reports/sprint-3/mandatory.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 14.03,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "known",
+      "command": [
+        "npm",
+        "run",
+        "test:regressions",
+        "--",
+        "--json",
+        "/data/data/com.termux/files/home/lifeos-remediation-reports/sprint-3/known.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 1.94,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "strict",
+      "command": [
+        "npm",
+        "run",
+        "test:regressions:strict"
+      ],
+      "exit": 1,
+      "expected": 1,
+      "seconds": 1.87,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 0.02,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "final-typecheck",
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 4.66,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "final-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 7.71,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "final-focused",
+      "command": [
+        "node",
+        "test_sprint3_acceptance.js"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 1.94,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "final-controls",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--controls",
+        "--json",
+        "/data/data/com.termux/files/home/lifeos-remediation-reports/sprint-3/mandatory.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 13.81,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "final-diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 0.03,
+      "baseline": "5848a0eb4c887d5c9479208ae282d8a72a228268"
+    },
+    {
+      "name": "final-test-all",
+      "command": [
+        "npm",
+        "run",
+        "test:all"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 39.26,
+      "sourceCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9"
+    },
+    {
+      "name": "checkpoint-typecheck",
+      "command": [
+        "npx",
+        "--no-install",
+        "tsc",
+        "--noEmit"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 5.09,
+      "sourceCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9"
+    },
+    {
+      "name": "checkpoint-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 8.69,
+      "sourceCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9"
+    },
+    {
+      "name": "checkpoint-controls",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--controls",
+        "--json",
+        "/data/data/com.termux/files/home/lifeos-remediation-reports/sprint-3/mandatory.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 13.75,
+      "sourceCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9"
+    },
+    {
+      "name": "checkpoint-known",
+      "command": [
+        "node",
+        "scripts/run-wp0-regressions.cjs",
+        "--json",
+        "/data/data/com.termux/files/home/lifeos-remediation-reports/sprint-3/known.json"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 1.54,
+      "sourceCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9"
+    },
+    {
+      "name": "native-runner-syntax",
+      "command": [
+        "sh",
+        "-n",
+        "scripts/run-android-acceptance.sh"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 0.01,
+      "sourceCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9"
+    },
+    {
+      "name": "native-runner-blocked",
+      "command": [
+        "sh",
+        "scripts/run-android-acceptance.sh"
+      ],
+      "exit": 2,
+      "expected": 2,
+      "seconds": 0.01,
+      "sourceCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9"
+    },
+    {
+      "name": "checkpoint-diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "expected": 0,
+      "seconds": 0.02,
+      "sourceCommit": "cd503d8033b40b9ee6957bf876e8bb18d1b8f5f9"
+    }
+  ],
+  "mandatory": [
+    {
+      "id": "LOS-010",
+      "status": "PASS",
+      "assertions": 5
+    },
+    {
+      "id": "LOS-009",
+      "status": "PASS",
+      "assertions": 19
+    },
+    {
+      "id": "CONTROL-INTEGRATION",
+      "status": "PASS",
+      "assertions": 20
+    },
+    {
+      "id": "LOS-002",
+      "status": "PASS",
+      "assertions": 16
+    },
+    {
+      "id": "LOS-003",
+      "status": "PASS",
+      "assertions": 18
+    },
+    {
+      "id": "LOS-007",
+      "status": "PASS",
+      "assertions": 4
+    },
+    {
+      "id": "LOS-008",
+      "status": "PASS",
+      "assertions": 16
+    },
+    {
+      "id": "SPRINT1-RESTORE",
+      "status": "PASS",
+      "assertions": 19
+    },
+    {
+      "id": "SPRINT1-RECOVERY",
+      "status": "PASS",
+      "assertions": 20
+    },
+    {
+      "id": "SPRINT1-IMPORT-RACE",
+      "status": "PASS",
+      "assertions": 5
+    },
+    {
+      "id": "LOS-023",
+      "status": "PASS",
+      "assertions": 22
+    }
+  ],
+  "observations": [
+    {
+      "id": "LOS-001",
+      "status": "KNOWN_DEFECT"
+    },
+    {
+      "id": "LOS-003-ANDROID",
+      "status": "BLOCKED"
+    }
+  ],
+  "androidInstrumentationExecuted": false,
+  "reason": "ADB found no device; no emulator or SDK/Gradle installed locally. Synthetic native7 and interactive native1 scenarios implemented, not executed."
+}

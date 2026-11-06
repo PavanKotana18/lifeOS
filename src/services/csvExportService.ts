@@ -2,11 +2,13 @@
  * LifeOS CSV Export Service with Formula Injection (CWE-1236) Protection
  */
 
+const formulaPrefix = /^(?:[\t\r\n]|[\s\u0000-\u001f]*[=+@-])/;
+
 export function sanitizeCsvCell(val: any): string {
   if (val === null || val === undefined) return '';
   let str = String(val);
   // Formula Injection Prevention: If cell starts with dangerous symbols (=, +, -, @, tab, CR), prefix with single quote
-  if (/^[=+\-@\t\r]/.test(str)) {
+  if (formulaPrefix.test(str)) {
     str = "'" + str;
   }
   // Escape quotes and wrap in quotes if contains comma, quote, or newline
@@ -14,6 +16,14 @@ export function sanitizeCsvCell(val: any): string {
     str = '"' + str.replace(/"/g, '""') + '"';
   }
   return str;
+}
+
+// Production UI keeps its original always-quoted column contract.
+export function quoteCsvCell(value: unknown): string {
+  const text = String(value ?? '');
+  const formula = typeof value === 'string' && formulaPrefix.test(text);
+  const safe = formula ? "'" + text : text;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 export const CsvExportService = {
@@ -53,7 +63,8 @@ export const CsvExportService = {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     CsvExportService,
-    sanitizeCsvCell
+    sanitizeCsvCell,
+    quoteCsvCell
   };
 }
 if (typeof window !== 'undefined') {
