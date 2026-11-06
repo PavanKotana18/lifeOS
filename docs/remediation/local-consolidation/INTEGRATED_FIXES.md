@@ -1,0 +1,11 @@
+# Integrated Fixes
+
+Baseline Sprint 1 `3e11619d612fc4207bf5972979a8583da069ea3e`; verified implementation checkpoint `6bd8f0e42bf90d50a1058ed8cf9856d12b15b2d3`. No main/develop/Sprint 1 merge. Final reports commit is the draft PR head.
+
+Three coherent fixes, selectively engineered rather than merging historical branches:
+
+1. **LC-001 — Notification permission contract.** Source candidate `fix/gemini-vapt-remediation-20261105@93f882f`. Port `NotificationService.checkExactAlarmPermission/requestExactAlarmPermission/canScheduleNotifications`, diagnostics, test notification guard and App `askNotificationPermission`. Manifest declares display/exact-alarm/reboot permissions required by the existing Capacitor notification implementation. All reminder scheduling requires both permissions; exact-alarm denial is visible. Actual system prompts/reboot still require hardware.
+2. **LC-002 — Finance analytics cents parity.** Same candidate, `src/services/financeAnalytics.ts:1-56`. Port integer-cents monthly/category totals and net savings; complete budget allocated/remaining arithmetic using cents. Synthetic 0.1+0.2 expenses with0.4 income/budget now produce0.3 total and0.1 savings/remainder consistently. No schema or stored amounts changed. This is two-decimal analytics, not arbitrary precision or a general money validation migration.
+3. **LC-003 / LOS-009 — Reminder cleanup.** Engineering completion of historical notification reconciliation work. `notificationService.ts:58-70` enumerates actual pending record-reminder kinds, retaining unrelated alarms; habit/milestone resync removes obsolete IDs even after rows disappear. App reset awaits cleanup before clearing records and reports failures. The original WP0 expected empty-reminder contract is unchanged and now mandatory. Native cancellation and DB commit cannot be atomic; see remaining risks.
+
+`test_local_consolidation.js` adds five focused scenarios using real production functions, actual App permission/reset handlers and disposable IndexedDB. Native alarm/permission interfaces are simulated. Mandatory WP0 scenarios increase9→10; known observations decrease3→2. The existing four encrypted suites remain mandatory. Workflow gains exact integration push/base targeting so checks and debug builds actually run for the stacked draft; no permissions or signing changes.
