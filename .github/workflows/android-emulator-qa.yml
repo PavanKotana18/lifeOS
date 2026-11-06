@@ -14,7 +14,7 @@ permissions:
 jobs:
   android-emulator-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,6 +28,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npx cap sync android
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.2.1"
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -35,16 +38,29 @@ jobs:
           arch: x86_64
           profile: pixel_6
           avd-name: lifeos-acceptance-sprint3
+          emulator-boot-timeout: 900
           disable-animations: true
           script: |
             adb logcat -c
             gradle -p android :app:connectedDebugAndroidTest --stacktrace
+      - name: Require executed Android instrumentation tests
+        if: success()
+        run: |
+          python3 - <<"PY"
+          import glob, sys, xml.etree.ElementTree as ET
+          reports = glob.glob("android/app/build/outputs/androidTest-results/connected/debug/**/*.xml", recursive=True)
+          total = sum(len(ET.parse(path).findall(".//testcase")) for path in reports)
+          print(f"JUnit reports: {len(reports)}; test cases: {total}")
+          if not reports or total == 0:
+              sys.exit(1)
+          PY
       - name: Capture sanitized emulator failure evidence
         if: failure()
         run: |
           mkdir -p qa-emulator-evidence
-          adb logcat -d -v brief AndroidRuntime:E System.err:E '*:S' > qa-emulator-evidence/logcat-errors.txt || true
-          adb exec-out screencap -p > qa-emulator-evidence/failure.png || true
+          { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
+          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-emulator-evidence/logcat-errors.txt 2>&1
+          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
       - name: Upload JUnit and failure evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,5 +69,5 @@ jobs:
           path: |
             android/app/build/outputs/androidTest-results/connected/debug/*.xml
             qa-emulator-evidence/**
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
