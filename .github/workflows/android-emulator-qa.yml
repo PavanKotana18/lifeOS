@@ -83,9 +83,7 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            ANDROID_TEST_FILTER='com.lifeos.personal.CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' \
-            ANDROID_REQUIRED_TEST='CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' \
-            bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+            ANDROID_TEST_FILTER='com.lifeos.personal.CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' ANDROID_REQUIRED_TEST='CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
       - name: Require exactly the recovery regression test
         if: success()
         run: |
