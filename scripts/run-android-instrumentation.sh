@@ -8,11 +8,15 @@ SERIAL=${ANDROID_SERIAL:-emulator-5554}
 TEST_FILTER=${ANDROID_TEST_FILTER:-}
 REQUIRED_TEST=${ANDROID_REQUIRED_TEST:-${TEST_FILTER:-LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView}}
 mkdir -p "$OUT"
+SAFE_EMULATOR=false
 
 capture_evidence() {
   local result=$?
   trap - EXIT
   set +e
+  # A refusal must never collect screenshots/logs from an existing installation
+  # or a physical handset. Diagnostics below are limited to the fresh QA AVD.
+  if [[ "$SAFE_EMULATOR" != true ]]; then exit "$result"; fi
   timeout 8s adb -s "$SERIAL" shell dumpsys webviewupdate > "$OUT/webview-provider.txt" 2>&1
   timeout 8s adb -s "$SERIAL" logcat -d -v threadtime AndroidRuntime:E System.err:E chromium:E LifeOSAcceptance:I '*:S' > "$OUT/logcat-errors.txt" 2>&1
   if [[ "$result" -ne 0 ]]; then
@@ -33,6 +37,7 @@ if [[ -n "$existing_package" ]]; then
   echo 'Refusing to overwrite an existing LifeOS installation; create a fresh AVD.' >&2
   exit 1
 fi
+SAFE_EMULATOR=true
 {
   printf 'serial=%s\n' "$SERIAL"
   adb -s "$SERIAL" shell getprop ro.build.version.release

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js && node test_offline_resilience.js && node test_tasks_recurrence_edges.js && node test_goal_status_ui.js && node test_auth_lifecycle.js && node test_session_manager.js && node test_crypto_service.js && node test_encrypted_record_codec.js && node test_encrypted_dexie_store.js && node test_crypto_native_source.js && node test_crypto_key_state_api.js && node test_backup_export_service.js && node test_audit_regressions.js && npm run test:encrypted && npm run test:wp0 && node test_sprint1_security.js && node test_local_consolidation.js && node test_sprint3_acceptance.js && node test_lifeos_stabilization.js",
+    "test": "node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js && node test_offline_resilience.js && node test_tasks_recurrence_edges.js && node test_goal_status_ui.js && node test_auth_lifecycle.js && node test_session_manager.js && node test_crypto_service.js && node test_encrypted_record_codec.js && node test_encrypted_dexie_store.js && node test_crypto_native_source.js && node test_crypto_key_state_api.js && node test_backup_export_service.js && node test_audit_regressions.js && npm run test:encrypted && npm run test:wp0 && node test_sprint1_security.js && node test_local_consolidation.js && node test_sprint3_acceptance.js && node test_lifeos_stabilization.js && node test_encryption_admission.js && node test_secure_startup.js && node test_android_startup.js && node test_product_labels_20261107.cjs && node scripts/test-android-runner.cjs",
     "cap:sync": "cap sync",
     "cap:open": "cap open android",
     "postinstall": "node scripts/patch-capacitor-tar.js",
@@ -17,7 +17,10 @@
     "test:wp0": "node tests/wp0/harness-selftest.cjs && node scripts/run-wp0-regressions.cjs --controls",
     "test:regressions": "node scripts/run-wp0-regressions.cjs",
     "test:regressions:strict": "node scripts/run-wp0-regressions.cjs --strict",
-    "test:encryption-admission": "node test_encryption_admission.js"
+    "test:encryption-admission": "node test_encryption_admission.js",
+    "test:secure-startup": "node test_secure_startup.js",
+    "test:product": "node test_product_labels_20261107.cjs",
+    "test:android-startup": "node test_android_startup.js"
   },
   "dependencies": {
     "@capacitor/android": "^6.0.0",

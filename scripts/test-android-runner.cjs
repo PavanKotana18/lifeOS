@@ -26,9 +26,10 @@ else if(a.includes('shell am instrument')) {
     });
     assert.ifError(result.error);
     assert.equal(result.status === 0, mode === 'pass', `${mode}: ${result.stderr}`);
-    assert.ok(fs.existsSync(path.join(out, 'webview-provider.txt')), `${mode}: provider diagnostic missing`);
-    assert.ok(fs.existsSync(path.join(out, 'logcat-errors.txt')), `${mode}: on-device log capture missing`);
-    if (mode !== 'pass') assert.ok(fs.existsSync(path.join(out, 'failure.png')), `${mode}: failure screenshot missing`);
+    const admitted = mode === 'pass' || mode === 'crash';
+    assert.equal(fs.existsSync(path.join(out, 'webview-provider.txt')), admitted, `${mode}: provider capture boundary`);
+    assert.equal(fs.existsSync(path.join(out, 'logcat-errors.txt')), admitted, `${mode}: log capture boundary`);
+    assert.equal(fs.existsSync(path.join(out, 'failure.png')), mode === 'crash', `${mode}: screenshot capture boundary`);
     if (mode === 'crash') assert.match(fs.readFileSync(path.join(out, 'junit.xml'), 'utf8'), /errors="[1-9]/);
     console.log(`PASS: Android runner ${mode} contract (simulated ADB only)`);
   }

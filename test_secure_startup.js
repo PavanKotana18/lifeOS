@@ -189,5 +189,27 @@ function unprovisioned(f) {
     await started.promise; await c.lock(); gate.resolve(); await rejection;
     assert.equal(f.sessionManager.isUnlocked(), false); assert.equal((await available()).unlocked, false);
   });
+  await test('Revoked encrypted read cannot return delayed plaintext; bootstrap remains available', async f => {
+    await f.activate();
+    await f.StorageService.categories.getAll();
+    await f.StorageService.transactions.add({ type: 'expense', amount: 1, category: 'Food',
+      description: 'Synthetic stale read', date: '2026-11-06', paymentMethod: 'Cash' });
+    const decrypt = f.native.decrypt, started = deferred(), release = deferred();
+    let delayed = false;
+    f.native.decrypt = async args => {
+      const result = await decrypt(args);
+      if (!delayed) { delayed = true; started.resolve(); await release.promise; }
+      return result;
+    };
+    const read = f.StorageService.transactions.getAll();
+    const rejected = assert.rejects(read, /locked/);
+    await started.promise;
+    f.sessionManager.lock();
+    await f.StorageService.settings.set('theme', 'light');
+    assert.equal(await f.StorageService.settings.get('theme', 'system'), 'light');
+    release.resolve(); await rejected;
+    await assert.rejects(f.StorageService.transactions.getAll(), /locked/);
+    assert.equal(f.sessionManager.isUnlocked(), false);
+  });
   console.log(`SECURE STARTUP: ${passed} tests passed (production services/Dexie; native SIMULATED)`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

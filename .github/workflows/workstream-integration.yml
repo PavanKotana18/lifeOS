@@ -28,7 +28,6 @@ jobs:
           java-version: '17'
       - run: npm ci
       - run: npm run test:all
-      - run: node scripts/test-android-runner.cjs
       - run: npx --no-install tsc --noEmit
       - run: npm run build
       - run: npx cap sync android
@@ -94,15 +93,12 @@ jobs:
           if len(tests) < 7 or root.attrib.get('failures', '0') != '0' or root.attrib.get('skipped', '0') != '0':
               sys.exit(1)
           PY
-      - name: Capture sanitized emulator failure evidence
+      - name: Capture runner setup failure metadata
         if: failure()
         run: |
           mkdir -p qa-api24-recovery-evidence
-          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-api24-recovery-evidence/boot-state.txt 2>&1
-          { timeout 5s adb devices -l || true; } > qa-api24-recovery-evidence/adb-devices.txt 2>&1
-          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-api24-recovery-evidence/logcat-errors.txt 2>&1
-          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-api24-recovery-evidence/failure.png 2>qa-api24-recovery-evidence/screenshot-error.txt
-          cp -R qa-emulator-evidence/. qa-api24-recovery-evidence/ 2>/dev/null || true
+          { timeout 5s adb devices -l || true; } > qa-api24-recovery-evidence/post-action-adb.txt 2>&1
+          { stat /dev/kvm || true; } > qa-api24-recovery-evidence/runner-kvm.txt 2>&1
       - name: Upload API 24 recovery evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -163,7 +159,7 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+            ANDROID_REQUIRED_TEST='LocalPersistenceAcceptanceTest#committedIndexedDbRecordSurvivesBackgroundAndActivityRecreation' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
       - name: Verify nonzero JUnit test count and passing smoke test
         if: success()
         run: |
@@ -176,14 +172,12 @@ jobs:
           if tests <= 0 or failures:
               sys.exit(1)
           PY
-      - name: Capture sanitized emulator failure evidence
+      - name: Capture runner setup failure metadata
         if: failure()
         run: |
           mkdir -p qa-emulator-evidence
-          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-emulator-evidence/boot-state.txt 2>&1
-          { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
-          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-emulator-evidence/logcat-errors.txt 2>&1
-          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
+          { timeout 5s adb devices -l || true; } > qa-emulator-evidence/post-action-adb.txt 2>&1
+          { stat /dev/kvm || true; } > qa-emulator-evidence/runner-kvm.txt 2>&1
       - name: Upload JUnit and failure evidence
         if: always()
         uses: actions/upload-artifact@v4

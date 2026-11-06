@@ -308,6 +308,22 @@
         "Mocked native simulation"
       ],
       "limitations": "Actual startup owner, AST-extracted App and disposable IndexedDB across restart with synthetic native AES-GCM. Explicit consent/recovery UI adapters simulated; no Android Keystore or rendered UI."
+    },
+    {
+      "path": "test_android_startup.js",
+      "categories": [
+        "Production integration",
+        "Unit"
+      ],
+      "limitations": "Actual main.tsx VM and bounded appearance helpers; browser/native appearance simulated, not a rendered Android UI."
+    },
+    {
+      "path": "test_product_labels_20261107.cjs",
+      "categories": [
+        "Production integration",
+        "Unit"
+      ],
+      "limitations": "Actual analytics and preference conversion functions with synthetic category labels/custom units."
     }
   ],
   "required_device_cases": [
