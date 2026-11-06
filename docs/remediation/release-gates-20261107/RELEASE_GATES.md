@@ -2,6 +2,20 @@
 
 Baseline: PR #20, `5d858ac23b7b6b12c0d473b681ec88769f3dddcc`. Native baseline evidence: https://github.com/PavanKotana18/lifeOS/actions/runs/42279659539 . No physical handset was tested by this session.
 
+## Current acceptance evidence
+
+Run https://github.com/PavanKotana18/lifeOS/actions/runs/42283070770 tested application/test code `13dbed724897f00b1923289830aa5514347e28a2`. APKs, Node, TypeScript and production build passed. Native results:
+
+| Job | Actual result |
+|---|---|
+| API 24 focused recovery | 1 passed, no skips/failures. |
+| API 24 full | 8 passed, 1 failed, 1 skipped. New UI/persistence case failed: loaded document, React root children = 0. Underlying JavaScript/WebView cause undiagnosed. |
+| API 34 smoke | 8 passed, 1 skipped; the tenth/new case started then process crashed. This is FAILED/INCOMPLETE acceptance despite the old parser's green status. |
+| API 34 matrix | NOT EXECUTED: SDK system-image download failed with ZipFile unknown archive; no JUnit. |
+| API 35 full | 9 passed, 1 skipped; new rendered-UI/IndexedDB/recreation test passed. |
+
+The parser previously accepted partial completed tests after an instrumentation process crash. It now requires a consistent declared test count, all expected test results, normal terminal code and no runner crash/failure. Synthetic self-tests and replay of the actual API 34 crash verify rejection; normal API 35/preflight and failing API 24 outputs verify accurate handling. JUnit records runner errors separately from test assertion failures. No assertions were suppressed. Native crashes require further diagnosis; this evidence does not establish an exploitable vulnerability.
+
 ## LOS-001: BLOCKED — production persists plaintext
 
 `src/db.ts` initializes `activeStorageTarget` to `rawStorageService`. `src/App.tsx:initApp` does not invoke `activateEncryptedStorage` or `openEncryptedStorageLifecycle`. The WP0 LOS-001 test executes this actual startup function, saves a synthetic transaction, and inspects the raw IndexedDB row. The expected ciphertext contract still fails. Optional biometric UI locking is not encryption at rest. Production records cannot be certified free of sensitive plaintext.
@@ -34,7 +48,7 @@ Privacy boundaries: theme cache (`lifeos-appearance`) and bootstrap settings are
 | Offline operation | BLOCKED | Node persistence tests pass; new isolated native WebView IndexedDB recreation test is pending CI; airplane mode/process death not covered. |
 | Finance | PASS | Production sorting/storage regression suite; full mounted Android transaction workflow not covered. |
 | Theme and UI | BLOCKED | Deterministic startup/preferences Node tests pass; manufacturer cold-launch and visual/override acceptance missing. |
-| Android compatibility | PASS | Baseline API 24/34/35 synthetic native tests and launch pass; current added test pending CI. |
+| Android compatibility | FAIL | Current API 24 React rendering failure and API 34 acceptance process crash; direct native crypto passing is insufficient. |
 | Privacy and permissions | BLOCKED | Plaintext records remain; real permission/reboot/SAF and full runtime data exposure assessment incomplete. |
 | Build reproducibility | BLOCKED | Pinned CI builds pass; no Gradle wrapper and no bit-identical artifact reproduction verified. |
 | Physical acceptance | NOT TESTED | No physical installation, biometric interaction or personal data used in this session. |
