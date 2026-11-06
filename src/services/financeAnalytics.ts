@@ -24,10 +24,13 @@ export function buildFinanceAnalytics(transactions: Array<{ date: string; amount
     const category = tx.category || 'Uncategorized';
     acc[category] = (acc[category] || 0) + toCents(tx.amount);
     return acc;
-  }, {});
-  const categoryExpenses = Object.fromEntries(
-    Object.entries(categoryExpenseCents).map(([category, cents]) => [category, fromCents(cents)])
-  );
+  }, Object.create(null));
+  // Category names are user data, including names such as "constructor".
+  // Neither aggregation nor an empty category-budget lookup may inherit keys.
+  const categoryExpenses: Record<string, number> = Object.create(null);
+  for (const [category, cents] of Object.entries(categoryExpenseCents)) {
+    categoryExpenses[category] = fromCents(cents);
+  }
   const categories = Object.entries(categoryExpenses).sort((a, b) => b[1] - a[1]).map(([name, amount]) => ({
     name, amount, percentage: totalExpenses ? amount / totalExpenses * 100 : 0,
   }));

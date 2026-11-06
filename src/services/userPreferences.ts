@@ -59,12 +59,15 @@ const unitToCanonical: Record<string, { dimension: 'distance' | 'speed' | 'volum
   'Imp gal': { dimension: 'volume', factor: 4.54609, canonical: 'L' },
 };
 
-export const canonicalUnit = (unit: string) => unitToCanonical[unit]?.canonical || unit;
+const getUnitDefinition = (unit: string) => Object.prototype.hasOwnProperty.call(unitToCanonical, unit)
+  ? unitToCanonical[unit] : undefined;
+
+export const canonicalUnit = (unit: string) => getUnitDefinition(unit)?.canonical || unit;
 
 export function convertMeasurement(value: number, from: string, to: string) {
   if (!Number.isFinite(value)) throw new Error('Measurement must be a finite number.');
-  const source = unitToCanonical[from];
-  const target = unitToCanonical[to];
+  const source = getUnitDefinition(from);
+  const target = getUnitDefinition(to);
   if (!source || !target || source.dimension !== target.dimension) {
     if (from === to) return value;
     throw new Error(`Cannot convert ${from} to ${to}.`);
