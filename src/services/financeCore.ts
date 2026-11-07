@@ -1,17 +1,20 @@
 /** Versioned currency metadata used by offline financial calculations. */
-export const CURRENCY_CATALOG_VERSION = 'lifeos-iso4217-subset-v1';
+export const CURRENCY_CATALOG_VERSION = 'lifeos-iso4217-snapshot-2026-11-v2';
 
 export interface CurrencyMetadata {
   code: string;
   fractionDigits: 0 | 2 | 3;
 }
 
-// The catalog intentionally lists supported codes explicitly. Unknown or
-// misspelled codes are rejected instead of silently receiving two decimals.
+// Frozen offline snapshot of the 162 ISO currency identifiers available from
+// Node 24.17.0 / ICU 78.3 Intl.supportedValuesOf('currency'); minor units come
+// from Intl.NumberFormat's resolved currency fraction digits. Keep this data
+// versioned so a future refresh is deliberate and legacy values stay stable.
+// Unknown or misspelled codes are rejected instead of assuming two decimals.
 const currencyRows: CurrencyMetadata[] = [
-  ...['AUD','CAD','CHF','CNY','EUR','GBP','HKD','INR','MXN','NZD','SGD','USD','ZAR'].map(code => ({ code, fractionDigits: 2 as const })),
-  ...['BIF','CLP','DJF','GNF','ISK','JPY','KMF','KRW','PYG','RWF','UGX','UYI','VND','VUV','XAF','XOF','XPF'].map(code => ({ code, fractionDigits: 0 as const })),
-  ...['BHD','IQD','JOD','KWD','LYD','OMR','TND'].map(code => ({ code, fractionDigits: 3 as const })),
+  ...['AED','AMD','ANG','AOA','ARS','AUD','AWG','AZN','BAM','BBD','BDT','BGN','BMD','BND','BOB','BRL','BSD','BTN','BWP','BYN','BZD','CAD','CDF','CHF','CNY','CRC','CUC','CUP','CVE','CZK','DKK','DOP','DZD','EGP','ERN','ETB','EUR','FJD','FKP','GBP','GEL','GHS','GIP','GMD','GTQ','GYD','HKD','HNL','HRK','HTG','ILS','INR','JMD','KES','KGS','KHR','KYD','KZT','LKR','LRD','LSL','MAD','MDL','MKD','MNT','MOP','MRU','MUR','MVR','MWK','MXN','MYR','MZN','NAD','NGN','NIO','NOK','NPR','NZD','PAB','PEN','PGK','PHP','PLN','QAR','RON','RSD','RUB','SAR','SBD','SCR','SDG','SEK','SGD','SHP','SLE','SRD','SSP','STN','SVC','SZL','THB','TJS','TMT','TOP','TRY','TTD','TWD','TZS','UAH','USD','UYU','UZS','VES','WST','XCD','XCG','XDR','XSU','ZAR','ZMW','ZWG','ZWL'].map(code => ({ code, fractionDigits: 2 as const })),
+  ...['AFN','ALL','BIF','CLP','COP','DJF','GNF','HUF','IDR','IQD','IRR','ISK','JPY','KMF','KPW','KRW','LAK','LBP','MGA','MMK','PKR','PYG','RWF','SLL','SOS','SYP','UGX','VND','VUV','XAF','XOF','XPF','YER'].map(code => ({ code, fractionDigits: 0 as const })),
+  ...['BHD','JOD','KWD','LYD','OMR','TND'].map(code => ({ code, fractionDigits: 3 as const })),
 ];
 
 export const CURRENCY_CATALOG: Readonly<Record<string, CurrencyMetadata>> = Object.freeze(
@@ -87,17 +90,26 @@ export function formatMinorUnits(minorUnits: bigint, currencyCode: string, local
   const divisor = pow10(fractionDigits);
   const whole = magnitude / divisor;
   const fraction = magnitude % divisor;
-  const formatter = new Intl.NumberFormat(locale, {
-    style: 'currency', currency: currencyCode, minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  });
-  const parts = formatter.formatToParts(negative ? -1n : 1n);
   const groupedWhole = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(whole);
-  return parts.map(part => {
+  const assemble = (parts: Intl.NumberFormatPart[]) => parts.map(part => {
     if (part.type === 'integer') return groupedWhole;
     if (part.type === 'fraction') return String(fraction).padStart(fractionDigits, '0');
     return part.value;
   }).join('');
+  try {
+    const parts = new Intl.NumberFormat(locale, {
+      style: 'currency', currency: currencyCode, minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    }).formatToParts(negative ? -1n : 1n);
+    return assemble(parts);
+  } catch {
+    // Older Android ICU data may predate a valid code in this frozen catalog.
+    // Retain exact localized digits and visibly include the code as a fallback.
+    const parts = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits,
+    }).formatToParts(negative ? -1n : 1n);
+    return `${currencyCode}\u00a0${assemble(parts)}`;
+  }
 }
 
 const RATE_DENOMINATOR = 120_000n; // 12 months * 10,000 basis points per 100%.

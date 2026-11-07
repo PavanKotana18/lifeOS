@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current Plan schedule package: `e42ab50046a53df66d9880ac881c9f65bf3a49c9` (`theme(planner): apply semantic palette to calendar and details`).
+- Latest pushed commit before the current Finance catalog package: `d1ed7a3c599a6156c5262713fda99bf7267163f0` (`fix(plan): order task summaries by saved schedule`).
 - Finance calculations/projection, LifeOS 2.0 navigation, themes, Finance overview, and incremental screen accessibility work are already on this branch; see completed package notes below.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -23,7 +23,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 ### Finance, theme and dashboard implementation
 
 - Added offline Finance > Planning with two savings scenarios and nominal/real values, contributions, step-up options and clear assumptions/limits.
-- `src/services/financeCore.ts` uses integer BigInt minor units, explicit half-away-from-zero input rounding, safe decimal serialization/formatting, bounded savings projections, and rational currency conversion with half-up output rounding. Currency metadata is a versioned subset; this is not yet a currency-aware persisted ledger. Existing financial records are not reinterpreted.
+- `src/services/financeCore.ts` uses integer BigInt minor units, explicit half-away-from-zero input rounding, safe decimal serialization/formatting, bounded savings projections, and rational currency conversion with half-up output rounding. Its 162-code currency metadata is versioned; this is not yet a currency-aware persisted ledger. Existing financial records are not reinterpreted.
 - Added six light/dark semantic palettes; Soft Ivory + Sage Feather is the default. Theme preference initialization is bounded and validated; preview/apply/cancel/default are wired into Settings. Rollout remains incremental, with no device screenshot/accessibility review yet.
 - Replaced the opaque weighted productivity percentage with separate due/completed task, scheduled routine and weekly routine counts using `getTodayOverview`. Added deterministic summary tests. This avoids implying unlike activities are a single meaningful score.
 - Dashboard and Finance explicit conversion calculator are pushed and included in passing CI `42331997256`.
@@ -185,9 +185,16 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused regression: PASS (7). `npm run test:all`: PASS (Node/WP0/Sentinel suites); native Android SAF picker remains device-blocked. `npx --no-install tsc --noEmit`: PASS. `npm run build`: PASS (2,242 modules; PlanHub is a 2.74 kB lazy chunk, main JS 493.85 kB, no >500 kB warning). `git diff --check`: PASS. No Android/emulator run was performed for this change.
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-plan-schedule-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-plan-schedule-20261107.log`.
 
+### Finance currency metadata expansion (local, verified)
+
+- Expanded the offline currency metadata from 39 to 162 identifiers using a frozen ICU 78.3 fraction-digit snapshot. Updated the metadata version; currency validation, minor-unit rules and locale formatting remain explicit. The converter now offers the expanded offline catalog without a network lookup or added dependency.
+- Existing records are unchanged and still do not store an explicit currency per transaction; this work does not migrate or reinterpret ledger data.
+- Focused Finance core: PASS (53 assertions), including 0/2/3 fraction-digit currencies, unsupported-code rejection, the new catalog version/count, and exact formatting fallback when runtime ICU lacks a snapshot code. Savings summary production-render checks: PASS (6). `npm run test:all`: PASS (Node/WP0/Sentinel suites; Android SAF OS picker remains device-blocked). TypeScript: PASS. `npm run build`: PASS (2,242 modules; main JS 493.85 kB, no >500 kB warning). No Android/emulator run was performed.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-finance-catalog-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-finance-catalog-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`) and Planner palette (`e42ab50`) are pushed. Plan task schedule ordering is locally verified and is part of the current uncommitted checkpoint.
+- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`), Planner palette (`e42ab50`) and Plan schedule (`d1ed7a3`) are pushed. The expanded Finance currency snapshot is locally verified and part of the current uncommitted checkpoint.
 - PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Check the latest CI once after pushing this checkpoint; do not infer CI success from local test/build results.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.

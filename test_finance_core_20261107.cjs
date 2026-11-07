@@ -3,8 +3,12 @@ const assert = require('node:assert/strict');
 require('./scripts/register-ts-test-loader.cjs');
 const finance = require('./src/services/financeCore.ts');
 
-assert.equal(finance.CURRENCY_CATALOG_VERSION, 'lifeos-iso4217-subset-v1');
+assert.equal(finance.CURRENCY_CATALOG_VERSION, 'lifeos-iso4217-snapshot-2026-11-v2');
+assert.equal(Object.keys(finance.CURRENCY_CATALOG).length, 162);
 assert.equal(finance.getCurrencyMetadata('inr').fractionDigits, 2);
+assert.equal(finance.getCurrencyMetadata('AED').fractionDigits, 2);
+assert.equal(finance.getCurrencyMetadata('XCG').fractionDigits, 2);
+assert.equal(finance.getCurrencyMetadata('AFN').fractionDigits, 0);
 assert.equal(finance.getCurrencyMetadata('JPY').fractionDigits, 0);
 assert.equal(finance.getCurrencyMetadata('KWD').fractionDigits, 3);
 assert.throws(() => finance.getCurrencyMetadata('XYZ'), /Unsupported currency/);
@@ -39,6 +43,18 @@ const formattedLarge = finance.formatMinorUnits(exactLarge, 'USD', 'en-US');
 assert.match(formattedLarge, /9,007,199,254,740,993,123\.45/);
 assert.equal(finance.formatMinorUnits(12345678n, 'INR', 'en-IN'), '₹1,23,456.78');
 assert.equal(finance.formatMinorUnits(-123n, 'JPY', 'ja-JP'), '-￥123');
+const originalNumberFormat = Intl.NumberFormat;
+try {
+  Intl.NumberFormat = function(locale, options) {
+    if (options?.style === 'currency' && options.currency === 'XCG') throw new RangeError('simulated older Android ICU currency data');
+    return new originalNumberFormat(locale, options);
+  };
+  const fallbackCurrency = finance.formatMinorUnits(12345n, 'XCG', 'en-US');
+  assert.ok(fallbackCurrency.startsWith('XCG'), 'unknown-to-runtime currency symbols retain the code');
+  assert.match(fallbackCurrency, /123\.45/, 'older ICU fallback preserves exact localized monetary digits');
+} finally {
+  Intl.NumberFormat = originalNumberFormat;
+}
 
 const noReturn = finance.projectSavings({
   startingMinorUnits: 5000n, monthlyContributionMinorUnits: 10000n, months: 12,
@@ -85,4 +101,4 @@ for (const input of [
   { startingMinorUnits: 0n, monthlyContributionMinorUnits: 0n, months: 12, annualReturnBasisPoints: -120000, annualInflationBasisPoints: 0 },
 ]) assert.throws(() => finance.projectSavings(input));
 
-console.log('FINANCE CORE: 47 assertions passed; calculations use integer minor units and synthetic inputs only.');
+console.log('FINANCE CORE: 53 assertions passed; calculations use integer minor units and synthetic inputs only.');
