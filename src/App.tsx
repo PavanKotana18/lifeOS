@@ -24,6 +24,7 @@ import FinanceProjection from './components/FinanceProjection';
 import ExploreHub from './components/ExploreHub';
 import PlanHub from './components/PlanHub';
 import InsightsHub from './components/InsightsHub';
+import FinanceSavingsSummary from './components/FinanceSavingsSummary';
 import { PRIMARY_NAVIGATION, type MainTab } from './services/navigationCatalog';
 import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
@@ -1491,7 +1492,7 @@ export default function App() {
                   })}</div>}
                 </section>
 
-                {savingsGoals.length > 0 && <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-savings-title"><div className="flex items-center justify-between gap-2"><div><h4 id="overview-savings-title" className="text-sm font-semibold">Savings goals</h4><p className="text-[10px] text-secondary">Saved progress, not projected returns</p></div><button onClick={() => navigateFinanceSubtab('savings')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All goals</button></div><div className="mt-3 space-y-3">{savingsGoals.slice(0, 2).map(goal => { const percent = goal.targetAmount > 0 ? Math.min(100, Math.max(0, Math.round(goal.currentAmount / goal.targetAmount * 100))) : 0; return <div key={goal.id}><div className="flex justify-between gap-2 text-xs"><span className="truncate font-medium">{goal.title}</span><span className="shrink-0 tabular-nums">{percent}%</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} savings progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${percent}%` }} /></div><p className="mt-1 text-[10px] text-secondary">{formatMoney(goal.currentAmount)} of {formatMoney(goal.targetAmount)}</p></div>; })}</div></section>}
+                <FinanceSavingsSummary goals={savingsGoals} formatMoney={formatMoney} onViewAll={() => navigateFinanceSubtab('savings')} onCreate={() => openCreateForm('savings')} />
 
                 <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-transactions-title">
                   <div className="mb-2 flex items-center justify-between gap-2"><div><h4 id="overview-transactions-title" className="text-sm font-semibold">Recent transactions</h4><p className="text-[10px] text-secondary">Newest by date and time</p></div><button onClick={() => navigateFinanceSubtab('transactions')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All transactions</button></div>
