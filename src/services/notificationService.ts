@@ -116,7 +116,7 @@ export const NotificationService = {
       };
       const now = new Date();
       const notifications = tasks.flatMap(task => buildTaskNotificationPlan(task, preferences, now).map(plan => ({
-        id: taskNotificationId(task, plan.kind), title: labels[plan.kind] || 'LifeOS reminder', body: task.title,
+        id: taskNotificationId(task, plan.kind), title: labels[plan.kind] || 'LifeOS reminder', body: 'Unlock LifeOS to view your reminder.',
         schedule: { at: plan.at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: plan.kind, taskId: task.id },
       })));
@@ -199,7 +199,7 @@ export const NotificationService = {
 
   async ensureChannel() {
     if (!isNative()) return;
-    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'LifeOS reminders', description: 'Local task, habit and goal reminders', importance: 4 })
+    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'LifeOS reminders', description: 'Local task, habit and goal reminders', importance: 4, visibility: 0 })
       .catch(error => { ensureChannelPromise = null; writeLastError(errorMessage(error)); console.error('LifeOS notification channel creation failed:', error); throw error; });
     const pending = ensureChannelPromise;
     try { await pending; }

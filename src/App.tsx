@@ -1007,15 +1007,6 @@ export default function App() {
     showToast('Habit removed', 'info');
   };
 
-  const toggleTheme = async () => {
-    const next = theme === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    setAppearancePreference(next);
-    applyDomTheme(next, themePreviewId || visualThemeId);
-    await StorageService.settings.set('theme', next);
-    localStorage.setItem('lifeos-appearance', next);
-  };
-
   const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string) => {
     const now = new Date();
     const today = formatLocalDate(now);
@@ -1440,7 +1431,6 @@ export default function App() {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <button id="theme-toggle-btn" onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-11 w-11 items-center justify-center rounded-full border transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
           <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
         </div>
       </header>

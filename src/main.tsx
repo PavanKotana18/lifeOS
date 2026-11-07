@@ -57,7 +57,7 @@ async function bootstrapAppearance() {
   let cachedTheme = DEFAULT_THEME_ID;
   try { cachedTheme = resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { /* Cosmetic cache is optional. */ }
   const [themeId, preference] = await Promise.all([
-    resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', cachedTheme)),
+    resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', cachedTheme), 1500, cachedTheme),
     resolveInitialAppearancePreference(() => StorageService.settings.get('theme', 'system')),
   ]);
   const mediaDark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;

@@ -29,7 +29,9 @@ assert.doesNotMatch(startup, /(?:text|bg|border)-(?:slate|gray|indigo|amber|rose
 assert.match(shell, /onClick=\{triggerBiometricAuth\}/, 'lock screen retains the existing biometric callback');
 assert.match(shell, /onClick=\{\(\) => \{ void openRecovery\(\); \}\}/, 'lock recovery opens through the protection gate');
 assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await setSensitiveScreenshotState\(true\);\s*setRecoveryOpen\(true\);/, 'recovery secrets are not rendered before native screenshot protection is acknowledged');
-assert.match(fsSource.slice(fsSource.indexOf('id="theme-toggle-btn"'), fsSource.indexOf('</button>', fsSource.indexOf('id="theme-toggle-btn"'))), /onClick=\{toggleTheme\}/, 'appearance control retains its existing action');
+assert.doesNotMatch(shell, /theme-toggle-btn|onClick=\{toggleTheme\}/, 'header has no duplicate theme shortcut');
+assert.match(fsSource, /id="color-theme-title"/, 'curated theme selection remains in Settings appearance');
+assert.match(fsSource, /aria-label="Open profile and settings"/, 'profile remains the header settings entry point');
 assert.match(fsSource, /lifeos-mark/, 'LifeOS mark uses its semantic shell class');
 assert.match(fsSource, /BrandMark/, 'App shell renders the shared original vector brand mark');
 assert.match(fsSource, /Daily consistency monitor<\/p>/, 'habit heading remains in the semantic palette');
