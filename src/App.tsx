@@ -1239,10 +1239,10 @@ export default function App() {
           </div>
           <div className="min-w-0">
             <h1 className="header-greeting text-[clamp(1.05rem,4.2vw,1.35rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
-            <p className="mt-0.5 truncate text-xs text-slate-400">{tabSubtitle[activeTab]}</p>
+            <p className="mt-0.5 truncate text-xs text-secondary">{tabSubtitle[activeTab]}</p>
           </div>
         </div>
-        <button id="theme-toggle-btn" onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
+        <button id="theme-toggle-btn" onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-11 w-11 shrink-0 items-center justify-center rounded-full border bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
       </header>
 
       {!isOnline && (
@@ -2028,7 +2028,7 @@ export default function App() {
       )}
 
       {/* Floating Bottom Nav */}
-      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-4 border-t border-slate-800 bg-slate-900/95 px-2 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
+      <nav aria-label="Main navigation" className="lifeos-nav fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-4 border-t px-2 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, compass: Compass, calendar: CalendarDays, insights: Activity })[icon];
           return (
@@ -2038,7 +2038,7 @@ export default function App() {
             onClick={() => navigateTo(tab)}
             aria-label={label}
             aria-current={activeTab === tab ? 'page' : undefined}
-            className={`nav-item flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-300 font-bold' : 'text-slate-400'}`}
+            className={`nav-item flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
           >
             <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />
             <span>{label}</span>

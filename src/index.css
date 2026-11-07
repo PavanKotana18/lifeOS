@@ -77,11 +77,15 @@ input[type="checkbox"] { min-height: 20px; min-width: 20px; }
 input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
 
 .app-header {
-  border-bottom: 1px solid #263244;
-  background: rgb(17 24 39 / 94%);
+  border-bottom: 1px solid var(--stroke);
+  background: var(--surface);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
+.app-icon-button { border-color: var(--stroke); background: var(--surface-raised); color: var(--ink-secondary); }
+.lifeos-nav { border-color: var(--stroke); background: var(--surface); }
+.lifeos-nav .nav-item[aria-current="page"] { background: var(--accent-tint); color: var(--accent); }
+.lifeos-nav .nav-item:not([aria-current="page"]) { color: var(--ink-secondary); }
 .lifeos-mark { box-shadow: 0 2px 8px rgb(0 0 0 / 18%); }
 .logo-brand { animation: lifeos-logo-in 220ms ease-out both; }
 .logo-portrait { animation: lifeos-logo-shift 360ms ease-in-out both; }
@@ -170,13 +174,8 @@ html.dark { color-scheme: dark; }
 .lifeos-danger { color: var(--danger); border-color: var(--danger); }
 
 html:not(.dark) body { background: var(--page); color: var(--ink); }
-html:not(.dark) .app-header { border-color: var(--stroke); background: var(--surface); }
-html:not(.dark) .app-icon-button { border-color: var(--stroke); background: var(--surface-raised); color: var(--ink-secondary); }
 html:not(.dark) .profile-panel { border-color: var(--stroke); background: var(--surface); box-shadow: 0 1px 3px rgb(15 23 42 / 7%); }
 html:not(.dark) .profile-avatar { background: var(--accent); color: var(--accent-foreground); }
-html:not(.dark) nav[aria-label="Main navigation"] { border-color: var(--stroke); background: var(--surface); }
-html:not(.dark) nav button[aria-current="page"] { background-color: var(--accent-tint); color: var(--accent); }
-html:not(.dark) nav button:not([aria-current="page"]) { color: var(--ink-secondary); }
 html:not(.dark) .bg-indigo-600 { background-color: var(--accent); color: var(--accent-foreground); }
 html:not(.dark) .bg-indigo-400 { background-color: var(--accent); }
 

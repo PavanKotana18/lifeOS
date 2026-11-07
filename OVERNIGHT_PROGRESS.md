@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit: `1455cecb38596ecc0c92413de0a62f7ddecbd1f8`.
+- Latest pushed commit before the current local shell styling checkpoint: `a5b455ba4b1aae0f313885c9fe327d227f671ab8`.
 - Dashboard commit `425bb6d` and Finance conversion commit `704fa55` are pushed. This checkpoint edit records final CI results locally; source and test code are clean.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -28,7 +28,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Replaced the opaque weighted productivity percentage with separate due/completed task, scheduled routine and weekly routine counts using `getTodayOverview`. Added deterministic summary tests. This avoids implying unlike activities are a single meaningful score.
 - Dashboard and Finance explicit conversion calculator are pushed and included in passing CI `42331997256`.
 
-### LifeOS 2.0 navigation package (local, verified, not yet pushed)
+### LifeOS 2.0 navigation package (committed, pushed to PR #23)
 
 - Added four primary destinations: Today, Explore, Plan and Insights. The existing Finance, Habits, Goals, Planner and Settings screens remain available through Explore.
 - Explore shows counts from current local application state. Plan lists upcoming open tasks and active goals and provides working navigation and task creation. Insights displays saved finance and routine summaries, with an explicit empty state and no sample metrics.
@@ -38,6 +38,13 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - `npm run build` PASS (2,241 modules); Vite reports the existing large main chunk advisory.
 - `npm run test:all` PASS, including the full Node/WP0/security/data suite, 7 navigation checks and all six Sentinel suites. Sentinel Saf picker execution remains explicitly device-blocked; no emulator was run for this local package.
 - No production security, encryption, storage, backup or Android native behavior changed in this package.
+
+### Theme-driven app shell (local, focused verification complete)
+
+- Header, appearance button and four-item navigation bar now use the active semantic surface, border, accent and secondary-text tokens in both light and dark modes. Navigation touch targets are at least 44 CSS px high; existing global focus and reduced-motion rules remain in effect.
+- Focused navigation contract: 7 checks PASS. Theme catalog and contrast suite PASS for all 6 palettes in light and dark modes.
+- TypeScript check PASS; production Vite build PASS (2,241 modules; existing >500 kB main-chunk advisory remains). `git diff --check` PASS.
+- Runtime visual review, screen reader review and Android device rendering are not claimed.
 
 ## Tests actually run on current local changes
 
@@ -62,6 +69,6 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## Next exact steps
 
-1. Review and checkpoint the verified navigation package, then continue incremental migration of existing screens to semantic tokens while preserving their models and workflows.
+1. Commit and publish the theme-driven shell change with the already-pushed navigation package after verifying PR head synchronization.
 2. Add focused interaction/back-stack coverage for the new primary destinations and Explore module routes; the current Node test verifies catalog integrity, while the Sentinel UI exercise is syntax-checked locally and still needs hosted UI execution.
 3. Keep LOS-001, API36 target compliance and physical biometric/SAF/notification acceptance visibly blocked pending their specific evidence.
