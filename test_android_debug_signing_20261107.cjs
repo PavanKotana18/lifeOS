@@ -17,6 +17,8 @@ assert.match(workflow, /Debug APK signing is mandatory[\s\S]*?exit 1/,
   'CI fails explicitly when any required debug signing secret is missing');
 assert.match(workflow, /keytool -list[\s\S]*?Verify debug APK signing identity and package version/,
   'CI validates the keystore and checks the APK signature, package ID and versionCode');
+assert.match(workflow, /SHA-256 signer: \$ACTUAL/,
+  'CI writes the verified fingerprint to the summary without treating it as shell syntax');
 assert.doesNotMatch(fs.readdirSync('android/app').join('\n'), /\.keystore|\.jks/,
   'keystore material is not added to the Android project');
 console.log('ANDROID SIGNING CONTRACT: package identity is stable; versionCode advances; persistent debug signing is secret-gated and no key file is committed.');
