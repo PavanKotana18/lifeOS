@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current local shell styling checkpoint: `a5b455ba4b1aae0f313885c9fe327d227f671ab8`.
+- Latest pushed commit before the current local Insights checkpoint: `6f2646c78be4bc59833253f192154674fe1f8380`.
 - Dashboard commit `425bb6d` and Finance conversion commit `704fa55` are pushed. This checkpoint edit records final CI results locally; source and test code are clean.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -46,6 +46,14 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - TypeScript check PASS; production Vite build PASS (2,241 modules; existing >500 kB main-chunk advisory remains). `git diff --check` PASS.
 - Runtime visual review, screen reader review and Android device rendering are not claimed.
 
+### Insights goal progress and route history (local, verified)
+
+- Insights now renders up to three active goals from the saved goal list with the existing production `getGoalProgress` rule, current/target values, and accessible progress bars. Zero-target values safely remain at 0% per the domain helper.
+- Navigation history is covered with the existing production history helpers for Today → Explore → Finance → Insights and back to Finance/Explore.
+- Added `test_insights_hub_20261107.cjs`, a server-render test of the actual React component with synthetic goals (5 assertions), and added it to the mandatory Node test chain.
+- Focused Insights (5) and navigation (9) checks PASS; TypeScript PASS; full `npm run test:all` PASS (all Node, WP0 and six Sentinel suites); `npm run build` PASS (2,241 modules; existing >500 kB bundle advisory).
+- Full local run output retained outside the repository at `/data/data/com.termux/files/usr/tmp/lifeos-test-all-overnight-20261107.log`. Sentinel SAF OS picker remains blocked without Android runtime; no handset claim.
+
 ## Tests actually run on current local changes
 
 - `npm run test:all`: PASS on a complete serial run after conversion and dashboard changes. Includes 97/97 core application assertions, 32 habit-wiring checks, 21/21 audit regressions, encrypted storage/migration/coordinator suites, WP0 harness (148 checks and 11 controls), 47 Finance assertions, six-theme contrast checks, 3 Today summary checks, Android runner contract simulations, and all six Sentinel suites. CI run `42331997256` also passed this command.
@@ -69,6 +77,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## Next exact steps
 
-1. Commit and publish the theme-driven shell change with the already-pushed navigation package after verifying PR head synchronization.
-2. Add focused interaction/back-stack coverage for the new primary destinations and Explore module routes; the current Node test verifies catalog integrity, while the Sentinel UI exercise is syntax-checked locally and still needs hosted UI execution.
+1. Commit and push the verified Insights goal progress and navigation history package to the same PR #23 branch; avoid adding another PR.
+2. Verify the consolidated GitHub Actions run and actual Android test counts. The last known runner for the shell-only checkpoint was queued behind the prior emulator matrix.
+3. Continue only after that checkpoint with incremental accessibility/theme review and a focused existing-screen migration; do not rewrite Finance, Habits, Goals or Planner models.
 3. Keep LOS-001, API36 target compliance and physical biometric/SAF/notification acceptance visibly blocked pending their specific evidence.

@@ -86,6 +86,8 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
 .lifeos-nav { border-color: var(--stroke); background: var(--surface); }
 .lifeos-nav .nav-item[aria-current="page"] { background: var(--accent-tint); color: var(--accent); }
 .lifeos-nav .nav-item:not([aria-current="page"]) { color: var(--ink-secondary); }
+.lifeos-progress-track { background: var(--surface-raised); }
+.lifeos-progress-fill { background: var(--accent); }
 .lifeos-mark { box-shadow: 0 2px 8px rgb(0 0 0 / 18%); }
 .logo-brand { animation: lifeos-logo-in 220ms ease-out both; }
 .logo-portrait { animation: lifeos-logo-shift 360ms ease-in-out both; }

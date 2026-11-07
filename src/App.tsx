@@ -195,7 +195,7 @@ export default function App() {
   const navigateTo = (tab: MainTab) => {
     const previous = activeTabRef.current;
     if (previous === tab) return;
-    navigationHistory.current.push(previous);
+    navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     activeTabRef.current = tab;
     setShowExitConfirmation(false);
     setActiveTab(tab);
@@ -220,7 +220,9 @@ export default function App() {
       if (state.activeTab === 'settings') setProfileNotificationsOpen(false);
       return;
     }
-    const previous = navigationHistory.current.pop();
+    const history = popTabHistory(navigationHistory.current, 'dashboard');
+    navigationHistory.current = history.history;
+    const previous = history.next;
     if (action === 'previous-tab' && previous) {
       activeTabRef.current = previous;
       setActiveTab(previous);
@@ -1419,6 +1421,7 @@ export default function App() {
           routinesDue={todayOverview.routinesDue}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
           weeklyTotal={todayOverview.weeklyRoutinesTotal}
+          goals={goals.filter(goal => goal.status === 'In Progress')}
           hasHistory={transactions.length > 0 || habits.length > 0 || goals.length > 0}
           formatMoney={formatMoney}
           onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
