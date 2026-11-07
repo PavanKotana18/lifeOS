@@ -2,6 +2,7 @@ package com.lifeos.personal;
 
 import android.os.Bundle;
 import android.content.res.Configuration;
+import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -53,13 +54,17 @@ public class MainActivity extends BridgeActivity {
 
     private void applyScreenshotProtection() {
         boolean secure = ScreenshotProtectionPolicy.shouldProtect(
-            BuildConfig.DEBUG, sensitiveScreen, activityResumed, webViewCompatibilityBlocked,
+            isDebuggableVariant(), sensitiveScreen, activityResumed, webViewCompatibilityBlocked,
             resumeValidationPending);
         if (secure) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
         }
+    }
+
+    private boolean isDebuggableVariant() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     private void showWebViewUpdateIfRequired() {

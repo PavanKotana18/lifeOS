@@ -1,6 +1,7 @@
 package com.lifeos.personal;
 
 import android.view.WindowManager;
+import android.content.pm.ApplicationInfo;
 
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -31,16 +32,18 @@ public class ScreenshotProtectionAcceptanceTest {
     }
 
     @Test public void debugActivityRequiresExplicitSafeStateAndRestoresProtectionOnLifecycle() {
-        Assume.assumeTrue("Instrumentation APK must use the debug variant", BuildConfig.DEBUG);
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             AtomicInteger before = new AtomicInteger();
             AtomicInteger safe = new AtomicInteger();
             AtomicInteger sensitive = new AtomicInteger();
             AtomicInteger supported = new AtomicInteger();
+            AtomicInteger debugVariant = new AtomicInteger();
             scenario.onActivity(activity -> {
                 String userAgent = activity.getBridge().getWebView().getSettings().getUserAgentString();
                 supported.set(WebViewCompatibility.isSupported(userAgent) ? 1 : 0);
+                debugVariant.set((activity.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0 ? 1 : 0);
             });
+            Assume.assumeTrue("Instrumentation APK must use the debug variant", debugVariant.get() == 1);
             Assume.assumeTrue("Unsupported WebView remains protected and is covered by compatibility tests", supported.get() == 1);
             scenario.onActivity(activity -> {
                 before.set(hasSecureFlag(activity) ? 1 : 0);
