@@ -152,68 +152,45 @@ async function main() {
       'Invalid amounts and missing goals create no financial records'
     );
 
-    // 3. A linked savings transfer must create a cash-flow expense atomically.
-    await db.categories.add({
-      id: 'cat-savings-transfer-test',
-      name: 'Savings Transfer Test',
-      type: 'expense',
-      color: '#10b981'
+    // 3. Savings progress must not create or mutate a spending transaction.
+    const historicalSavingsExpense = {
+      id: 'legacy-savings-expense', type: 'expense', amount: 250,
+      category: 'Investments', description: 'Savings contribution: Older fund',
+      date: '2026-10-01', paymentMethod: 'Savings transfer',
+      createdAt: '2026-10-01T10:00:00.000Z'
+    };
+    await db.transactions.add(historicalSavingsExpense);
+    const transactionsBeforeContribution = await db.transactions.count();
+    await StorageService.savings.addContribution({
+      goalId: 'sg-atomic', amount: 250, date: '2026-11-01', notes: 'Goal progress only'
     });
-
-    await StorageService.savings.addContribution(
-      { goalId: 'sg-atomic', amount: 250, date: '2026-11-01', notes: 'Atomic linked transfer test' },
-      {
-        type: 'expense',
-        amount: 250,
-        category: 'Savings Transfer Test',
-        description: 'Savings contribution: Emergency fund',
-        date: '2026-11-01',
-        paymentMethod: 'Savings transfer',
-        notes: 'Atomic linked transfer test'
-      }
-    );
-
-    const linkedTransaction = (await db.transactions.toArray())
-      .find(tx => tx.description === 'Savings contribution: Emergency fund');
-
     check(
       (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
       await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
-      Boolean(linkedTransaction) &&
-      linkedTransaction.type === 'expense' &&
-      linkedTransaction.amount === 250,
-      'Linked savings contribution updates the goal and creates a matching expense'
+      await db.transactions.count() === transactionsBeforeContribution &&
+      JSON.stringify(await db.transactions.get(historicalSavingsExpense.id)) === JSON.stringify(historicalSavingsExpense),
+      'Savings contribution adds no expense and leaves historical savings expense unchanged'
     );
 
-    // A linked expense failure must roll back both savings records.
-    const linkedExpenseFailure = () => { throw new Error('Injected linked transaction failure'); };
-    db.transactions.hook('creating').subscribe(linkedExpenseFailure);
+    // A transaction-table failure cannot turn goal progress into spending.
+    const unrelatedTransactionFailure = () => { throw new Error('Injected unrelated transaction failure'); };
+    db.transactions.hook('creating').subscribe(unrelatedTransactionFailure);
 
     try {
-      await assert.rejects(StorageService.savings.addContribution(
-        { goalId: 'sg-atomic', amount: 300, date: '2026-11-01' },
-        {
-          type: 'expense',
-          amount: 300,
-          category: 'Savings Transfer Test',
-          description: 'Savings contribution: Emergency fund rollback',
-          date: '2026-11-01',
-          paymentMethod: 'Savings transfer'
-        }
-      ));
+      await StorageService.savings.addContribution({
+        goalId: 'sg-atomic', amount: 50, date: '2026-11-01'
+      });
     } finally {
-      db.transactions.hook('creating').unsubscribe(linkedExpenseFailure);
+      db.transactions.hook('creating').unsubscribe(unrelatedTransactionFailure);
     }
 
     check(
-      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
-      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
-      !(await db.transactions.toArray()).some(tx => tx.description === 'Savings contribution: Emergency fund rollback'),
-      'Linked expense failure rolls back the contribution and goal balance'
+      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1300 &&
+      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 2 &&
+      await db.transactions.count() === transactionsBeforeContribution &&
+      JSON.stringify(await db.transactions.get(historicalSavingsExpense.id)) === JSON.stringify(historicalSavingsExpense),
+      'Contribution commit is independent of transaction creation and preserves historical rows'
     );
-
-    await StorageService.transactions.delete(linkedTransaction.id);
-    await db.categories.delete('cat-savings-transfer-test');
 
     // 4. Habit deletion must roll back if dependent-log deletion fails.
     await db.habits.add({

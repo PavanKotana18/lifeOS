@@ -1043,28 +1043,7 @@ export default function App() {
           notes: value('notes') || undefined
         };
 
-        let linkedExpense: Omit<Transaction, 'id' | 'createdAt'> | undefined;
-        if (value('linkTransfer') === 'yes') {
-          const goal = savingsGoals.find(item => item.id === value('goalId'));
-          if (!goal) throw new Error('Choose an available savings goal.');
-
-          const transferCategory = value('transferCategory');
-          if (!transferCategory || !categories.some(category => category.name === transferCategory && category.type === 'expense')) {
-            throw new Error('Choose an available expense category for the savings transfer.');
-          }
-
-          linkedExpense = {
-            type: 'expense',
-            amount,
-            category: transferCategory,
-            description: `Savings contribution: ${goal.title}`,
-            date: value('date'),
-            paymentMethod: 'Savings transfer',
-            notes: value('notes') || `Linked savings contribution to ${goal.title}`
-          };
-        }
-
-        await StorageService.savings.addContribution(contribution, linkedExpense);
+        await StorageService.savings.addContribution(contribution);
       } else if (createKind === 'milestone') {
         await StorageService.goals.addMilestone({ goalId: value('goalId'), title: value('title'), targetDate: value('date') || undefined, completed: false });
       } else if (createKind === 'goal-progress') {
@@ -1593,7 +1572,6 @@ export default function App() {
                   navigateFinanceSubtab('savings');
                   if (savingsGoals.length === 1) {
                     openCreateForm('contribution', savingsGoals[0].id);
-                    setCreateDraft(current => ({ ...current, linkTransfer: 'no' }));
                   }
                 }}
                 onTransactions={() => navigateFinanceSubtab('transactions')}
@@ -1693,15 +1671,11 @@ export default function App() {
             {financeSubtab === 'savings' && <div className="space-y-3">
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} formatMoney={formatMoney} formatDate={formatDate} onContribute={() => {
-                  const expenseCategories = categories.filter(category => category.type === 'expense');
-                  const preferredCategory = expenseCategories.find(category => category.name === 'Investments') || expenseCategories[0];
                   setCreateDraft({
                     goalId: goal.id,
                     date: new Date().toISOString().slice(0, 10),
                     amount: '',
                     notes: '',
-                    linkTransfer: 'yes',
-                    transferCategory: preferredCategory?.name || ''
                   });
                   setCreateKind('contribution');
                 }} onDelete={async () => {
@@ -2116,33 +2090,7 @@ export default function App() {
               <label className="mb-3 block text-xs text-secondary">Savings goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{savingsGoals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>
               <label className="mb-3 block text-xs text-secondary">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-secondary">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary">
-                <input
-                  type="checkbox"
-                  checked={createDraft.linkTransfer !== 'no'}
-                  onChange={e => setCreateDraft({ ...createDraft, linkTransfer: e.target.checked ? 'yes' : 'no' })}
-                />
-                Record this contribution as an expense in monthly cash flow
-              </label>
-              {createDraft.linkTransfer !== 'no' && <>
-                <label className="mb-2 block text-xs text-secondary">
-                  Expense category
-                  <select
-                    required
-                    value={createDraft.transferCategory || ''}
-                    onChange={e => setCreateDraft({ ...createDraft, transferCategory: e.target.value })}
-                    className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"
-                  >
-                    <option value="">Select expense category</option>
-                    {categories.filter(category => category.type === 'expense').map(category => (
-                      <option key={category.id} value={category.name}>{category.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <p className="mb-3 text-[11px] text-secondary">
-                  When enabled, this transfer is recorded as an expense and reduces the remaining balance for the selected month. The savings goal is updated at the same time.
-                </p>
-              </>}
+                <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs leading-relaxed text-secondary">A contribution updates this savings goal only. It does not record a cash movement or reduce expense and budget totals. Account transfers are not available yet.</p>
             </>}
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
