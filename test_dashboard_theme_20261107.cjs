@@ -1,0 +1,16 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
+const start = app.indexOf('        {/* VIEW 1: DASHBOARD */}');
+const end = app.indexOf('        {/* VIEW 2: FINANCE */}', start);
+assert.ok(start >= 0 && end > start, 'Today dashboard boundaries are present');
+const today = app.slice(start, end);
+assert.ok(!/\b(?:text|bg|border)-(?:slate|indigo|emerald|amber|rose|sky|violet)-\d{2,3}(?:\/\d+)?\b/.test(today), 'Today screen uses semantic theme colors');
+assert.match(today, /role="progressbar" aria-label=\{`\$\{goal\.title\} progress`\}/);
+assert.match(today, /aria-pressed=\{stats\.completedToday\}/);
+assert.match(today, /aria-label=\{`Mark \$\{t\.title\}/);
+assert.match(today, /Create a habit/);
+assert.match(today, /Add a task/);
+assert.match(today, /Nothing scheduled for today yet/);
+console.log('TODAY THEME: 8 source-level theme, progress, status and empty-state checks passed.');

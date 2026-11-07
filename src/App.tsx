@@ -1,37 +1,53 @@
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
-import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
+import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Compass, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
-import { StorageService, sessionManager, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords } from './db';
-import { CryptoService } from './services/cryptoService.ts';
+import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords } from './db';
+import { CryptoService, type PreparedRecovery } from './services/cryptoService.ts';
 import { createProtectedSessionController } from './services/cryptoSessionCoordinator';
 import { encryptBackup, MAX_BACKUP_FILE_BYTES } from './services/backupCryptoService';
 import { decodeBackupForRestore } from './services/backupImportService';
 import BackupPassphraseDialog from './components/BackupPassphraseDialog';
 import RecoveryDialog from './components/RecoveryDialog';
+import SecureSetupDialog from './components/SecureSetupDialog';
 import { createRecoveryController } from './services/recoveryService';
 import { quoteCsvCell } from './services/csvExportService.ts';
 import { exportBackupFile } from './services/backupExportService';
+import { confirmScreenshotResume, isSensitiveScreenshotState, setSensitiveScreenshotState } from './services/screenshotProtection';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
-import { DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
+import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
+import { getCurrencyMetadata } from './services/financeCore';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
+import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
+import { resolveInitialVisualTheme } from './services/systemAppearance';
+import FinanceSavingsSummary from './components/FinanceSavingsSummary';
+import { PRIMARY_NAVIGATION, type MainTab } from './services/navigationCatalog';
 import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
+const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
+const ExploreHub = React.lazy(() => import('./components/ExploreHub'));
+const PlanHub = React.lazy(() => import('./components/PlanHub'));
+const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
 
-type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
+function ScreenLoading({ label }: { label: string }) {
+  return <div className="lifeos-panel rounded-2xl border p-6 text-center text-sm text-secondary" role="status" aria-live="polite">{label}</div>;
+}
+
+const tabSubtitle: Record<MainTab, string> = { dashboard: "Here's your day at a glance.", explore: 'Your life modules, thoughtfully organized.', plan: 'Tasks, routines and goals for what comes next.', insights: 'Progress from the records you have saved.', finance: 'Your finances, thoughtfully organized.', habits: 'Your habits, thoughtfully organized.', goals: 'Your goals, thoughtfully organized.', planner: 'Your planner, thoughtfully organized.', settings: 'Your profile, thoughtfully organized.' };
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
-const applyDomTheme = (theme: 'dark' | 'light') => {
+const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
+  applyThemeTokens(themeId, theme);
   document.documentElement.style.colorScheme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#090d16' : '#f8fafc');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#101712' : '#FAFAF7');
 };
 
 const notificationLabels: Record<keyof NotificationPreferences, string> = {
@@ -66,6 +82,10 @@ export default function App() {
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
+  const [visualThemeId, setVisualThemeId] = useState<ThemeId>(() => {
+    try { return resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { return DEFAULT_THEME_ID; }
+  });
+  const [themePreviewId, setThemePreviewId] = useState<ThemeId | null>(null);
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [displayName, setDisplayName] = useState('');
   const [clockNow, setClockNow] = useState(() => new Date());
@@ -84,10 +104,27 @@ export default function App() {
   const [appReady, setAppReady] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const recoveryController = useRef(createRecoveryController(CryptoService, sessionManager, getRecoveryChallenge)).current;
+  const [secureSetup, setSecureSetup] = useState<{ prepared?: PreparedRecovery } | null>(null);
+  const secureSetupResolver = useRef<((accepted: boolean) => void) | null>(null);
+  const requestSecureSetup = async (prepared?: PreparedRecovery): Promise<boolean> => {
+    await setSensitiveScreenshotState(true);
+    if (secureSetupResolver.current) return Promise.reject(new Error('Secure setup is already open.'));
+    return new Promise(resolve => {
+      secureSetupResolver.current = accepted => {
+        secureSetupResolver.current = null;
+        setSecureSetup(null);
+        resolve(accepted);
+      };
+      setSecureSetup(prepared ? { prepared } : {});
+    });
+  };
+  useEffect(() => () => { secureSetupResolver.current?.(false); }, []);
   const [backupPrompt, setBackupPrompt] = useState<'export' | 'import' | null>(null);
   const backupPassphraseResolver = useRef<((value: string | null) => void) | null>(null);
   const backupOperation = useRef(false);
-  const requestBackupPassphrase = (purpose: 'export' | 'import'): Promise<string | null> => {
+  const [backupOperationInProgress, setBackupOperationInProgress] = useState(false);
+  const requestBackupPassphrase = async (purpose: 'export' | 'import'): Promise<string | null> => {
+    await setSensitiveScreenshotState(true);
     if (backupPassphraseResolver.current) return Promise.reject(new Error('A backup prompt is already open.'));
     return new Promise(resolve => {
       backupPassphraseResolver.current = value => {
@@ -104,10 +141,41 @@ export default function App() {
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
   const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
   const [biometricMessage, setBiometricMessage] = useState('');
+  const [biometricAuthActive, setBiometricAuthActive] = useState(false);
+  const [activityResumeGuard, setActivityResumeGuard] = useState(false);
   const biometricAuthInFlight = useRef<Promise<boolean> | null>(null);
   const biometricAuthenticated = useRef(false);
   const startupComplete = useRef(false);
-  const encryptedSession = useRef(createProtectedSessionController(CryptoService, sessionManager)).current;
+  const encryptedSession = useRef(createProtectedSessionController(CryptoService, sessionManager, {
+    hasEncryptedRecords,
+    requestInitialSetup: () => requestSecureSetup(),
+    confirmRecovery: prepared => requestSecureSetup(prepared),
+    activateStorage: activateEncryptedStorage,
+    isStorageActive: isEncryptedStorageActivated,
+  })).current;
+
+  const sensitiveScreenshot = activityResumeGuard || isSensitiveScreenshotState({
+    appReady,
+    onboardingRequired,
+    onboardingComplete,
+    secureSetupOpen: secureSetup !== null,
+    recoveryOpen,
+    backupPassphraseOpen: backupPrompt !== null,
+    backupOperationInProgress,
+    locked: isLocked,
+    biometricAuthenticationInProgress: biometricAuthActive,
+  });
+  useEffect(() => {
+    // The native Activity defaults to protected. A failed bridge call therefore
+    // leaves screenshots blocked rather than exposing an uncertain screen.
+    const protectUntilRevalidated = () => {
+      setActivityResumeGuard(true);
+      void setSensitiveScreenshotState(true).catch(() => undefined);
+    };
+    window.addEventListener('lifeos:activity-resumed', protectUntilRevalidated);
+    void setSensitiveScreenshotState(sensitiveScreenshot).catch(() => undefined);
+    return () => window.removeEventListener('lifeos:activity-resumed', protectUntilRevalidated);
+  }, [sensitiveScreenshot]);
   const authCoordinator = useRef(createAuthCoordinator(async () => {
     const result = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your identity to access your personal data');
     if (!result.success) setBiometricMessage(result.message || 'Authentication was not completed. Retry when you are ready.');
@@ -126,7 +194,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
 
   // Subtab & Filter States
-  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'budgets' | 'savings' | 'analytics'>('overview');
+  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
   const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -162,7 +230,7 @@ export default function App() {
   const navigateTo = (tab: MainTab) => {
     const previous = activeTabRef.current;
     if (previous === tab) return;
-    navigationHistory.current.push(previous);
+    navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     activeTabRef.current = tab;
     setShowExitConfirmation(false);
     setActiveTab(tab);
@@ -187,7 +255,9 @@ export default function App() {
       if (state.activeTab === 'settings') setProfileNotificationsOpen(false);
       return;
     }
-    const previous = navigationHistory.current.pop();
+    const history = popTabHistory(navigationHistory.current, 'dashboard');
+    navigationHistory.current = history.history;
+    const previous = history.next;
     if (action === 'previous-tab' && previous) {
       activeTabRef.current = previous;
       setActiveTab(previous);
@@ -228,50 +298,32 @@ export default function App() {
     void CapacitorApp.addListener('appStateChange', async state => {
       if (disposed) return;
       if (!state.isActive) {
+        setActivityResumeGuard(true);
         backupPassphraseResolver.current?.(null);
-        // Close admission immediately, then wait for admitted database work.
-        sessionManager.lock();
-        if (isEncryptedStorageActivated()) {
-          setIsLocked(true);
-          biometricAuthenticated.current = false;
-          try { await encryptedSession.lock(); }
-          catch { setBiometricMessage('The native key could not be locked. Access remains blocked.'); }
-        }
-        await sessionManager.waitForIdle();
-
-        const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-        if (disposed) return;
-        if (isBio) {
-          biometricAuthenticated.current = false;
-          authCoordinator.resetForBackground();
-          setIsLocked(true);
-          setBiometricVerified(false);
-          setBiometricMessage('');
-        }
+        secureSetupResolver.current?.(false);
+        setIsLocked(true);
+        setBiometricVerified(false);
+        biometricAuthenticated.current = false;
+        authCoordinator.resetForBackground();
+        // Close native admission even during setup, not only after migration.
+        try { await encryptedSession.lock(); }
+        catch { setBiometricMessage('The native key could not be locked. Access remains blocked.'); }
         return;
       }
       if (resumeInProgress) return;
       resumeInProgress = true;
+      setBiometricAuthActive(true);
       try {
         // Wait for any previous background operation drain before reopening.
         await sessionManager.waitForIdle();
         if (disposed || !startupComplete.current) return;
 
         setClockNow(new Date());
-        if (isEncryptedStorageActivated()) {
-          await encryptedSession.open();
-          if (disposed) return;
-          setIsLocked(false);
-        } else {
-          const isBio = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
-          if (disposed) return;
-          if (isBio && startupComplete.current && !biometricAuthenticated.current) {
-            const authenticated = await triggerBiometricAuth();
-            if (!authenticated || !biometricAuthenticated.current || disposed) return;
-          }
-          // Never reload protected records while the biometric session is locked.
-          if (!isBio) sessionManager.unlock();
-        }
+        await encryptedSession.open();
+        if (disposed || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
+        biometricAuthenticated.current = true;
+        setBiometricVerified(true);
+        setIsLocked(false);
         if (!sessionManager.isUnlocked()) return;
         const records = await reloadAllData();
         if (disposed) return;
@@ -286,6 +338,10 @@ export default function App() {
         await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
           effectiveNotificationPreferences(permissionResume.advanced ? permissionResume.preferences : prefs, permissionResume.advanced || master));
         if (!disposed) await refreshNotificationDiagnostics();
+        if (!disposed) {
+          await confirmScreenshotResume();
+          setActivityResumeGuard(false);
+        }
       } catch (error) {
         if (isEncryptedStorageActivated()) {
           setIsLocked(true);
@@ -294,6 +350,7 @@ export default function App() {
         console.error('LifeOS resume recovery failed.', error);
       } finally {
         resumeInProgress = false;
+        setBiometricAuthActive(false);
       }
     }).then(async listener => {
       if (disposed) await listener.remove();
@@ -328,14 +385,14 @@ export default function App() {
 
   useEffect(() => {
     if (appearance !== 'system') return;
-    const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved); };
+    const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved, themePreviewId || visualThemeId); };
     const nativeTheme = (event: Event) => update((event as CustomEvent<{ dark: boolean }>).detail.dark ? 'dark' : 'light');
     window.addEventListener('lifeos:system-appearance', nativeTheme);
     const stopMedia = typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
       ? () => {}
       : watchSystemTheme(window.matchMedia('(prefers-color-scheme: dark)'), update);
     return () => { stopMedia(); window.removeEventListener('lifeos:system-appearance', nativeTheme); };
-  }, [appearance]);
+  }, [appearance, visualThemeId, themePreviewId]);
 
   useEffect(() => {
     if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
@@ -381,10 +438,13 @@ export default function App() {
   const initApp = async () => {
     // Bootstrap-safe preferences only.
     const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'system');
+    const savedVisualTheme = await resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', visualThemeId));
+    setVisualThemeId(savedVisualTheme);
     setAppearancePreference(savedTheme);
     const resolvedTheme = resolveAppearance(savedTheme, systemDarkPreference());
     setTheme(resolvedTheme);
-    applyDomTheme(resolvedTheme);
+    applyDomTheme(resolvedTheme, savedVisualTheme);
+    try { localStorage.setItem('lifeos-theme-id', savedVisualTheme); } catch { /* Cosmetic cache is optional. */ }
     localStorage.setItem('lifeos-appearance', savedTheme);
 
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
@@ -405,27 +465,15 @@ export default function App() {
     const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
     let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
 
-    // Never reinterpret ciphertext through the legacy raw backend after restart.
-    // New encryption activation is deliberately deferred to the reviewed rollout.
-    if (!isEncryptedStorageActivated() && await hasEncryptedRecords()) {
-      sessionManager.lock();
-      throw new Error('Encrypted records were found. Data remains protected. Key recovery is available; opening encrypted data awaits the validated rollout.');
-    }
-
-    // Establish the application session before reading private preferences or records.
-    if (isEncryptedStorageActivated()) {
-      await encryptedSession.open();
-      setIsLocked(false);
-    } else if (lockSetting) {
-      const authenticated = await triggerBiometricAuth();
-      if (!authenticated || !biometricAuthenticated.current || !sessionManager.isUnlocked()) {
-        startupComplete.current = true;
-        setAppReady(true);
-        return;
-      }
-    } else {
-      sessionManager.unlock();
-    }
+    // The native key is authoritative on every process start. This owner
+    // explicitly provisions only databases without any ciphertext, confirms a
+    // memory-only recovery kit, then migrates/verifies before exposing records.
+    setIsLocked(true);
+    await encryptedSession.open();
+    if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Secure startup expired after app lock. Retry in the foreground.');
+    biometricAuthenticated.current = true;
+    setBiometricVerified(true);
+    setIsLocked(false);
 
     // Private preferences are read only after session authorization.
     const storedCurrency = await StorageService.settings.get<UserPreferences['currency']>('currency', 'INR');
@@ -508,9 +556,34 @@ export default function App() {
     setAppearancePreference(preference);
     const resolved = resolveAppearance(preference, systemDarkPreference());
     setTheme(resolved);
-    applyDomTheme(resolved);
+    applyDomTheme(resolved, themePreviewId || visualThemeId);
     await StorageService.settings.set('theme', preference);
     localStorage.setItem('lifeos-appearance', preference);
+  };
+
+  const previewVisualTheme = (themeId: ThemeId) => {
+    setThemePreviewId(themeId);
+    applyDomTheme(theme, themeId);
+  };
+
+  const cancelVisualThemePreview = () => {
+    setThemePreviewId(null);
+    applyDomTheme(theme, visualThemeId);
+  };
+
+  const applyVisualTheme = async () => {
+    if (!themePreviewId) return;
+    try {
+      await StorageService.settings.set('visualTheme', themePreviewId);
+      setVisualThemeId(themePreviewId);
+      try { localStorage.setItem('lifeos-theme-id', themePreviewId); } catch { /* Persistent setting remains authoritative. */ }
+      setThemePreviewId(null);
+      applyDomTheme(theme, themePreviewId);
+      showToast('Color theme applied', 'success');
+    } catch (error) {
+      cancelVisualThemePreview();
+      showToast(error instanceof Error ? error.message : 'Could not save this theme.', 'danger');
+    }
   };
 
   const refreshNotificationDiagnostics = async () => {
@@ -621,22 +694,39 @@ export default function App() {
   };
 
   const handleEnableBiometric = async () => {
-    const availability = await BiometricService.isAvailable();
-    if (!availability.isAvailable) return { success: false, message: availability.code === 'NOT_ENROLLED' ? 'No fingerprint or device screen lock is enrolled. Set one up in Android settings, then try again.' : 'Device authentication is not available on this device.' };
-    let result: { success: boolean; message?: string };
-    if (isEncryptedStorageActivated()) {
-      try { await encryptedSession.open(); result = { success: true }; }
-      catch (error) { return { success: false, message: error instanceof Error ? error.message : 'Encryption authentication failed.' }; }
-    } else {
-      result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
+    setBiometricAuthActive(true);
+    try {
+      await setSensitiveScreenshotState(true);
+      const availability = await BiometricService.isAvailable();
+      if (!availability.isAvailable) return { success: false, message: availability.code === 'NOT_ENROLLED' ? 'No fingerprint or device screen lock is enrolled. Set one up in Android settings, then try again.' : 'Device authentication is not available on this device.' };
+      let result: { success: boolean; message?: string };
+      if (isEncryptedStorageActivated()) {
+        try { await encryptedSession.open(); result = { success: true }; }
+        catch (error) { return { success: false, message: error instanceof Error ? error.message : 'Encryption authentication failed.' }; }
+      } else {
+        result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
+      }
+      if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
+      if (!isEncryptedStorageActivated()) sessionManager.unlock();
+      setBiometricEnabled(true); setBiometricVerified(true);
+      biometricAuthenticated.current = true;
+      authCoordinator.markAuthenticated();
+      await StorageService.settings.set('biometricLockEnabled', true);
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Device authentication could not be completed.' };
+    } finally {
+      setBiometricAuthActive(false);
     }
-    if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
-    if (!isEncryptedStorageActivated()) sessionManager.unlock();
-    setBiometricEnabled(true); setBiometricVerified(true);
-    biometricAuthenticated.current = true;
-    authCoordinator.markAuthenticated();
-    await StorageService.settings.set('biometricLockEnabled', true);
-    return { success: true };
+  };
+
+  const openRecovery = async () => {
+    try {
+      await setSensitiveScreenshotState(true);
+      setRecoveryOpen(true);
+    } catch {
+      setStartupError('Recovery cannot open because screenshot protection is unavailable. Your data remains protected.');
+    }
   };
 
   const finishOnboarding = async () => {
@@ -650,8 +740,10 @@ export default function App() {
   const importBackupFile = async (file?: File) => {
     if (!file || backupOperation.current) return;
     backupOperation.current = true;
+    setBackupOperationInProgress(true);
     let restored = false;
     try {
+      await setSensitiveScreenshotState(true);
       if (file.size > MAX_BACKUP_FILE_BYTES) throw new Error('Backup file exceeds the supported size.');
       const text = await decodeBackupForRestore(await file.text(), {
         requestPassphrase: () => requestBackupPassphrase('import'),
@@ -672,54 +764,36 @@ export default function App() {
       showToast('Backup restored successfully', 'success');
     } catch (error) {
       showToast(restored ? 'Backup restored, but the screen could not refresh. Reopen LifeOS to verify.' : error instanceof Error ? error.message : 'Could not restore this backup', 'danger');
-    } finally { backupOperation.current = false; }
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
   };
 
   const triggerBiometricAuth = async () => {
-    if (isEncryptedStorageActivated()) {
-      try {
-        await encryptedSession.open();
-        biometricAuthenticated.current = true;
-        setIsLocked(false);
-        setBiometricVerified(true);
-        return true;
-      } catch (error) {
-        setIsLocked(true);
-        setBiometricMessage(error instanceof Error ? error.message : 'Encryption authentication failed.');
-        return false;
-      }
-    }
     if (biometricAuthInFlight.current) return biometricAuthInFlight.current;
-    if (biometricAuthenticated.current) return true;
+    setBiometricAuthActive(true);
     const attempt = (async () => {
-      setIsLocked(true);
-      setBiometricMessage('Confirm your identity to open LifeOS.');
-      const availability = await BiometricService.isAvailable();
-      if (!availability.isAvailable) {
-        const message = availability.code === 'NOT_ENROLLED'
-          ? 'No biometric or device screen lock is enrolled. Set one up in Android settings, then retry.'
-          : 'Device authentication is unavailable. Your data remains locked until authentication is available.';
-        setBiometricMessage(message);
-        setBiometricAvailability(message);
-        return false;
-      }
-      const success = await authCoordinator.authenticate();
-      if (success) {
-        sessionManager.unlock();
+      try {
+        await setSensitiveScreenshotState(true);
+        await encryptedSession.open();
+        if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Authentication expired after app lock.');
         biometricAuthenticated.current = true;
         setIsLocked(false);
         setBiometricVerified(true);
         setBiometricMessage('');
+        // Retry must complete all private startup hydration when startup was
+        // cancelled; native unlock alone never marks the application ready.
+        if (!startupComplete.current) await initApp();
+        else await reloadAllData();
         return true;
+      } catch (error) {
+        sessionManager.lock();
+        setIsLocked(true);
+        setBiometricVerified(false);
+        setBiometricMessage(error instanceof Error ? error.message : 'Encryption authentication failed.');
+        return false;
       }
-      return false;
-    })().catch(error => {
-      const message = error instanceof Error ? error.message : 'Device authentication failed. Your data remains locked.';
-      setBiometricMessage(message);
-      console.error('LifeOS biometric startup authentication failed.', error);
-      return false;
-    }).finally(() => { biometricAuthInFlight.current = null; });
+    })();
     biometricAuthInFlight.current = attempt;
+    void attempt.then(() => { biometricAuthInFlight.current = null; setBiometricAuthActive(false); }, () => { biometricAuthInFlight.current = null; setBiometricAuthActive(false); });
     return attempt;
   };
 
@@ -816,7 +890,7 @@ export default function App() {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     setAppearancePreference(next);
-    applyDomTheme(next);
+    applyDomTheme(next, themePreviewId || visualThemeId);
     await StorageService.settings.set('theme', next);
     localStorage.setItem('lifeos-appearance', next);
   };
@@ -1066,7 +1140,7 @@ export default function App() {
     const monthlyTxs = transactions.filter(t => t.date && t.date.startsWith(financeMonth));
     let totalIncome = 0;
     let totalExpenses = 0;
-    const categoryExpenses: Record<string, number> = {};
+    const categoryExpenses: Record<string, number> = Object.create(null);
 
     for (const tx of monthlyTxs) {
       const amt = Number(tx.amount) || 0;
@@ -1106,7 +1180,7 @@ export default function App() {
     };
   }, [transactions, budgets, financeMonth]);
 
-  const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange, categories), [transactions, budgets, financeMonth, financeAnalyticsRange, categories]);
+  const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange, categories, userPrefs.currency), [transactions, budgets, financeMonth, financeAnalyticsRange, categories, userPrefs.currency]);
 
   // Habit Streak Calculation Helper
   const getHabitStreaks = (habitId: string, targetDate: string) => {
@@ -1114,25 +1188,11 @@ export default function App() {
     return { ...stats, totalCount: new Set(habitLogs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)).size };
   };
 
-  // Productivity Score Calculation
-  const productivityScore = useMemo(() => {
-    const todayStr = formatLocalDate(clockNow);
-    const completedHabits = habits.filter(h => {
-      if (h.frequency === 'weekly') return calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency).completed > 0;
-      if (!isHabitScheduledOnDate(h.frequency, todayStr)) return true;
-      return getHabitStreaks(h.id, todayStr).completedToday;
-    }).length;
-    const habitWeight = habits.length > 0 ? (completedHabits / habits.length) * 50 : 50;
-
-    const todayTasks = tasks.filter(t => t.dueDate === todayStr || (!t.dueDate && !t.completed));
-    const completedTasks = todayTasks.filter(t => t.completed).length;
-    const taskWeight = todayTasks.length > 0 ? (completedTasks / todayTasks.length) * 50 : 50;
-
-    if (habits.length === 0 && todayTasks.length === 0) return null;
-    return Math.min(100, Math.round(habitWeight + taskWeight));
-  }, [habits, habitLogs, tasks, clockNow]);
-
   const todayKey = formatLocalDate(clockNow);
+  const todayOverview = useMemo(
+    () => getTodayOverview(tasks, habits, habitLogs, todayKey),
+    [tasks, habits, habitLogs, todayKey]
+  );
   const tomorrowDate = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 1);
   const tomorrowKey = formatLocalDate(tomorrowDate);
   const calendarDays = useMemo(() => getMonthCalendarDays(plannerDisplayedMonth.getFullYear(), plannerDisplayedMonth.getMonth(), userPrefs.firstDayOfWeek === 'monday'), [plannerDisplayedMonth, userPrefs.firstDayOfWeek]);
@@ -1176,12 +1236,18 @@ export default function App() {
       && (!query || haystack.includes(query));
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
+  const financeOverviewTransactions = useMemo(
+    () => sortTransactions(transactions.filter(tx => tx.date?.startsWith(financeMonth)), 'date-desc').slice(0, 3),
+    [transactions, financeMonth]
+  );
 
-  if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit); }} onClose={() => setRecoveryOpen(false)} />;
+  if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared} onDecision={accepted => secureSetupResolver.current?.(accepted)} />;
+
+  if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit).then(async () => { setRecoveryOpen(false); setStartupError(''); await initApp(); }); }} onClose={() => setRecoveryOpen(false)} />;
 
   if (backupPrompt) return <BackupPassphraseDialog purpose={backupPrompt} onComplete={value => backupPassphraseResolver.current?.(value)} />;
 
-  if (!appReady) return <div className={`fixed inset-0 flex items-center justify-center px-6 ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-slate-300">{startupError}</p><button className="mt-5 min-h-11 rounded-xl bg-indigo-600 px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="mt-3 block min-h-11 w-full rounded border border-slate-600 px-4" onClick={() => setRecoveryOpen(true)}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-400" />}</div>;
+  if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 lifeos-border" style={{ borderTopColor: 'var(--accent)' }} aria-hidden="true" />}</div>;
 
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
@@ -1211,46 +1277,46 @@ export default function App() {
   // If App is Biometrically Locked, render Lock Screen Overlay
   if (isLocked) {
     return (
-      <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`}>
-        <div className="w-20 h-20 rounded-3xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center mb-6">
-          <svg className="w-10 h-10 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <div className="lifeos-page fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="lifeos-tint lifeos-border mb-6 flex h-20 w-20 items-center justify-center rounded-3xl border">
+          <svg className="h-10 w-10 lifeos-accent-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
         </div>
         <h2 className="text-2xl font-bold mb-2">LifeOS is Locked</h2>
-        <p className="text-sm text-slate-400 mb-8 max-w-xs">Biometric authentication is required to protect your personal data.</p>
+        <p className="text-sm text-secondary mb-8 max-w-xs">Biometric authentication is required to protect your personal data.</p>
         <button
           onClick={triggerBiometricAuth}
-          className="w-full max-w-xs py-3.5 px-6 rounded-xl bg-indigo-600 text-white font-semibold shadow-lg shadow-indigo-600/30 active:scale-95 transition"
+          className="lifeos-accent-button min-h-12 w-full max-w-xs rounded-xl px-6 py-3.5 font-semibold active:scale-95 transition"
         >
           {biometricMessage ? 'Try again' : 'Verify Biometrics'}
         </button>
-        <button className="mt-3 min-h-11 rounded border px-4" onClick={() => setRecoveryOpen(true)}>Recover encryption key</button>
-        {biometricMessage && <p role="status" className="mt-4 max-w-xs text-sm text-amber-300">{biometricMessage}</p>}
+          <button className="lifeos-input mt-3 min-h-11 rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button>
+        {biometricMessage && <p role="status" className="lifeos-warning mt-4 max-w-xs text-sm">{biometricMessage}</p>}
       </div>
     );
   }
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} style={{ paddingBottom: 'calc(6.25rem + env(safe-area-inset-bottom))' }}>
+    <div className="lifeos-page min-h-screen" style={{ paddingBottom: 'calc(6.25rem + env(safe-area-inset-bottom))' }}>
       {/* Top Mobile Header */}
       <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white logo-${logoPhase}`} aria-hidden="true">
+          <div className={`lifeos-mark lifeos-accent-button flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-black logo-${logoPhase}`} aria-hidden="true">
             <span>L</span>
           </div>
           <div className="min-w-0">
             <h1 className="header-greeting text-[clamp(1.05rem,4.2vw,1.35rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
-            <p className="mt-0.5 truncate text-xs text-slate-400">{activeTab === 'dashboard' ? "Here's your day at a glance." : `Your ${({ finance: 'finances', habits: 'habits', goals: 'goals', planner: 'planner', settings: 'profile' } as Record<string, string>)[activeTab] || 'day'}, thoughtfully organized.`}</p>
+            <p className="mt-0.5 truncate text-xs text-secondary">{tabSubtitle[activeTab]}</p>
           </div>
         </div>
-        <button onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
+        <button id="theme-toggle-btn" onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
       </header>
 
       {!isOnline && (
         <div role="status" aria-live="polite" className="mx-auto max-w-md px-4 pt-2">
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <div className="lifeos-warning lifeos-panel rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'var(--warning)' }}>
             Offline — LifeOS records remain stored on this device. Internet-dependent services may be unavailable.
           </div>
         </div>
@@ -1259,100 +1325,100 @@ export default function App() {
       {/* Main Container */}
       <main className="max-w-md mx-auto p-4 space-y-4">
         {/* VIEW 1: DASHBOARD */}
-        <div key={activeTab} className="tab-transition">
+        <div key={activeTab} id={`view-${activeTab}`} className="tab-transition">
         {activeTab === 'dashboard' && (
           <div className="space-y-5">
-            <div><p className="text-sm font-medium text-slate-500">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
+            <div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
 
-            {/* Productivity Score Card */}
-            {productivityScore === null ? (
-              <div className="dashboard-score p-4 rounded-2xl bg-slate-900 border border-slate-800">
-                <h3 className="text-lg font-bold">Productivity Score</h3>
-                <p className="mt-1 text-xs text-slate-400">No tasks or habits scheduled today.</p>
+            {/* Today at a glance: separate counts keep task and routine progress understandable. */}
+            <section className="lifeos-panel space-y-3 rounded-2xl border p-4" aria-labelledby="today-overview-title" data-testid="today-overview">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">At a glance</p>
+                <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s focus</h3>
               </div>
-            ) : (
-            <div className="dashboard-score p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <div className="flex justify-between items-center">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Daily Performance</span>
-                  <h3 className="text-lg font-bold mt-1">Productivity Score</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{productivityScore}% adherence today</p>
-                </div>
-                <div className="w-14 h-14 rounded-full border-4 border-indigo-500 bg-slate-900 flex items-center justify-center text-base font-black text-indigo-400">
-                  {productivityScore}%
-                </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button onClick={() => navigateTo('planner')} className="lifeos-raised min-h-16 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" aria-label={`Open Planner: ${todayOverview.tasksCompleted} of ${todayOverview.tasksDue} tasks due today complete`}>
+                  <span className="block text-xs text-secondary">Tasks due today</span>
+                  <span className="mt-1 block text-base font-semibold tabular-nums">{todayOverview.tasksCompleted} <span className="text-sm font-normal text-secondary">of {todayOverview.tasksDue} complete</span></span>
+                </button>
+                <button onClick={() => navigateTo('habits')} className="lifeos-raised min-h-16 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" aria-label={`Open Habits: ${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} routines complete today`}>
+                  <span className="block text-xs text-secondary">Routines today</span>
+                  <span className="mt-1 block text-base font-semibold tabular-nums">{todayOverview.routinesCompleted} <span className="text-sm font-normal text-secondary">of {todayOverview.routinesDue} checked</span></span>
+                </button>
               </div>
-              <div className="w-full h-2 rounded-full bg-slate-800 mt-3 overflow-hidden">
-                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${productivityScore}%` }} />
-              </div>
-            </div>
-            )}
+              {todayOverview.weeklyRoutinesTotal > 0 && <p className="text-xs text-secondary">Weekly routines · {todayOverview.weeklyRoutinesCompleted} of {todayOverview.weeklyRoutinesTotal} checked this week</p>}
+              {todayOverview.tasksDue === 0 && todayOverview.routinesDue === 0 && todayOverview.weeklyRoutinesTotal === 0 && <p className="text-sm text-secondary">Nothing scheduled for today yet. Add a task or routine when you’re ready.</p>}
+            </section>
 
             {/* Active Goals Summary */}
-            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <section className="lifeos-panel rounded-2xl border p-4">
               <div className="mb-3 flex items-center justify-between">
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-violet-300">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
-                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold text-violet-300" aria-label="Open Goals">View all →</button>
+                <div><p className="text-[10px] font-bold uppercase tracking-wider lifeos-accent-text">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
+                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all →</button>
               </div>
               {goals.filter(goal => goal.status === 'In Progress').length === 0 ? (
-                <div className="rounded-xl bg-slate-900/50 px-3 py-4 text-center text-xs text-slate-400"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="mt-2 font-semibold text-violet-300">Create your first goal</button></div>
+                <div className="lifeos-raised rounded-xl px-3 py-4 text-center text-xs text-secondary"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
               ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => {
                 const progress = goalProgress(goal);
-                return <button key={goal.id} onClick={() => navigateTo('goals')} className="block w-full rounded-xl bg-slate-900/55 p-3 text-left">
-                  <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{goal.title}</span><span className="shrink-0 text-xs font-bold text-violet-300">{progress}%</span></div>
-                  <div className="my-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-violet-500" style={{ width: `${progress}%` }} /></div>
-                  <div className="flex justify-between gap-2 text-[10px] text-slate-400"><span>{displayGoalMeasure(goal.currentValue, goal.unit)} / {displayGoalMeasure(goal.targetValue, goal.unit)}</span><span>{formatDate(goal.targetDate)} · {getDaysRemainingText(goal.targetDate)}</span></div>
+                return <button key={goal.id} onClick={() => navigateTo('goals')} className="lifeos-raised block min-h-11 w-full rounded-xl p-3 text-left">
+                  <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{goal.title}</span><span className="shrink-0 text-xs font-bold lifeos-accent-text">{progress}%</span></div>
+                  <div className="lifeos-progress-track my-2 h-1.5 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${progress}%` }} /></div>
+                  <div className="flex justify-between gap-2 text-[10px] text-secondary"><span>{displayGoalMeasure(goal.currentValue, goal.unit)} / {displayGoalMeasure(goal.targetValue, goal.unit)}</span><span>{formatDate(goal.targetDate)} · {getDaysRemainingText(goal.targetDate)}</span></div>
                 </button>;
               })}</div>}
             </section>
 
             {/* Financial Overview Card */}
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+            <div className="lifeos-panel rounded-2xl border p-4">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Monthly Finance ({financeMonth})</h3>
-                <button onClick={() => navigateTo('finance')} className="text-xs text-indigo-400 font-semibold">Details &rarr;</button>
+                <button onClick={() => navigateTo('finance')} className="min-h-11 text-xs lifeos-accent-text font-semibold">Details &rarr;</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
-                <div className="p-3 rounded-xl bg-slate-800/60">
-                  <p className="text-xs text-slate-400">Total Income</p>
-                  <p className="text-base font-bold text-emerald-400 mt-0.5">{formatMoney(financeMetrics.totalIncome)}</p>
+                <div className="p-3 rounded-xl lifeos-raised">
+                  <p className="text-xs text-secondary">Income</p>
+                  <p className="mt-0.5 text-base font-bold tabular-nums" style={{ color: 'var(--success)' }}>{formatMoney(financeAnalytics.totalIncome)}</p>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-800/60">
-                  <p className="text-xs text-slate-400">Total Expenses</p>
-                  <p className="text-base font-bold text-rose-400 mt-0.5">{formatMoney(financeMetrics.totalExpenses)}</p>
+                <div className="p-3 rounded-xl lifeos-raised">
+                  <p className="text-xs text-secondary">Expenses</p>
+                  <p className="mt-0.5 text-base font-bold tabular-nums" style={{ color: 'var(--danger)' }}>{formatMoney(financeAnalytics.totalExpenses)}</p>
                 </div>
               </div>
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>Net Balance: <strong className={financeMetrics.remainingBalance >= 0 ? 'text-white' : 'text-rose-400'}>{formatMoney(financeMetrics.remainingBalance)}</strong></span>
-                <span>Savings: <strong className="text-indigo-400">{financeMetrics.savingsRate}%</strong></span>
+              <div className="flex justify-between gap-3 text-xs text-secondary">
+                <span>Net this month: <strong className="text-primary tabular-nums">{formatMoney(financeAnalytics.netSavings)}</strong></span>
+                <span>Savings rate: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
               </div>
             </div>
 
             {/* Today's Habits Summary */}
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+            <div className="lifeos-panel rounded-2xl border p-4">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Habits Today</h3>
-                <button onClick={() => navigateTo('habits')} className="text-xs text-indigo-400 font-semibold">Manage</button>
+                <button onClick={() => navigateTo('habits')} className="text-xs lifeos-accent-text font-semibold">Manage</button>
               </div>
               {habits.length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-500">No habits configured yet. Create one in Habits tab.</div>
+                <div className="lifeos-raised rounded-xl py-6 text-center text-xs text-secondary"><p>No habits configured yet.</p><button onClick={() => openCreateForm('habit')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Create a habit</button></div>
               ) : (
                 <div className="space-y-2">
                   {habits.slice(0, 4).map(h => {
                     const todayStr = todayKey;
                     const stats = getHabitStreaks(h.id, todayStr);
                     return (
-                      <div key={h.id} className="p-3 rounded-xl bg-slate-800/60 flex items-center justify-between">
+                      <div key={h.id} className="p-3 rounded-xl lifeos-raised flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}
-                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs transition ${stats.completedToday ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600'}`}
+                            type="button"
+                            aria-pressed={stats.completedToday}
+                            aria-label={`${stats.completedToday ? 'Mark' : 'Complete'} ${h.name} ${stats.completedToday ? 'incomplete' : 'for today'}`}
+                            className="lifeos-panel flex min-h-11 min-w-11 items-center justify-center rounded-full border-2 text-xs transition"
+                            style={{ borderColor: stats.completedToday ? 'var(--success)' : 'var(--stroke)', backgroundColor: stats.completedToday ? 'var(--success)' : 'var(--surface)', color: 'var(--page)' }}
                           >
                             {stats.completedToday ? '✓' : ''}
                           </button>
                           <div>
-                            <p className={`text-sm font-medium ${stats.completedToday ? 'line-through text-slate-500' : ''}`}>{h.name}</p>
-                            <p className="text-[10px] text-amber-400 font-semibold">🔥 {stats.currentStreak} day streak</p>
+                            <p className={`text-sm font-medium ${stats.completedToday ? 'line-through text-muted' : ''}`}>{h.name}</p>
+                            <p className="text-[10px] text-[var(--warning)] font-semibold">🔥 {stats.currentStreak} day streak</p>
                           </div>
                         </div>
                       </div>
@@ -1363,35 +1429,39 @@ export default function App() {
             </div>
 
             {/* Pending Tasks */}
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+            <div className="lifeos-panel rounded-2xl border p-4">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Today's Agenda</h3>
-                <button onClick={() => navigateTo('planner')} className="text-xs text-indigo-400 font-semibold">All Tasks</button>
+                <button onClick={() => navigateTo('planner')} className="text-xs lifeos-accent-text font-semibold">All Tasks</button>
               </div>
               {dashboardTasks.length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-500">No tasks due today. You're all caught up!</div>
+                <div className="lifeos-raised rounded-xl py-6 text-center text-xs text-secondary"><p>No tasks due today. You're all caught up!</p><button onClick={() => openCreateForm('task')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Add a task</button></div>
               ) : (
                 <div className="space-y-2">
                   {dashboardTasks.map(t => {
                     const status = getTaskStatus(t, clockNow);
-                    return <div key={t.id} className={`p-3 rounded-xl border flex items-center justify-between ${status === 'Overdue' ? 'border-rose-500/40 bg-rose-950/35' : 'border-slate-800 bg-slate-800/60'}`}>
+                    return <div key={t.id} className="lifeos-panel flex items-center justify-between rounded-xl border p-3" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : 'var(--stroke)' }}>
                       <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={t.completed}
-                          onChange={async () => {
-                            await StorageService.tasks.toggleCompleted(t.id, !t.completed);
-                            if (!t.completed) await NotificationService.cancelTask(t);
-                            const records = await reloadAllData();
-                            await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
-                            showToast('Task updated', 'success');
-                          }}
-                          className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
-                        />
+                        <label className="flex min-h-11 min-w-11 items-center justify-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}
+                            checked={t.completed}
+                            onChange={async () => {
+                              await StorageService.tasks.toggleCompleted(t.id, !t.completed);
+                              if (!t.completed) await NotificationService.cancelTask(t);
+                              const records = await reloadAllData();
+                              await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+                              showToast('Task updated', 'success');
+                            }}
+                            className="h-5 w-5 cursor-pointer rounded"
+                            style={{ accentColor: 'var(--accent)' }}
+                          />
+                        </label>
                         <div>
                           <p className="text-sm font-medium">{t.title}</p>
-                          <p className="text-[10px] text-slate-400">{formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ''}</p>
-                          <div className="mt-1 flex flex-wrap gap-1"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.priority === 'Urgent' ? 'bg-rose-500/20 text-rose-400' : t.priority === 'High' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-300'}`}>{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${status === 'Overdue' ? 'bg-rose-500/20 text-rose-300' : status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-300'}`}>{status}</span></div>
+                          <p className="text-[10px] text-secondary">{formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ''}</p>
+                          <div className="mt-1 flex flex-wrap gap-1"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.priority === 'Urgent' ? 'lifeos-tint text-[var(--danger)]' : t.priority === 'High' ? 'lifeos-tint text-[var(--warning)]' : 'lifeos-raised text-secondary'}`}>{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${status === 'Overdue' ? 'lifeos-tint text-[var(--danger)]' : status === 'Completed' ? 'lifeos-tint text-[var(--success)]' : 'lifeos-raised text-secondary'}`}>{status}</span></div>
                         </div>
                       </div>
                     </div>
@@ -1403,14 +1473,47 @@ export default function App() {
         )}
 
         {/* VIEW 2: FINANCE */}
+        {activeTab === 'explore' && <Suspense fallback={<ScreenLoading label="Loading your modules…" />}><ExploreHub
+          counts={{
+            transactions: transactions.length,
+            habits: habits.filter(habit => !habit.archived).length,
+            goals: goals.filter(goal => goal.status === 'In Progress').length,
+            openTasks: tasks.filter(task => !task.completed).length,
+          }}
+          onNavigate={navigateTo}
+        /></Suspense>}
+
+        {activeTab === 'plan' && <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
+          onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} /></Suspense>}
+
+        {activeTab === 'insights' && <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
+          month={financeMonth}
+          income={financeMetrics.totalIncome}
+          expenses={financeMetrics.totalExpenses}
+          balance={financeMetrics.remainingBalance}
+          transactionCount={financeMetrics.count}
+          completedRoutines={todayOverview.routinesCompleted}
+          routinesDue={todayOverview.routinesDue}
+          weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
+          weeklyTotal={todayOverview.weeklyRoutinesTotal}
+          goals={goals.filter(goal => goal.status === 'In Progress')}
+          hasHistory={transactions.length > 0 || habits.length > 0 || goals.length > 0}
+          formatMoney={formatMoney}
+          onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
+          onHabits={() => { setHabitsSubtab('weekly'); navigateTo('habits'); }}
+          onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
+        /></Suspense>}
+
         {activeTab === 'finance' && (
           <div className="space-y-4">
-            <div className="flex bg-slate-900 p-1 rounded-xl gap-1 text-xs font-semibold overflow-x-auto">
-              {(['overview', 'transactions', 'budgets', 'savings', 'analytics'] as const).map(sub => (
+            <div className="flex lifeos-panel p-1 rounded-xl gap-1 text-xs font-semibold overflow-x-auto">
+              {(['overview', 'transactions', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => (
                 <button
+                  type="button"
                   key={sub}
                   onClick={() => navigateFinanceSubtab(sub)}
-                  className={`flex-1 py-2 px-3 rounded-lg capitalize whitespace-nowrap ${financeSubtab === sub ? 'bg-slate-800 text-white' : 'text-slate-400'}`}
+                  aria-current={financeSubtab === sub ? 'page' : undefined}
+                  className={`flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 py-2 capitalize whitespace-nowrap ${financeSubtab === sub ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}
                 >
                   {sub}
                 </button>
@@ -1421,48 +1524,67 @@ export default function App() {
             {financeSubtab === 'overview' && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-semibold">Monthly Focus</h3>
+                  <div><h3 className="text-sm font-semibold">Money this month</h3><p className="text-[10px] text-secondary">{userPrefs.currency} · saved transactions on this device</p></div>
                   <input
                     type="month"
                     value={financeMonth}
                     onChange={(e) => setFinanceMonth(e.target.value)}
-                    className="p-1.5 text-xs bg-slate-900 border border-slate-800 rounded-lg text-white"
+                    aria-label="Finance overview month"
+                    className="lifeos-input min-h-11 rounded-lg p-2 text-xs"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2.5">
-                  <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                    <p className="text-xs text-slate-400">Total Income</p>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{formatMoney(financeMetrics.totalIncome)}</p>
+                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
+                    <p className="text-xs text-secondary">Income</p>
+                    <p className="mt-1 break-words text-xl font-bold tabular-nums" style={{ color: 'var(--success)' }}>{formatMoney(financeAnalytics.totalIncome)}</p>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                    <p className="text-xs text-slate-400">Total Expenses</p>
-                    <p className="text-xl font-bold text-rose-400 mt-1">{formatMoney(financeMetrics.totalExpenses)}</p>
+                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
+                    <p className="text-xs text-secondary">Expenses</p>
+                    <p className="mt-1 break-words text-xl font-bold tabular-nums" style={{ color: 'var(--danger)' }}>{formatMoney(financeAnalytics.totalExpenses)}</p>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                    <p className="text-xs text-slate-400">Remaining Balance</p>
-                    <p className="text-xl font-bold mt-1">{formatMoney(financeMetrics.remainingBalance)}</p>
+                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
+                    <p className="text-xs text-secondary">Net this month</p>
+                    <p className="mt-1 break-words text-xl font-bold tabular-nums">{formatMoney(financeAnalytics.netSavings)}</p>
+                    <p className="mt-1 text-[10px] text-secondary">Income less expenses</p>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                    <p className="text-xs text-slate-400">Savings Rate</p>
-                    <p className="text-xl font-bold text-indigo-400 mt-1">{financeMetrics.savingsRate}%</p>
+                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
+                    <p className="text-xs text-secondary">Savings rate</p>
+                    <p className="mt-1 text-xl font-bold tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</p>
+                    <p className="mt-1 text-[10px] text-secondary">Net divided by income</p>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-semibold">Month-over-month</h4><span className="text-[10px] text-slate-400">vs {previousMonthKey(financeMonth)}</span></div>
-                  {[{ label: 'Income', current: financeMetrics.totalIncome, previous: financeMetrics.previousMonthIncome, color: 'bg-emerald-500' }, { label: 'Expenses', current: financeMetrics.totalExpenses, previous: financeMetrics.previousMonthExpenses, color: 'bg-rose-500' }].map(row => {
-                    const max = Math.max(row.current, row.previous, 1);
-                    return <div key={row.label} className="mb-3 last:mb-0"><div className="mb-1 flex justify-between text-[10px]"><span>{row.label}</span><span>{formatMoney(row.current)} <span className="text-slate-500">· {formatMoney(row.previous)}</span></span></div><div className="flex h-2 gap-1"><div className={`h-full rounded ${row.color}`} style={{ width: `${row.current / max * 100}%` }} /><div className="h-full rounded bg-slate-600" style={{ width: `${row.previous / max * 100}%` }} /></div></div>;
+                <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-budget-title" data-testid="finance-overview-budget">
+                  <div className="flex items-center justify-between gap-2"><div><h4 id="overview-budget-title" className="text-sm font-semibold">Budget status</h4><p className="text-[10px] text-secondary">For {financeMonth}</p></div><button onClick={() => navigateFinanceSubtab('budgets')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All budgets</button></div>
+                  {financeAnalytics.budgetRows.length === 0 ? <div className="mt-2"><p className="text-xs text-secondary">No budgets set for this month.</p><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set a budget</button></div> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.slice(0, 3).map((row, index) => {
+                    const percent = row.allocated > 0 ? Math.round(row.spent / row.allocated * 100) : 0;
+                    const width = Math.min(100, Math.max(0, percent));
+                    return <div key={`${row.category}-${index}`}><div className="flex justify-between gap-2 text-xs"><span className="truncate">{row.category}</span><span className="shrink-0 tabular-nums">{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${row.category} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={width}><div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: percent >= 100 ? 'var(--danger)' : percent >= 80 ? 'var(--warning)' : 'var(--accent)' }} /></div><div className="mt-1 flex justify-between gap-2 text-[10px] text-secondary"><span>{percent}% used</span><span>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>;
+                  })}</div>}
+                </section>
+
+                <FinanceSavingsSummary goals={savingsGoals} formatMoney={formatMoney} onViewAll={() => navigateFinanceSubtab('savings')} onCreate={() => openCreateForm('savings')} />
+
+                <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-transactions-title">
+                  <div className="mb-2 flex items-center justify-between gap-2"><div><h4 id="overview-transactions-title" className="text-sm font-semibold">Recent transactions</h4><p className="text-[10px] text-secondary">Newest by date and time</p></div><button onClick={() => navigateFinanceSubtab('transactions')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All transactions</button></div>
+                  {financeOverviewTransactions.length === 0 ? <p className="py-3 text-center text-xs text-secondary">No transactions saved for this month.</p> : <ul className="divide-y" style={{ borderColor: 'var(--stroke)' }}>{financeOverviewTransactions.map(transaction => <li key={transaction.id}><button onClick={() => openEditTransaction(transaction)} className="flex min-h-14 w-full items-center justify-between gap-3 py-2 text-left"><span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.description || transaction.category}</span><span className="block text-[10px] text-secondary">{formatDate(transaction.date)}{transaction.occurredAt ? ` · ${formatTime(new Date(transaction.occurredAt))}` : ''} · {transaction.category}</span></span><span className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: transaction.type === 'income' ? 'var(--success)' : 'var(--danger)' }}>{transaction.type === 'income' ? '+' : '−'}{formatMoney(transaction.amount)}</span></button></li>)}</ul>}
+                </section>
+
+                <div className="lifeos-panel rounded-2xl border p-4">
+                  <div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-semibold">Month-over-month</h4><span className="text-[10px] text-secondary">vs {previousMonthKey(financeMonth)}</span></div>
+                  {[{ label: 'Income', current: financeAnalytics.totalIncome, previous: financeAnalytics.periodRows[financeAnalytics.periodRows.length - 2]?.income ?? null, color: 'var(--success)' }, { label: 'Expenses', current: financeAnalytics.totalExpenses, previous: financeAnalytics.periodRows[financeAnalytics.periodRows.length - 2]?.expenses ?? null, color: 'var(--danger)' }].map(row => {
+                    const max = Math.max(row.current, row.previous || 0, 1);
+                    return <div key={row.label} className="mb-3 last:mb-0"><div className="mb-1 flex justify-between gap-2 text-[10px]"><span>{row.label}</span><span className="text-right tabular-nums">{formatMoney(row.current)} <span className="text-secondary">· {row.previous === null ? 'no prior records' : formatMoney(row.previous)}</span></span></div><div className="flex h-2 gap-1"><div className="h-full rounded" style={{ width: `${row.current / max * 100}%`, backgroundColor: row.color }} />{row.previous !== null && <div className="h-full rounded" style={{ width: `${row.previous / max * 100}%`, backgroundColor: 'var(--surface-raised)' }} />}</div></div>;
                   })}
-                  <p className="mt-2 text-[10px] text-slate-500">Current month · previous month</p>
+                  <p className="mt-2 text-[10px] text-muted">Current month · previous month</p>
                 </div>
 
                 {/* Quick Add Buttons */}
                 <div className="flex gap-2">
                   <button
                     onClick={() => openCreateForm('transaction')}
-                    className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-semibold text-xs active:scale-95 transition"
+                    className="lifeos-accent-button min-h-11 flex-1 rounded-xl py-3 text-xs font-semibold transition active:scale-95"
                   >
                     + Record Transaction
                   </button>
@@ -1479,11 +1601,11 @@ export default function App() {
                     placeholder="Search description, category..."
                     value={financeSearch}
                     onChange={(e) => setFinanceSearch(e.target.value)}
-                    className="flex-1 p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white"
+                    className="lifeos-input min-h-11 flex-1 rounded-xl px-3 py-2.5 text-xs"
                   />
-                  <button onClick={() => openCreateForm('transaction')} className="shrink-0 rounded-xl bg-indigo-600 px-3 text-xs font-semibold text-white">+ Add</button>
+                  <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
                 </div>
-                <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-slate-400">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-800 bg-slate-900 px-2 py-2 text-xs text-white" /></label><label className="text-[10px] text-slate-400">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-800 bg-slate-900 px-2 py-2 text-xs text-white"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label></div>
+                <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label></div>
 
                 {/* Filters */}
                 <div className="flex gap-1.5 overflow-x-auto text-xs pb-1">
@@ -1491,27 +1613,27 @@ export default function App() {
                     <button
                       key={t}
                       onClick={() => setFinanceTypeFilter(t)}
-                      className={`px-3 py-1.5 rounded-full capitalize whitespace-nowrap ${financeTypeFilter === t ? 'bg-indigo-600 text-white font-semibold' : 'bg-slate-900 text-slate-400 border border-slate-800'}`}
+                      className={`px-3 py-1.5 rounded-full capitalize whitespace-nowrap ${financeTypeFilter === t ? 'lifeos-accent-button font-semibold' : 'lifeos-panel text-secondary border border-[var(--stroke)]'}`}
                     >
                       {t}
                     </button>
                   ))}
                 </div>
-                <label className="flex items-center justify-between text-[10px] text-slate-400">Sort<select value={financeSort} onChange={e => setFinanceSort(e.target.value)} className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-2 text-xs text-white"><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="amount-desc">Largest amount</option></select></label>
+                <label className="flex items-center justify-between text-[10px] text-secondary">Sort<select value={financeSort} onChange={e => setFinanceSort(e.target.value)} className="lifeos-input min-h-11 rounded-lg px-2 py-2 text-xs"><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="amount-desc">Largest amount</option></select></label>
 
                 {/* Transactions List */}
                 <div className="space-y-2">
                   {filteredTransactions.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-slate-500">No transactions match these filters.</div>
+                    <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
                   ) : (
                     filteredTransactions.map(t => (
-                        <div key={t.id} role="button" tabIndex={0} aria-label={`Edit transaction ${t.description || t.category}`} onClick={() => openEditTransaction(t)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openEditTransaction(t); } }} className="cursor-pointer p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center transition hover:border-indigo-500/50 active:scale-[.995]">
+                        <div key={t.id} role="button" tabIndex={0} aria-label={`Edit transaction ${t.description || t.category}`} onClick={() => openEditTransaction(t)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openEditTransaction(t); } }} className="cursor-pointer p-3.5 rounded-xl lifeos-panel border border-[var(--stroke)] flex justify-between items-center transition hover:border-[var(--accent)] active:scale-[.995]">
                           <div>
                             <p className="font-semibold text-sm">{t.description || t.category}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ''} &bull; {t.category} ({t.paymentMethod})</p>
+                            <p className="text-xs text-secondary mt-0.5">{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ''} &bull; {t.category} ({t.paymentMethod})</p>
                           </div>
                           <div className="text-right">
-                            <p className={`font-bold text-sm ${t.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            <p className={`font-bold text-sm ${t.type === 'income' ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
                               {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
                             </p>
                             <button
@@ -1522,7 +1644,7 @@ export default function App() {
                                 await reloadAllData();
                                 showToast('Transaction deleted', 'info');
                               }}
-                              className="text-[10px] text-slate-500 hover:text-rose-400 mt-1"
+                              className="text-[10px] text-muted hover:text-[var(--danger)] mt-1"
                             >
                               Delete
                             </button>
@@ -1535,20 +1657,20 @@ export default function App() {
             )}
 
             {financeSubtab === 'budgets' && <div className="space-y-3">
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Monthly budgets</h3><p className="text-xs text-slate-400">Track spending against a monthly limit</p></div><button onClick={() => openCreateForm('budget')} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">+ Add budget</button></div>
-              {budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900 py-8 text-center text-sm text-slate-400">No budget set for {financeMonth}.</div> : budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).map(b => {
+              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Monthly budgets</h3><p className="text-xs text-secondary">Track spending against a monthly limit</p></div><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add budget</button></div>
+              {budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No budget set for {financeMonth}.</div> : budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).map(b => {
                 const budgetCategoryName = b.categoryId ? categories.find(category => category.id === b.categoryId)?.name : undefined;
                 const spent = b.categoryId ? (budgetCategoryName ? financeMetrics.categoryExpenses[budgetCategoryName] || 0 : 0) : financeMetrics.totalExpenses;
                 const pct = b.monthlyAmount > 0 ? Math.min(100, Math.round(spent / b.monthlyAmount * 100)) : 0;
-                return <div key={b.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between text-sm"><strong>{b.categoryId ? (budgetCategoryName || 'Unavailable category') : 'Overall budget'}</strong><span>{formatMoney(spent)} / {formatMoney(b.monthlyAmount)}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${pct >= 100 ? 'bg-rose-500' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{pct}% used</span><span>{formatMoney(Math.max(0, b.monthlyAmount - spent))} remaining</span></div><button onClick={async () => { await StorageService.budgets.delete(b.id); await reloadAllData(); showToast('Budget deleted', 'info'); }} className="mt-2 text-xs text-slate-400">Delete</button></div>;
+                return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{b.categoryId ? (budgetCategoryName || 'Unavailable category') : 'Overall budget'}</strong><span>{formatMoney(spent)} / {formatMoney(b.monthlyAmount)}</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetCategoryName || 'Overall'} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className={`h-full rounded-full ${pct >= 100 ? 'bg-[var(--danger)]' : 'bg-[var(--accent)]'}`} style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-secondary"><span>{pct}% used</span><span>{formatMoney(Math.max(0, b.monthlyAmount - spent))} remaining</span></div><button onClick={async () => { await StorageService.budgets.delete(b.id); await reloadAllData(); showToast('Budget deleted', 'info'); }} className="mt-2 text-xs text-secondary">Delete</button></div>;
               })}
             </div>}
 
             {financeSubtab === 'savings' && <div className="space-y-3">
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-slate-400">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">+ Add goal</button></div>
-              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900 py-8 text-center text-sm text-slate-400">No savings goals yet.</div> : savingsGoals.map(goal => {
+              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
+              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : savingsGoals.map(goal => {
                 const pct = goal.targetAmount > 0 ? Math.min(100, Math.round(goal.currentAmount / goal.targetAmount * 100)) : 0;
-                return <div key={goal.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-slate-400">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold text-indigo-400">{pct}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => {
+                return <div key={goal.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-secondary">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} savings progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="h-full rounded-full bg-[var(--success)]" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-secondary"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => {
                   const expenseCategories = categories.filter(category => category.type === 'expense');
                   const preferredCategory = expenseCategories.find(category => category.name === 'Investments') || expenseCategories[0];
                   setCreateDraft({
@@ -1560,16 +1682,21 @@ export default function App() {
                     transferCategory: preferredCategory?.name || ''
                   });
                   setCreateKind('contribution');
-                }} className="text-xs font-semibold text-indigo-400">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-slate-400">Delete</button></div></div>;
+                }} className="text-xs font-semibold lifeos-accent-text">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-secondary">Delete</button></div></div>;
               })}
             </div>}
 
+            {financeSubtab === 'planning' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection
+              currencyCode={userPrefs.currency}
+              locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
+            /></Suspense>}
+
             {financeSubtab === 'analytics' && <div className="space-y-4">
-              <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-slate-400">Based on transactions saved on this device</p></div><label className="text-[10px] text-slate-400">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="mt-1 block rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs" /></label></div>
+              <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-secondary">Based on transactions saved on this device</p></div><label className="text-[10px] text-secondary">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="lifeos-input mt-1 block min-h-11 rounded-lg px-2 py-2 text-xs" /></label></div>
               <div className="grid grid-cols-2 gap-2.5">
-                {[['Income', financeAnalytics.totalIncome, 'text-emerald-400'], ['Expenses', financeAnalytics.totalExpenses, 'text-rose-400'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-rose-400' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'text-indigo-400']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><p className="text-xs text-slate-400">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
+                {[['Income', financeAnalytics.totalIncome, 'text-[var(--success)]'], ['Expenses', financeAnalytics.totalExpenses, 'text-[var(--danger)]'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-[var(--danger)]' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'lifeos-accent-text']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><p className="text-xs text-secondary">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
               </div>
-              <Suspense fallback={<div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center text-sm text-slate-400">Loading financial charts…</div>}>
+              <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
                 <FinanceCharts
                   analytics={financeAnalytics}
                   theme={theme}
@@ -1580,8 +1707,8 @@ export default function App() {
                   onRangeChange={setFinanceAnalyticsRange}
                 />
               </Suspense>
-              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-slate-400">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${pct >= 100 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-indigo-500'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-slate-400"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-rose-400' : ''}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
-              <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
+              <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-secondary">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${row.category} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, pct)}><div className={`h-full rounded-full ${pct >= 100 ? 'bg-[var(--danger)]' : pct >= 80 ? 'bg-[var(--warning)]' : 'bg-[var(--accent)]'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-secondary"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-[var(--danger)]' : 'text-secondary'}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
+              <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
             </div>}
           </div>
         )}
@@ -1592,15 +1719,15 @@ export default function App() {
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold">Habit Tracker</h2>
-                <p className="text-xs text-slate-400">Daily consistency monitor</p>
+                <p className="text-xs text-secondary">Daily consistency monitor</p>
               </div>
-              <button onClick={() => openCreateForm('habit')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Add habit</button>
+              <button onClick={() => openCreateForm('habit')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add habit</button>
             </div>
-            <label className="block text-xs text-slate-400">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => setHabitsSelectedDate(e.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm" /></label>
+            <label className="block text-xs text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => setHabitsSelectedDate(e.target.value)} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>
 
             <div className="space-y-2">
               {habits.length === 0 ? (
-                <div className="text-center py-10 text-xs text-slate-500">No habits added. Tap demo data in Profile or create custom habits.</div>
+                <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary"><p>No habits yet.</p><p className="mt-1 text-xs">Create a routine that fits your day.</p><button onClick={() => openCreateForm('habit')} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Create a habit</button></div>
               ) : (
                 habits.map(h => {
                   const todayStr = habitsSelectedDate;
@@ -1608,10 +1735,10 @@ export default function App() {
                   const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency);
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
-                      <div key={h.id} className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`h-9 w-9 shrink-0 rounded-full border-2 text-sm ${stats.completedToday ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-600'}`}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-slate-500' : ''}`}>{h.name}</span><span className="block text-[10px] text-amber-400">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button onClick={event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; void handleHabitDeletion(h); }} className="rounded-lg px-2 py-1 text-xs text-slate-400">Delete</button></div>
-                      <div className="mt-3 flex items-center justify-between text-[10px] text-slate-400"><span>Weekly completion</span><span>{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} className={`h-2 flex-1 rounded-full ${done ? 'bg-emerald-500' : 'bg-slate-700'}`} />; })}</div>
-                      {h.reminderTime && <p className="mt-2 text-[10px] text-slate-400">Reminder · {h.reminderTime} local</p>}
+                      <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
+                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${stats.completedToday ? 'border-[var(--success)] text-[var(--surface)]' : 'border-[var(--stroke)] text-secondary'}`} style={stats.completedToday ? { backgroundColor: 'var(--success)' } : undefined}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-secondary' : ''}`}>{h.name}</span><span className="block text-[10px] text-[var(--warning)]">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button type="button" onClick={event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; void handleHabitDeletion(h); }} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Delete</button></div>
+                      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
+                      {h.reminderTime && <p className="mt-2 text-[10px] text-secondary">Reminder · {h.reminderTime} local</p>}
                     </div>
                   );
                 })
@@ -1623,21 +1750,21 @@ export default function App() {
         {/* VIEW 4: GOALS */}
         {activeTab === 'goals' && (
           <div className="space-y-4">
-            <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">+ Add goal</button></div>
-            <div className="grid grid-cols-3 gap-2"><button onClick={() => setGoalsSubtab('active')} className={`rounded-xl px-2 py-2 text-xs ${goalsSubtab === 'active' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Active</button><button onClick={() => setGoalsSubtab('paused')} className={`rounded-xl px-2 py-2 text-xs ${goalsSubtab === 'paused' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Paused</button><button onClick={() => setGoalsSubtab('completed')} className={`rounded-xl px-2 py-2 text-xs ${goalsSubtab === 'completed' ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'}`}>Completed</button></div>
-            <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
+            <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
+            <div className="grid grid-cols-3 gap-2">{(['active', 'paused', 'completed'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
+            <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
             {goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 py-10 text-center text-sm text-slate-400">{goalsSubtab === 'completed' ? 'Completed goals will appear here.' : goalsSubtab === 'paused' ? 'No paused goals. You can pause an active goal whenever needed.' : 'No active goals yet. Set a goal to start tracking progress.'}</div>
+              <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary">{goalsSubtab === 'completed' ? 'Completed goals will appear here.' : goalsSubtab === 'paused' ? 'No paused goals. You can pause an active goal whenever needed.' : <><p>No active goals yet.</p><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Create a goal</button></>}</div>
             ) : (
               goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).map(g => {
                 const pct = goalProgress(g);
                 const goalMilestones = milestones.filter(milestone => milestone.goalId === g.id);
-                return <div key={g.id} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
-                  <div className="flex items-start justify-between gap-3"><div><button onClick={() => openEditGoal(g)} className="min-h-9 text-left font-semibold text-sm hover:text-indigo-300">{g.title}</button><p className="text-[10px] text-slate-400">{g.category} · target {formatDate(g.targetDate)} · {getDaysRemainingText(g.targetDate)}</p></div><span className="text-sm font-bold text-indigo-400">{pct}%</span></div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} /></div>
-                  <div className="flex justify-between text-xs text-slate-400"><span>{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</span><span>{goalMilestones.filter(milestone => milestone.completed).length}/{goalMilestones.length} milestones</span></div>
-                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-indigo-300">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-slate-200">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-amber-300">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] font-semibold text-emerald-300">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!window.confirm(`Delete goal “${g.title}” and its milestones?`)) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="rounded-lg bg-slate-800 px-2.5 py-2 text-[10px] text-rose-300">Delete</button></div>
-                  {goalMilestones.length > 0 && <div className="space-y-2 border-t border-slate-800 pt-3">{goalMilestones.map(milestone => <div key={milestone.id} className="flex items-center gap-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-4 w-4 accent-indigo-500" /><div className="min-w-0 flex-1"><p className={`text-xs ${milestone.completed ? 'text-slate-500 line-through' : ''}`}>{milestone.title}</p>{milestone.targetDate && <p className="text-[10px] text-slate-500">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</p>}</div></div>)}</div>}
+                return <div key={g.id} className="lifeos-panel space-y-3 rounded-2xl border p-4">
+                  <div className="flex items-start justify-between gap-3"><div><button onClick={() => openEditGoal(g)} className="min-h-11 text-left font-semibold text-sm lifeos-accent-text">{g.title}</button><p className="text-[10px] text-secondary">{g.category} · target {formatDate(g.targetDate)} · {getDaysRemainingText(g.targetDate)}</p></div><span className="text-sm font-bold lifeos-accent-text">{pct}%</span></div>
+                  <div className="lifeos-progress-track h-2 w-full overflow-hidden rounded-full" role="progressbar" aria-label={`${g.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div>
+                  <div className="flex justify-between text-xs text-secondary"><span>{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</span><span>{goalMilestones.filter(milestone => milestone.completed).length}/{goalMilestones.length} milestones</span></div>
+                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="lifeos-tint lifeos-accent-text min-h-11 rounded-xl px-3 text-xs font-semibold">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-xs font-semibold">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--warning)]">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--success)]">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!window.confirm(`Delete goal “${g.title}” and its milestones?`)) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="lifeos-raised lifeos-danger min-h-11 rounded-xl px-3 text-xs">Delete</button></div>
+                  {goalMilestones.length > 0 && <div className="space-y-2 border-t border-[var(--stroke)] pt-3">{goalMilestones.map(milestone => <label key={milestone.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5 shrink-0" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-xs ${milestone.completed ? 'text-secondary line-through' : ''}`}>{milestone.title}</span>{milestone.targetDate && <span className="block text-[10px] text-secondary">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</span>}</span></label>)}</div>}
                 </div>;
               })
             )}
@@ -1647,13 +1774,13 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         {activeTab === 'planner' && (
           <div className="space-y-4">
-            <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-indigo-400">Planner</p><h2 className="text-xl font-semibold tracking-tight">Your calendar</h2></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white transition active:scale-[.98]">+ Add task</button></div>
-            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm" aria-label="Monthly task calendar">
+            <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider lifeos-accent-text">Planner</p><h2 className="text-xl font-semibold tracking-tight">Your calendar</h2></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
+            <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1"><button aria-label="Previous month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="min-h-10 min-w-10 rounded-lg text-slate-300 transition hover:bg-slate-800 active:scale-95"><ChevronLeft size={19} className="mx-auto" /></button><h3 className="min-w-32 text-center text-sm font-semibold">{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3><button aria-label="Next month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="min-h-10 min-w-10 rounded-lg text-slate-300 transition hover:bg-slate-800 active:scale-95"><ChevronRight size={19} className="mx-auto" /></button></div>
-                <button onClick={() => { setPlannerSelectedDate(todayKey); setPlannerDisplayedMonth(new Date(clockNow.getFullYear(), clockNow.getMonth(), 1)); setPlannerFilter('all'); }} className="min-h-9 rounded-lg px-3 text-xs font-semibold text-indigo-400 transition active:scale-95">Today</button>
+                <div className="flex items-center gap-1"><button aria-label="Previous month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronLeft size={19} className="mx-auto" /></button><h3 className="min-w-32 text-center text-sm font-semibold">{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3><button aria-label="Next month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronRight size={19} className="mx-auto" /></button></div>
+                <button onClick={() => { setPlannerSelectedDate(todayKey); setPlannerDisplayedMonth(new Date(clockNow.getFullYear(), clockNow.getMonth(), 1)); setPlannerFilter('all'); }} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text transition active:scale-95">Today</button>
               </div>
-              <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-medium text-slate-500">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <span key={day} className="py-1">{day}</span>)}</div>
+              <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-medium text-secondary">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <span key={day} className="py-1">{day}</span>)}</div>
               <div className="grid grid-cols-7 gap-y-1">
                 {calendarDays.map(day => {
                   const dayTasks = plannerTasksByDate.get(day) || [];
@@ -1663,25 +1790,25 @@ export default function App() {
                   const isToday = day === todayKey;
                   const selected = day === plannerSelectedDate;
                   const label = new Date(`${day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-                  return <button key={day} aria-label={`${label}${dayTasks.length ? `, ${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'}` : ''}${overdue ? ', overdue tasks' : ''}`} aria-pressed={selected} onClick={() => { setPlannerSelectedDate(day); if (!inMonth) setPlannerDisplayedMonth(new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, 1)); setPlannerFilter('all'); }} className={`relative flex min-h-10 flex-col items-center justify-center rounded-xl text-xs transition active:scale-95 ${selected ? 'bg-indigo-600 font-semibold text-white shadow-sm' : isToday ? 'border border-indigo-400/70 font-semibold text-indigo-300' : inMonth ? 'text-slate-200 hover:bg-slate-800' : 'text-slate-600'}`}>
-                    <span>{Number(day.slice(-2))}</span>{dayTasks.length > 0 && <span className={`mt-0.5 h-1 w-1 rounded-full ${selected ? 'bg-white' : overdue ? 'bg-rose-500' : allComplete ? 'bg-emerald-500' : 'bg-indigo-400'}`} aria-hidden="true" />}
+                  return <button key={day} aria-label={`${label}${dayTasks.length ? `, ${dayTasks.length} task${dayTasks.length === 1 ? '' : 's'}` : ''}${overdue ? ', overdue tasks' : ''}`} aria-pressed={selected} onClick={() => { setPlannerSelectedDate(day); if (!inMonth) setPlannerDisplayedMonth(new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, 1)); setPlannerFilter('all'); }} className={`relative flex min-h-11 flex-col items-center justify-center rounded-xl text-xs transition active:scale-95 ${selected ? 'lifeos-accent-button font-semibold shadow-sm' : isToday ? 'lifeos-border border font-semibold lifeos-accent-text' : inMonth ? 'text-primary hover:bg-[var(--surface-raised)]' : 'text-muted'}`}>
+                    <span>{Number(day.slice(-2))}</span>{dayTasks.length > 0 && <span className="mt-0.5 h-1 w-1 rounded-full" style={{ backgroundColor: selected ? 'var(--surface)' : overdue ? 'var(--danger)' : allComplete ? 'var(--success)' : 'var(--accent)' }} aria-hidden="true" />}
                   </button>;
                 })}
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-800 pt-2.5 text-[10px] text-slate-500"><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full bg-indigo-400" />Tasks</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full bg-rose-500" />Overdue</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Complete</span></div>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--stroke)] pt-2.5 text-[10px] text-secondary"><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />Tasks</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--danger)' }} />Overdue</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--success)' }} />Complete</span></div>
             </section>
             <section className="space-y-3" aria-label="Selected day agenda">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-slate-500">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="min-h-10 rounded-lg border border-slate-700 px-3 text-xs font-semibold text-indigo-400">Quick add</button></div>
-              <input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-sm" />
-              <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
-              {plannerDetailTask && <article className="rounded-2xl border border-indigo-500/30 bg-slate-900 p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-10 rounded-lg px-3 text-xs text-slate-400">Back to agenda</button></div><p className="mt-2 text-sm text-slate-400">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-rose-300' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-emerald-300' : 'text-indigo-300'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl bg-slate-800 p-3"><p className="text-xs text-slate-500">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-slate-700 text-sm font-semibold text-indigo-400">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
+              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-panel min-h-11 rounded-lg border px-3 text-xs font-semibold lifeos-accent-text">Quick add</button></div>
+              <input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" />
+              <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
+              {plannerDetailTask && <article className="lifeos-panel rounded-2xl border border-[var(--accent)] p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Back to agenda</button></div><p className="mt-2 text-sm text-secondary">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-[var(--danger)]' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-[var(--stroke)] text-sm font-semibold lifeos-accent-text">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl lifeos-accent-button text-sm font-semibold">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
             {visiblePlannerTasks.length === 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 px-5 py-9 text-center"><div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-slate-400"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-slate-500">Choose another day or add a task when you’re ready.</p></div>
+              <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
             ) : (
               <div className="space-y-2">
                 {visiblePlannerTasks.map(t => {
                   const status = getTaskStatus(t, clockNow);
-                  return <div key={t.id} role="button" tabIndex={0} aria-label={`Open task ${t.title}`} onClick={() => setPlannerDetailTaskId(t.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPlannerDetailTaskId(t.id); } }} className={`cursor-pointer p-3.5 rounded-xl border flex items-center justify-between gap-2 transition hover:border-indigo-500/50 ${status === 'Overdue' ? 'border-rose-500/40 bg-rose-950/25' : 'border-slate-800 bg-slate-900'}`}>
+                  return <div key={t.id} role="button" tabIndex={0} aria-label={`Open task ${t.title}`} onClick={() => setPlannerDetailTaskId(t.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPlannerDetailTaskId(t.id); } }} className="lifeos-panel flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3.5 transition hover:border-[var(--accent)]" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : undefined }}>
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
@@ -1693,16 +1820,18 @@ export default function App() {
                           const records = await reloadAllData();
                           await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
                         }}
-                        className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
+                        aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}
+                        className="h-5 w-5 cursor-pointer rounded"
+                        style={{ accentColor: 'var(--accent)' }}
                       />
                       <div>
-                        <span className={`text-sm font-medium ${t.completed ? 'line-through text-slate-500' : ''}`}>{t.title}</span>
-                        {t.description && <p className="mt-0.5 text-xs text-slate-400">{t.description}</p>}
-                        <p className="text-xs text-slate-400">Due {formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ' · end of day'}</p>
-                        <div className="mt-1 flex gap-1"><span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] ${status === 'Overdue' ? 'bg-rose-500/20 text-rose-300' : status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-indigo-500/20 text-indigo-300'}`}>{status}</span>{t.recurring !== 'None' && <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-300">{t.recurring}</span>}</div>
+                        <span className={`text-sm font-medium ${t.completed ? 'line-through text-secondary' : ''}`}>{t.title}</span>
+                        {t.description && <p className="mt-0.5 text-xs text-secondary">{t.description}</p>}
+                        <p className="text-xs text-secondary">Due {formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ' · end of day'}</p>
+                        <div className="mt-1 flex gap-1"><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.priority}</span><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px]" style={{ color: status === 'Overdue' ? 'var(--danger)' : status === 'Completed' ? 'var(--success)' : 'var(--accent)' }}>{status}</span>{t.recurring !== 'None' && <span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.recurring}</span>}</div>
                       </div>
                     </div>
-                    <div className="flex shrink-0 flex-col gap-2"><button onClick={async event => { event.stopPropagation(); if (!window.confirm(`Delete “${t.title}”?`)) return; await NotificationService.cancelTask(t); await StorageService.tasks.delete(t.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task removed', 'info'); }} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:text-rose-400">Delete</button></div>
+                    <div className="flex shrink-0 flex-col gap-2"><button onClick={async event => { event.stopPropagation(); if (!window.confirm(`Delete “${t.title}”?`)) return; await NotificationService.cancelTask(t); await StorageService.tasks.delete(t.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task removed', 'info'); }} className="lifeos-danger min-h-11 rounded-lg px-3 text-xs">Delete</button></div>
                   </div>
                 })}
               </div>
@@ -1714,81 +1843,102 @@ export default function App() {
         {/* VIEW 6: SETTINGS */}
         {activeTab === 'settings' && (
           <div className="profile-page space-y-5">
-            <div><p className="text-xs font-semibold tracking-wide text-indigo-400">PROFILE & PREFERENCES</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Your Profile</h2><p className="mt-1 text-sm text-slate-400">Personalize how LifeOS works for you.</p></div>
+            <div><p className="text-xs font-semibold tracking-wide lifeos-accent-text">PROFILE & PREFERENCES</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Your Profile</h2><p className="mt-1 text-sm text-secondary">Personalize how LifeOS works for you.</p></div>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-              <div className="flex items-center gap-3"><div className="profile-avatar flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-xl font-bold text-white">{profileInitial(displayName) || <UserRound size={21} />}</div><div><p className="text-xs text-slate-400">Your LifeOS profile</p><h3 className="mt-0.5 text-lg font-semibold">{displayName.trim() || 'Personal details'}</h3></div></div>
-              <label className="block text-xs text-slate-300">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <p className="text-xs text-slate-500">Your name appears in the greeting and Profile avatar.</p>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-4">
+              <div className="flex items-center gap-3"><div className="profile-avatar lifeos-accent-button flex h-14 w-14 items-center justify-center rounded-full text-xl font-bold">{profileInitial(displayName) || <UserRound size={21} />}</div><div><p className="text-xs text-secondary">Your LifeOS profile</p><h3 className="mt-0.5 text-lg font-semibold">{displayName.trim() || 'Personal details'}</h3></div></div>
+              <label className="block text-xs text-secondary">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <p className="text-xs text-secondary">Your name appears in the greeting and Profile avatar.</p>
             </section>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
-              <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-slate-400">Device-level authentication for the app.</p></div>
-              <p className="text-xs text-slate-400">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
-              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-800/60 p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-slate-400">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-10 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
-              {biometricEnabled && <p className={`flex items-center gap-1 text-[11px] ${biometricVerified ? 'text-emerald-300' : 'text-amber-300'}`}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+              <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-secondary">Device-level authentication for the app.</p></div>
+              <p className="text-xs text-secondary">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
+              <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
+              {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
             </section>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
-              <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-slate-400">Choose a theme or follow Android's system setting.</p>
-              <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`flex min-h-12 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'border-indigo-400 bg-indigo-500/10 text-indigo-200' : 'border-slate-700 bg-slate-800 text-slate-300'}`}><Icon size={14} />{label}</button>)}</div>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+              <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-secondary">Choose a theme or follow Android's system setting.</p>
+              <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-              <div><h3 className="text-base font-semibold">Preferences</h3><p className="mt-1 text-xs text-slate-400">Formats affect display and new input only. Existing amounts are never converted.</p></div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs text-slate-300">Currency<select value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value as UserPreferences['currency'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="INR">INR · ₹</option><option value="USD">USD · $</option><option value="EUR">EUR · €</option><option value="GBP">GBP · £</option></select></label>
-                <label className="text-xs text-slate-300">Distance<select value={userPrefs.distance} onChange={event => void saveUserPreference('distance', event.target.value as UserPreferences['distance'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="km">Kilometres · km</option><option value="mi">Miles · mi</option></select></label>
-                <label className="text-xs text-slate-300">Speed<select value={userPrefs.speed} onChange={event => void saveUserPreference('speed', event.target.value as UserPreferences['speed'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="km/h">Kilometres/hour</option><option value="m/s">Metres/second</option><option value="mph">Miles/hour</option></select></label>
-                <label className="text-xs text-slate-300">Volume<select value={userPrefs.volume} onChange={event => void saveUserPreference('volume', event.target.value as UserPreferences['volume'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="L">Litres · L</option><option value="mL">Millilitres · mL</option><option value="US gal">US gallons</option><option value="Imp gal">Imperial gallons</option></select></label>
-                <label className="text-xs text-slate-300">Date format<select value={userPrefs.dateFormat} onChange={event => void saveUserPreference('dateFormat', event.target.value as UserPreferences['dateFormat'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="DMY">DD/MM/YYYY</option><option value="MDY">MM/DD/YYYY</option><option value="YMD">YYYY-MM-DD</option></select></label>
-                <label className="text-xs text-slate-300">Week starts<select value={userPrefs.firstDayOfWeek} onChange={event => void saveUserPreference('firstDayOfWeek', event.target.value as UserPreferences['firstDayOfWeek'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label>
-                <label className="text-xs text-slate-300">Time format<select value={userPrefs.timeFormat} onChange={event => void saveUserPreference('timeFormat', event.target.value as UserPreferences['timeFormat'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="12h">12-hour</option><option value="24h">24-hour</option></select></label>
-                <label className="text-xs text-slate-300">Number locale<select value={userPrefs.locale} onChange={event => void saveUserPreference('locale', event.target.value as UserPreferences['locale'])} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="system">Follow device</option><option value="en-IN">English · India</option><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="de-DE">German · Germany</option></select></label>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-4" aria-labelledby="color-theme-title">
+              <div><h3 id="color-theme-title" className="text-base font-semibold">Color theme</h3><p className="mt-1 text-xs text-secondary">Preview a coordinated palette. Apply to save it, or cancel to restore your current theme.</p></div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {(Object.entries(THEME_CATALOG) as Array<[ThemeId, typeof THEME_CATALOG[ThemeId]]>).map(([id, option]) => {
+                  const previewTokens = option[theme];
+                  const selected = (themePreviewId || visualThemeId) === id;
+                  return <button key={id} type="button" aria-pressed={selected} aria-label={`Preview ${option.label}`} onClick={() => previewVisualTheme(id)} className={`lifeos-panel flex min-h-14 items-center gap-2 rounded-xl border p-2 text-left text-xs ${selected ? 'ring-2 ring-offset-2 ring-offset-[var(--page)]' : ''}`} style={selected ? { outlineColor: previewTokens.focus, ['--tw-ring-color' as string]: previewTokens.focus } as React.CSSProperties : undefined}>
+                    <span className="flex shrink-0 gap-0.5" aria-hidden="true">{[previewTokens.background, previewTokens.accent, ...previewTokens.chartSeries.slice(1, 3)].map(color => <span key={color} className="h-5 w-2.5 rounded-full border" style={{ backgroundColor: color, borderColor: previewTokens.border }} />)}</span>
+                    <span className="font-medium">{option.label}</span>
+                  </button>;
+                })}
               </div>
-              <p className="text-[11px] text-slate-500">Financial values use one stored currency and are only reformatted here; no exchange-rate conversion is applied. Distance and volume use canonical storage units for new goal measurements. Speed is saved as a preference for features that use it.</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => previewVisualTheme(DEFAULT_THEME_ID)} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm">Restore default</button>
+                <button type="button" disabled={!themePreviewId} onClick={cancelVisualThemePreview} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50">Cancel</button>
+                <button type="button" disabled={!themePreviewId} onClick={() => void applyVisualTheme()} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">Apply theme</button>
+              </div>
             </section>
 
-            <button onClick={() => setProfileNotificationsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-slate-400">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-slate-500" /></button>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-4">
+              <div><h3 className="text-base font-semibold">Preferences</h3><p className="mt-1 text-xs text-secondary">Formats affect display and new input only. Existing amounts are never converted.</p></div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs text-secondary">Reporting currency<select aria-label="Reporting currency" value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value)} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{CURRENCY_CODES.map(code => <option key={code} value={code}>{code} · {getCurrencyMetadata(code).fractionDigits} decimals</option>)}</select></label>
+                <label className="text-xs text-secondary">Distance<select value={userPrefs.distance} onChange={event => void saveUserPreference('distance', event.target.value as UserPreferences['distance'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km">Kilometres · km</option><option value="mi">Miles · mi</option></select></label>
+                <label className="text-xs text-secondary">Speed<select value={userPrefs.speed} onChange={event => void saveUserPreference('speed', event.target.value as UserPreferences['speed'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km/h">Kilometres/hour</option><option value="m/s">Metres/second</option><option value="mph">Miles/hour</option></select></label>
+                <label className="text-xs text-secondary">Volume<select value={userPrefs.volume} onChange={event => void saveUserPreference('volume', event.target.value as UserPreferences['volume'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="L">Litres · L</option><option value="mL">Millilitres · mL</option><option value="US gal">US gallons</option><option value="Imp gal">Imperial gallons</option></select></label>
+                <label className="text-xs text-secondary">Date format<select value={userPrefs.dateFormat} onChange={event => void saveUserPreference('dateFormat', event.target.value as UserPreferences['dateFormat'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="DMY">DD/MM/YYYY</option><option value="MDY">MM/DD/YYYY</option><option value="YMD">YYYY-MM-DD</option></select></label>
+                <label className="text-xs text-secondary">Week starts<select value={userPrefs.firstDayOfWeek} onChange={event => void saveUserPreference('firstDayOfWeek', event.target.value as UserPreferences['firstDayOfWeek'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label>
+                <label className="text-xs text-secondary">Time format<select value={userPrefs.timeFormat} onChange={event => void saveUserPreference('timeFormat', event.target.value as UserPreferences['timeFormat'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="12h">12-hour</option><option value="24h">24-hour</option></select></label>
+                <label className="text-xs text-secondary">Number locale<select value={userPrefs.locale} onChange={event => void saveUserPreference('locale', event.target.value as UserPreferences['locale'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="system">Follow device</option><option value="en-IN">English · India</option><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="de-DE">German · Germany</option></select></label>
+              </div>
+              <p className="text-[11px] text-muted">Financial values use one stored currency and are only reformatted here; no exchange-rate conversion is applied. Distance and volume use canonical storage units for new goal measurements. Speed is saved as a preference for features that use it.</p>
+            </section>
 
-            {profileNotificationsOpen && <div className={`fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium text-indigo-400"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-              <p className="text-xs text-slate-400">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
-              <div className="flex min-h-11 items-center justify-between rounded-xl bg-slate-800/60 px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
-              <p className="text-[11px] text-slate-400">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
-              {!notificationDiagnostics.supported && <p className="text-[11px] text-amber-300">The native notification plugin is not available in this runtime.</p>}
-              {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-slate-800 pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
-              <div className="space-y-1 rounded-xl border border-slate-800 p-3 text-[10px] text-slate-400"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-rose-300' : 'text-emerald-300'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
-              <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Test notification scheduled for ${at.toLocaleTimeString()}`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="min-h-11 rounded-xl bg-indigo-600 px-3 text-xs font-semibold text-white">Test notification · 10 sec</button><button onClick={() => void openNotificationSettings()} className="min-h-11 rounded-xl bg-slate-800 px-3 text-xs font-semibold">Android settings</button></div>
-              <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-10 w-full rounded-xl border border-slate-700 text-xs font-medium text-slate-300">Refresh diagnostics</button>
+            <button onClick={() => setProfileNotificationsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl lifeos-panel border px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-secondary">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-muted" /></button>
+
+            {profileNotificationsOpen && <div className="lifeos-page fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))]" role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium lifeos-accent-text"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
+            <section className="lifeos-panel rounded-xl border p-4 space-y-3">
+              <p className="text-xs text-secondary">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
+              <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
+              <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
+              {!notificationDiagnostics.supported && <p className="text-[11px] text-[var(--warning)]">The native notification plugin is not available in this runtime.</p>}
+              {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--stroke)] pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
+              <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-[10px] text-secondary"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-[var(--danger)]' : 'text-[var(--success)]'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
+              <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Test notification scheduled for ${at.toLocaleTimeString()}`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Test notification · 10 sec</button><button onClick={() => void openNotificationSettings()} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android settings</button></div>
+              <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button>
             </section></div></div>}
 
             {/* Demo Data Trigger */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Sample Demonstration Data</h3>
-              <p className="text-xs text-slate-400">Load sample transactions, habits, goals, and tasks to evaluate all features.</p>
+              <p className="text-xs text-secondary">Load sample transactions, habits, goals, and tasks to evaluate all features.</p>
               <button
                 onClick={async () => {
                   await StorageService.backup.seedDemoData();
                   await reloadAllData();
                   showToast('Sample demonstration data loaded', 'success');
                 }}
-                className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-xs font-semibold hover:bg-slate-700 transition"
+                className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold transition"
               >
                 Load Sample Demo Data
               </button>
             </div>
 
             {/* Backup & Restore */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Backup & Restore</h3>
-              <p className="text-xs text-slate-400">Export a passphrase-encrypted backup, or restore a validated encrypted or legacy JSON backup.</p>
+              <p className="text-xs text-secondary">Export a passphrase-encrypted backup, or restore a validated encrypted or legacy JSON backup.</p>
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
                     if (backupOperation.current) return;
                     backupOperation.current = true;
+                    setBackupOperationInProgress(true);
                     try {
+                      await setSensitiveScreenshotState(true);
                       const passphrase = await requestBackupPassphrase('export');
                       if (passphrase === null) return;
                       const token = sessionManager.capture();
@@ -1810,13 +1960,13 @@ export default function App() {
                     } catch (error) {
                       console.error('LifeOS backup export failed:', error);
                       showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
-                    } finally { backupOperation.current = false; }
+                    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
                   }}
-                  className="flex-1 py-2.5 rounded-xl bg-slate-800 text-white text-xs font-semibold"
+                  className="lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold"
                 >
                   Export encrypted backup
                 </button>
-                <button onClick={() => document.getElementById('lifeos-backup-import')?.click()} className="flex-1 rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white">Restore JSON</button>
+                <button onClick={() => document.getElementById('lifeos-backup-import')?.click()} className="lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold">Restore JSON</button>
               </div>
               <input id="lifeos-backup-import" type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackupFile(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} />
               <button onClick={async () => {
@@ -1841,18 +1991,18 @@ export default function App() {
                 } catch (error) {
                   showToast(error instanceof Error ? error.message : 'Transactions CSV export failed.', 'danger');
                 }
-              }} className="w-full rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-white">Export transactions CSV</button>
+              }} className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold">Export transactions CSV</button>
             </div>
 
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-2">
-              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-slate-400">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-slate-500">Offline-first personal management. Your records are stored in the local app database.</p>
-              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-10 rounded-xl border border-slate-700 px-3 text-xs font-medium">Restart onboarding</button>
+            <section className="lifeos-panel rounded-xl border p-4 space-y-2">
+              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
+              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
             </section>
 
             {/* Danger Zone */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-rose-900/50 space-y-3">
-              <h3 className="text-sm font-semibold text-rose-400">Data Reset</h3>
-              <p className="text-xs text-slate-400">Permanently erase all personal database records.</p>
+            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-[var(--danger)]">Data Reset</h3>
+              <p className="text-xs text-secondary">Permanently erase all personal database records.</p>
               <button
                 onClick={async () => {
                   if (!window.confirm('Permanently erase all LifeOS data stored on this device? This cannot be undone.')) return;
@@ -1865,7 +2015,7 @@ export default function App() {
                     showToast('Reset did not complete. Please retry; reminder cleanup must succeed before records are erased.', 'danger');
                   }
                 }}
-                className="w-full py-2.5 rounded-xl bg-rose-600 text-white text-xs font-semibold"
+                className="lifeos-danger min-h-11 w-full rounded-xl border px-3 text-xs font-semibold"
               >
                 Clear All Application Data
               </button>
@@ -1877,23 +2027,23 @@ export default function App() {
 
       {createKind && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form onSubmit={saveNewRecord} className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+          <form onSubmit={saveNewRecord} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? 'Add savings goal' : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
-              <button type="button" aria-label="Close" onClick={requestCloseForm} className="rounded-lg px-3 py-1 text-slate-300 hover:bg-slate-800">✕</button>
+              <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? 'Add savings goal' : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
+              <button type="button" aria-label="Close" onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
             </div>
-            {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-slate-300">
+            {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
               {createKind === 'transaction' ? 'Description' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
-              <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm text-white" />
+              <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {createKind === 'transaction' && <>
-              <label className="mb-3 block text-xs text-slate-300">Type<select value={createDraft.type} onChange={e => {
+              <label className="mb-3 block text-xs text-secondary">Type<select value={createDraft.type} onChange={e => {
                 const type = e.target.value as 'income' | 'expense';
                 const category = categories.find(item => item.type === type)?.name || '';
                 setCreateDraft({ ...createDraft, type, category });
-              }} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
-              <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Category<select required value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">
+              }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
+              <label className="mb-3 block text-xs text-secondary">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Category<select required value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">
                 <option value="">Select category</option>
                 {createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type) && (
                   <option value={createDraft.category}>Legacy category: {createDraft.category}</option>
@@ -1902,40 +2052,40 @@ export default function App() {
                   <option key={category.id} value={category.name}>{category.name}</option>
                 ))}
               </select></label>
-              <label className="mb-3 block text-xs text-slate-300">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
-              <label className="mb-4 block text-xs text-slate-300">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-amber-300">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
+              <label className="mb-4 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'habit' && <>
-              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Frequency<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
-              <label className="mb-3 block text-xs text-slate-300">Daily target (optional)<input type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-slate-300">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
+              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Frequency<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
+              <label className="mb-3 block text-xs text-secondary">Daily target (optional)<input type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
             </>}
             {createKind === 'goal' && <>
-              <label className="mb-3 block text-xs text-slate-300">Category<select value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select></label>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-slate-300">Target<input required type="number" min="0.01" step="any" inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label><label className="text-xs text-slate-300">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></div>
-              <label className="mb-3 block text-xs text-slate-300">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Priority<select value={createDraft.priority || 'Medium'} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              {editingGoalId && <label className="mb-3 block text-xs text-slate-300">Status<select value={createDraft.status || 'In Progress'} onChange={e => setCreateDraft({ ...createDraft, status: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['In Progress', 'Paused', 'Completed'].map(status => <option key={status}>{status}</option>)}</select></label>}
-              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Category<select value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select></label>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target<input required type="number" min="0.01" step="any" inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>
+              <label className="mb-3 block text-xs text-secondary">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority || 'Medium'} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
+              {editingGoalId && <label className="mb-3 block text-xs text-secondary">Status<select value={createDraft.status || 'In Progress'} onChange={e => setCreateDraft({ ...createDraft, status: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['In Progress', 'Paused', 'Completed'].map(status => <option key={status}>{status}</option>)}</select></label>}
+              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'budget' && <>
-              <label className="mb-3 block text-xs text-slate-300">Budget category (optional)<select value={createDraft.categoryId || ''} onChange={e => setCreateDraft({ ...createDraft, categoryId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"><option value="">Overall budget</option>{categories.filter(category => category.type === 'expense').map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-              <label className="mb-3 block text-xs text-slate-300">Monthly limit<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-4 block text-xs text-slate-300">Month<input required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Budget category (optional)<select value={createDraft.categoryId || ''} onChange={e => setCreateDraft({ ...createDraft, categoryId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="">Overall budget</option>{categories.filter(category => category.type === 'expense').map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+              <label className="mb-3 block text-xs text-secondary">Monthly limit<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-4 block text-xs text-secondary">Month<input required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'savings' && <>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-slate-300">Target amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label><label className="text-xs text-slate-300">Already saved<input type="number" min="0" step="0.01" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></div>
-              <label className="mb-3 block text-xs text-slate-300">Category (optional)<input maxLength={40} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Already saved<input type="number" min="0" step="0.01" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>
+              <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={40} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'contribution' && <>
-              <label className="mb-3 block text-xs text-slate-300">Savings goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{savingsGoals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>
-              <label className="mb-3 block text-xs text-slate-300">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-slate-300">
+              <label className="mb-3 block text-xs text-secondary">Savings goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{savingsGoals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>
+              <label className="mb-3 block text-xs text-secondary">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary">
                 <input
                   type="checkbox"
                   checked={createDraft.linkTransfer !== 'no'}
@@ -1944,13 +2094,13 @@ export default function App() {
                 Record this contribution as an expense in monthly cash flow
               </label>
               {createDraft.linkTransfer !== 'no' && <>
-                <label className="mb-2 block text-xs text-slate-300">
+                <label className="mb-2 block text-xs text-secondary">
                   Expense category
                   <select
                     required
                     value={createDraft.transferCategory || ''}
                     onChange={e => setCreateDraft({ ...createDraft, transferCategory: e.target.value })}
-                    className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm"
+                    className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"
                   >
                     <option value="">Select expense category</option>
                     {categories.filter(category => category.type === 'expense').map(category => (
@@ -1958,53 +2108,53 @@ export default function App() {
                     ))}
                   </select>
                 </label>
-                <p className="mb-3 text-[11px] text-slate-400">
+                <p className="mb-3 text-[11px] text-secondary">
                   When enabled, this transfer is recorded as an expense and reduces the remaining balance for the selected month. The savings goal is updated at the same time.
                 </p>
               </>}
             </>}
-            {createKind === 'milestone' && <label className="mb-3 block text-xs text-slate-300">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
-            {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-slate-300">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-slate-300">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label></>}
+            {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
+            {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <>
-              <label className="mb-3 block text-xs text-slate-300">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-slate-300">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              <label className="mb-3 block text-xs text-slate-300">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-slate-300">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-2 py-3 text-sm" /></label><label className="text-xs text-slate-300">Due time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-2 py-3 text-sm" /></label></div>
-              <label className="mb-3 block text-xs text-slate-300">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-slate-500">Uses local time; delivery may be approximate on Android.</span></label>
-              <label className="mb-3 block text-xs text-slate-300">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
+              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
+              <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Due time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
+              <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
+              <label className="mb-3 block text-xs text-secondary">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
             </>}
-            {!['habit', 'budget', 'task', 'transaction', 'goal-progress'].includes(createKind) && <label className="mb-4 block text-xs text-slate-300">{createKind === 'goal' || createKind === 'savings' ? 'Target date' : createKind === 'milestone' ? 'Target date (optional)' : 'Date'}<input type="date" required={createKind !== 'milestone'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-sm" /></label>}
-            {editingTransactionId && <button type="button" onClick={async () => { if (!window.confirm('Delete this transaction? This cannot be undone.')) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-rose-500/40 px-4 py-2.5 text-sm font-medium text-rose-400">Delete transaction</button>}
-            <button type="submit" className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white active:scale-[.99]">{editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button>
+            {!['habit', 'budget', 'task', 'transaction', 'goal-progress'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">{createKind === 'goal' || createKind === 'savings' ? 'Target date' : createKind === 'milestone' ? 'Target date (optional)' : 'Date'}<input type="date" required={createKind !== 'milestone'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
+            {editingTransactionId && <button type="button" onClick={async () => { if (!window.confirm('Delete this transaction? This cannot be undone.')) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
+            <button type="submit" className="w-full rounded-xl lifeos-accent-button px-4 py-3 text-sm font-semibold active:scale-[.99]">{editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button>
           </form>
         </div>
       )}
 
       {/* Floating Bottom Nav */}
-      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-6 border-t border-slate-800 bg-slate-900/95 px-1 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
-        {(['dashboard', 'finance', 'habits', 'goals', 'planner', 'settings'] as const).map(tab => {
-          const Icon = ({ dashboard: Home, finance: CircleDollarSign, habits: Activity, goals: GoalIcon, planner: CalendarDays, settings: UserRound })[tab];
-          const label = ({ dashboard: 'Home', finance: 'Finance', habits: 'Habits', goals: 'Goals', planner: 'Planner', settings: 'Profile' })[tab];
+      <nav aria-label="Main navigation" className="lifeos-nav fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-4 border-t px-2 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
+        {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
+          const Icon = ({ home: Home, compass: Compass, calendar: CalendarDays, insights: Activity })[icon];
           return (
           <button
             key={tab}
+            data-tab={tab}
             onClick={() => navigateTo(tab)}
             aria-label={label}
             aria-current={activeTab === tab ? 'page' : undefined}
-            className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-300 font-bold' : 'text-slate-400'}`}
+            className={`nav-item flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
           >
-            {tab === 'settings' ? <span className={`flex h-[21px] w-[21px] items-center justify-center rounded-full text-[10px] font-bold ${displayName.trim() ? 'bg-indigo-500 text-white' : activeTab === tab ? 'bg-indigo-500/20 text-indigo-200' : 'bg-slate-700 text-slate-300'}`} aria-hidden="true">{profileInitial(displayName) || <Icon size={14} />}</span> : <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />}
+            <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />
             <span>{label}</span>
           </button>
           );
         })}
       </nav>
 
-      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-5 text-white shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave LifeOS?</h2><p className="mt-2 text-sm text-slate-400">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="min-h-11 flex-1 rounded-xl border border-slate-700 text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="min-h-11 flex-1 rounded-xl bg-indigo-600 text-sm font-semibold text-white">Exit app</button></div></section></div>}
+      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave LifeOS?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
 
       {/* In-app Toast Notification */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl text-xs font-semibold text-white flex items-center gap-2">
+        <div role="status" aria-live="polite" className="lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl">
           <span>{toast.message}</span>
         </div>
       )}

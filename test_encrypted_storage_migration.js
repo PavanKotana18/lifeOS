@@ -74,7 +74,7 @@ async function createFixture(options = {}) {
   db.version(1).stores(schema);
   await db.open();
 
-  const database = {};
+  const database = { transaction: db.transaction.bind(db) };
   for (const table of tables) database[table] = db.table(table);
 
   for (const table of tables) {

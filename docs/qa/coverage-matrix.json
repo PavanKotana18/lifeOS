@@ -162,13 +162,13 @@
     },
     {
       "module": "Screen profiles and API matrix",
-      "testIds": ["ANDROID-API24", "ANDROID-API34", "ANDROID-API35"],
+      "testIds": ["ANDROID-API29", "ANDROID-API34", "ANDROID-API35"],
       "risk": "HIGH",
       "testType": ["Android instrumentation matrix configured"],
       "environment": "GitHub-hosted emulator; not yet run",
       "lastObservedStatus": "NOT EXECUTED",
       "lastObserved": "2026-11-07",
-      "evidence": "PR smoke API34 is pending; three-profile matrix runs only if smoke succeeds",
+      "evidence": "Prior API 24 app acceptance failed with Chromium 69 below LifeOS Chromium 87 requirement. Android 10/API 29 is now minSdk; API 29/34/35 acceptance is pending CI.",
       "gaps": ["No matrix artifacts or physical device manufacturer evidence yet"]
     }
   ]

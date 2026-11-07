@@ -9,7 +9,10 @@
   "tests": [
     {
       "path": "test_encryption_admission.js",
-      "categories": ["Production integration", "Mocked native simulation"],
+      "categories": [
+        "Production integration",
+        "Mocked native simulation"
+      ],
       "limitations": "Real facade and migration with disposable IndexedDB and synthetic native AES-GCM; no genuine Keystore or provisioning UI."
     },
     {
@@ -88,9 +91,10 @@
     {
       "path": "test_auth_lifecycle.js",
       "categories": [
-        "Static/source inspection"
+        "Production integration",
+        "Mocked native simulation"
       ],
-      "limitations": "Text assertions and/or test-side simulations; not Java/React runtime coverage."
+      "limitations": "Actual AST-extracted App lifecycle and encrypted Dexie; native bridge and onStop simulated, no Java/device execution."
     },
     {
       "path": "test_backup_export_service.js",
@@ -104,7 +108,7 @@
       "categories": [
         "Production integration"
       ],
-      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+      "limitations": "Legacy raw-storage internals exposed ONLY in test transpilation, disposable IndexedDB. Does not validate production activation or encryption; test_encryption_admission, test_secure_startup and WP0 cover real protected facade."
     },
     {
       "path": "test_backup_validation.js",
@@ -146,7 +150,7 @@
       "categories": [
         "Production integration"
       ],
-      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+      "limitations": "Legacy raw-storage internals exposed ONLY in test transpilation, disposable IndexedDB. Does not validate production activation or encryption; test_encryption_admission, test_secure_startup and WP0 cover real protected facade."
     },
     {
       "path": "test_encrypted_dexie_store.js",
@@ -224,14 +228,14 @@
       "categories": [
         "Production integration"
       ],
-      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+      "limitations": "Legacy raw-storage internals exposed ONLY in test transpilation, disposable IndexedDB. Does not validate production activation or encryption; test_encryption_admission, test_secure_startup and WP0 cover real protected facade."
     },
     {
       "path": "test_tasks_recurrence_edges.js",
       "categories": [
         "Production integration"
       ],
-      "limitations": "Actual selected production functions/Dexie; native crypto may be mocked, no real WebView durability."
+      "limitations": "Legacy raw-storage internals exposed ONLY in test transpilation, disposable IndexedDB. Does not validate production activation or encryption; test_encryption_admission, test_secure_startup and WP0 cover real protected facade."
     },
     {
       "path": "tests/wp0/harness-selftest.cjs",
@@ -296,6 +300,30 @@
         "Android instrumentation required"
       ],
       "limitations": "Opt-in real BiometricPrompt and Keystore with actual ActivityScenario on a fresh named AVD only; requires human accept/cancel actions. BLOCKED without selected device; never run as ordinary synthetic suite."
+    },
+    {
+      "path": "test_secure_startup.js",
+      "categories": [
+        "Production integration",
+        "Mocked native simulation"
+      ],
+      "limitations": "Actual startup owner, AST-extracted App and disposable IndexedDB across restart with synthetic native AES-GCM. Explicit consent/recovery UI adapters simulated; no Android Keystore or rendered UI."
+    },
+    {
+      "path": "test_android_startup.js",
+      "categories": [
+        "Production integration",
+        "Unit"
+      ],
+      "limitations": "Actual main.tsx VM and bounded appearance helpers; browser/native appearance simulated, not a rendered Android UI."
+    },
+    {
+      "path": "test_product_labels_20261107.cjs",
+      "categories": [
+        "Production integration",
+        "Unit"
+      ],
+      "limitations": "Actual analytics and preference conversion functions with synthetic category labels/custom units."
     }
   ],
   "required_device_cases": [

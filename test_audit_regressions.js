@@ -136,28 +136,13 @@ check(
   'Recurring task creation propagates reminderAt'
 );
 
-// F-09: Empty state guard must require both domains to be empty.
+// Dashboard presents transparent per-domain counts and does not publish an opaque composite score.
 check(
-  app.includes(
-    'if (habits.length === 0 && todayTasks.length === 0) return null;'
-  ),
-  'Productivity score returns null only when both domains are empty'
+  app.includes('getTodayOverview(tasks, habits, habitLogs, todayKey)') &&
+  app.includes('Tasks due today') && app.includes('Routines today') &&
+  !app.includes('productivityScore') && !app.includes('adherence today'),
+  'Dashboard exposes separate task and routine counts without a composite score'
 );
-
-// F-09: Empty state must not show a misleading percentage.
-check(
-  app.includes('productivityScore === null') &&
-  app.includes('No tasks or habits scheduled today.'),
-  'Dashboard displays an explicit empty productivity state'
-);
-
-// F-09: Existing score calculation remains present.
-check(
-  app.includes('return Math.min(100, Math.round(habitWeight + taskWeight));') &&
-  app.includes('{productivityScore}% adherence today'),
-  'Existing productivity scoring remains active for non-empty days'
-);
-
 
 // F-08: Savings contributions can create a linked expense in the same storage operation.
 check(
@@ -185,4 +170,4 @@ check(
   'Savings contribution UI enables an optional linked cash-flow expense by default'
 );
 
-console.log(`AUDIT REGRESSION SOURCE TESTS: ${passed}/23 PASSED`);
+console.log(`AUDIT REGRESSION SOURCE TESTS: ${passed}/21 PASSED`);

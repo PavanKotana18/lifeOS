@@ -2,8 +2,8 @@
 const assert = require('node:assert/strict');
 const h = require('./production-harness.cjs');
 
-async function usingFixture(fn) {
-  const f = await h.fixture();
+async function usingFixture(fn, options) {
+  const f = await h.fixture(options);
   try { return await fn(f); } finally { await f.dispose(); }
 }
 async function seed(f) {
@@ -101,12 +101,14 @@ const cases = [
       const expression = h.appFunction('importBackupFile');
       await h.bind(expression, { ...f.appDeps(), ...h.noopSetters(expression),
         StorageService: { backup }, backupOperation: { current: false },
+        setBackupOperationInProgress: () => {},
+        setSensitiveScreenshotState: async () => {},
         decodeBackupForRestore: importer.decodeBackupForRestore,
         MAX_BACKUP_FILE_BYTES: codec.MAX_BACKUP_FILE_BYTES,
         requestBackupPassphrase: async () => { throw new Error('Legacy import must not request a passphrase'); },
       })({ size: 300, text: async () => JSON.stringify({ tables: Object.fromEntries(h.TABLES.map(t => [t, []])) }) });
       h.equal(replacement, false, 'Empty observation never grants unconfirmed replacement consent');
-      h.check(/Confirm replacement/.test(rejected?.message || ''), 'Actual live guard refused replacement');
+      h.check(/Confirm replacement|Existing data found/.test(rejected?.message || ''), 'Actual live guard refused replacement');
       h.equal(await snapshot(f), before, 'Concurrent write survives actual UI import attempt');
     }); }
   },
@@ -133,11 +135,12 @@ const cases = [
   },
   { id: 'CONTROL-INTEGRATION', category: 'Production integration + mocked native simulation', known: false,
     async run() { await usingFixture(async f => {
+      f.sessionManager.lock();
       await assert.rejects(f.StorageService.transactions.getAll(), /locked/i);
       const original = await seed(f);
       await f.StorageService.backup.importData(original, { replaceExisting: true });
       h.equal(JSON.parse(await f.StorageService.backup.exportData()).tables, JSON.parse(original).tables,
-        'Raw restore exercises actual validator and Dexie');
+        'Encrypted restore exercises actual validator and Dexie');
       await f.activate();
       const rows = await f.lifeOSDatabase.transactions.toArray();
       h.check(rows.every(r => r.__lifeosEncrypted === 1 && r.amount === undefined && r.description === undefined),
@@ -162,7 +165,7 @@ const cases = [
       h.check(f.native.calls.includes('encrypt') && f.native.calls.includes('decrypt'), 'Real TS wrapper uses simulated native API');
     }); }
   },
-  { id: 'LOS-001', category: 'Production integration / AST-extracted startup; simulated browser/native', known: true,
+  { id: 'LOS-001', category: 'Production integration / AST-extracted startup; simulated browser/native', known: false,
     async run() { await usingFixture(async f => {
       const init = h.appFunction('initApp');
       const deps = { ...f.appDeps(), ...h.noopSetters(init) };
@@ -175,7 +178,7 @@ const cases = [
       h.contract({ activated: f.isEncryptedStorageActivated(), encrypted: stored.__lifeosEncrypted === 1,
         plaintextFieldsAbsent: stored.description === undefined && stored.amount === undefined },
       { activated: true, encrypted: true, plaintextFieldsAbsent: true });
-    }); }
+    }, { activate: false }); }
   },
   { id: 'LOS-002', category: 'Production integration; real validator/facade/coordinator/Dexie; simulated native', known: false,
     async run() { await usingFixture(async f => {
@@ -198,6 +201,7 @@ const cases = [
       await seed(f); await f.activate();
       const deps = f.appDeps(), errors = [];
       const realReload = deps.reloadAllData; let reloads = 0;
+      deps.confirmScreenshotResume = async () => {};
       deps.reloadAllData = async () => { const result = await realReload(); reloads++; return result; };
       deps.console = { error: (...args) => errors.push(String(args[1]?.message || args[0])) };
       const expression = h.lifecycleCallback();
@@ -274,10 +278,10 @@ const cases = [
   { id: 'LOS-007', category: 'Production integration: raw/encrypted goal API parity; simulated native', known: false,
     async run() { await usingFixture(async f => {
       f.sessionManager.unlock();
-      const expected = await goalOutcomes(f.StorageService);
+      const expected = await goalOutcomes(f.legacyStorageService);
       h.equal(expected, { targetReached: 'Completed', prematureCompletion: 'In Progress',
         lastMilestone: 'Completed', reopenedMilestone: 'In Progress', paused: 'Paused' }, 'Raw goal semantics independently checked');
-      await f.StorageService.backup.clearAll(); await f.activate();
+      await f.legacyStorageService.backup.clearAll(); await f.activate();
       const actual = await goalOutcomes(f.StorageService);
       h.contract(actual, expected);
     }); }
@@ -285,9 +289,9 @@ const cases = [
   { id: 'LOS-008', category: 'Production integration: raw/encrypted recurrence parity; fixed local clock; simulated native', known: false,
     async run() { await usingFixture(async f => {
       f.sessionManager.unlock();
-      const expected = await recurrenceOutcomes(f.StorageService);
+      const expected = await recurrenceOutcomes(f.legacyStorageService);
       h.check(Object.values(expected).every(date => date > '2026-11-06'), 'Raw next dates must be after fixed local today');
-      await f.StorageService.backup.clearAll(); await f.activate();
+      await f.legacyStorageService.backup.clearAll(); await f.activate();
       h.contract(await recurrenceOutcomes(f.StorageService), expected);
     }); }
   },
@@ -298,7 +302,10 @@ const cases = [
       const habit = (await s.habits.getAll())[0];
       await s.habits.update(habit.id, { reminderTime: '09:00' });
       const milestones = await s.goals.getAllMilestones();
-      await f.lifeOSDatabase.milestones.update(milestones[0].id, { targetDate: '2026-12-01', completed: false });
+      await f.encryptedStorageRuntime.transactionCoordinator.run(async tx => {
+        const milestone = await tx.get('milestones', milestones[0].id);
+        tx.put('milestones', { ...milestone, targetDate: '2026-12-01', completed: false });
+      });
       const enabled = Object.fromEntries(Object.keys(f.DEFAULT_NOTIFICATION_PREFERENCES).map(k => [k, true]));
       await ns.syncHabits(await s.habits.getAll(), enabled);
       await ns.syncMilestones(await s.goals.getAll(), await s.goals.getAllMilestones(), enabled);

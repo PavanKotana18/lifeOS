@@ -4,59 +4,190 @@
   "routes": [
     {
       "name": "dashboard",
-      "selector": "[aria-current='page'][data-tab='dashboard']",
-      "description": "Daily productivity score, quick glance metrics, urgent tasks, and navigation hubs",
-      "transitions": ["finance", "habits", "goals", "planner", "settings"]
+      "selector": "#view-dashboard",
+      "description": "Today overview with separate task/routine counts, finance, goals, priorities, and navigation hubs",
+      "transitions": [
+        "explore",
+        "plan",
+        "insights",
+        "finance",
+        "habits",
+        "goals",
+        "planner",
+        "settings"
+      ]
+    },
+    {
+      "name": "explore",
+      "selector": "#view-explore",
+      "description": "Curated module catalog for money, habits, goals, planning and settings",
+      "transitions": [
+        "finance",
+        "habits",
+        "goals",
+        "planner",
+        "settings"
+      ]
+    },
+    {
+      "name": "plan",
+      "selector": "#view-plan",
+      "description": "Task and goal planning entry points with real local records",
+      "transitions": [
+        "planner",
+        "goals",
+        "habits"
+      ]
+    },
+    {
+      "name": "insights",
+      "selector": "#view-insights",
+      "description": "Financial and routine summaries derived from saved records",
+      "transitions": [
+        "finance",
+        "habits",
+        "goals"
+      ]
     },
     {
       "name": "finance",
-      "selector": "[aria-current='page'][data-tab='finance']",
+      "selector": "#view-finance",
       "subtabs": [
-        { "name": "overview", "description": "Monthly income/expense summary, remaining balance, quick add buttons" },
-        { "name": "transactions", "description": "Paginated, searchable transaction registry with type filtering" },
-        { "name": "budgets", "description": "Category and monthly overall budget tracking against actual expenditures" },
-        { "name": "savings", "description": "Savings goals progress and incremental contribution logging" },
-        { "name": "analytics", "description": "Spending breakdown by category and historical month-over-month trends" }
+        {
+          "name": "overview",
+          "description": "Monthly income/expense summary, remaining balance, quick add buttons"
+        },
+        {
+          "name": "transactions",
+          "description": "Paginated, searchable transaction registry with type filtering"
+        },
+        {
+          "name": "budgets",
+          "description": "Category and monthly overall budget tracking against actual expenditures"
+        },
+        {
+          "name": "savings",
+          "description": "Savings goals progress and incremental contribution logging"
+        },
+        {
+          "name": "analytics",
+          "description": "Spending breakdown by category and historical month-over-month trends"
+        }
       ],
-      "transitions": ["dashboard", "habits", "goals", "planner", "settings"]
+      "transitions": [
+        "dashboard",
+        "habits",
+        "goals",
+        "planner",
+        "settings",
+        "explore",
+        "plan",
+        "insights"
+      ]
     },
     {
       "name": "habits",
-      "selector": "[aria-current='page'][data-tab='habits']",
+      "selector": "#view-habits",
       "subtabs": [
-        { "name": "checklist", "description": "Daily and weekly habit completion checklists and streak counters" },
-        { "name": "analytics", "description": "Weekly completion rate, streak history, and habit adherence" }
+        {
+          "name": "checklist",
+          "description": "Daily and weekly habit completion checklists and streak counters"
+        },
+        {
+          "name": "analytics",
+          "description": "Weekly completion rate, streak history, and habit adherence"
+        }
       ],
-      "transitions": ["dashboard", "finance", "goals", "planner", "settings"]
+      "transitions": [
+        "dashboard",
+        "finance",
+        "goals",
+        "planner",
+        "settings",
+        "explore",
+        "plan",
+        "insights"
+      ]
     },
     {
       "name": "goals",
-      "selector": "[aria-current='page'][data-tab='goals']",
+      "selector": "#view-goals",
       "subtabs": [
-        { "name": "active", "description": "In-progress goals, milestone checklists, and progress indicators" },
-        { "name": "completed", "description": "Achieved milestones and archived goals" }
+        {
+          "name": "active",
+          "description": "In-progress goals, milestone checklists, and progress indicators"
+        },
+        {
+          "name": "completed",
+          "description": "Achieved milestones and archived goals"
+        }
       ],
-      "transitions": ["dashboard", "finance", "habits", "planner", "settings"]
+      "transitions": [
+        "dashboard",
+        "finance",
+        "habits",
+        "planner",
+        "settings",
+        "explore",
+        "plan",
+        "insights"
+      ]
     },
     {
       "name": "planner",
-      "selector": "[aria-current='page'][data-tab='planner']",
+      "selector": "#view-planner",
       "subtabs": [
-        { "name": "agenda", "description": "Daily scheduled tasks, priority grouping, due times, and overdue alerts" },
-        { "name": "calendar", "description": "Monthly planner grid with leap day and adjacent month boundary support" }
+        {
+          "name": "agenda",
+          "description": "Daily scheduled tasks, priority grouping, due times, and overdue alerts"
+        },
+        {
+          "name": "calendar",
+          "description": "Monthly planner grid with leap day and adjacent month boundary support"
+        }
       ],
-      "transitions": ["dashboard", "finance", "habits", "goals", "settings"]
+      "transitions": [
+        "dashboard",
+        "finance",
+        "habits",
+        "goals",
+        "settings",
+        "explore",
+        "plan",
+        "insights"
+      ]
     },
     {
       "name": "settings",
-      "selector": "[aria-current='page'][data-tab='settings']",
+      "selector": "#view-settings",
       "sections": [
-        { "name": "profile", "description": "User display name, avatar initials, and biometric configuration" },
-        { "name": "notifications", "description": "Notification permissions, quiet hours, and category toggles" },
-        { "name": "preferences", "description": "Theme (Dark/Light/System), currency, time format, and units" },
-        { "name": "data_management", "description": "Encrypted backup export, restore verification, and local database wipe" }
+        {
+          "name": "profile",
+          "description": "User display name, avatar initials, and biometric configuration"
+        },
+        {
+          "name": "notifications",
+          "description": "Notification permissions, quiet hours, and category toggles"
+        },
+        {
+          "name": "preferences",
+          "description": "Theme (Dark/Light/System), currency, time format, and units"
+        },
+        {
+          "name": "data_management",
+          "description": "Encrypted backup export, restore verification, and local database wipe"
+        }
       ],
-      "transitions": ["dashboard", "finance", "habits", "goals", "planner"]
+      "transitions": [
+        "dashboard",
+        "finance",
+        "habits",
+        "goals",
+        "planner",
+        "explore",
+        "plan",
+        "insights"
+      ]
     }
   ]
 }
