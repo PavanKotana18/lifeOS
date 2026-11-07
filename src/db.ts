@@ -7,6 +7,7 @@ import {
   type LifeOSDatabaseWithTransactions
 } from './services/encryptedStorageIntegration';
 import { CryptoService } from './services/cryptoService.ts';
+import { decimalToMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
 import {
   Transaction,
   Category,
@@ -195,6 +196,7 @@ export function validateTransactionRecord(
   if (requireComplete && record.type !== 'income' && record.type !== 'expense') {
     throw new Error('Transaction type must be income or expense');
   }
+  validateMoneyMetadata(record);
   if (record.type !== undefined && record.type !== 'income' && record.type !== 'expense') {
     throw new Error('Transaction type must be income or expense');
   }
@@ -207,6 +209,27 @@ export function validateTransactionRecord(
     ) {
       throw new Error(`Transaction ${field} is required`);
     }
+  }
+}
+
+function validateMoneyMetadata(record: { currencyCode?: string; amountMinor?: string; amount?: number }): void {
+  if (record.currencyCode !== undefined) {
+    try {
+      const metadata = getCurrencyMetadata(record.currencyCode);
+      if (metadata.code !== record.currencyCode) throw new Error('Non-canonical currency code');
+    }
+    catch { throw new Error('Financial record currency must be a supported ISO 4217 code'); }
+  }
+  if (record.amountMinor !== undefined &&
+    (typeof record.amountMinor !== 'string' || !/^(0|[1-9]\d*)$/.test(record.amountMinor))) {
+    throw new Error('Financial record minor-unit amount must be a non-negative integer string');
+  }
+  if (record.amountMinor !== undefined && !record.currencyCode) {
+    throw new Error('Exact minor-unit amount requires an explicit currency code');
+  }
+  if (record.amountMinor !== undefined && record.currencyCode && record.amount !== undefined &&
+      decimalToMinorUnits(record.amount, record.currencyCode) !== BigInt(record.amountMinor)) {
+    throw new Error('Major and minor-unit financial amounts do not agree.');
   }
 }
 
@@ -272,7 +295,9 @@ export interface IDataStorage {
     updateGoal(id: string, updates: Partial<SavingsGoal>): Promise<void>;
     deleteGoal(id: string): Promise<void>;
     addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>): Promise<void>;
-    getContributions(goalId: string): Promise<SavingsContribution[]>;
+    updateContribution(id: string, changes: Partial<Pick<SavingsContribution, 'amount' | 'amountMinor' | 'currencyCode' | 'date' | 'notes'>>): Promise<void>;
+    deleteContribution(id: string): Promise<void>;
+    getContributions(goalId?: string): Promise<SavingsContribution[]>;
   };
   habits: {
     getAll(): Promise<Habit[]>;
@@ -383,6 +408,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'occurredAt', 'transactions', i);
     optionalInstant(r, 'updatedAt', 'transactions', i);
     optionalBoolean(r, 'isRecurring', 'transactions', i);
+    try { validateMoneyMetadata(r); } catch { fail('transactions', i, 'currency/amountMinor'); }
   });
 
   check('categories', (r, i) => {
@@ -396,6 +422,7 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredNumber(r, 'monthlyAmount', 'budgets', i);
     if (!month(r.monthYear)) fail('budgets', i, 'monthYear');
     requiredString(r, 'createdAt', 'budgets', i);
+    try { validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.amountMinor, amount: r.monthlyAmount }); } catch { fail('budgets', i, 'currency/amountMinor'); }
     optionalString(r, 'categoryId', 'budgets', i);
     if (r.categoryId && !ids.categories.has(r.categoryId)) fail('budgets', i, 'categoryId reference');
   });
@@ -406,6 +433,10 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredNumber(r, 'currentAmount', 'savingsGoals', i);
     requiredDate(r, 'targetDate', 'savingsGoals', i);
     requiredString(r, 'createdAt', 'savingsGoals', i);
+    try {
+      validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.targetAmountMinor, amount: r.targetAmount });
+      validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.currentAmountMinor, amount: r.currentAmount });
+    } catch { fail('savingsGoals', i, 'currency/amountMinor'); }
     optionalString(r, 'category', 'savingsGoals', i);
     optionalString(r, 'notes', 'savingsGoals', i);
   });
@@ -416,6 +447,7 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredNumber(r, 'amount', 'savingsContributions', i);
     requiredDate(r, 'date', 'savingsContributions', i);
     requiredString(r, 'createdAt', 'savingsContributions', i);
+    try { validateMoneyMetadata(r); } catch { fail('savingsContributions', i, 'currency/amountMinor'); }
     optionalString(r, 'notes', 'savingsContributions', i);
   });
 
@@ -662,14 +694,21 @@ const rawStorageService: IDataStorage = {
       return db.budgets.filter(b => b.monthYear === month).toArray();
     },
     async upsert(budget) {
+    validateMoneyMetadata({ ...budget, amount: budget.monthlyAmount });
       return db.transaction('rw', db.budgets, async () => {
         const existing = await db.budgets
           .filter(b => b.monthYear === budget.monthYear && b.categoryId === budget.categoryId)
           .first();
 
         if (existing) {
-          await db.budgets.update(existing.id, { monthlyAmount: budget.monthlyAmount });
-          return { ...existing, monthlyAmount: budget.monthlyAmount };
+          if (existing.currencyCode && budget.currencyCode && existing.currencyCode !== budget.currencyCode) {
+            throw new Error('A budget cannot change currency without explicit reconciliation.');
+          }
+          const updates = { monthlyAmount: budget.monthlyAmount,
+            ...(budget.amountMinor !== undefined ? { amountMinor: budget.amountMinor } : {}),
+            ...(budget.currencyCode !== undefined ? { currencyCode: budget.currencyCode } : {}) };
+          await db.budgets.update(existing.id, updates);
+          return { ...existing, ...updates };
         }
 
         const record: Budget = {
@@ -690,6 +729,8 @@ const rawStorageService: IDataStorage = {
       return db.savingsGoals.toArray();
     },
     async addGoal(goal) {
+      validateMoneyMetadata({ currencyCode: goal.currencyCode, amountMinor: goal.targetAmountMinor, amount: goal.targetAmount });
+      validateMoneyMetadata({ currencyCode: goal.currencyCode, amountMinor: goal.currentAmountMinor, amount: goal.currentAmount });
       const id = createRecordId('sg');
       const record: SavingsGoal = { ...goal, id, createdAt: new Date().toISOString() };
       await db.savingsGoals.add(record);
@@ -720,9 +761,25 @@ const rawStorageService: IDataStorage = {
           const goal = await db.savingsGoals.get(contribution.goalId);
           if (!goal) throw new Error('Savings goal not found');
 
+          const currencyCode = contribution.currencyCode || goal.currencyCode;
+          if (goal.currencyCode && contribution.currencyCode && goal.currencyCode !== contribution.currencyCode) {
+            throw new Error('Contribution currency must match its savings goal currency.');
+          }
+          validateMoneyMetadata({ currencyCode, amountMinor: contribution.amountMinor, amount: contribution.amount });
+          const exactContributionMinor = currencyCode
+            ? (contribution.amountMinor ? BigInt(contribution.amountMinor) : decimalToMinorUnits(contribution.amount, currencyCode))
+            : null;
+          const currentMinor = exactContributionMinor === null ? null :
+            (goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode!));
+
           const id = createRecordId('sc');
-          await db.savingsGoals.update(goal.id, {
+          const nextMinor = currentMinor === null || exactContributionMinor === null ? null : currentMinor + exactContributionMinor;
+          await db.savingsGoals.update(goal.id, nextMinor === null ? {
             currentAmount: (goal.currentAmount || 0) + contribution.amount
+          } : {
+            currentAmount: Number(minorUnitsToDecimal(nextMinor, currencyCode!)),
+            currentAmountMinor: nextMinor.toString(10),
+            currencyCode
           });
           await db.savingsContributions.add({
             ...contribution, id, createdAt: new Date().toISOString()
@@ -730,8 +787,64 @@ const rawStorageService: IDataStorage = {
         }
       );
     },
+    async updateContribution(id, changes) {
+      validateMoneyMetadata(changes);
+      if (changes.amount !== undefined && (!Number.isFinite(changes.amount) || changes.amount <= 0)) throw new Error('Contribution amount must be greater than zero.');
+      if (changes.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(changes.date)) throw new Error('Contribution date must use YYYY-MM-DD format.');
+      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
+        const existing = await db.savingsContributions.get(id);
+        if (!existing) return;
+        const goal = await db.savingsGoals.get(existing.goalId);
+        if (!goal) throw new Error('Savings goal missing for contribution.');
+        const currencyCode = changes.currencyCode || existing.currencyCode || goal.currencyCode;
+        if (goal.currencyCode && currencyCode && goal.currencyCode !== currencyCode) throw new Error('Contribution currency must match its savings goal currency.');
+        if (changes.currencyCode && existing.currencyCode && changes.currencyCode !== existing.currencyCode) throw new Error('Changing contribution currency requires an explicit conversion.');
+        let nextGoal: Partial<SavingsGoal>;
+        if (currencyCode) {
+          const oldMinor = existing.amountMinor ? BigInt(existing.amountMinor) : decimalToMinorUnits(existing.amount, currencyCode);
+          const newAmount = changes.amount ?? existing.amount;
+          const newMinor = changes.amountMinor ? BigInt(changes.amountMinor) : decimalToMinorUnits(newAmount, currencyCode);
+          const currentMinor = goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode);
+          const nextMinor = currentMinor - oldMinor + newMinor;
+          if (nextMinor < 0n) throw new Error('Contribution history does not reconcile with the saved goal amount.');
+          nextGoal = { currentAmountMinor: nextMinor.toString(10), currentAmount: Number(minorUnitsToDecimal(nextMinor, currencyCode)), currencyCode };
+          changes = { ...changes, amount: Number(minorUnitsToDecimal(newMinor, currencyCode)), amountMinor: newMinor.toString(10), currencyCode };
+        } else {
+          const newAmount = changes.amount ?? existing.amount;
+          const next = goal.currentAmount - existing.amount + newAmount;
+          if (!Number.isFinite(newAmount) || newAmount <= 0 || next < -1e-9) throw new Error('Contribution edit would make the savings total invalid.');
+          nextGoal = { currentAmount: Math.max(0, next) };
+        }
+        const safe = { ...changes };
+        delete (safe as any).id; delete (safe as any).goalId; delete (safe as any).createdAt;
+        await db.savingsGoals.update(goal.id, nextGoal);
+        await db.savingsContributions.update(id, safe);
+      });
+    },
+    async deleteContribution(id) {
+      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
+        const contribution = await db.savingsContributions.get(id);
+        if (!contribution) return;
+        const goal = await db.savingsGoals.get(contribution.goalId);
+        if (!goal) throw new Error('Savings goal missing for contribution.');
+        const currencyCode = contribution.currencyCode || goal.currencyCode;
+        if (currencyCode) {
+          const amountMinor = contribution.amountMinor ? BigInt(contribution.amountMinor) : decimalToMinorUnits(contribution.amount, currencyCode);
+          const currentMinor = goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode);
+          const nextMinor = currentMinor - amountMinor;
+          if (nextMinor < 0n) throw new Error('Contribution history does not reconcile with the saved goal amount.');
+          await db.savingsGoals.update(goal.id, { currentAmountMinor: nextMinor.toString(10), currentAmount: Number(minorUnitsToDecimal(nextMinor, currencyCode)) });
+        } else {
+          const next = goal.currentAmount - contribution.amount;
+          if (next < -1e-9) throw new Error('Contribution history does not reconcile with the saved goal amount.');
+          await db.savingsGoals.update(goal.id, { currentAmount: Math.max(0, next) });
+        }
+        await db.savingsContributions.delete(id);
+      });
+    },
     async getContributions(goalId) {
-      return db.savingsContributions.where('goalId').equals(goalId).reverse().sortBy('date');
+      const rows = goalId ? await db.savingsContributions.where('goalId').equals(goalId).toArray() : await db.savingsContributions.toArray();
+      return rows.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
     }
   },
   habits: {

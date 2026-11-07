@@ -446,6 +446,8 @@ async function runTestSuite() {
   assert(invalidConversionRejected && userPreferenceUtils.formatDatePreference(new Date(2026, 0, 2), 'YMD') === '2026-01-02', 'Incompatible units fail safely and date display preference formats consistently');
   const transactionUpdate = userPreferenceUtils.buildTransactionUpdate({ type: 'expense', amount: 18.25, category: 'Food', description: 'Lunch', dateTime: '2026-10-31T12:15', paymentMethod: 'UPI', notes: 'Workday', isRecurring: false });
   assert(transactionUpdate.amount === 18.25 && transactionUpdate.date === '2026-10-31' && transactionUpdate.notes === 'Workday' && !('id' in transactionUpdate) && !('createdAt' in transactionUpdate), 'Transaction edit fields exclude identity and creation timestamp so updates preserve them');
+  const exactTransaction = userPreferenceUtils.buildTransactionUpdate({ type: 'expense', amount: '1.005', currencyCode: 'USD', category: 'Food', description: 'Coffee', dateTime: '2026-10-31T12:15', paymentMethod: 'Cash' });
+  assert(exactTransaction.amount === 1.01 && exactTransaction.amountMinor === '101' && exactTransaction.currencyCode === 'USD', 'New transactions persist exact minor units and their explicit currency');
   const analyticsRows = buildFinanceAnalytics([
     { date: '2026-09-03', amount: 120, type: 'expense', category: 'Rent' },
     { date: '2026-10-01', amount: 1000, type: 'income', category: 'Salary' },

@@ -31,6 +31,14 @@ async function main() {
   const loaded = new Module(path.join(__dirname, 'src/db.recurrence-edges.cjs'), module);
   loaded.filename = path.join(__dirname, 'src/db.recurrence-edges.cjs');
   loaded.paths = module.paths;
+  const financeSource = fs.readFileSync(path.join(__dirname, 'src/services/financeCore.ts'), 'utf8');
+  const financeCompiled = ts.transpileModule(financeSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.recurrence-edges.cjs'), module);
+  financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.recurrence-edges.cjs');
+  financeLoaded.paths = module.paths;
+  financeLoaded._compile(financeCompiled, financeLoaded.filename);
   const sessionSource = fs.readFileSync(
     path.join(__dirname, 'src/services/sessionManager.ts'),
     'utf8'
@@ -54,6 +62,7 @@ async function main() {
 
   const originalModuleLoad = Module._load;
   Module._load = function (request, parent, isMain) {
+    if (request === './services/financeCore' && parent && parent.filename === loaded.filename) return financeLoaded.exports;
     if (
       request === './services/sessionManager' &&
       parent &&

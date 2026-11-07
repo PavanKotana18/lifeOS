@@ -17,6 +17,14 @@ const compiled = ts.transpileModule(source, {
 const loaded = new Module(path.join(__dirname, 'src/db.validation.test.cjs'), module);
 loaded.filename = path.join(__dirname, 'src/db.validation.test.cjs');
 loaded.paths = module.paths;
+const financeSource = fs.readFileSync(path.join(__dirname, 'src/services/financeCore.ts'), 'utf8');
+const financeCompiled = ts.transpileModule(financeSource, { compilerOptions: {
+  module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+} }).outputText;
+const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.test.cjs'), module);
+financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.test.cjs');
+financeLoaded.paths = module.paths;
+financeLoaded._compile(financeCompiled, financeLoaded.filename);
 
 const sessionSource = fs.readFileSync(
   path.join(__dirname, 'src/services/sessionManager.ts'),
@@ -42,6 +50,7 @@ sessionLoaded._compile(sessionCompiled, sessionLoaded.filename);
 const originalModuleLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (parent && parent.filename === loaded.filename) {
+    if (request === './services/financeCore') return financeLoaded.exports;
     if (request === './services/sessionManager') {
       return sessionLoaded.exports;
     }
@@ -177,6 +186,32 @@ test('Rejects invalid transaction amount', () => {
   rejects(d, /transactions.*amount/);
 });
 
+test('Accepts explicit currency and exact minor units while preserving legacy rows', () => {
+  const d = sample();
+  d.transactions[0].currencyCode = 'INR';
+  d.transactions[0].amountMinor = '10000';
+  assert.strictEqual(validate(d).length, 11);
+  const legacy = sample();
+  assert.strictEqual(validate(legacy).length, 11);
+});
+
+test('Rejects exact amounts without a currency or with invalid minor-unit values', () => {
+  const missing = sample(); missing.transactions[0].amountMinor = '100';
+  rejects(missing, /transactions.*currency\/amountMinor/);
+  const malformed = sample(); malformed.transactions[0].currencyCode = 'INR'; malformed.transactions[0].amountMinor = '1.00';
+  rejects(malformed, /transactions.*currency\/amountMinor/);
+});
+
+test('Rejects unsupported or non-canonical transaction currency codes', () => {
+  const d = sample(); d.transactions[0].currencyCode = 'xyz'; d.transactions[0].amountMinor = '100';
+  rejects(d, /transactions.*currency\/amountMinor/);
+});
+
+test('Rejects mismatched major and minor amount representations', () => {
+  const d = sample(); d.transactions[0].currencyCode = 'USD'; d.transactions[0].amountMinor = '999';
+  rejects(d, /transactions.*currency\/amountMinor/);
+});
+
 test('Rejects impossible calendar dates', () => {
   const d = sample(); d.transactions[0].date = '2026-02-30';
   rejects(d, /transactions.*date/);
@@ -272,4 +307,4 @@ test('Accepts demo-style Food budget with the seeded cat_food reference', () => 
   assert.strictEqual(validate(d).length, 11);
 });
 
-console.log(`\nBackup validation tests: ${passed}/19 passed`);
+console.log(`\nBackup validation tests: ${passed}/23 passed`);

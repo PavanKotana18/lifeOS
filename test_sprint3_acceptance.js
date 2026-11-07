@@ -26,10 +26,10 @@ async function fixture(run){const f=await h.fixture();try{await run(f);}finally{
  await test('Actual write failure preserves form, and a later explicit retry commits once',()=>fixture(async f=>{
   f.sessionManager.unlock();const expression=h.appFunction('saveNewRecord');const operation={current:false};const closed=[];const messages=[];
   const fail=()=>{throw Error('SIMULATED_WRITE_FAILURE');};f.lifeOSDatabase.habits.hook('creating',fail);
-  const save=h.bind(expression,{...f.appDeps(),...h.noopSetters(expression),createOperation:operation,createKind:'habit',createDraft:{title:'Synthetic retry',frequency:'daily'},editingHabitId:null,editingTaskId:null,editingTransactionId:null,editingGoalId:null,habits:[],setCreateKind:v=>closed.push(v),showToast:(...a)=>messages.push(a),async reloadAllData(){return {tasks:[],habits:[],goals:[],milestones:[]};}});
+  const save=h.bind(expression,{...f.appDeps(),...h.noopSetters(expression),createOperation:operation,createKind:'habit',createDraft:{title:'Synthetic retry',frequency:'daily'},editingHabitId:null,editingTaskId:null,editingTransactionId:null,editingGoalId:null,editingContributionId:null,habits:[],setCreateKind:v=>closed.push(v),showToast:(...a)=>messages.push(a),async reloadAllData(){return {tasks:[],habits:[],goals:[],milestones:[]};}});
   await save({preventDefault(){}});assert.equal(await f.lifeOSDatabase.habits.count(),0);assert.deepEqual(closed,[]);assert.equal(operation.current,false);assert.match(messages.at(-1)[0],/SIMULATED_WRITE_FAILURE/);
   f.lifeOSDatabase.habits.hook('creating').unsubscribe(fail);await save({preventDefault(){}});
-  assert.equal(await f.lifeOSDatabase.habits.count(),1);assert.deepEqual(closed,[null]);assert.equal(operation.current,false);assert.equal(messages.at(-1)[1],'success');
+  assert.equal(await f.lifeOSDatabase.habits.count(),1);assert.deepEqual(closed,[null]);assert.equal(operation.current,false);assert.equal(messages.at(-1)[1],'success',messages.at(-1)[0]);
  }));
  console.log(`SPRINT3 ACCEPTANCE: ${passed}/4 passed (no device execution)`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

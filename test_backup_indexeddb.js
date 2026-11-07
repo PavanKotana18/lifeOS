@@ -20,6 +20,14 @@ async function main() {
   const loaded = new Module(path.join(__dirname, 'src/db.integration.cjs'), module);
   loaded.filename = path.join(__dirname, 'src/db.integration.cjs');
   loaded.paths = module.paths;
+  const financeSource = fs.readFileSync(path.join(__dirname, 'src/services/financeCore.ts'), 'utf8');
+  const financeCompiled = ts.transpileModule(financeSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.integration.cjs'), module);
+  financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.integration.cjs');
+  financeLoaded.paths = module.paths;
+  financeLoaded._compile(financeCompiled, financeLoaded.filename);
   const sessionSource = fs.readFileSync(
     path.join(__dirname, 'src/services/sessionManager.ts'),
     'utf8'
@@ -54,6 +62,7 @@ async function main() {
     parent.filename &&
     parent.filename.endsWith('/src/db.integration.cjs')
   ) {
+    if (request === './services/financeCore') return financeLoaded.exports;
     if (request === './services/encryptedStorageIntegration') {
       return { BOOTSTRAP_SETTING_KEYS: new Set([
         'theme', 'visualTheme', 'biometricLockEnabled',

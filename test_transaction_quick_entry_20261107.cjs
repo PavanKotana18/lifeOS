@@ -8,7 +8,7 @@ assert.ok(transactionFormStart >= 0 && transactionFormEnd > transactionFormStart
 const transactionForm = app.slice(transactionFormStart, transactionFormEnd);
 assert.match(app, /createKind === 'transaction' \? 'Merchant or description \(optional\)'/);
 assert.match(app, /required=\{createKind !== 'transaction'\}/, 'transaction description is optional while other record titles remain required');
-assert.match(transactionForm, /autoFocus=\{!editingTransactionId\} required type="number" min="0\.01" step="0\.01" inputMode="decimal"/, 'new quick entry focuses a decimal amount field');
+assert.match(transactionForm, /autoFocus=\{!editingTransactionId\} required type="number" min=\{10 \*\* -getCurrencyMetadata\(userPrefs\.currency\)\.fractionDigits\} step=\{10 \*\* -getCurrencyMetadata\(userPrefs\.currency\)\.fractionDigits\} inputMode="decimal"/, 'new quick entry focuses an amount field with the selected currency minor unit');
 assert.match(transactionForm, /aria-expanded=\{transactionDetailsOpen\} aria-controls="transaction-optional-details"/);
 assert.match(transactionForm, /transactionDetailsOpen && <div id="transaction-optional-details"/, 'optional fields are collapsed for quick entry and expanded for edits');
 assert.match(transactionForm, /Transaction date and time[\s\S]*?type="datetime-local"/, 'optional transaction timestamp can still be edited');

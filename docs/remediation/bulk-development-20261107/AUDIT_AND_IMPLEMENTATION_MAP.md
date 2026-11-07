@@ -13,7 +13,7 @@ React screens (src/App.tsx + src/components/*)
   → Capacitor plugins and Android native receivers where required
 ```
 
-Finance screens (`MoneyHome`, `FinanceProjection`, `FinanceCharts`, savings views) are already separate components. `financeCore.ts` provides integer minor-unit arithmetic, a versioned offline currency catalog, manual FX inputs and projection math. These are useful foundations; the persisted ledger still uses `number` amounts and has no explicit per-record currency or account identity. Transactions currently support only income and expense. No transfer/account repository exists.
+Finance screens (`MoneyHome`, `FinanceProjection`, `FinanceCharts`, savings views) are separate components. `financeCore.ts` provides integer minor-unit arithmetic, a versioned offline currency catalog, manual FX conversion helpers and projection math. New financial entries now also retain optional exact minor-unit strings and explicit currency codes. Older entries remain untouched and continue to use the reporting-currency context protected by the existing preference lock. Transactions still support only income and expense; no transfer/account repository exists.
 
 ## Verified risks and gaps
 
@@ -21,7 +21,7 @@ Finance screens (`MoneyHome`, `FinanceProjection`, `FinanceCharts`, savings view
 |---|---|---|
 | Profile/settings | `src/App.tsx` is 2,421 lines; Profile, Appearance, notification controls and security actions are rendered in the monolithic settings branch. | Extract focused profile screens while preserving existing callbacks and encrypted settings paths. |
 | Navigation | `navigationCatalog.ts` maps the four primary destinations to existing tabs; `tabHistory.ts` owns back history. No horizontal swipe gesture currently exists. | Add one guarded gesture controller that calls the existing navigation function; do not create another route state machine. |
-| Financial schema | Dexie declares only schema version 1. `Transaction` has a floating-point `amount`, type income/expense, and no currency/account field. | Do not infer currencies for old records. Defer schema expansion until encrypted codecs, migration and backup contracts can be upgraded and tested together. |
+| Financial schema | Dexie remains schema version 1. Financial types now accept optional `amountMinor` and `currencyCode` metadata; raw/encrypted storage and backup validation check paired fields and exact/major consistency. No account or transfer fields/table exist. | Additive fields are safe without a table migration and old backups remain valid. Do not infer currencies for old records. Accounts/transfers still need coordinated schema, encrypted-admission and backup changes. |
 | Encrypted storage | `encryptedStorageIntegration.ts` allow-lists encrypted tables and migrates rows with verify-before-replace. Backup validation enumerates known tables. | Any new table needs coordinated changes across Dexie, the encrypted facade, migration, backup validation/import/export and tests. |
 | Notification engine | `notificationService.ts` delegates scheduling to Capacitor Local Notifications; Android manifest uses the plugin’s broadcast receivers. | Retain this working path. A second Kotlin scheduler would risk duplicate schedules and needs proof before implementation. |
 | Dependencies | React/TypeScript, Dexie 4, Capacitor 6, Recharts and Lucide are already installed. No additional UI/gesture library is required for the requested work. | Avoid dependency changes; use existing components and native pointer/touch events. |
@@ -32,7 +32,7 @@ Finance screens (`MoneyHome`, `FinanceProjection`, `FinanceCharts`, savings view
 1. Extract and redesign Profile/Settings with existing persisted preferences and a focused screen model.
 2. Add an opt-out horizontal swipe controller integrated with the existing four-tab navigation, plus deterministic gesture tests.
 3. Improve Money using existing calculations and storage contracts that do not reinterpret old records (transaction filters/summaries, budgets, savings and projection clarity).
-4. Only add persisted accounts, transfer records or explicit currency fields after a versioned encrypted-schema and backup migration plan passes disposable-fixture tests. Old amounts cannot be assigned a guessed currency.
+4. Add account/transfer persistence only with a versioned encrypted-schema and backup migration plan and disposable-fixture tests. Old amounts cannot be assigned a guessed currency.
 5. Keep the Capacitor notification engine unless native tests establish a specific defect it can safely correct.
 
 This report records repository evidence and a safe implementation map; it is not a claim that the listed gaps have been fixed.
@@ -60,3 +60,11 @@ The current production path already uses Capacitor Local Notifications, whose An
 `ProfilePreferences.tsx` now owns the display/unit/currency/navigation controls as a reusable presentation component; `App.tsx` supplies the existing encrypted settings write callback and record-aware currency lock.
 
 Currency-picker labels are memoized per selected locale, so search filters reuse labels instead of repeatedly constructing currency-format data on each keystroke.
+
+## Finance continuation checkpoint — 2026-11-08
+
+- New transactions, budgets, savings goals and contributions carry explicit currency identity and exact integer minor-unit strings. Major-unit numeric fields remain for compatibility with existing UI, backups and consumers; the write boundary checks they round-trip to the same minor units.
+- Existing records without currency metadata are not rewritten or guessed. The global reporting currency remains protected from changes while financial records exist. Explicitly tagged records in another currency are omitted from reporting-currency totals with an explanation; no rate is fabricated.
+- Savings contribution history is visible per goal and supports edit/delete. Both raw IndexedDB and encrypted storage update the goal total and contribution in one atomic mutation. Mismatched currencies and unreconciled negative totals are rejected.
+- No Dexie version change or new encrypted table was introduced. Old backup rows remain accepted; optional currency/exact amount metadata is validated when present.
+- Limits: accounts/opening balances/transfers, persisted manual FX rates, planned commitments, and dedicated Accounts pages are not implemented. These need a coordinated financial model and versioned encrypted backup contract; this checkpoint does not claim those features.

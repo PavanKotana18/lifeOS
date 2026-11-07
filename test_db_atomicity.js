@@ -19,6 +19,14 @@ async function main() {
   const loaded = new Module(path.join(__dirname, 'src/db.atomicity.cjs'), module);
   loaded.filename = path.join(__dirname, 'src/db.atomicity.cjs');
   loaded.paths = module.paths;
+  const financeSource = fs.readFileSync(path.join(__dirname, 'src/services/financeCore.ts'), 'utf8');
+  const financeCompiled = ts.transpileModule(financeSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.atomicity.cjs'), module);
+  financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.atomicity.cjs');
+  financeLoaded.paths = module.paths;
+  financeLoaded._compile(financeCompiled, financeLoaded.filename);
   const sessionSource = fs.readFileSync(
     path.join(__dirname, 'src/services/sessionManager.ts'),
     'utf8'
@@ -53,6 +61,7 @@ async function main() {
     parent.filename &&
     parent.filename.endsWith('/src/db.atomicity.cjs')
   ) {
+    if (request === './services/financeCore') return financeLoaded.exports;
     if (request === './services/encryptedStorageIntegration') {
       return { BOOTSTRAP_SETTING_KEYS: new Set([
         'theme', 'visualTheme', 'biometricLockEnabled',
@@ -654,6 +663,30 @@ async function main() {
       !(await db.transactions.get(historicalTransaction.id)),
       'Category can be deleted after its budget and transaction references are removed'
     );
+
+    await db.savingsGoals.add({
+      id: 'sg-exact', title: 'Exact savings', targetAmount: 10, targetAmountMinor: '1000',
+      currentAmount: 0.1, currentAmountMinor: '10', currencyCode: 'USD',
+      targetDate: '2027-01-01', createdAt: stamp,
+    });
+    await StorageService.savings.addContribution({
+      goalId: 'sg-exact', amount: 0.2, amountMinor: '20', currencyCode: 'USD', date: '2026-11-01',
+    });
+    await assert.rejects(StorageService.savings.addContribution({
+      goalId: 'sg-exact', amount: 0.01, amountMinor: '1', currencyCode: 'EUR', date: '2026-11-01',
+    }), /currency/i);
+    check(
+      (await db.savingsGoals.get('sg-exact')).currentAmountMinor === '30' &&
+      await db.savingsContributions.where('goalId').equals('sg-exact').count() === 1,
+      'Exact savings contributions reconcile minor units and reject mixed currencies atomically'
+    );
+    const exactContribution = await db.savingsContributions.where('goalId').equals('sg-exact').first();
+    await StorageService.savings.updateContribution(exactContribution.id, { amount: 0.3, amountMinor: '30', currencyCode: 'USD' });
+    check((await db.savingsGoals.get('sg-exact')).currentAmountMinor === '40',
+      'Editing a contribution atomically applies the exact minor-unit difference to its goal');
+    await StorageService.savings.deleteContribution(exactContribution.id);
+    check((await db.savingsGoals.get('sg-exact')).currentAmountMinor === '10' && await db.savingsContributions.where('goalId').equals('sg-exact').count() === 0,
+      'Deleting a contribution atomically reconciles goal progress without changing transactions');
 
     console.log(`\nDATABASE ATOMICITY TESTS: ${passed} legacy-internal assertions PASSED`);
   } finally {

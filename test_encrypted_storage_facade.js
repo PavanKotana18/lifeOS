@@ -282,6 +282,31 @@ async function rejects(fn, pattern) {
     assert.equal((await storage.savings.getContributions(goal.id)).length, 0);
   });
 
+  await test('exact savings contributions reconcile with their explicit goal currency', async () => {
+    const goal = await storage.savings.addGoal({
+      title: 'Precise reserve', targetAmount: 2, currentAmount: 0.1,
+      targetAmountMinor: '200', currentAmountMinor: '10', currencyCode: 'USD',
+      targetDate: '2027-01-01',
+    });
+    await storage.savings.addContribution({
+      goalId: goal.id, amount: 0.2, amountMinor: '20', currencyCode: 'USD', date: '2026-11-04',
+    });
+    const saved = (await storage.savings.getGoals()).find(row => row.id === goal.id);
+    assert.equal(saved.currentAmountMinor, '30');
+    assert.equal(saved.currentAmount, 0.3);
+    await rejects(() => storage.savings.addContribution({
+      goalId: goal.id, amount: 0.01, amountMinor: '1', currencyCode: 'EUR', date: '2026-11-05',
+    }), /currency/i);
+    assert.equal((await storage.savings.getContributions(goal.id)).length, 1,
+      'A cross-currency contribution is rejected without a conversion contract');
+    const contribution = (await storage.savings.getContributions(goal.id))[0];
+    await storage.savings.updateContribution(contribution.id, { amount: 0.3, amountMinor: '30', currencyCode: 'USD' });
+    assert.equal((await storage.savings.getGoals()).find(row => row.id === goal.id).currentAmountMinor, '40');
+    await storage.savings.deleteContribution(contribution.id);
+    assert.equal((await storage.savings.getGoals()).find(row => row.id === goal.id).currentAmountMinor, '10');
+    assert.equal((await storage.savings.getContributions(goal.id)).length, 0);
+  });
+
   await test('invalid calendar date rejects without RangeError', async () => {
     const habit = await storage.habits.add({
       name: 'Test habit',

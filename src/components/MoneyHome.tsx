@@ -10,8 +10,9 @@ type Props = {
   largestCategory: { name: string; amount: number } | null;
   expenseChange: number | null;
   hasPreviousMonthRecords: boolean;
+  excludedCurrencyCount?: number;
   transactions: Transaction[];
-  formatMoney: (amount: number) => string;
+  formatMoney: (amount: number, currencyCode?: string) => string;
   formatDate: (date: string) => string;
   formatTime: (date: Date) => string;
   onMonthChange: (month: string) => void;
@@ -34,7 +35,7 @@ const moneyDestinations = [
   { id: 'planning', label: 'Planning', note: 'Explore transparent scenarios', icon: CalendarClock },
 ] as const;
 
-export default function MoneyHome({ month, income, expenses, netCashFlow, budgetRows, largestCategory, expenseChange, hasPreviousMonthRecords, transactions, formatMoney, formatDate, formatTime, onMonthChange,
+export default function MoneyHome({ month, income, expenses, netCashFlow, budgetRows, largestCategory, expenseChange, hasPreviousMonthRecords, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
   onAddExpense, onAddIncome, onMoveToSavings, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onEditTransaction }: Props) {
   const destinationActions = { transactions: onTransactions, budgets: onBudgets, savings: onSavings, analytics: onAnalytics, planning: onPlanning };
   const monthDate = /^\d{4}-\d{2}$/.test(month) ? new Date(`${month}-01T12:00:00`) : new Date();
@@ -55,6 +56,7 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
         <div><span>Expenses</span><strong>{formatMoney(expenses)}</strong></div>
       </div>
       {!transactions.length && <p className="money-empty-note">Nothing recorded for this month yet. Your totals will appear here after you add an entry.</p>}
+      {excludedCurrencyCount > 0 && <p className="money-empty-note" role="status">{excludedCurrencyCount} financial item{excludedCurrencyCount === 1 ? '' : 's'} in another currency are left out of these totals. Comparing them requires a dated exchange rate.</p>}
     </section>
 
     <section aria-label="Quick money actions" className="money-quick-actions">
@@ -75,7 +77,7 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
         <button type="button" onClick={() => onEditTransaction(transaction)} className="money-transaction-row">
           <span className={`money-transaction-sign ${transaction.type === 'income' ? 'is-income' : 'is-expense'}`} aria-hidden="true">{transaction.type === 'income' ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}</span>
           <span className="money-transaction-copy"><strong>{transaction.description || transaction.category || (transaction.type === 'income' ? 'Income' : 'Expense')}</strong><small>{formatDate(transaction.date)}{transaction.occurredAt ? ` · ${formatTime(new Date(transaction.occurredAt))}` : ''} · {transaction.category}</small></span>
-          <span className={`money-transaction-amount ${transaction.type === 'income' ? 'is-income' : 'is-expense'}`}>{transaction.type === 'income' ? '+' : '−'}{formatMoney(transaction.amount)}</span>
+          <span className={`money-transaction-amount ${transaction.type === 'income' ? 'is-income' : 'is-expense'}`}>{transaction.type === 'income' ? '+' : '−'}{formatMoney(transaction.amount, transaction.currencyCode)}</span>
         </button>
       </li>)}</ul>}
     </section>

@@ -91,6 +91,21 @@ export function minorUnitsToDecimal(minorUnits: bigint, currencyCode: string): s
   return `${negative ? '-' : ''}${whole}.${fraction}`;
 }
 
+/** Normalize one persisted amount while retaining a legacy-friendly major-unit number. */
+export function createMoneyRecordAmount(value: string | number, currencyCode: string, allowZero = false): {
+  amount: number;
+  amountMinor: string;
+  currencyCode: string;
+} {
+  const minor = decimalToMinorUnits(value, currencyCode);
+  if (minor < 0n || (minor === 0n && !allowZero)) throw new RangeError('Amount must be greater than zero.');
+  const amount = Number(minorUnitsToDecimal(minor, currencyCode));
+  if (!Number.isFinite(amount) || decimalToMinorUnits(amount, currencyCode) !== minor) {
+    throw new RangeError('Amount is too large to store safely at this currency precision.');
+  }
+  return { amount, amountMinor: minor.toString(10), currencyCode: getCurrencyMetadata(currencyCode).code };
+}
+
 export function serializeMinorUnits(minorUnits: bigint): string {
   return minorUnits.toString(10);
 }

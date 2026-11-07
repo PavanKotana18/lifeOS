@@ -4,6 +4,10 @@ export interface Transaction {
   id: string;
   type: TransactionType;
   amount: number;
+  /** Exact minor-unit amount for new records; absent on untouched legacy rows. */
+  amountMinor?: string;
+  /** ISO 4217 identity for new records; absent means legacy currency context. */
+  currencyCode?: string;
   category: string;
   description: string;
   date: string; // YYYY-MM-DD
@@ -28,6 +32,8 @@ export interface Budget {
   id: string;
   categoryId?: string; // Optional: category-specific or overall monthly budget
   monthlyAmount: number;
+  amountMinor?: string;
+  currencyCode?: string;
   monthYear: string; // YYYY-MM
   createdAt: string;
 }
@@ -37,6 +43,9 @@ export interface SavingsGoal {
   title: string;
   targetAmount: number;
   currentAmount: number;
+  targetAmountMinor?: string;
+  currentAmountMinor?: string;
+  currencyCode?: string;
   targetDate: string; // YYYY-MM-DD
   category?: string;
   notes?: string;
@@ -47,6 +56,8 @@ export interface SavingsContribution {
   id: string;
   goalId: string;
   amount: number;
+  amountMinor?: string;
+  currencyCode?: string;
   date: string;
   notes?: string;
   createdAt: string;
