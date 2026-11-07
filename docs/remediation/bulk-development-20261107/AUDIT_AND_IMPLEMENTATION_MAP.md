@@ -56,3 +56,5 @@ The current production path already uses Capacitor Local Notifications, whose An
 - `npm run build` passed; Vite retained its existing advisory that the main JavaScript chunk exceeds 500 kB.
 - `git diff --check` passed.
 - Local Android build/device execution is unavailable in this Termux worktree: no Android SDK variables or connected ADB device, and no checked-in Gradle wrapper. Hosted CI is the Android compilation path.
+
+`ProfilePreferences.tsx` now owns the display/unit/currency/navigation controls as a reusable presentation component; `App.tsx` supplies the existing encrypted settings write callback and record-aware currency lock.

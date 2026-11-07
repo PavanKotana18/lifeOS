@@ -5,6 +5,7 @@ require('./scripts/register-ts-test-loader.cjs');
 const { mergeUserPreferences, DEFAULT_USER_PREFERENCES } = require('./src/services/userPreferences.ts');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const profile = fs.readFileSync('src/components/ProfileSettings.tsx', 'utf8');
+const preferences = fs.readFileSync('src/components/ProfilePreferences.tsx', 'utf8');
 const settings = app.slice(app.indexOf('        {/* VIEW 6: SETTINGS */}'), app.indexOf('      {createKind && ('));
 for (const section of ['appearance', 'preferences', 'notifications', 'privacy', 'data', 'about']) {
   assert.ok(profile.includes(`section: '${section}'`), `Profile links to ${section}`);
@@ -13,10 +14,10 @@ for (const section of ['appearance', 'preferences', 'notifications', 'privacy', 
 assert.match(profile, /Your information stays on this device/);
 assert.match(profile, /aria-label="Profile settings"/);
 assert.match(settings, /onBack=\{\(\) => setProfileSection\('home'\)\}/);
-assert.match(settings, /onClick=\{\(\) => void saveUserPreference\('swipeNavigationEnabled', !userPrefs\.swipeNavigationEnabled\)\}/);
+assert.match(preferences, /onClick=\{\(\) => onChange\('swipeNavigationEnabled', !preferences\.swipeNavigationEnabled\)\}/);
 assert.match(settings, /Export encrypted backup/);
-assert.match(settings, /Currency for financial records/);
-assert.match(settings, /disabled=\{transactions\.length > 0 \|\| budgets\.length > 0 \|\| savingsGoals\.length > 0\}/);
+assert.match(preferences, /Currency for financial records/);
+assert.match(preferences, /disabled=\{hasFinancialRecords\}/);
 assert.match(settings, /Clear All Application Data/);
 const fresh = mergeUserPreferences({}, 'INR');
 assert.equal(fresh.swipeNavigationEnabled, true);

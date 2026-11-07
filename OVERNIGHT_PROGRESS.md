@@ -329,3 +329,9 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Tests:** The full `npm test` chain completed through its final Android-runner contract tests without a failure; `npm run test:sentinel` passed 6/6 suites; focused Profile, settings, navigation, finance core and finance analytics suites passed; TypeScript and production build passed; `git diff --check` passed.
 - **Android limitation:** `java` and `adb` exist, but there is no configured Android SDK, no connected device, and this checkout has no Gradle wrapper. No APK or native device result is claimed. Vite emits the existing >500 kB main-chunk warning.
 - **Next:** Review staged files and baseline statuses, commit the feature branch checkpoint, push it, and request GitHub-hosted build validation. Do not alter PR #24 or the original checkout.
+
+## Checkpoint E — Preferences component extraction
+- **Change:** Moved locale, units, date/time formats, currency safety guidance and the swipe opt-out into reusable `ProfilePreferences.tsx`; App now supplies the saved preference state and persistence callback. No storage schema changed.
+- **Verification:** TypeScript passed; Profile and Settings accessibility contracts passed; production build passed (2,252 modules). A source test first referenced the old inline toggle, then was updated to assert the extracted production component; the corrected test passes.
+- **Hosted CI:** Run `42402575188` for commit `e54b9a24c9df7b05eef0478bbea7dac119306049` passed automated checks and was still building Android packaging when last checked. The next pushed commit will receive its own CI run.
+- **Next:** Commit/push this extraction as a small follow-up, then verify its hosted run without waiting indefinitely.
