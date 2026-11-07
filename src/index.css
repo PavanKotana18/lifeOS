@@ -154,6 +154,18 @@ body {
 .money-tool-row { display: flex; width: 100%; min-height: 4.25rem; align-items: center; gap: 0.75rem; text-align: left; }
 .money-tool-icon { width: 2.35rem; height: 2.35rem; border-radius: 0.75rem; background: transparent; color: var(--accent); }
 .money-tool-row > svg:last-child { flex: 0 0 auto; color: var(--ink-muted); }
+.transaction-history-item { min-width: 0; }
+.transaction-history-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
+.transaction-history-copy { display: grid; min-width: 0; flex: 1; gap: 0.22rem; padding: 0; text-align: left; }
+.transaction-history-copy strong { overflow: hidden; font-size: 0.9rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.transaction-history-copy span { color: var(--ink-secondary); font-size: 0.75rem; line-height: 1.4; overflow-wrap: anywhere; }
+.transaction-history-amount { flex: 0 0 auto; max-width: 45%; overflow-wrap: anywhere; text-align: right; font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.transaction-history-amount.is-income { color: var(--success); }
+.transaction-history-amount.is-expense { color: var(--ink); }
+.transaction-history-actions { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.3rem; }
+.transaction-history-actions button { min-height: 44px; border-radius: 0.6rem; padding-inline: 0.65rem; color: var(--ink-secondary); font-size: 0.75rem; font-weight: 600; }
+.transaction-history-actions button:last-child { color: var(--danger); }
+.transaction-history-item button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 
 .life-hub { display: grid; gap: 1.5rem; }
 .life-hub-heading { display: grid; gap: 0.3rem; }

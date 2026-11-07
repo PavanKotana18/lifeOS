@@ -20,6 +20,7 @@ import { createAuthCoordinator } from './services/authCoordinator';
 import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
 import { getCurrencyMetadata } from './services/financeCore';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
+import { buildDuplicateTransactionDraft } from './services/transactionDraft';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
@@ -921,6 +922,11 @@ export default function App() {
     setEditingTransactionId(transaction.id); setEditingTaskId(null); setEditingHabitId(null); setEditingGoalId(null); setCreateKind('transaction');
   };
 
+  const openDuplicateTransaction = (transaction: Transaction) => {
+    openCreateForm('transaction');
+    setCreateDraft(current => buildDuplicateTransactionDraft(current, transaction));
+  };
+
   const openEditGoal = (goal: Goal) => {
     const oldUnit = goal.unit || '';
     const selectedUnit = ['km', 'mi', 'mile', 'miles'].includes(oldUnit) ? userPrefs.distance
@@ -1590,30 +1596,27 @@ export default function App() {
                     <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
                   ) : (
                     filteredTransactions.map(t => (
-                        <div key={t.id} role="button" tabIndex={0} aria-label={`Edit transaction ${t.description || t.category}`} onClick={() => openEditTransaction(t)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openEditTransaction(t); } }} className="cursor-pointer p-3.5 rounded-xl lifeos-panel border border-[var(--stroke)] flex justify-between items-center transition hover:border-[var(--accent)] active:scale-[.995]">
-                          <div>
-                            <p className="font-semibold text-sm">{t.description || t.category}</p>
-                            <p className="text-xs text-secondary mt-0.5">{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ''} &bull; {t.category} ({t.paymentMethod})</p>
-                          </div>
-                          <div className="text-right">
-                            <p className={`font-bold text-sm ${t.type === 'income' ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
-                              {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
-                            </p>
-                            <button
-                              onClick={async event => {
-                                event.stopPropagation();
-                                if (!window.confirm(`Delete transaction “${t.description || t.category}”?`)) return;
-                                await StorageService.transactions.delete(t.id);
-                                await reloadAllData();
-                                showToast('Transaction deleted', 'info');
-                              }}
-                              className="text-[10px] text-muted hover:text-[var(--danger)] mt-1"
-                            >
-                              Delete
-                            </button>
-                          </div>
+                      <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border p-3.5">
+                        <div className="transaction-history-main">
+                          <button type="button" onClick={() => openEditTransaction(t)} aria-label={`Edit transaction ${t.description || t.category}`} className="transaction-history-copy">
+                            <strong>{t.description || t.category}</strong>
+                            <span>{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ' · time not recorded'} &bull; {t.category} ({t.paymentMethod || 'Other'})</span>
+                          </button>
+                          <span className={`transaction-history-amount ${t.type === 'income' ? 'is-income' : 'is-expense'}`}>
+                            {t.type === 'income' ? '+' : '−'}{formatMoney(t.amount)}
+                          </span>
                         </div>
-                      ))
+                        <div className="transaction-history-actions">
+                          <button type="button" onClick={() => openDuplicateTransaction(t)} aria-label={`Duplicate transaction ${t.description || t.category}`}>Duplicate</button>
+                          <button type="button" onClick={async () => {
+                            if (!window.confirm(`Delete transaction “${t.description || t.category}”?`)) return;
+                            await StorageService.transactions.delete(t.id);
+                            await reloadAllData();
+                            showToast('Transaction deleted', 'info');
+                          }} aria-label={`Delete transaction ${t.description || t.category}`}>Delete</button>
+                        </div>
+                      </article>
+                    ))
                   )}
                 </div>
               </div>
