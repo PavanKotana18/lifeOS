@@ -140,9 +140,16 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused test: PASS (21 production-render assertions). `npx --no-install tsc --noEmit`: PASS. `npm run build`: PASS (2,242 modules; main JS 492.04 kB, secondary chunks split). `npm run test:all`: PASS, including full Node/WP0/Sentinel chain; SAF native OS picker remains device-blocked. `git diff --check`: PASS.
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-onboarding-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-onboarding-theme-20261107.log`.
 
+### Finance Analytics palette and accessible budgets (local, verified)
+
+- Migrated the Finance Analytics subview’s cards, status colors, budget bars, and month filter to semantic theme tokens. Budget utilization now exposes an accessible progressbar with a bounded 0–100 value; numeric calculations and persisted data are unchanged.
+- Added `test_finance_analytics_theme_20261107.cjs` (13 source-level assertions) to the mandatory test chain. The contract checks the Analytics view’s semantic tokens, retained production metric bindings, and progress semantics.
+- Focused Finance Analytics contract: PASS (13). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0/six Sentinel suites; physical SAF picker still device-blocked). `npm run build`: PASS (2,242 modules; main JS 492.25 kB, no >500 kB warning). `git diff --check`: PASS.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-finance-analytics-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-finance-analytics-theme-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings semantic theme completion is pushed at `e8b082c833d66cb027dfe1419ec4d8522fc0ebc8`; on-demand screen loading is pushed at `2a23faa8354edbf2499234509976a6485c739d4f`. Current branch HEAD before Onboarding changes was `b5a3218f9fd17edd00b773c72a46714a5aefb709`; the Onboarding package is locally verified and awaiting checkpoint commit/push.
-- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Hosted run `42337919020` for `b5a3218` was pending; after the next push, check latest CI once and report pending until terminal.
+- Settings palette (`e8b082c`), on-demand screen chunks (`2a23faa`), and Onboarding (`eab78db4257b98523cdc63128a37e530117ec7bb`) packages are pushed. Current local Finance Analytics package is verified and uncommitted; base HEAD is `eab78db`.
+- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42338314656` for `eab78db` was pending at last check and subsequent pushes may cancel it. Check the newest head once after checkpointing; never infer CI success from the local build.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
