@@ -41,6 +41,20 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(f.pending.size,9, 'task, weekly habit and milestone reminders use the supported inexact fallback'); assert.equal((await ns.getDiagnostics()).exactAlarm,'denied');
   const testAt = await ns.testNotification(1_000); assert.ok(testAt instanceof Date); assert.equal(f.pending.size,10, 'test notification is queued even without exact-alarm access');
  }));
+ await test('Only user-selected task reminders use Android idle-aware alarm quota', async () => fixture(async f => {
+  const ns=f.NotificationService;
+  ns.checkExactAlarmPermission=async()=> 'denied';
+  const prefs={...f.DEFAULT_NOTIFICATION_PREFERENCES,taskReminders:true,upcomingDeadlines:true,overdueAlerts:true};
+  const task={id:'idle-quota-task',title:'Synthetic',dueDate:'2030-01-02',dueTime:'12:00',reminderAt:new Date(Date.now()+60*60_000).toISOString(),completed:false};
+  await ns.syncTasks([task],prefs);
+  const taskEntries=[...f.pending.values()].filter(item=>item.extra?.taskId===task.id);
+  assert.equal(taskEntries.length,3,'reminder, deadline and overdue alert remain distinct schedules');
+  assert.equal(taskEntries.find(item=>item.extra.kind==='taskReminders').schedule.allowWhileIdle,true);
+  assert.equal(taskEntries.find(item=>item.extra.kind==='upcomingDeadlines').schedule.allowWhileIdle,false);
+  assert.equal(taskEntries.find(item=>item.extra.kind==='overdueAlerts').schedule.allowWhileIdle,false);
+  await ns.syncHabits([{id:'idle-quota-habit',frequency:'daily',reminderTime:'09:00'}],{...prefs,taskReminders:false,habitReminders:true});
+  assert.ok([...f.pending.values()].filter(item=>item.extra?.kind==='habitReminder').every(item=>item.schedule.allowWhileIdle===false));
+ }));
  await test('Android capability diagnostics distinguish an available bridge from delivery evidence', async () => fixture(async f => {
   const report=await f.NotificationService.getDiagnostics();
   assert.equal(report.capability,'available'); assert.equal(report.supported,true);
@@ -98,6 +112,56 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(report.cancellationReason, 'pending-time-mismatch');
   assert.equal(report.pendingTimestampMatches, false);
   assert.equal(new Date(f.pending.get(stableId(`task:${task.id}:taskReminders`)).schedule.at).getTime(), firstAt.getTime(), 'failed replacement leaves the previously valid alarm intact');
+ }));
+ await test('Reminder lifecycle evidence distinguishes native acceptance, queue observation, posting and taps without record content', async () => fixture(async f => {
+  const ns=f.NotificationService;
+  ns.checkExactAlarmPermission=async()=> 'denied';
+  const prefs={...f.DEFAULT_NOTIFICATION_PREFERENCES,taskReminders:true};
+  const reminderAt=new Date(Date.now()+90*60_000);
+  const task=await f.StorageService.tasks.add({title:'PRIVATE TASK TITLE',dueDate:'2030-01-01',priority:'Medium',recurring:'None',completed:false,reminderAt:reminderAt.toISOString()});
+  const id=f.load('src/services/domainUtils.ts').stableNotificationId(`task:${task.id}:taskReminders`);
+  await ns.syncTasks([task],prefs);
+  let lifecycle=JSON.parse(global.localStorage.getItem('lifeos.notificationLifecycle.v1'))[String(id)];
+  assert.equal(lifecycle.scheduleMode,'inexact-allowWhileIdle');
+  assert.ok(lifecycle.scheduleRequestedAt); assert.ok(lifecycle.nativeAcceptedAt); assert.ok(lifecycle.pendingObservedAt);
+  assert.equal(lifecycle.deliveryState,'pending-observed');
+  assert.equal(JSON.stringify(lifecycle).includes('PRIVATE TASK TITLE'),false);
+  assert.equal(JSON.stringify(lifecycle).includes(task.id),false,'the persisted lifecycle uses the numeric notification key, not task identifiers');
+  f.pending.delete(id);
+  const RealDate=global.Date, fakeNow=RealDate.now()+120*60_000;
+  global.Date=class extends RealDate { constructor(...args){ super(...(args.length?args:[fakeNow])); } static now(){ return fakeNow; } };
+  try {
+   const report=await ns.diagnoseTaskReminder(task,prefs);
+   assert.equal(report.lifecycleEvidence.deliveryUnconfirmed,true,'a past reminder absent from active and pending state remains explicitly unconfirmed');
+   assert.equal(report.lifecycleEvidence.nativeAcceptedAt,lifecycle.nativeAcceptedAt,'the original schedule acceptance remains available after its pending row disappears');
+   assert.equal(report.deliveryEvidence,'unknown-no-active-or-pending-record');
+  } finally { global.Date=RealDate; }
+  await ns.addReceivedListener(()=>{});
+  f.emitNotification('localNotificationReceived',{id,extra:{kind:'taskReminders',originalReminderAt:task.reminderAt}});
+  lifecycle=JSON.parse(global.localStorage.getItem('lifeos.notificationLifecycle.v1'))[String(id)];
+  assert.equal(lifecycle.deliveryState,'native-receiver-event-observed'); assert.ok(lifecycle.receiverEventAt);
+  assert.equal(lifecycle.deliveryObservedAt,undefined,'the receiver callback alone is not reported as proof that Android displayed the notification');
+  await ns.addActionListener(()=>{});
+  f.emitNotification('localNotificationActionPerformed',{notification:{id,extra:{kind:'taskReminders',originalReminderAt:task.reminderAt}}});
+  lifecycle=JSON.parse(global.localStorage.getItem('lifeos.notificationLifecycle.v1'))[String(id)];
+  assert.ok(lifecycle.tappedAt,'tap evidence persists separately from delivery evidence');
+  assert.equal(lifecycle.deliveryState,'tapped','tap evidence is not mislabeled as a current active-notification observation');
+ }));
+ await test('Revoked Android notification permission cancels native alarms but preserves task reminder definition', async () => fixture(async f => {
+  const ns=f.NotificationService;
+  const prefs={...f.DEFAULT_NOTIFICATION_PREFERENCES,taskReminders:true};
+  const reminderAt=new Date(Date.now()+60*60_000).toISOString();
+  const task=await f.StorageService.tasks.add({title:'Synthetic permission fixture',dueDate:'2030-01-01',priority:'Medium',recurring:'None',completed:false,reminderAt});
+  const id=f.load('src/services/domainUtils.ts').stableNotificationId(`task:${task.id}:taskReminders`);
+  await ns.syncTasks([task],prefs);
+  assert.ok(f.pending.has(id));
+  f.notifications.checkPermissions=async()=>({display:'denied'});
+  await ns.syncTasks([task],prefs);
+  assert.equal(f.pending.has(id),false,'permission revocation removes the unusable native alarm');
+  assert.equal((await f.StorageService.tasks.getAll()).find(row=>row.id===task.id).reminderAt,reminderAt,'reminder definition remains saved');
+  const lifecycle=JSON.parse(global.localStorage.getItem('lifeos.notificationLifecycle.v1'))[String(id)];
+  assert.equal(lifecycle.deliveryState,'cancelled');
+  assert.equal(lifecycle.cancellationReason,'android-notification-permission-unavailable');
  }));
  await test('Resume catches up a still-persisted past inexact reminder without claiming delivery', async () => fixture(async f => {
   const ns=f.NotificationService;
@@ -190,5 +254,5 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const messages=[];const reset=h.bind(h.buttonHandler('Clear All Application Data'),{...f.appDeps(),showToast:(...args)=>messages.push(args)});
   await reset();assert.equal(await f.lifeOSDatabase.tasks.count(),1);assert.equal(messages.at(-1)[1],'danger');
  }));
- console.log(`LOCAL CONSOLIDATION: ${passed}/13 passed (native simulated)`);
+ console.log(`LOCAL CONSOLIDATION: ${passed}/16 passed (native simulated)`);
 })().catch(e=>{console.error(e);process.exitCode=1;});

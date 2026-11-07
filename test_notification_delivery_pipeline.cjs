@@ -20,6 +20,10 @@ assert.match(service, /getDeliveredNotifications\(\)/, 'diagnostics separate per
 assert.match(service, /lateCatchUp/, 'resume recovery retains a delayed still-persisted reminder instead of cancelling it as past');
 assert.match(service, /delivery-not-observable/, 'a missing pending record is not misreported as a confirmed delivery');
 assert.match(service, /setAndAllowWhileIdle|approximate/, 'denied exact-alarm access is explicitly approximate');
+assert.match(service, /allowWhileIdle: plan\.kind === 'taskReminders'/, 'only explicit task reminders consume the per-app idle-aware alarm quota');
+assert.match(service, /lifeos\.notificationLifecycle\.v1/, 'per-reminder request/acceptance/observation evidence survives pending-row removal');
+assert.match(service, /delivery-unconfirmed/, 'an elapsed reminder without active delivery evidence remains unconfirmed');
+assert.match(service, /localNotificationReceived/, 'native plugin receipt events are recorded separately from schedule acceptance');
 assert.match(service, /taskSyncQueue\.then\(run, run\)/, 'task schedule updates are serialized');
 assert.match(taskSave, /await ensurePrivateStorageBeforeWrite\(\)[\s\S]*?StorageService\.tasks\.add[\s\S]*?await reloadAllData\(\)[\s\S]*?syncNotificationSchedules/, 'task storage is secure, persisted, reloaded, then synchronized');
 assert.match(service, /visibility: 0/, 'new channel requests private lock-screen visibility');

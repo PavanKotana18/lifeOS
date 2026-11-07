@@ -215,6 +215,7 @@ async function fixture({ activate = true } = {}) {
   };
   const pending = new Map();
   const delivered = new Map();
+  const notificationListeners = new Map();
   const notifications = {
     async createChannel() {}, async listChannels() { return { channels: [] }; },
     async areEnabled() { return { value: true }; },
@@ -223,6 +224,11 @@ async function fixture({ activate = true } = {}) {
     async checkExactNotificationSetting() { return { exact_alarm: 'granted' }; },
     async getPending() { return { notifications: [...pending.values()] }; },
     async getDeliveredNotifications() { return { notifications: [...delivered.values()] }; },
+    async addListener(eventName, callback) {
+      const listeners = notificationListeners.get(eventName) || new Set();
+      listeners.add(callback); notificationListeners.set(eventName, listeners);
+      return { async remove() { listeners.delete(callback); } };
+    },
     async cancel({ notifications }) { notifications.forEach(n => { pending.delete(n.id); delivered.delete(n.id); }); },
     async schedule({ notifications }) { notifications.forEach(n => pending.set(n.id, structuredClone(n))); }
   };
@@ -285,7 +291,8 @@ async function fixture({ activate = true } = {}) {
   // Default integration fixtures actually migrate through production APIs;
   // security boundary tests explicitly request { activate: false }.
   if (activate) { db.sessionManager.unlock(); await db.activateEncryptedStorage(); }
-  return { ...db, native, pending, delivered, notifications, load, appDeps, ...notificationModule,
+  return { ...db, native, pending, delivered, notifications, notificationListeners, load, appDeps, ...notificationModule,
+    emitNotification(eventName, payload) { for (const callback of notificationListeners.get(eventName) || []) callback(payload); },
     setPluginAvailable(name, available) { if (available) availablePlugins.add(name); else availablePlugins.delete(name); },
     async restart() {
       db.sessionManager.lock(); await db.sessionManager.waitForIdle();
