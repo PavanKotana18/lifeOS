@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { assessExchangeRateFreshness, convertMinorUnits, decimalToMinorUnits, formatMinorUnits, getCurrencyMetadata, CURRENCY_CATALOG } from '../services/financeCore';
+import { assessExchangeRateFreshness, convertMinorUnits, decimalToMinorUnits, formatMinorUnits, getCurrencyMetadata, formatCurrencyChoice, CURRENCY_CATALOG } from '../services/financeCore';
 import { formatLocalDate } from '../services/domainUtils';
 
 type Props = { currencyCode: string; locale?: string };
@@ -41,12 +41,12 @@ export default function FinanceCurrencyConverter({ currencyCode, locale }: Props
     <div className="grid grid-cols-2 gap-3">
       <label className="block text-sm font-medium text-primary">From
         <select aria-label="Source currency" value={fromCurrency} onChange={event => setFromCurrency(event.target.value)} className={fieldClass}>
-          {currencyCodes.map(code => <option key={code} value={code}>{code} · {getCurrencyMetadata(code).fractionDigits} decimals</option>)}
+          {currencyCodes.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, locale)} · {getCurrencyMetadata(code).fractionDigits} decimal places</option>)}
         </select>
       </label>
       <label className="block text-sm font-medium text-primary">To
         <select aria-label="Target currency" value={toCurrency} onChange={event => setToCurrency(event.target.value)} className={fieldClass}>
-          {currencyCodes.map(code => <option key={code} value={code}>{code} · {getCurrencyMetadata(code).fractionDigits} decimals</option>)}
+          {currencyCodes.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, locale)} · {getCurrencyMetadata(code).fractionDigits} decimal places</option>)}
         </select>
       </label>
     </div>

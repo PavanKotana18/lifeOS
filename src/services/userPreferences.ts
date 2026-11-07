@@ -15,25 +15,31 @@ export interface UserPreferences {
   firstDayOfWeek: 'monday' | 'sunday';
   timeFormat: '12h' | '24h';
   locale: 'system' | 'en-IN' | 'en-US' | 'en-GB' | 'de-DE';
+  swipeNavigationEnabled: boolean;
 }
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   currency: 'INR', distance: 'km', speed: 'km/h', volume: 'L',
   dateFormat: 'DMY', firstDayOfWeek: 'monday', timeFormat: '12h', locale: 'system',
+  swipeNavigationEnabled: true,
 };
 
 export const resolveSystemDark = (nativeValue: boolean | undefined, mediaValue: boolean) => typeof nativeValue === 'boolean' ? nativeValue : mediaValue;
 
 export function mergeUserPreferences(saved: Partial<UserPreferences>, legacyCurrency: string): UserPreferences {
   const safe = { ...DEFAULT_USER_PREFERENCES };
-  const options: Record<keyof UserPreferences, string[]> = {
+  const options: Partial<Record<keyof UserPreferences, string[]>> = {
     currency: [...CURRENCY_CODES], distance: ['km', 'mi'], speed: ['km/h', 'm/s', 'mph'],
     volume: ['L', 'mL', 'US gal', 'Imp gal'], dateFormat: ['DMY', 'MDY', 'YMD'],
     firstDayOfWeek: ['monday', 'sunday'], timeFormat: ['12h', '24h'], locale: ['system', 'en-IN', 'en-US', 'en-GB', 'de-DE'],
   };
-  for (const key of Object.keys(options) as Array<keyof UserPreferences>) {
+  for (const key of [...Object.keys(options), 'swipeNavigationEnabled'] as Array<keyof UserPreferences>) {
     const value = saved[key];
-    if (typeof value === 'string' && options[key].includes(value)) (safe as any)[key] = value;
+    if (key === 'swipeNavigationEnabled') {
+      if (typeof value === 'boolean') safe.swipeNavigationEnabled = value;
+      continue;
+    }
+    if (typeof value === 'string' && options[key]?.includes(value)) (safe as any)[key] = value;
   }
   if (!saved.currency && options.currency.includes(legacyCurrency)) safe.currency = legacyCurrency;
   return safe;

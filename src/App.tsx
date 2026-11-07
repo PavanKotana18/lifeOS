@@ -19,7 +19,7 @@ import { confirmScreenshotResume, isSensitiveScreenshotState, setSensitiveScreen
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
 import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
-import { getCurrencyMetadata } from './services/financeCore';
+import { formatCurrencyChoice } from './services/financeCore';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { getBudgetDisplayStatus } from './services/budgetDisplay';
 import { buildDuplicateTransactionDraft } from './services/transactionDraft';
@@ -29,8 +29,10 @@ import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
+import { ProfileHome, ProfileSubpage, type ProfileSection } from './components/ProfileSettings';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
+import { resolvePrimarySwipe } from './services/navigationGestures';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding from './components/Onboarding';
@@ -92,7 +94,8 @@ export default function App() {
   const pendingNotificationTaskId = useRef<string | null>(null);
   const pendingNotificationActionId = useRef<number | null>(null);
   const handledNotificationIds = useRef(new Set<number>());
-  const [profileNotificationsOpen, setProfileNotificationsOpen] = useState(false);
+  const [profileSection, setProfileSection] = useState<ProfileSection>('home');
+  const swipePointer = useRef<{ id: number; x: number; y: number; startedAt: number; interactive: boolean; systemEdge: boolean; horizontalControl: boolean } | null>(null);
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
@@ -278,21 +281,59 @@ export default function App() {
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
 
-  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileNotificationsOpen, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation });
-  backState.current = { createKind, modalContent, plannerDetailTaskId, profileNotificationsOpen, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation };
+  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation });
+  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation };
 
   const navigateTo = (tab: MainTab) => {
     const previous = activeTabRef.current;
     if (previous === tab) return;
+    if (tab === 'settings') setProfileSection('home');
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     activeTabRef.current = tab;
     setShowExitConfirmation(false);
     setActiveTab(tab);
   };
 
+  const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    swipePointer.current = null;
+    if (!userPrefs.swipeNavigationEnabled || event.pointerType === 'mouse' || activeTab === 'settings' || createKind || modalContent) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const interactive = Boolean(target.closest('button,a,input,textarea,select,[contenteditable="true"],[role="button"],[role="switch"],[role="dialog"],[data-no-tab-swipe]'));
+    const horizontalControl = Boolean(target.closest('[data-horizontal-scroll],.recharts-wrapper,svg,canvas,[role="slider"]'));
+    let ancestor: HTMLElement | null = target as HTMLElement;
+    let horizontallyScrollable = false;
+    while (ancestor && ancestor !== event.currentTarget) {
+      const overflowX = window.getComputedStyle(ancestor).overflowX;
+      if ((overflowX === 'auto' || overflowX === 'scroll') && ancestor.scrollWidth > ancestor.clientWidth + 2) {
+        horizontallyScrollable = true;
+        break;
+      }
+      ancestor = ancestor.parentElement;
+    }
+    swipePointer.current = {
+      id: event.pointerId, x: event.clientX, y: event.clientY, startedAt: Date.now(),
+      interactive, systemEdge: event.clientX <= 24 || event.clientX >= window.innerWidth - 24,
+      horizontalControl: horizontalControl || horizontallyScrollable,
+    };
+  };
+
+  const handleContentPointerUp = (event: React.PointerEvent<HTMLElement>) => {
+    const start = swipePointer.current;
+    swipePointer.current = null;
+    if (!start || start.id !== event.pointerId) return;
+    const target = resolvePrimarySwipe(activeTab, {
+      deltaX: event.clientX - start.x, deltaY: event.clientY - start.y,
+      durationMs: Date.now() - start.startedAt, startedOnInteractive: start.interactive,
+      startedAtSystemEdge: start.systemEdge, startedInHorizontalControl: start.horizontalControl,
+      enabled: userPrefs.swipeNavigationEnabled,
+    });
+    if (target) navigateTo(target);
+  };
+
   const navigateBack = () => {
     const state = backState.current;
-    const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileNotificationsOpen) }, navigationHistory.current.length > 0);
+    const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileSection !== 'home') }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
     if (action === 'exit-app') { void CapacitorApp.exitApp(); return; }
     if (action === 'dismiss-dialog') { requestCloseForm(); setModalContent(null); return; }
@@ -306,7 +347,7 @@ export default function App() {
       }
       if (state.activeTab === 'habits') setHabitsSubtab('checklist');
       if (state.activeTab === 'goals') setGoalsSubtab('active');
-      if (state.activeTab === 'settings') setProfileNotificationsOpen(false);
+      if (state.activeTab === 'settings') setProfileSection('home');
       return;
     }
     const history = popTabHistory(navigationHistory.current, 'dashboard');
@@ -699,7 +740,7 @@ export default function App() {
   useEffect(() => {
     if (!appReady) return;
     void refreshNotificationDiagnostics();
-  }, [appReady, profileNotificationsOpen]);
+  }, [appReady, profileSection]);
 
   const copyNotificationDiagnostics = async () => {
     const diagnostics = await refreshNotificationDiagnostics();
@@ -995,7 +1036,7 @@ export default function App() {
       window.setTimeout(() => handledNotificationIds.current.delete(id), 10_000);
       if (extra.kind === 'test') {
         navigateTo('settings');
-        setProfileNotificationsOpen(true);
+        setProfileSection('notifications');
         void NotificationService.acknowledgeInitialTapAction(id);
         return;
       }
@@ -1606,7 +1647,7 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className="max-w-md mx-auto p-4 space-y-4">
+      <main className="max-w-md mx-auto p-4 space-y-4" onPointerDown={handleContentPointerDown} onPointerUp={handleContentPointerUp} onPointerCancel={() => { swipePointer.current = null; }}>
         {/* VIEW 1: DASHBOARD */}
         <div key={activeTab} id={`view-${activeTab}`} className="tab-transition">
         {activeTab === 'dashboard' && (
@@ -2111,23 +2152,17 @@ export default function App() {
         {/* VIEW 6: SETTINGS */}
         {activeTab === 'settings' && (
           <div className="profile-page space-y-5">
-            <div><p className="text-xs font-semibold tracking-wide lifeos-accent-text">PROFILE & PREFERENCES</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Your Profile</h2><p className="mt-1 text-sm text-secondary">Personalize how LifeOS works for you.</p></div>
+            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { setProfileSection(section); if (section === 'notifications') void refreshNotificationDiagnostics(); }} />}
 
-            <section className="lifeos-panel rounded-2xl border p-5 space-y-4">
-              <div className="flex items-center gap-3"><div className="profile-avatar lifeos-accent-button flex h-14 w-14 items-center justify-center rounded-full text-xl font-bold">{profileInitial(displayName) || <UserRound size={21} />}</div><div><p className="text-xs text-secondary">Your LifeOS profile</p><h3 className="mt-0.5 text-lg font-semibold">{displayName.trim() || 'Personal details'}</h3></div></div>
-              <label className="block text-xs text-secondary">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <p className="text-xs text-secondary">Your name appears in the greeting and Profile avatar.</p>
-            </section>
-
-            <section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" description="Keep your personal records protected on this device." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
               <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-secondary">Device-level authentication for the app.</p></div>
               <p className="text-xs text-secondary">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
               {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
-            </section>
+            </section></ProfileSubpage>}
 
-            <section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" description="Choose how LifeOS looks. Your theme is saved on this device." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
               <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-secondary">Choose a theme or follow Android's system setting.</p>
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
@@ -2149,12 +2184,12 @@ export default function App() {
                 <button type="button" disabled={!themePreviewId} onClick={cancelVisualThemePreview} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50">Cancel</button>
                 <button type="button" disabled={!themePreviewId} onClick={() => void applyVisualTheme()} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">Apply theme</button>
               </div>
-            </section>
+            </section></ProfileSubpage>}
 
-            <section className="lifeos-panel rounded-2xl border p-5 space-y-4">
+            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Display choices change presentation, not the meaning of saved records." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-4">
               <div><h3 className="text-base font-semibold">Preferences</h3><p className="mt-1 text-xs text-secondary">Formats affect display and new input only. Existing amounts are never converted.</p></div>
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs text-secondary">Reporting currency<select aria-label="Reporting currency" value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value)} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{CURRENCY_CODES.map(code => <option key={code} value={code}>{code} · {getCurrencyMetadata(code).fractionDigits} decimals</option>)}</select></label>
+                <label className="text-xs text-secondary">Currency for financial records<select aria-label="Currency for financial records" disabled={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value)} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm disabled:opacity-70">{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</option>)}</select>{(transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0) && <span className="mt-1 block text-[11px] text-muted">Locked because saved financial records do not yet store their own currency. Changing it could misstate past values.</span>}</label>
                 <label className="text-xs text-secondary">Distance<select value={userPrefs.distance} onChange={event => void saveUserPreference('distance', event.target.value as UserPreferences['distance'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km">Kilometres · km</option><option value="mi">Miles · mi</option></select></label>
                 <label className="text-xs text-secondary">Speed<select value={userPrefs.speed} onChange={event => void saveUserPreference('speed', event.target.value as UserPreferences['speed'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km/h">Kilometres/hour</option><option value="m/s">Metres/second</option><option value="mph">Miles/hour</option></select></label>
                 <label className="text-xs text-secondary">Volume<select value={userPrefs.volume} onChange={event => void saveUserPreference('volume', event.target.value as UserPreferences['volume'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="L">Litres · L</option><option value="mL">Millilitres · mL</option><option value="US gal">US gallons</option><option value="Imp gal">Imperial gallons</option></select></label>
@@ -2164,12 +2199,9 @@ export default function App() {
                 <label className="text-xs text-secondary">Number locale<select value={userPrefs.locale} onChange={event => void saveUserPreference('locale', event.target.value as UserPreferences['locale'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="system">Follow device</option><option value="en-IN">English · India</option><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="de-DE">German · Germany</option></select></label>
               </div>
               <p className="text-[11px] text-muted">Financial values use one stored currency and are only reformatted here; no exchange-rate conversion is applied. Distance and volume use canonical storage units for new goal measurements. Speed is saved as a preference for features that use it.</p>
-            </section>
+            </section><section className="lifeos-panel rounded-2xl border p-5 space-y-4" aria-label="Navigation preferences"><div><h2 className="text-base font-semibold">Navigation</h2><p className="mt-1 text-xs text-secondary">Swipe across Today, Money, Plan and Life. Buttons and charts keep their own gestures.</p></div><div className="lifeos-raised flex min-h-14 items-center justify-between gap-3 rounded-xl px-3"><span className="text-sm font-medium">Swipe between tabs</span><button type="button" role="switch" aria-checked={userPrefs.swipeNavigationEnabled} onClick={() => void saveUserPreference('swipeNavigationEnabled', !userPrefs.swipeNavigationEnabled)} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-semibold ${userPrefs.swipeNavigationEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{userPrefs.swipeNavigationEnabled ? 'On' : 'Off'}</button></div></section></ProfileSubpage>}
 
-            <button onClick={() => { setProfileNotificationsOpen(true); void refreshNotificationDiagnostics(); }} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl lifeos-panel border px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-secondary">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-muted" /></button>
-
-            {profileNotificationsOpen && <div className="lifeos-page fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))]" role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium lifeos-accent-text"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
-            <section className="lifeos-panel rounded-xl border p-4 space-y-3">
+            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" description="Choose which local reminders LifeOS may send." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-xl border p-4 space-y-3">
               <p className="text-xs text-secondary">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
               <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
               <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
@@ -2181,8 +2213,9 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android settings</button></div>
               <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button>
               <button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
-            </section></div></div>}
+            </section></ProfileSubpage>}
 
+            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => setProfileSection('home')}>
             {/* Demo Data Trigger */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Sample Demonstration Data</h3>
@@ -2266,11 +2299,6 @@ export default function App() {
               }} className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold">Export transactions CSV</button>
             </div>
 
-            <section className="lifeos-panel rounded-xl border p-4 space-y-2">
-              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
-              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
-            </section>
-
             {/* Danger Zone */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold text-[var(--danger)]">Data Reset</h3>
@@ -2292,6 +2320,13 @@ export default function App() {
                 Clear All Application Data
               </button>
             </div>
+            </ProfileSubpage>}
+            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => setProfileSection('home')}>
+            <section className="lifeos-panel rounded-xl border p-4 space-y-2">
+              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
+              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
+            </section>
+            </ProfileSubpage>}
           </div>
         )}
         </div>

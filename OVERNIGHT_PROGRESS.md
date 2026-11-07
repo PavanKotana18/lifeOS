@@ -295,3 +295,37 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Added explicit confirmation, scoped rollback messaging, optimistic list removal after successful delete, and separate refresh-failure messaging. Saved transactions are explicitly left unchanged.
 - `test_budget_display_20261107.cjs`: 17/17; TypeScript, production build, and `git diff --check`: PASS. Current local changes are limited to the budget-card handler, its regression assertions and this checkpoint.
 - Run `42355347997` has now passed for `8d345aadbc526202af8416c39f3feb8643bd6eef`. The budget deletion follow-up is committed locally as `ff125c4f2dfe1a8f83c882d4bc835e4c34c9b713` and is ready to push after updating PR #24 evidence.
+# Overnight LifeOS bulk development progress
+
+## 2026-11-07 — Start / checkpoint A
+
+- **Branch and base:** `feature/lifeos2-bulk-development-20261107`, based on PR #24 head `f1a26b199f4db8b7b0f64fd9136f23d6dfebb927`.
+- **Workspace:** `/data/data/com.termux/files/home/lifeos-bulk-20261107`; clean at creation. PR #24 notification branch remains separate.
+- **Preservation:** The original `/data/data/com.termux/files/home/lifeOS` worktree has pre-existing tracked edits in `src/App.tsx`, `src/services/notificationService.ts`, `test_auth_lifecycle.js`, `test_sec01_orphan_keystore.js`, and untracked `.audit-backup/`. No original-worktree files were changed.
+- **Reviewed:** App shell, navigation metadata/history, Profile/settings rendering, finance services and screens, database/encrypted-storage integration, backup validation, Android native manifest/plugins and available tests/workflows.
+- **Findings:** `App.tsx` is 2,421 lines and owns the Profile UI. The four primary destinations already map to existing navigation state. Exact money/currency calculation helpers exist, but stored transactions still have numeric amounts and no currency/account identity. Dexie declares schema v1 only; adding account/transfer data touches encryption and backup contracts. Notifications are native AlarmManager-backed through Capacitor Local Notifications; retain that scheduler absent new evidence.
+- **Tests run:** None in the new branch yet. Previous PR #24 checkpoint evidence is preserved but not treated as validation of new code.
+- **Completed:** Repository state check, isolated worktree/branch creation, initial architecture and migration-risk report.
+- **Next:** Extract a focused Profile/settings screen and test persistence/navigation without changing encrypted-storage semantics; then implement guarded swipe navigation.
+- **Uncommitted:** This audit and progress log.
+
+## Checkpoint B — Profile routes and swipe navigation (2026-11-08)
+- **Branch/commit:** `feature/lifeos2-bulk-development-20261107` based on PR #24 head `f1a26b199f4db8b7b0f64fd9136f23d6dfebb927`; implementation changes are currently uncommitted.
+- **Completed:** Split the Settings landing page from six destination screens; retained biometric, recovery, backup, CSV export, demo-data, onboarding restart and reset actions in their appropriate sections. Added persisted swipe-navigation preference and guarded left/right gesture handling on the main content.
+- **Tests actually run:** navigation gesture tests (14 checks), profile route/preference checks, existing navigation IA tests and settings accessibility checks passed. `npx tsc --noEmit` passed.
+- **Install note:** A clean `npm ci` installed the repository lockfile dependencies locally; no package versions were changed. `esbuild` emitted npm's install-script approval warning, but TypeScript and tests ran. No Android emulator/device tests were run.
+- **Known blockers/limits:** Real touch feel and accessibility gesture behavior still need Android device review. Finance account/transfer persistence is not safe to add until Dexie, encryption admission and backup migration support are designed together; no historical currency or account is being guessed.
+- **Next:** Review the existing finance engine and Money screens, implement only migration-safe functionality, add tests, then run full repository checks and Android CI if feasible.
+
+## Checkpoint C — Safe Money improvements and regression verification (2026-11-08)
+- **Reviewed:** Money overview, integer-minor-unit calculations, finance analytics, Dexie schema, encrypted-store allowlist, backup validation and current Android notification ownership.
+- **Implemented:** Currency selection now displays localized currency names, ISO codes and symbols. The financial currency cannot be changed after transactions, budgets or savings goals exist because legacy values lack explicit currency and changing it would relabel history. No financial schema or stored records were changed. The existing Capacitor local-notification path already delegates to Android's AlarmManager-backed receivers; no second native scheduler was introduced.
+- **Tests actually run:** Full `npm test` chain completed with all visible suites passing, including new Profile and swipe cases, WP0 regressions, encrypted migration/security suites, finance, notification contracts and Android runner simulations. `npm run test:sentinel` passed all 6 suites (0 failed; SAF real OS picker is documented as device-blocked in Sentinel output). `npm run build` passed before the localized currency selector change; `npx tsc --noEmit` and focused finance tests passed after the code change. Final build will be rerun before checkpoint.
+- **Known blockers:** No Android emulator/device was used in this Termux run, so swipe touch feel and native notification execution remain unverified. Persisted accounts/transfers/per-record currency require a separately designed versioned encrypted Dexie + backup migration; no guesses or partial schema writes were made.
+- **Next:** Rerun final TypeScript/build, inspect Android tool availability and diff, update report, then commit/push a reviewable branch checkpoint and request hosted CI.
+
+## Checkpoint D — Final local validation (2026-11-08)
+- **Review:** Confirmed the profile remains reachable from the avatar, the swipe event listener uses existing navigation state, money currency values remain safe for legacy data, and notification scheduling remains on Capacitor's native AlarmManager path.
+- **Tests:** The full `npm test` chain completed through its final Android-runner contract tests without a failure; `npm run test:sentinel` passed 6/6 suites; focused Profile, settings, navigation, finance core and finance analytics suites passed; TypeScript and production build passed; `git diff --check` passed.
+- **Android limitation:** `java` and `adb` exist, but there is no configured Android SDK, no connected device, and this checkout has no Gradle wrapper. No APK or native device result is claimed. Vite emits the existing >500 kB main-chunk warning.
+- **Next:** Review staged files and baseline statuses, commit the feature branch checkpoint, push it, and request GitHub-hosted build validation. Do not alter PR #24 or the original checkout.

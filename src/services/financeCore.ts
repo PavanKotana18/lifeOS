@@ -28,6 +28,30 @@ export function getCurrencyMetadata(code: string): CurrencyMetadata {
   return metadata;
 }
 
+/** Localized currency name for selection UI. Falls back safely on older WebViews without Intl.DisplayNames. */
+export function getCurrencyDisplayName(code: string, locale?: string): string {
+  const normalized = String(code || '').toUpperCase();
+  getCurrencyMetadata(normalized);
+  try {
+    const DisplayNames = (Intl as typeof Intl & { DisplayNames?: new (locales: string | string[] | undefined, options: { type: 'currency' }) => { of: (value: string) => string | undefined } }).DisplayNames;
+    return (DisplayNames && new DisplayNames(locale, { type: 'currency' }).of(normalized)) || normalized;
+  } catch { return normalized; }
+}
+
+/** A readable local symbol where the runtime has one; the ISO code remains the identity. */
+export function getCurrencySymbol(code: string, locale?: string): string {
+  getCurrencyMetadata(code);
+  try {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' })
+      .formatToParts(0).find(part => part.type === 'currency')?.value || code.toUpperCase();
+  } catch { return code.toUpperCase(); }
+}
+
+export function formatCurrencyChoice(code: string, locale?: string): string {
+  const normalized = String(code || '').toUpperCase();
+  return `${getCurrencyDisplayName(normalized, locale)} (${normalized} · ${getCurrencySymbol(normalized, locale)})`;
+}
+
 const pow10 = (digits: number) => 10n ** BigInt(digits);
 const MAX_INPUT_DIGITS = 128;
 
