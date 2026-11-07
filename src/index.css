@@ -213,11 +213,25 @@ body {
 .life-destination-copy span { overflow: hidden; color: var(--ink-secondary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
 .life-destination-row > svg:last-child { flex: 0 0 auto; color: var(--ink-muted); }
 
+.plan-hub { display: grid; gap: 1.6rem; }
+.plan-hub-heading { display: grid; gap: 0.3rem; }
+.plan-hub-section { min-width: 0; }
+.plan-hub-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding-bottom: 0.65rem; }
+.plan-hub-section-heading > div { min-width: 0; }
+.plan-hub-link { min-height: 44px; flex: 0 0 auto; border-radius: 0.65rem; padding-inline: 0.5rem; color: var(--accent); font-size: 0.875rem; font-weight: 600; }
+.plan-hub-list { border-top: 1px solid var(--stroke); }
+.plan-hub-row { display: flex; min-width: 0; flex-direction: column; gap: 0.18rem; border-bottom: 1px solid var(--stroke); padding: 0.75rem 0.1rem; }
+.plan-hub-row-title { overflow-wrap: anywhere; font-weight: 500; }
+.plan-hub-row-meta { color: var(--ink-secondary); font-variant-numeric: tabular-nums; }
+.plan-hub-create { width: 100%; margin-top: 0.75rem; border-radius: 0.9rem; }
+.plan-hub-routines { display: flex; min-height: 48px; align-items: center; justify-content: space-between; border-top: 1px solid var(--stroke); border-bottom: 1px solid var(--stroke); text-align: left; }
+.plan-hub-link:focus-visible, .plan-hub-routines:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+
 @media (max-width: 360px) {
   .money-home-heading { align-items: start; }
   .money-period input { width: 8.2rem; }
   .money-action { padding: 0.6rem; }
-  .money-action small { font-size: 0.625rem; }
+  .money-action small { font-size: 0.75rem; }
 }
 
 button, input, select, textarea {

@@ -31,7 +31,19 @@ public class MainActivity extends BridgeActivity {
         // Start protected for every build. Debug UI may opt into screenshots only
         // after React confirms that the visible surface contains no secrets.
         applyScreenshotProtection();
+        applySystemFontScale();
         showWebViewUpdateIfRequired();
+    }
+
+    static int webTextZoomForFontScale(float fontScale) {
+        if (Float.isNaN(fontScale) || Float.isInfinite(fontScale) || fontScale <= 0f) return 100;
+        return Math.round(fontScale * 100f);
+    }
+
+    private void applySystemFontScale() {
+        if (bridge == null || bridge.getWebView() == null) return;
+        float fontScale = getResources().getConfiguration().fontScale;
+        bridge.getWebView().getSettings().setTextZoom(webTextZoomForFontScale(fontScale));
     }
 
     public void setSensitiveScreen(boolean sensitive) {
@@ -120,6 +132,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        applySystemFontScale();
         notifyWebTheme(newConfig);
     }
 
