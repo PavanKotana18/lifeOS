@@ -335,3 +335,9 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Verification:** TypeScript passed; Profile and Settings accessibility contracts passed; production build passed (2,252 modules). A source test first referenced the old inline toggle, then was updated to assert the extracted production component; the corrected test passes.
 - **Hosted CI:** Run `42402575188` for commit `e54b9a24c9df7b05eef0478bbea7dac119306049` passed automated checks and was still building Android packaging when last checked. The next pushed commit will receive its own CI run.
 - **Next:** Commit/push this extraction as a small follow-up, then verify its hosted run without waiting indefinitely.
+
+## Checkpoint F — Production-component rendering tests
+- **Change:** Added server-rendered assertions for the actual Profile home, subpage shell and Preferences component, including destination links, identity/local-only copy, back navigation, currency lock and swipe preference. This supplements rather than replaces the pure gesture and source contracts.
+- **Tests:** Full `npm test` ran through the final Android-runner contract checks with no reported failure; the output is saved at `/data/data/com.termux/files/usr/tmp/lifeos-bulk-npm-test.log`. The added Profile component render test and TypeScript check passed directly.
+- **Hosted CI:** Run `42402575188` completed successfully for the first code checkpoint. Run `42402896503` has passed automated checks and is building the Android APK/release artifact for commit `8c8b3ed72f18874d99742b54153e72c055119b78`.
+- **Next:** Commit/push the test-only additions, verify the final hosted run and update the PR/checkpoint with its actual result.
