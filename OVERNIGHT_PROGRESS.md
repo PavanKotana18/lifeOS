@@ -132,9 +132,17 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-lazy-screens-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-lazy-screens-20261107.log`.
 - Latest observed hosted run for prior commit `17146bc1ae6a38156e61bc49f13385b0f5260a08` was still in progress (`42337188975`). The Settings palette commit `e8b082c833d66cb027dfe1419ec4d8522fc0ebc8` had a queued workflow (`42337583466`); this package is not yet covered by hosted CI.
 
+### Onboarding theme and accessibility pass (local, verified)
+
+- Migrated all five Onboarding steps to semantic surfaces, text, accent, status, focus and progress colors. Added an accessible step progress value and notification checkbox labels; controls use 44px+ touch targets. Biometric and Android permission callbacks and state transitions are unchanged.
+- Added `test_onboarding_theme_20261107.cjs` to server-render the real production component through all five states using synthetic preferences. It verifies the dialog, progress, semantic palette use and relevant step content (21 assertions).
+- The first test run found React escapes the completion heading apostrophe in HTML; the assertion was corrected to accept the serialized HTML representation. No product failure was indicated.
+- Focused test: PASS (21 production-render assertions). `npx --no-install tsc --noEmit`: PASS. `npm run build`: PASS (2,242 modules; main JS 492.04 kB, secondary chunks split). `npm run test:all`: PASS, including full Node/WP0/Sentinel chain; SAF native OS picker remains device-blocked. `git diff --check`: PASS.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-onboarding-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-onboarding-theme-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings semantic theme completion is committed and pushed at `e8b082c833d66cb027dfe1419ec4d8522fc0ebc8`; on-demand screen loading is committed and pushed at `2a23faa8354edbf2499234509976a6485c739d4f`. Worktree is clean at `2a23faa`.
-- PR #23 remains open/draft and points to `2a23faa`, targeting `security/lifeos-encrypted-startup-20261107`. The last known workflow for `e8b082c` was pending (`42337583466`); no run for `2a23faa` was returned by `gh run list --commit` at checkpoint time. Treat latest-host CI as not yet verified.
-- Next, check the latest hosted run once after it appears and record terminal results. Then continue sequentially with bounded, evidence-led work. LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review remain blockers; do not imply release readiness or total overnight completion.
+- Settings semantic theme completion is pushed at `e8b082c833d66cb027dfe1419ec4d8522fc0ebc8`; on-demand screen loading is pushed at `2a23faa8354edbf2499234509976a6485c739d4f`. Current branch HEAD before Onboarding changes was `b5a3218f9fd17edd00b773c72a46714a5aefb709`; the Onboarding package is locally verified and awaiting checkpoint commit/push.
+- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Hosted run `42337919020` for `b5a3218` was pending; after the next push, check latest CI once and report pending until terminal.
+- Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
