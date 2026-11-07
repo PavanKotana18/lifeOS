@@ -124,8 +124,8 @@ jobs:
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M
-            test-filter: "WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage"
-            required-test: "WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage"
+            test-filter: "com.lifeos.personal.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage"
+            required-test: "com.lifeos.personal.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage"
           - id: standard-api34
             api-level: 34
             profile: pixel_6

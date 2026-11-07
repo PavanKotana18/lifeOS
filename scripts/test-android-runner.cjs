@@ -5,6 +5,11 @@ const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/workstream-integration.yml'), 'utf8');
+assert.match(workflow, /test-filter:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
+  'API 29 filter must name the fully qualified instrumentation class');
+assert.match(workflow, /required-test:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
+  'API 29 acceptance gate must require the fully qualified compatibility case');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifeos-runner-contract-'));
 try {
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
