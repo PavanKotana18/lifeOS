@@ -14,7 +14,7 @@ export interface CryptoLifecycleAdapter {
   prepareRecovery?(): Promise<PreparedRecovery>;
   confirmRecovery?(): Promise<void>;
   deferRecovery?(): Promise<void>;
-  setup(): Promise<{ success: boolean; message?: string }>;
+  setup(options?: { deferRecovery?: boolean }): Promise<{ success: boolean; message?: string }>;
   unlock(): Promise<{ success: boolean; message?: string }>;
   lock(): Promise<void>;
   isUnlocked(): Promise<boolean>;
@@ -91,7 +91,7 @@ export function createProtectedSessionController(
               throw new Error('Encryption state changed during setup. Retry or recover the existing key.');
             }
             current();
-            const result = await crypto.setup();
+            const result = await crypto.setup({ deferRecovery: openOptions.recoveryChoice === 'later' });
             current();
             if (!result?.success) throw new Error(result?.message || 'Secure setup was cancelled or failed.');
             keyCreatedThisAttempt = true;

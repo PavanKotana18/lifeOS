@@ -800,6 +800,7 @@ public class LifeOSCryptoPlugin extends Plugin {
 
     @PluginMethod
     public void setup(PluginCall call) {
+        boolean deferRecovery = call.getBoolean("deferRecovery", false);
         long authGeneration = getLockGeneration();
         synchronized (keyLock) {
             if (setupInProgress) {
@@ -859,14 +860,14 @@ public class LifeOSCryptoPlugin extends Plugin {
                     wrapped = authorizedCipher.doFinal(generatedKey);
                     iv = authorizedCipher.getIV();
 
-                    boolean persisted = getContext()
-                        .getSharedPreferences(PREFS, 0)
-                        .edit()
+                    android.content.SharedPreferences.Editor setupEditor = getContext()
+                        .getSharedPreferences(PREFS, 0).edit()
                         .putString("wrapped_key", Base64.encodeToString(wrapped, Base64.NO_WRAP))
                         .putString("wrapped_iv", Base64.encodeToString(iv, Base64.NO_WRAP))
                         .putInt("key_version", 1)
-                        .remove("initial_setup_pending")
-                        .commit();
+                        .remove("initial_setup_pending");
+                    if (deferRecovery) setupEditor.putBoolean("recovery_deferred", true);
+                    boolean persisted = setupEditor.commit();
 
                     if (!persisted) {
                         throw new IllegalStateException("Unable to persist wrapped database key");
@@ -881,7 +882,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                     } finally {
                         cryptoLock.writeLock().unlock();
                     }
-                    recoveryDeferralAllowed = true;
+                    recoveryDeferralAllowed = !deferRecovery;
 
                     JSObject response = new JSObject();
                     response.put("success", true);

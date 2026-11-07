@@ -19,18 +19,18 @@ function owner(f, overrides = {}) {
     });
 }
 function unprovisioned(f) {
-  let provisioned = false, recovery = false, recoveryDeferred = false, setups = 0, preparations = 0;
+  let provisioned = false, recovery = false, recoveryDeferred = false, setups = 0, preparations = 0, setupOptions;
   const read = f.native.getKeyState;
   f.native.getKeyState = async () => ({ ...await read(), keyProvisioned: provisioned,
     recoveryProvisioned: recovery, recoveryDeferred, keystoreAliasPresent: provisioned,
     unlocked: provisioned && (await f.native.isUnlocked()).unlocked });
-  f.native.setup = async () => { setups++; provisioned = true; return f.native.unlock(); };
+  f.native.setup = async options => { setups++; setupOptions = options; provisioned = true; recoveryDeferred = options?.deferRecovery === true; return f.native.unlock(); };
   f.native.prepareRecovery = async () => { preparations++; return { success: true,
     recoveryCode: 'A'.repeat(43), envelope: { version: 1, kdf: 'PBKDF2-HMAC-SHA-256', iterations: 600000,
       salt: Buffer.alloc(16).toString('base64'), iv: Buffer.alloc(12).toString('base64'), wrappedKey: Buffer.alloc(48).toString('base64') } }; };
   f.native.confirmRecovery = async () => { recovery = true; recoveryDeferred = false; return { success: true }; };
   f.native.deferRecovery = async () => { recoveryDeferred = true; return { success: true }; };
-  return { get setups() { return setups; }, get preparations() { return preparations; } };
+  return { get setups() { return setups; }, get preparations() { return preparations; }, get setupOptions() { return setupOptions; } };
 }
 (async () => {
   await test('A pristine first install reaches welcome without native authentication or private hydration', async f => {
@@ -65,6 +65,19 @@ function unprovisioned(f) {
       assert.equal(f.isEncryptedStorageActivated(), false);
     } finally { f.StorageService.transactions.getAll = original; }
   });
+  await test('Onboarding display name persists through the bootstrap profile setting before secure setup', async f => {
+    const update = h.appFunction('updateDisplayName');
+    let renderedName = '';
+    const updateName = h.bind(update, { StorageService: f.StorageService,
+      isEncryptedStorageActivated: f.isEncryptedStorageActivated, setDisplayName: name => { renderedName = name; } });
+    await updateName('  Synthetic Profile  ');
+    assert.equal(renderedName, '  Synthetic Profile  ');
+    assert.equal(await f.StorageService.settings.get('displayName'), 'Synthetic Profile');
+    const fresh = await f.restart();
+    assert.equal(await fresh.StorageService.settings.get('displayName'), 'Synthetic Profile');
+    await fresh.lifeOSDatabase.close();
+    await fresh.lifeOSDatabase.delete();
+  });
   await test('An interrupted native setup may retry only its marked orphan alias', async f => {
     let state = { keyProvisioned: false, recoveryProvisioned: false, recoveryDeferred: false,
       initialSetupPending: true, recoveryNeedsRebind: false, metadataConsistent: true,
@@ -81,24 +94,22 @@ function unprovisioned(f) {
     assert.equal((await f.native.getKeyState()).recoveryDeferred, true);
     assert.equal(f.isEncryptedStorageActivated(), true);
   });
-  await test('First-record gate encrypts the pending name before the caller may write', async f => {
+  await test('First-record gate defers optional recovery and encrypts private records before writing', async f => {
     const state = unprovisioned(f);
     const expression = h.appFunction('ensurePrivateStorageBeforeWrite');
     const c = owner(f);
     const deps = { ...f.appDeps(), encryptedSession: c, requestFirstRecordSecurity: async () => 'later',
       firstRecordSetupAuthorized: { current: false }, safeFirstRunBrowse: { current: true },
-      pendingDisplayName: { current: 'Synthetic User' }, biometricAuthenticated: { current: false },
+      biometricAuthenticated: { current: false },
       setIsLocked() {}, setBiometricEnabled() {}, setBiometricVerified() {},
       setRecoveryProvisioned() {}, setRecoveryDeferred() {}, async reloadAllData() {} };
     await h.bind(expression, deps)();
     assert.equal(state.setups, 1);
     assert.equal(state.preparations, 0);
+    assert.equal(state.setupOptions.deferRecovery, true, 'recovery deferral accompanies first Keystore key creation');
     assert.equal(deps.safeFirstRunBrowse.current, false);
-    assert.equal(deps.pendingDisplayName.current, '');
     assert.equal(f.isEncryptedStorageActivated(), true);
-    const nameRow = await f.lifeOSDatabase.settings.get('displayName');
-    assert.equal(nameRow.__lifeosEncrypted, 1);
-    assert.equal(nameRow.value, undefined);
+    assert.equal((await f.native.getKeyState()).recoveryDeferred, true);
     await f.StorageService.categories.add({ id: 'synthetic-food', name: 'Food', type: 'expense' });
     const tx = await f.StorageService.transactions.add({ type: 'expense', amount: 2.5, category: 'Food', description: 'Synthetic record', date: '2026-11-07', paymentMethod: 'Cash' });
     assert.equal((await f.lifeOSDatabase.transactions.get(tx.id)).__lifeosEncrypted, 1);
@@ -107,14 +118,15 @@ function unprovisioned(f) {
     const state = unprovisioned(f), expression = h.appFunction('ensurePrivateStorageBeforeWrite');
     const ensure = h.bind(expression, { ...f.appDeps(), encryptedSession: owner(f), requestFirstRecordSecurity: async () => null,
       firstRecordSetupAuthorized: { current: false }, safeFirstRunBrowse: { current: true },
-      pendingDisplayName: { current: 'Synthetic User' }, biometricAuthenticated: { current: false },
+      biometricAuthenticated: { current: false },
       setIsLocked() {}, setBiometricEnabled() {}, setBiometricVerified() {}, setRecoveryProvisioned() {},
       setRecoveryDeferred() {}, async reloadAllData() {} });
     await assert.rejects(ensure(), /cancelled/);
     assert.equal(state.setups, 0);
     assert.equal(f.isEncryptedStorageActivated(), false);
     assert.equal(await f.lifeOSDatabase.transactions.count(), 0);
-    await assert.rejects(f.StorageService.settings.set('displayName', 'Synthetic User'), /Encrypted storage is not ready/);
+    await f.StorageService.settings.set('displayName', 'Synthetic User');
+    assert.equal(await f.StorageService.settings.get('displayName'), 'Synthetic User');
   });
   await test('Legacy-data startup waits for explicit consent and complete-kit confirmation', async f => {
     const state = unprovisioned(f), consent = deferred(), kit = deferred(), shown = deferred();

@@ -8,11 +8,10 @@ export default function FirstRecordSecurityDialog({ onDecision }: {
     <section role="dialog" aria-modal="true" aria-labelledby="first-record-security-title" className="lifeos-panel my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md space-y-3 overflow-y-auto rounded-2xl border p-5 shadow-2xl">
       <p className="text-xs font-semibold uppercase tracking-[.14em] lifeos-accent-text">Before your first record</p>
       <h1 id="first-record-security-title" className="text-xl font-semibold">Protect your personal data</h1>
-      <p className="text-sm leading-6 text-secondary">Android will authenticate you and LifeOS will encrypt records on this device. Cancelling or unavailable authentication leaves the record unsaved.</p>
-      <p className="lifeos-warning rounded-xl p-3 text-xs leading-5">A recovery kit can restore access if this device key is lost. You can set one up now or later in Settings. Until then, losing the key may make the data unrecoverable.</p>
-      <button type="button" onClick={() => onDecision('later')} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">Protect this device; recovery later</button>
-      <button type="button" onClick={() => onDecision('setup')} className="lifeos-panel min-h-12 w-full rounded-xl border px-4 text-sm font-semibold">Set up recovery now</button>
-      <button type="button" onClick={() => onDecision(null)} className="min-h-11 w-full rounded-xl px-4 text-sm text-secondary">Not now</button>
+      <p className="text-sm leading-6 text-secondary">Android will authenticate you once while LifeOS prepares encrypted storage on this device. Recovery is optional and can be configured later in Settings.</p>
+      <p className="lifeos-warning rounded-xl p-3 text-xs leading-5">Without a recovery kit or encrypted backup, losing this device key may make your records unrecoverable.</p>
+      <button type="button" onClick={() => onDecision('later')} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">Not now — set up recovery later</button>
+      <button type="button" onClick={() => onDecision(null)} className="min-h-11 w-full rounded-xl px-4 text-sm text-secondary">Cancel saving for now</button>
     </section>
   </div>;
 }

@@ -11,8 +11,8 @@ async function test(name, run) {
   await test('Inactive facade rejects sensitive reads/writes even with an unlocked JS session', async f => {
     for (const operation of [() => f.StorageService.transactions.getAll(),
       () => f.StorageService.transactions.add({description:'synthetic'}),
-      () => f.StorageService.settings.set('displayName','synthetic'),
-      () => f.StorageService.settings.get('displayName',''),
+      () => f.StorageService.settings.set('privateSetting','synthetic'),
+      () => f.StorageService.settings.get('privateSetting',''),
       () => f.StorageService.backup.exportData(), () => f.StorageService.backup.clearAll()]) {
       f.sessionManager.unlock();
       await assert.rejects(operation, /Encrypted storage is not ready/);
@@ -23,6 +23,8 @@ async function test(name, run) {
     assert.equal(await f.StorageService.settings.get('theme','system'),'light');
     await f.StorageService.settings.set('visualTheme','soft-ivory-sage');
     assert.equal(await f.StorageService.settings.get('visualTheme',''),'soft-ivory-sage');
+    await f.StorageService.settings.set('displayName','Synthetic profile');
+    assert.equal(await f.StorageService.settings.get('displayName',''),'Synthetic profile');
   });
   await test('Actual startup activates encrypted storage before private hydration',async f=>{
     const init=h.appFunction('initApp');
@@ -31,7 +33,7 @@ async function test(name, run) {
     assert.equal(f.sessionManager.isUnlocked(),true);
     await f.StorageService.settings.set('displayName','synthetic');
     const row=await f.lifeOSDatabase.settings.get('displayName');
-    assert.equal(row.__lifeosEncrypted,1);assert.equal(row.value,undefined);
+    assert.equal(row.__lifeosEncrypted,undefined);assert.equal(row.value,'synthetic');
   });
   await test('Missing recovery protection blocks migration without changing legacy records',async f=>{
     const row={id:'synthetic-category',name:'Synthetic',type:'expense'};

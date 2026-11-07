@@ -52,7 +52,7 @@ interface NativeCryptoPlugin {
     envelope: RecoveryEnvelope;
   }): Promise<CryptoOperationResult>;
   rebindLocalKey(): Promise<CryptoOperationResult>;
-  setup(): Promise<CryptoOperationResult>;
+  setup(options?: { deferRecovery?: boolean }): Promise<CryptoOperationResult>;
   unlock(): Promise<CryptoOperationResult>;
   lock(): Promise<{ success: boolean }>;
   getKeyState(): Promise<CryptoKeyState>;
@@ -224,9 +224,9 @@ export const CryptoService = Object.freeze({
     if (result?.verified !== true) throw new Error('Recovery kit does not match the existing encrypted database.');
   },
 
-  async setup(): Promise<CryptoOperationResult> {
+  async setup(options?: { deferRecovery?: boolean }): Promise<CryptoOperationResult> {
     assertNativeCryptoAvailable();
-    return nativeCrypto.setup();
+    return nativeCrypto.setup(options);
   },
 
   async unlock(): Promise<CryptoOperationResult> {

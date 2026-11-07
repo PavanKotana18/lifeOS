@@ -90,6 +90,7 @@ export default function App() {
   const [plannerDisplayedMonth, setPlannerDisplayedMonth] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); });
   const [plannerDetailTaskId, setPlannerDetailTaskId] = useState<string | null>(null);
   const pendingNotificationTaskId = useRef<string | null>(null);
+  const pendingNotificationActionId = useRef<number | null>(null);
   const handledNotificationIds = useRef(new Set<number>());
   const [profileNotificationsOpen, setProfileNotificationsOpen] = useState(false);
   const scrollPositions = useRef<Record<string, number>>({});
@@ -109,6 +110,7 @@ export default function App() {
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', exactAlarm: 'checking', channel: 'unknown', pendingCount: 0, lastError: '' });
+  const [taskReminderDiagnostics, setTaskReminderDiagnostics] = useState<Record<string, unknown> | null>(null);
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
@@ -118,7 +120,6 @@ export default function App() {
   const [firstRecordSecurityOpen, setFirstRecordSecurityOpen] = useState(false);
   const [recoveryProvisioned, setRecoveryProvisioned] = useState(false);
   const [recoveryDeferred, setRecoveryDeferred] = useState(false);
-  const pendingDisplayName = useRef('');
   const safeFirstRunBrowse = useRef(false);
   const firstRecordSetupAuthorized = useRef(false);
   const firstRecordSecurityResolver = useRef<((choice: NewUserRecoveryChoice | null) => void) | null>(null);
@@ -548,7 +549,7 @@ export default function App() {
       setBiometricVerified(false);
       setRecoveryProvisioned(false);
       setRecoveryDeferred(false);
-      setDisplayName('');
+      setDisplayName(await StorageService.settings.get<string>('displayName', ''));
       setOnboardingRequired(!completed);
       setOnboardingComplete(completed);
       setOnboardingStep(0);
@@ -556,6 +557,8 @@ export default function App() {
         await StorageService.settings.set('notificationDefaultsPending', true);
       }
       if (!started && !completed) await StorageService.settings.set('onboardingStarted', true);
+      const notificationPermission = await NotificationService.checkPermission();
+      await reconcileNotificationPreferences(notificationPermission);
       setAppReady(true);
       return;
     }
@@ -731,18 +734,15 @@ export default function App() {
     if (results.some(result => result.status === 'rejected')) {
       console.warn('One or more local notification schedules could not be updated.', results.filter(result => result.status === 'rejected'));
       await refreshNotificationDiagnostics();
-      return;
+      return false;
     }
     await refreshNotificationDiagnostics();
+    return true;
   };
 
   const updateDisplayName = async (name: string) => {
     const normalized = name.slice(0, 48).trim();
     setDisplayName(name.slice(0, 48));
-    if (!isEncryptedStorageActivated()) {
-      pendingDisplayName.current = normalized;
-      return;
-    }
     await StorageService.settings.set('displayName', normalized);
   };
 
@@ -905,32 +905,68 @@ export default function App() {
     if (!task) {
       setPlannerDetailTaskId(null);
       showToast('That reminder no longer has an available task.', 'info');
+      const actionId = pendingNotificationActionId.current;
+      pendingNotificationActionId.current = null;
+      if (actionId !== null) await NotificationService.acknowledgeInitialTapAction(actionId);
       return;
     }
     setPlannerSelectedDate(task.dueDate);
     setPlannerDetailTaskId(task.id);
+    const actionId = pendingNotificationActionId.current;
+    pendingNotificationActionId.current = null;
+    if (actionId !== null) await NotificationService.acknowledgeInitialTapAction(actionId);
+  };
+
+  const diagnosePlannerTaskReminder = async (task: Task) => {
+    let synchronizationFailed = false;
+    try {
+      await NotificationService.syncTasks(tasks, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
+    } catch {
+      synchronizationFailed = true;
+    }
+    try {
+      const report = await NotificationService.diagnoseTaskReminder(task, notificationPreferences);
+      setTaskReminderDiagnostics({
+        ...report,
+        sessionReady: sessionManager.isUnlocked() && isEncryptedStorageActivated(),
+        synchronizationFailed,
+      });
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Reminder diagnostics unavailable.', 'danger');
+    }
   };
 
   useEffect(() => {
     let disposed = false;
     let listener: { remove: () => Promise<void> } | null = null;
-    void NotificationService.addActionListener(action => {
+    const handleAction = (action: { notification: { id: number; extra?: Record<string, unknown> } }) => {
       const extra = action.notification.extra || {};
       const id = action.notification.id;
       if (handledNotificationIds.current.has(id)) return;
       handledNotificationIds.current.add(id);
+      window.setTimeout(() => handledNotificationIds.current.delete(id), 10_000);
       if (extra.kind === 'test') {
         navigateTo('settings');
         setProfileNotificationsOpen(true);
+        void NotificationService.acknowledgeInitialTapAction(id);
         return;
       }
       const taskId = typeof extra.taskId === 'string' ? extra.taskId : '';
-      if (!taskId) { navigateTo('planner'); return; }
+      if (!taskId) { navigateTo('planner'); void NotificationService.acknowledgeInitialTapAction(id); return; }
       pendingNotificationTaskId.current = taskId;
+      pendingNotificationActionId.current = id;
       if (!isLocked && sessionManager.isUnlocked() && isEncryptedStorageActivated()) {
         void processPendingTaskNotification().catch(error => showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger'));
       }
-    }).then(handle => { if (disposed) void handle.remove(); else listener = handle; }).catch(error => console.warn('Notification tap listener could not start.', error));
+    };
+    void NotificationService.addActionListener(handleAction).then(async handle => {
+      if (disposed) { await handle.remove(); return; }
+      listener = handle;
+      // The Capacitor listener receives onNewIntent; this native one-shot also
+      // covers notification taps that cold-start the Activity via onCreate.
+      const initialAction = await NotificationService.getInitialTapAction();
+      if (initialAction) handleAction(initialAction);
+    }).catch(error => console.warn('Notification tap listener could not start.', error));
     return () => { disposed = true; if (listener) void listener.remove(); };
   }, [isLocked]);
 
@@ -1179,10 +1215,6 @@ export default function App() {
     setRecoveryProvisioned(state.recoveryProvisioned);
     setRecoveryDeferred(state.recoveryDeferred === true);
     await StorageService.settings.set('biometricLockEnabled', true);
-    if (pendingDisplayName.current) {
-      await StorageService.settings.set('displayName', pendingDisplayName.current);
-      pendingDisplayName.current = '';
-    }
     await reloadAllData();
   };
 
@@ -1287,12 +1319,13 @@ export default function App() {
       const records = await reloadAllData();
       const reminderOptedIn = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable;
       const schedulePreferences = { ...notificationPreferences, taskReminders: reminderOptedIn || notificationPreferences.taskReminders };
-      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(schedulePreferences, notificationsEnabled || reminderOptedIn));
+      const schedulesUpdated = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(schedulePreferences, notificationsEnabled || reminderOptedIn));
       const wasEditingTask = editingTaskId;
       const wasEditingHabit = editingHabitId;
       const wasEditingTransaction = editingTransactionId;
       const wasEditingGoal = editingGoalId;
-      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable ? 'danger' : 'success');
+      const reminderSyncFailed = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable && !schedulesUpdated;
+      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and run Diagnose reminder.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable || reminderSyncFailed ? 'danger' : 'success');
     } catch (error) {
       showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
     } finally { createOperation.current = false; }
@@ -1984,7 +2017,7 @@ export default function App() {
               <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-panel min-h-11 rounded-lg border px-3 text-xs font-semibold lifeos-accent-text">Quick add</button></div>
               <input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" />
               <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
-              {plannerDetailTask && <article className="lifeos-panel rounded-2xl border border-[var(--accent)] p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Back to agenda</button></div><p className="mt-2 text-sm text-secondary">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-[var(--danger)]' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><button type="button" onClick={async () => { try { const report = await NotificationService.diagnoseTaskReminder(plannerDetailTask, notificationPreferences); showToast(`Reminder ${report.taskReference}: ${report.schedulingResult}; ${report.scheduledLocalTime || report.cancellationReason || 'no schedule'}`, report.schedulingResult === 'pending' ? 'success' : 'info'); } catch (error) { showToast(error instanceof Error ? error.message : 'Reminder diagnostics unavailable.', 'danger'); } }} className="mt-3 min-h-10 w-full rounded-lg border border-[var(--stroke)] px-3 text-xs text-secondary">Diagnose reminder</button><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-[var(--stroke)] text-sm font-semibold lifeos-accent-text">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl lifeos-accent-button text-sm font-semibold">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
+              {plannerDetailTask && <article className="lifeos-panel rounded-2xl border border-[var(--accent)] p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Back to agenda</button></div><p className="mt-2 text-sm text-secondary">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-[var(--danger)]' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-3 min-h-10 w-full rounded-lg border border-[var(--stroke)] px-3 text-xs text-secondary">Diagnose reminder</button>{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-xl lifeos-raised p-3 text-[11px]" aria-live="polite"><dt>Eligibility / secure session</dt><dd>{String(taskReminderDiagnostics.eligible)} / {String(taskReminderDiagnostics.sessionReady)}</dd><dt>Scheduled local time</dt><dd>{String(taskReminderDiagnostics.scheduledLocalTime || 'none')}</dd><dt>LifeOS category / Android permission</dt><dd>{String(taskReminderDiagnostics.categoryEnabled)} / {String(taskReminderDiagnostics.androidPermission)}</dd><dt>Scheduling / pending ID</dt><dd>{String(taskReminderDiagnostics.schedulingResult)} / {String(taskReminderDiagnostics.pendingNotificationId || 'none')}</dd><dt>Pending time matches</dt><dd>{String(taskReminderDiagnostics.pendingTimestampMatches)}</dd><dt>Exact alarm capability</dt><dd>{String(taskReminderDiagnostics.exactAlarm)}</dd><dt>Resync failed / cancellation reason</dt><dd>{String(taskReminderDiagnostics.synchronizationFailed)} / {String(taskReminderDiagnostics.cancellationReason || 'none')}</dd></dl>}<div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-[var(--stroke)] text-sm font-semibold lifeos-accent-text">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl lifeos-accent-button text-sm font-semibold">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
             {visiblePlannerTasks.length === 0 ? (
               <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
             ) : (

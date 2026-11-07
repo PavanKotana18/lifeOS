@@ -51,8 +51,8 @@ const native = {
     calls.push(['rebindLocalKey']);
     return { success: true, keyVersion: 1 };
   },
-  async setup() {
-    calls.push(['setup']);
+  async setup(options) {
+    calls.push(['setup', options]);
     return { success: true, keyVersion: 1 };
   },
   async unlock() {
@@ -193,8 +193,9 @@ async function run() {
     'Local Keystore re-binding delegates to native biometric protection'
   );
 
-  const setup = await CryptoService.setup();
+  const setup = await CryptoService.setup({ deferRecovery: true });
   check(setup.success, 'Setup delegates to the native plugin');
+  check(calls.some(call => call[0] === 'setup' && call[1]?.deferRecovery === true), 'New device provisioning can persist recovery deferral with the Keystore key creation');
 
   const unlock = await CryptoService.unlock();
   check(unlock.success, 'Unlock delegates to the native plugin');
@@ -245,7 +246,7 @@ async function run() {
   await assert.rejects(CryptoService.unlock(), /unavailable/);
   check(true, 'Web or unsupported platforms fail closed');
 
-  console.log(`CRYPTO SERVICE TESTS: ${passed}/24 PASSED`);
+  console.log(`CRYPTO SERVICE TESTS: ${passed}/25 PASSED`);
 }
 
 run().catch(error => {

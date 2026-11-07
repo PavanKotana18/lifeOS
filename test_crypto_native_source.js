@@ -172,10 +172,12 @@ assert.match(deferral, /putBoolean\("recovery_deferred",\s*true\)[\s\S]*?\.commi
 assert.match(keyState, /result\.put\("recoveryDeferred",\s*recoveryDeferred\)/);
 const setup = section('@PluginMethod\n    public void setup(PluginCall call)', '@PluginMethod\n    public void unlock(PluginCall call)');
 assert.match(setup, /initial_setup_pending/);
+assert.match(setup, /getBoolean\("deferRecovery"[\s\S]*?putBoolean\("recovery_deferred",\s*true\)[\s\S]*?setupEditor\.commit\(\)/,
+  'Recovery deferral for new users is committed atomically with the wrapped key');
 assert.match(setup, /aliasPresent\s*&&\s*!setupPending/, 'Unrecognized existing aliases remain blocked');
 assert.match(setup, /remove\(\"initial_setup_pending\"\)/);
 assert.match(setup, /only this explicitly[\s\S]*interrupted first-time setup may safely reuse the alias/);
-assert.match(setup, /recoveryDeferralAllowed = true;/, 'Only native setup enables one-time deferral');
-assert.equal((source.match(/recoveryDeferralAllowed = true;/g) || []).length, 1, 'No other native path may grant recovery deferral');
+assert.match(setup, /recoveryDeferralAllowed\s*=\s*!deferRecovery/, 'Native setup only enables the legacy one-time deferral when it was not persisted atomically');
+assert.equal((source.match(/recoveryDeferralAllowed\s*=\s*!deferRecovery/g) || []).length, 1, 'No other native path may grant setup-time deferral');
 console.log('PASS: recovery deferral is explicit, one-time, key-bound and represented in native state');
 console.log('PASS: Recovery metadata checks the supported KDF version');

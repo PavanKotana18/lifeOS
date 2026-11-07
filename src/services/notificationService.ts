@@ -17,8 +17,14 @@ const taskNotificationId = (task: Task, kind: string) => notificationId(`task:${
 const testId = notificationId('lifeos:test-notification');
 const isNative = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('LocalNotifications');
 const NativeNotificationSettings = registerPlugin<{ open(): Promise<void> }>('NotificationSettings');
+const NativeNotificationTapLaunch = registerPlugin<{
+  getInitialAction(): Promise<{ action?: { notification?: { id?: number; extra?: Record<string, unknown> } } }>;
+  acknowledgeInitialAction(options: { id: number }): Promise<void>;
+}>('NotificationTapLaunch');
 const diagnosticKey = 'lifeos.notificationDiagnostics';
 let ensureChannelPromise: Promise<void> | null = null;
+let taskSyncQueue: Promise<void> = Promise.resolve();
+const taskScheduleStatus = new Map<string, 'pending' | 'schedule-failed'>();
 
 export interface NotificationDiagnostics {
   supported: boolean;
@@ -36,6 +42,11 @@ function writeLastError(error: string) {
   try { if (error) localStorage.setItem(diagnosticKey, error); else localStorage.removeItem(diagnosticKey); } catch { /* Diagnostics are best-effort when storage is unavailable. */ }
 }
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
+function pendingTimeMatches(actual: unknown, expected: Date) {
+  if (actual === undefined || actual === null) return false;
+  const actualTime = actual instanceof Date ? actual.getTime() : new Date(actual as string | number).getTime();
+  return Number.isFinite(actualTime) && Math.abs(actualTime - expected.getTime()) < 1000;
+}
 
 function localDateTime(date: string, time: string) {
   const [year, month, day] = date.split('-').map(Number);
@@ -104,7 +115,8 @@ export const NotificationService = {
 
   async syncTasks(tasks: Task[], preferences: NotificationPreferences) {
     if (!isNative()) return;
-    try {
+    const run = async () => {
+      try {
       await this.ensureChannel();
       if (!(await this.canScheduleNotifications())) {
         writeLastError('permission-denied-or-revoked');
@@ -113,7 +125,6 @@ export const NotificationService = {
       const pending = await LocalNotifications.getPending();
       const taskKinds = new Set(['taskReminders', 'upcomingDeadlines', 'overdueAlerts']);
       const oldTaskNotifications = pending.notifications.filter(item => taskKinds.has(String(item.extra?.kind || '')));
-      await cancelIds(oldTaskNotifications.map(item => item.id));
 
       const labels: Record<string, string> = {
         taskReminders: 'Task reminder', upcomingDeadlines: 'Upcoming deadline', overdueAlerts: 'Task overdue',
@@ -124,19 +135,41 @@ export const NotificationService = {
         schedule: { at: plan.at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: plan.kind, taskId: task.id },
       })));
+      const desiredIds = new Set(notifications.map(item => item.id));
       if (notifications.length) {
+        // Queue the replacement set first. A failed update must not erase
+        // reminders which were already queued successfully.
         await schedule(notifications);
         const after = await LocalNotifications.getPending();
-        const scheduledIds = new Set(after.notifications.map(item => item.id));
-        const missing = notifications.filter(item => !scheduledIds.has(item.id));
+        const pendingById = new Map(after.notifications.map(item => [item.id, item]));
+        const missing = notifications.filter(item => {
+          const pendingItem = pendingById.get(item.id);
+          return !pendingItem || !pendingTimeMatches(pendingItem.schedule?.at, item.schedule.at);
+        });
         if (missing.length) throw new Error(`schedule-verification-missing:${missing.length}`);
       }
+      // Retire only stale LifeOS task schedules after the desired set is
+      // confirmed. Serializing this operation prevents overlapping syncs from
+      // cancelling each other's schedules during rapid task edits/resume.
+      await cancelIds(oldTaskNotifications.filter(item => !desiredIds.has(item.id)).map(item => item.id));
+      const finalPending = await LocalNotifications.getPending();
+      const finalIds = new Set(finalPending.notifications.map(item => item.id));
+      for (const task of tasks) {
+        const reminderId = taskNotificationId(task, 'taskReminders');
+        if (finalIds.has(reminderId)) taskScheduleStatus.set(task.id, 'pending');
+        else taskScheduleStatus.delete(task.id);
+      }
       writeLastError('');
-    } catch (error) {
-      writeLastError(errorMessage(error));
-      console.error('LifeOS task notification scheduling failed:', error);
-      throw error;
-    }
+      } catch (error) {
+        for (const task of tasks) taskScheduleStatus.set(task.id, 'schedule-failed');
+        writeLastError(errorMessage(error));
+        console.error('LifeOS task notification scheduling failed:', error);
+        throw error;
+      }
+    };
+    const result = taskSyncQueue.then(run, run);
+    taskSyncQueue = result.then(() => undefined, () => undefined);
+    return result;
   },
 
   async diagnoseTaskReminder(task: Task, preferences: NotificationPreferences) {
@@ -147,12 +180,14 @@ export const NotificationService = {
     const planned = buildTaskNotificationPlan(task, { ...DEFAULT_NOTIFICATION_PREFERENCES, ...preferences }, new Date());
     const taskPlan = planned.find(item => item.kind === kind);
     const pendingItem = pending.notifications.find(item => item.id === id);
+    const pendingMatchesPlan = Boolean(pendingItem && taskPlan && pendingTimeMatches(pendingItem.schedule?.at, taskPlan.at));
     let cancellationReason = '';
     if (task.completed) cancellationReason = 'task-completed';
     else if (!task.reminderAt) cancellationReason = 'reminder-not-configured';
     else if (!preferences.taskReminders) cancellationReason = 'category-disabled';
     else if (permission !== 'granted') cancellationReason = `permission-${permission}`;
     else if (!taskPlan) cancellationReason = 'invalid-or-past-reminder-time';
+    else if (pendingItem && !pendingMatchesPlan) cancellationReason = 'pending-time-mismatch';
     else if (!pendingItem) cancellationReason = 'not-present-in-android-pending-queue';
     return {
       taskReference: task.id,
@@ -160,8 +195,11 @@ export const NotificationService = {
       scheduledLocalTime: taskPlan?.at.toLocaleString() || null,
       categoryEnabled: preferences.taskReminders,
       androidPermission: permission,
-      schedulingResult: pendingItem ? 'pending' : cancellationReason ? 'not-scheduled' : 'unknown',
-      pendingNotificationId: pendingItem?.id ?? null,
+      schedulingResult: pendingMatchesPlan ? 'pending' : taskPlan && permission === 'granted' && preferences.taskReminders && !task.completed
+        ? taskScheduleStatus.get(task.id) || 'not-present-in-android-pending-queue'
+        : 'not-scheduled',
+      pendingNotificationId: pendingMatchesPlan ? pendingItem?.id ?? null : null,
+      pendingTimestampMatches: pendingMatchesPlan,
       cancellationReason: cancellationReason || null,
       exactAlarm: await this.checkExactAlarmPermission(),
     };
@@ -170,6 +208,19 @@ export const NotificationService = {
   async addActionListener(listener: (action: { notification: { id: number; extra?: Record<string, unknown> } }) => void) {
     if (!isNative()) return { remove: async () => {} };
     return LocalNotifications.addListener('localNotificationActionPerformed', listener);
+  },
+
+  async getInitialTapAction() {
+    if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('NotificationTapLaunch')) return null;
+    const result = await NativeNotificationTapLaunch.getInitialAction();
+    return result.action?.notification && typeof result.action.notification.id === 'number'
+      ? { notification: { id: result.action.notification.id, extra: result.action.notification.extra } }
+      : null;
+  },
+
+  async acknowledgeInitialTapAction(id: number) {
+    if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('NotificationTapLaunch')) return;
+    await NativeNotificationTapLaunch.acknowledgeInitialAction({ id });
   },
 
   async cancelTask(task: Task) {

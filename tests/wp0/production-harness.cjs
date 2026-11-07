@@ -246,6 +246,7 @@ async function fixture({ activate = true } = {}) {
     const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...load('src/services/todayLayout.ts'), ...db, ...notificationModule, ...state,
       ...load('src/services/csvExportService.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
+      reconcileNotificationPreferences: async () => {},
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
       ensurePrivateStorageBeforeWrite: async () => {
         if (!db.isEncryptedStorageActivated() || !db.sessionManager.isUnlocked()) {
@@ -280,7 +281,7 @@ async function fixture({ activate = true } = {}) {
   // Default integration fixtures actually migrate through production APIs;
   // security boundary tests explicitly request { activate: false }.
   if (activate) { db.sessionManager.unlock(); await db.activateEncryptedStorage(); }
-  return { ...db, native, pending, load, appDeps, ...notificationModule,
+  return { ...db, native, pending, notifications, load, appDeps, ...notificationModule,
     async restart() {
       db.sessionManager.lock(); await db.sessionManager.waitForIdle();
       db.lifeOSDatabase.close(); await native.lock();

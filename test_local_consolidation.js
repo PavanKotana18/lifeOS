@@ -35,6 +35,48 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.ok(report.pendingNotificationId);
   assert.equal(JSON.stringify(report).includes(task.title), false);
  }));
+ await test('Persisted task reminder is queued at its saved local-time instant and survives failed reschedule', async () => fixture(async f => {
+  const stableId = f.load('src/services/domainUtils.ts').stableNotificationId;
+  const prefs = { ...f.DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };
+  const firstAt = new Date(Date.now() + 90 * 60_000);
+  const nextAt = new Date(Date.now() + 150 * 60_000);
+  const task = await f.StorageService.tasks.add({ title: 'Synthetic reminder', dueDate: '2030-01-01', priority: 'Medium', recurring: 'None', completed: false, reminderAt: firstAt.toISOString() });
+  const stored = await f.StorageService.tasks.getAll();
+  assert.equal(stored[0].reminderAt, firstAt.toISOString(), 'database persists reminder as the selected absolute instant');
+  await f.NotificationService.syncTasks(stored, prefs);
+  let report = await f.NotificationService.diagnoseTaskReminder(stored[0], prefs);
+  assert.equal(report.schedulingResult, 'pending');
+  assert.equal(report.pendingTimestampMatches, true);
+  assert.equal(new Date(f.pending.get(report.pendingNotificationId).schedule.at).getTime(), firstAt.getTime());
+  f.notifications.schedule = async () => { throw new Error('SIMULATED_SCHEDULE_REJECTION'); };
+  const edited = { ...stored[0], reminderAt: nextAt.toISOString() };
+  const originalError = console.error;
+  console.error = () => {};
+  try { await assert.rejects(f.NotificationService.syncTasks([edited], prefs), /SIMULATED_SCHEDULE_REJECTION/); }
+  finally { console.error = originalError; }
+  report = await f.NotificationService.diagnoseTaskReminder(edited, prefs);
+  assert.equal(report.schedulingResult, 'schedule-failed');
+  assert.equal(report.cancellationReason, 'pending-time-mismatch');
+  assert.equal(report.pendingTimestampMatches, false);
+  assert.equal(new Date(f.pending.get(stableId(`task:${task.id}:taskReminders`)).schedule.at).getTime(), firstAt.getTime(), 'failed replacement leaves the previously valid alarm intact');
+ }));
+ await test('Task sync removes completed or deleted task schedules without affecting unrelated reminders', async () => fixture(async f => {
+  const prefs = { ...f.DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };
+  const stableId = f.load('src/services/domainUtils.ts').stableNotificationId;
+  const at = new Date(Date.now() + 120 * 60_000).toISOString();
+  const first = await f.StorageService.tasks.add({ title: 'Synthetic one', dueDate: '2030-01-01', priority: 'Medium', recurring: 'None', completed: false, reminderAt: at });
+  const second = await f.StorageService.tasks.add({ title: 'Synthetic two', dueDate: '2030-01-01', priority: 'Medium', recurring: 'None', completed: false, reminderAt: at });
+  const rows = await f.StorageService.tasks.getAll();
+  await f.NotificationService.syncTasks(rows, prefs);
+  const firstId = stableId(`task:${first.id}:taskReminders`), secondId = stableId(`task:${second.id}:taskReminders`);
+  await f.NotificationService.syncTasks([{ ...rows[0], completed: true }, rows[1]], prefs);
+  assert.equal(f.pending.has(firstId), false, 'completed reminder is cancelled');
+  assert.equal(f.pending.has(secondId), true, 'unrelated active reminder remains queued');
+  await f.NotificationService.syncTasks([rows[1]], prefs);
+  assert.equal(f.pending.has(secondId), true, 'task deletion synchronization preserves other task reminder');
+  await f.NotificationService.syncTasks([], prefs);
+  assert.equal(f.pending.has(secondId), false, 'deleted task reminder is removed after deletion sync');
+ }));
  await test('Permission UI permits approximate reminders without exact-alarm settings detour', async () => fixture(async f => {
   const ns=f.NotificationService;let requested=0;
   ns.checkExactAlarmPermission=async()=> 'denied'; ns.requestExactAlarmPermission=async()=>{ requested++;return 'denied'; };
@@ -57,5 +99,5 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const messages=[];const reset=h.bind(h.buttonHandler('Clear All Application Data'),{...f.appDeps(),showToast:(...args)=>messages.push(args)});
   await reset();assert.equal(await f.lifeOSDatabase.tasks.count(),1);assert.equal(messages.at(-1)[1],'danger');
  }));
- console.log(`LOCAL CONSOLIDATION: ${passed}/6 passed (native simulated)`);
+ console.log(`LOCAL CONSOLIDATION: ${passed}/8 passed (native simulated)`);
 })().catch(e=>{console.error(e);process.exitCode=1;});

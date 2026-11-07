@@ -131,8 +131,35 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      - name: Configure persistent debug signing when available
+        id: debug-signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LIFEOS_DEBUG_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LIFEOS_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            KEYSTORE_PATH="$RUNNER_TEMP/lifeos-debug.keystore"
+            printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+            chmod 600 "$KEYSTORE_PATH"
+            {
+              echo "LIFEOS_DEBUG_KEYSTORE_PATH=$KEYSTORE_PATH"
+              echo "LIFEOS_DEBUG_KEYSTORE_PASSWORD=$STORE_PASSWORD"
+              echo "LIFEOS_DEBUG_KEY_ALIAS=$KEY_ALIAS"
+              echo "LIFEOS_DEBUG_KEY_PASSWORD=$KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Stable LifeOS debug signing is configured for this APK." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No persistent debug signing key is configured. This APK uses the runner-generated Android debug key and may not update an installation signed by another runner." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Build Debug APK
         run: gradle -p android :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+
+      - name: Report APK signing identity
+        run: gradle -p android :app:signingReport
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
