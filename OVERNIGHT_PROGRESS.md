@@ -276,3 +276,10 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Added `SavingsGoalProgress.tsx` and `test_savings_goal_visual_20261107.cjs` (19 SSR/source assertions) to the mandatory test chain. The test uses synthetic amounts only.
 - Focused savings visual: PASS (19); TypeScript: PASS; production build: PASS (2,246 modules; Inter locally included; existing large-chunk advisory, main JS 512.09 kB / FinanceCharts 414.76 kB); `git diff --check`: PASS. Android rendering is not validated.
 - This package is local and uncommitted. Next step: inspect/stage only its files plus checkpoint, commit and push to the existing branch/PR #24, then verify CI once.
+
+### Budget status and missing-category presentation (local, focused verification complete)
+
+- The budget screen previously capped the reported percentage at 100% and displayed zero remaining after overspend. Added `getBudgetDisplayStatus` to retain the actual percentage and overage while capping only the visual track; over-plan amounts now use neutral text, and an absent monthly limit is not described as remaining money.
+- Budgets whose category reference no longer resolves now show usage as unavailable and ask the user to restore the category; they no longer imply that spending was zero. No budget, category, or transaction records were modified.
+- Added `test_budget_display_20261107.cjs` (14 focused arithmetic/UI assertions) to the mandatory chain. Budget display tests: PASS (14); Finance precision/regression: PASS (7); local consolidation/notifications: PASS (5); TypeScript: PASS; production build: PASS (2,247 modules; existing chunk advisory, main JS 513.09 kB, FinanceCharts 414.76 kB); `git diff --check`: PASS.
+- GitHub run `42354889078` passed automated checks and Android debug build for prior head `f28d1e69bf61c441000a7eee01de3ce25ca12271`. This budget package is local and not yet in CI.
