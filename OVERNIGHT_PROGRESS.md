@@ -107,9 +107,17 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Strong biometric prompt, key invalidation/rebind, notification delivery, SAF picker, and actual screen/theme tap-through remain device-dependent.
 - No crypto policy/algorithm, production activation, backup format, target SDK, signing, or release behavior was changed here.
 
-## Next exact steps
+### Settings controls, forms and backup actions (local, verified)
 
-1. Commit and push the verified Goal/Planner accessibility packages to the existing PR #23 branch; do not create another PR.
-2. Verify CI for the latest published head. Treat an API29 `sdkmanager` package-download failure as infrastructure-blocked unless a new log demonstrates an application/test defect.
-3. Continue with a focused Settings/theme accessibility migration, preserving existing preference, permission and backup behavior.
-4. Keep LOS-001, API36 target compliance and physical biometric/SAF/notification acceptance visibly blocked pending their specific evidence.
+- Migrated Settings and shared form controls to semantic input/surface/accent tokens, with 44px minimum targets. Appearance choices, biometric/notification switches, backup restore/export and demo-data actions now expose usable sizing and theme-aware surfaces. Existing preference, permission, backup and data behavior was not changed.
+- Added `test_settings_ui_accessibility_20261107.cjs` with 12 source-level assertions and added it to the mandatory Node test chain. Its first run exposed a multiline-JSX matcher assumption in the test itself; the matcher now accepts the actual JSX formatting. No application defect was indicated by that initial failure.
+- `node test_settings_ui_accessibility_20261107.cjs`: PASS, 12 checks. `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS, including Node/WP0/Sentinel suites (SAF operating-system picker remains runtime-blocked). `npm run build`: PASS, 2,242 modules; main JS 511.80 kB and the existing Vite chunk advisory remains. `git diff --check`: PASS.
+- Complete test log: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-settings-ui-20261107.log`; build log: `/data/data/com.termux/files/usr/tmp/lifeos-build-settings-ui-20261107.log`.
+- Latest fetched PR #23 head at this checkpoint is `0fdf642d55b693d977832fb8c7430540da07a90d`, the same as local `HEAD` before the Settings commit. CI run `42336637914` for that head is queued; it has not been treated as a pass. Earlier hosted infrastructure failure `42334646139` is documented above.
+
+## Current checkpoint and next exact steps
+
+- Current worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`, branch `integration/lifeos-functional-security-20261107`. Preserve the existing worktree and continue on this branch.
+- The verified Settings package is ready to commit and push to the existing PR #23; do not create another PR.
+- Next, review remaining Settings/theme behavior gaps against already implemented theme catalog and preferences, then choose the next bounded work package. Do not broaden into a full redesign. Continue with platform-neutral contracts or focused product/accessibility work only where it can be verified without affecting security-sensitive storage.
+- Keep LOS-001, API36 target compliance and physical biometric/SAF/notification acceptance visibly blocked pending their specific evidence. Do not claim whole-mission completion while those gates and remaining work packages are outstanding.
