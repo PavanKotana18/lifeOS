@@ -104,6 +104,23 @@ body {
 .today-sections button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 .transaction-optional-details { background: var(--surface-raised); }
 .transaction-optional-details button:focus-visible, .transaction-optional-details input:focus-visible, .transaction-optional-details textarea:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+.savings-goal-row { display: grid; grid-template-columns: 4.75rem minmax(0, 1fr); align-items: center; gap: 0.9rem; border-bottom: 1px solid var(--stroke); padding: 1rem 0; }
+.savings-goal-gauge { position: relative; display: grid; width: 4.5rem; aspect-ratio: 1; place-items: center; }
+.savings-goal-gauge svg { width: 100%; height: 100%; overflow: visible; }
+.savings-goal-track, .savings-goal-fill { fill: none; stroke-width: 7; }
+.savings-goal-track { stroke: var(--stroke); }
+.savings-goal-fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 180ms ease-out; }
+.savings-goal-percent { position: absolute; color: var(--ink); font-size: 0.78rem; font-weight: 650; }
+.savings-goal-content { min-width: 0; }
+.savings-goal-heading { display: flex; align-items: start; justify-content: space-between; gap: 0.5rem; }
+.savings-goal-target-date { flex: 0 0 auto; color: var(--ink-secondary); font-size: 0.6875rem; }
+.savings-goal-status { margin-top: 0.35rem; color: var(--ink-secondary); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.savings-goal-target { margin-top: 0.15rem; color: var(--ink-secondary); font-size: 0.6875rem; }
+.savings-goal-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-top: 0.35rem; }
+.savings-goal-actions button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 0.3rem; border-radius: 0.7rem; padding: 0 0.6rem; font-size: 0.75rem; font-weight: 600; }
+.savings-goal-contribute { color: var(--accent); }
+.savings-goal-delete { color: var(--ink-secondary); }
+.savings-goal-actions button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 .money-page-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .money-page-toolbar select { max-width: min(64%, 15rem); }
 .money-back-button { display: inline-flex; min-height: 44px; flex: 0 0 auto; align-items: center; gap: 0.2rem; color: var(--accent); font-size: 0.875rem; font-weight: 600; }

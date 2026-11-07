@@ -25,6 +25,7 @@ import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodayS
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
+import SavingsGoalProgress from './components/SavingsGoalProgress';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
@@ -1676,9 +1677,7 @@ export default function App() {
 
             {financeSubtab === 'savings' && <div className="space-y-3">
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
-              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : savingsGoals.map(goal => {
-                const pct = goal.targetAmount > 0 ? Math.min(100, Math.round(goal.currentAmount / goal.targetAmount * 100)) : 0;
-                return <div key={goal.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-secondary">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} savings progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="h-full rounded-full bg-[var(--success)]" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-secondary"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => {
+              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} formatMoney={formatMoney} formatDate={formatDate} onContribute={() => {
                   const expenseCategories = categories.filter(category => category.type === 'expense');
                   const preferredCategory = expenseCategories.find(category => category.name === 'Investments') || expenseCategories[0];
                   setCreateDraft({
@@ -1690,8 +1689,14 @@ export default function App() {
                     transferCategory: preferredCategory?.name || ''
                   });
                   setCreateKind('contribution');
-                }} className="text-xs font-semibold lifeos-accent-text">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-secondary">Delete</button></div></div>;
-              })}
+                }} onDelete={async () => {
+                  if (!window.confirm(`Delete savings goal “${goal.title}” and its contributions?`)) return;
+                  try { await StorageService.savings.deleteGoal(goal.id); }
+                  catch { showToast('LifeOS could not confirm the deletion. Refresh Savings before retrying.', 'danger'); return; }
+                  setSavingsGoals(current => current.filter(item => item.id !== goal.id));
+                  try { await reloadAllData(); showToast('Savings goal deleted', 'success'); }
+                  catch { showToast('Goal deleted. Reopen Savings to refresh the latest data.', 'info'); }
+                }} />)}</div>}
             </div>}
 
             {financeSubtab === 'planning' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection

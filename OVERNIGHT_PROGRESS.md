@@ -268,4 +268,11 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - No schema, accounting, account, transfer, currency-per-record or transaction persistence behavior changed. Android IME/keyboard rendering remains unverified without a device/emulator.
 - Added `test_transaction_quick_entry_20261107.cjs` with 9 source-contract assertions to `npm test`. Focused form test: PASS (9); duplicate tests: PASS (17); actual create handler/CSV regression: PASS (4/4); LifeOS domain suite: PASS (101/101). Today encrypted-restart test: PASS (18). TypeScript and production build: PASS; build retains the existing Vite chunk advisory (main JS 510.06 kB; FinanceCharts 414.76 kB).
 - Exact baseline CI run `42354069192` passed automated checks and Android debug build for prior head `70f67f4cb3ee97960ddcfa4ec306b71355724a56`. This quick-entry change is not in CI yet.
-- Local uncommitted scope: `src/App.tsx`, `src/index.css`, `package.json`, new `test_transaction_quick_entry_20261107.cjs`, and this checkpoint. Next exact step: diff-check, commit/push this isolated increment, update PR #24, and verify its CI once.
+- Transaction quick entry was committed/pushed as `1fd950b845438bbbcabad140220f8a68256f8afc`; CI run `42354408058` passed automated checks and Android debug APK build.
+
+### Savings goal progress visual (local, focused verification complete)
+
+- Replaced the generic savings progress bar with a compact theme-aware SVG goal gauge. It reports actual saved/remaining amounts, caps only the visual arc at 100% while preserving over-target values in text, and renders invalid target/current data as unavailable instead of silently showing a fabricated zero. Delete now asks for confirmation and distinguishes deletion failure from a post-delete refresh failure.
+- Added `SavingsGoalProgress.tsx` and `test_savings_goal_visual_20261107.cjs` (19 SSR/source assertions) to the mandatory test chain. The test uses synthetic amounts only.
+- Focused savings visual: PASS (19); TypeScript: PASS; production build: PASS (2,246 modules; Inter locally included; existing large-chunk advisory, main JS 512.09 kB / FinanceCharts 414.76 kB); `git diff --check`: PASS. Android rendering is not validated.
+- This package is local and uncommitted. Next step: inspect/stage only its files plus checkpoint, commit and push to the existing branch/PR #24, then verify CI once.
