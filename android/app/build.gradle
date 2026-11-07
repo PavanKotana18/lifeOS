@@ -66,7 +66,10 @@ android {
     }
     buildTypes {
         debug {
-            if (lifeosDebugSigningReady) signingConfig signingConfigs.lifeosDebug
+            if (!lifeosDebugSigningReady) {
+                throw new GradleException('Debug APK signing requires LIFEOS_DEBUG_KEYSTORE_PATH, LIFEOS_DEBUG_KEYSTORE_PASSWORD, LIFEOS_DEBUG_KEY_ALIAS, and LIFEOS_DEBUG_KEY_PASSWORD.')
+            }
+            signingConfig signingConfigs.lifeosDebug
         }
         release {
             if (lifeosReleaseSigningReady) signingConfig signingConfigs.release
