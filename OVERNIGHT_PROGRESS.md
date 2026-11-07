@@ -135,6 +135,6 @@ Updated: 2026-11-07 (Asia/Kolkata)
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings semantic theme completion is committed and pushed at `e8b082c833d66cb027dfe1419ec4d8522fc0ebc8`. The on-demand screen package is locally verified and is the current uncommitted package; commit/push it to the same branch after reviewing the diff.
-- After pushing, check hosted CI once for latest head; report pending until terminal. Avoid rerunning the unchanged emulator matrix locally.
-- Continue sequentially with bounded, evidence-led work. LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review remain blockers; do not imply release readiness or total overnight completion.
+- Settings semantic theme completion is committed and pushed at `e8b082c833d66cb027dfe1419ec4d8522fc0ebc8`; on-demand screen loading is committed and pushed at `2a23faa8354edbf2499234509976a6485c739d4f`. Worktree is clean at `2a23faa`.
+- PR #23 remains open/draft and points to `2a23faa`, targeting `security/lifeos-encrypted-startup-20261107`. The last known workflow for `e8b082c` was pending (`42337583466`); no run for `2a23faa` was returned by `gh run list --commit` at checkpoint time. Treat latest-host CI as not yet verified.
+- Next, check the latest hosted run once after it appears and record terminal results. Then continue sequentially with bounded, evidence-led work. LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review remain blockers; do not imply release readiness or total overnight completion.
