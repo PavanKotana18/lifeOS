@@ -49,6 +49,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ScreenCaptureProtectionPlugin.class);
         registerPlugin(LaunchExperiencePlugin.class);
         registerPlugin(NotificationTapLaunchPlugin.class);
+        registerPlugin(RuntimeInfoPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Start protected for every build. Debug UI may opt into screenshots only

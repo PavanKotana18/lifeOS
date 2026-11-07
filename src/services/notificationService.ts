@@ -1,6 +1,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalNotifications, Weekday, type LocalNotificationSchema } from '@capacitor/local-notifications';
 import { buildTaskNotificationPlan, stableNotificationId } from './domainUtils';
+import { LIFEOS_BUILD_INFO } from './buildInfo';
 import type { Goal, Habit, Milestone, NotificationPreferences, Task } from '../types';
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
@@ -16,6 +17,7 @@ const notificationId = stableNotificationId;
 const taskNotificationId = (task: Task, kind: string) => notificationId(`task:${task.id}:${kind}`);
 const testId = notificationId('lifeos:test-notification');
 const isNative = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('LocalNotifications');
+const NativeRuntimeInfo = registerPlugin<{ getInfo(): Promise<{ androidApi: number; packageName: string; versionName: string; versionCode: number }> }>('LifeOSRuntimeInfo');
 const NativeNotificationSettings = registerPlugin<{ open(): Promise<void> }>('NotificationSettings');
 const NativeNotificationTapLaunch = registerPlugin<{
   getInitialAction(): Promise<{ action?: { notification?: { id?: number; extra?: Record<string, unknown> } } }>;
@@ -27,21 +29,60 @@ let taskSyncQueue: Promise<void> = Promise.resolve();
 const taskScheduleStatus = new Map<string, 'pending' | 'schedule-failed'>();
 
 export interface NotificationDiagnostics {
+  capability: 'initializing' | 'available' | 'unavailable' | 'error';
+  platform: string;
   supported: boolean;
   permission: string;
+  appNotifications: string;
   exactAlarm: string;
   channel: string;
   pendingCount: number;
+  androidApi: number | null;
+  packageName: string | null;
+  versionName: string | null;
+  versionCode: number | null;
+  build: typeof LIFEOS_BUILD_INFO;
+  lastScheduleAttempt: string | null;
+  lastScheduleResult: string;
+  lastCancellationReason: string | null;
+  lastActionEvent: { at: string; kind: string; id: number } | null;
   lastError: string;
 }
 
-function readLastError() {
-  try { return localStorage.getItem(diagnosticKey) || ''; } catch { return ''; }
+type NotificationDiagnosticRecord = {
+  lastError?: string;
+  lastScheduleAttempt?: string;
+  lastScheduleResult?: string;
+  lastCancellationReason?: string;
+  lastActionEvent?: { at: string; kind: string; id: number };
+};
+function readDiagnosticRecord(): NotificationDiagnosticRecord {
+  try { return JSON.parse(localStorage.getItem(diagnosticKey) || '{}'); } catch { return {}; }
 }
-function writeLastError(error: string) {
-  try { if (error) localStorage.setItem(diagnosticKey, error); else localStorage.removeItem(diagnosticKey); } catch { /* Diagnostics are best-effort when storage is unavailable. */ }
+function updateDiagnostics(update: Partial<NotificationDiagnosticRecord>) {
+  try { localStorage.setItem(diagnosticKey, JSON.stringify({ ...readDiagnosticRecord(), ...update })); } catch { /* Diagnostics are best-effort when storage is unavailable. */ }
 }
-function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
+function safeErrorCode(error: unknown) {
+  const name = error instanceof Error && /^[A-Za-z]+Error$/.test(error.name) ? error.name : 'Error';
+  return `${name}:native-operation-failed`;
+}
+function writeLastError(error: string) { updateDiagnostics({ lastError: error || '' }); }
+function withTimeout<T>(operation: Promise<T>, label: string, timeoutMs = 5000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label}-timeout`)), timeoutMs);
+    operation.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+  });
+}
+
+function requireNativeNotifications() {
+  if (!Capacitor.isNativePlatform()) return false;
+  if (!Capacitor.isPluginAvailable('LocalNotifications')) {
+    writeLastError('local-notifications-plugin-not-registered');
+    updateDiagnostics({ lastScheduleResult: 'failed:local-notifications-plugin-not-registered' });
+    throw new Error('Local Notifications native plugin is not registered in this installed Android build.');
+  }
+  return true;
+}
 function pendingTimeMatches(actual: unknown, expected: Date) {
   if (actual === undefined || actual === null) return false;
   const actualTime = actual instanceof Date ? actual.getTime() : new Date(actual as string | number).getTime();
@@ -56,18 +97,22 @@ function localDateTime(date: string, time: string) {
 }
 
 async function cancelIds(ids: number[]) {
-  if (!isNative() || !ids.length) return;
+  if (!ids.length || !requireNativeNotifications()) return;
   await LocalNotifications.cancel({ notifications: ids.map(id => ({ id })) });
 }
 
 async function schedule(notifications: LocalNotificationSchema[]) {
-  if (!isNative() || !notifications.length) return;
+  if (!notifications.length || !requireNativeNotifications()) return;
   await LocalNotifications.schedule({ notifications });
+}
+
+function formatDateForDiagnostic(date: Date | null | undefined) {
+  return date && Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
 // Match only reminder kinds owned by this app; retain unrelated pending entries.
 async function cancelPendingKinds(kinds: string[]) {
-  if (!isNative()) return;
+  if (!requireNativeNotifications()) return;
   const pending = await LocalNotifications.getPending();
   const owned = new Set(kinds);
   await cancelIds(pending.notifications.filter(item => owned.has(String(item.extra?.kind || ''))).map(item => item.id));
@@ -114,12 +159,14 @@ export const NotificationService = {
   },
 
   async syncTasks(tasks: Task[], preferences: NotificationPreferences) {
-    if (!isNative()) return;
+    if (!requireNativeNotifications()) return;
     const run = async () => {
+      updateDiagnostics({ lastScheduleAttempt: new Date().toISOString(), lastScheduleResult: 'running', lastCancellationReason: '' });
       try {
       await this.ensureChannel();
       if (!(await this.canScheduleNotifications())) {
         writeLastError('permission-denied-or-revoked');
+        updateDiagnostics({ lastScheduleResult: 'not-scheduled:permission-unavailable' });
         return;
       }
       const pending = await LocalNotifications.getPending();
@@ -136,6 +183,13 @@ export const NotificationService = {
         extra: { kind: plan.kind, taskId: task.id },
       })));
       const desiredIds = new Set(notifications.map(item => item.id));
+      const notificationOwners = new Map<number, string>();
+      for (const item of notifications) {
+        const owner = `${String(item.extra?.kind)}:${String(item.extra?.taskId)}`;
+        const existing = notificationOwners.get(item.id);
+        if (existing && existing !== owner) throw new Error('notification-id-collision');
+        notificationOwners.set(item.id, owner);
+      }
       if (notifications.length) {
         // Queue the replacement set first. A failed update must not erase
         // reminders which were already queued successfully.
@@ -151,7 +205,9 @@ export const NotificationService = {
       // Retire only stale LifeOS task schedules after the desired set is
       // confirmed. Serializing this operation prevents overlapping syncs from
       // cancelling each other's schedules during rapid task edits/resume.
-      await cancelIds(oldTaskNotifications.filter(item => !desiredIds.has(item.id)).map(item => item.id));
+      const stale = oldTaskNotifications.filter(item => !desiredIds.has(item.id));
+      await cancelIds(stale.map(item => item.id));
+      if (stale.length) updateDiagnostics({ lastCancellationReason: 'task-removed-completed-or-no-longer-eligible' });
       const finalPending = await LocalNotifications.getPending();
       const finalIds = new Set(finalPending.notifications.map(item => item.id));
       for (const task of tasks) {
@@ -160,10 +216,13 @@ export const NotificationService = {
         else taskScheduleStatus.delete(task.id);
       }
       writeLastError('');
+      updateDiagnostics({ lastScheduleResult: `pending-queue-verified:${notifications.length}` });
       } catch (error) {
         for (const task of tasks) taskScheduleStatus.set(task.id, 'schedule-failed');
-        writeLastError(errorMessage(error));
-        console.error('LifeOS task notification scheduling failed:', error);
+        const code = safeErrorCode(error);
+        writeLastError(code);
+        updateDiagnostics({ lastScheduleResult: `failed:${code}` });
+        console.warn('LifeOS task notification scheduling failed:', code);
         throw error;
       }
     };
@@ -178,6 +237,17 @@ export const NotificationService = {
     const id = taskNotificationId(task, kind);
     const pending = isNative() ? await LocalNotifications.getPending() : { notifications: [] };
     const planned = buildTaskNotificationPlan(task, { ...DEFAULT_NOTIFICATION_PREFERENCES, ...preferences }, new Date());
+    const plannedNotifications = planned.map(item => {
+      const notificationId = taskNotificationId(task, item.kind);
+      const pendingNotification = pending.notifications.find(entry => entry.id === notificationId);
+      return {
+        kind: item.kind,
+        scheduledLocalTime: item.at.toLocaleString(),
+        scheduledUtcTime: item.at.toISOString(),
+        notificationId,
+        inAndroidPendingQueue: Boolean(pendingNotification && pendingTimeMatches(pendingNotification.schedule?.at, item.at)),
+      };
+    });
     const taskPlan = planned.find(item => item.kind === kind);
     const pendingItem = pending.notifications.find(item => item.id === id);
     const pendingMatchesPlan = Boolean(pendingItem && taskPlan && pendingTimeMatches(pendingItem.schedule?.at, taskPlan.at));
@@ -189,33 +259,48 @@ export const NotificationService = {
     else if (!taskPlan) cancellationReason = 'invalid-or-past-reminder-time';
     else if (pendingItem && !pendingMatchesPlan) cancellationReason = 'pending-time-mismatch';
     else if (!pendingItem) cancellationReason = 'not-present-in-android-pending-queue';
+    const dueAt = task.dueTime ? localDateTime(task.dueDate, task.dueTime) : null;
+    const record = readDiagnosticRecord();
     return {
       taskReference: task.id,
       eligible: Boolean(taskPlan && permission === 'granted' && preferences.taskReminders && !task.completed),
       scheduledLocalTime: taskPlan?.at.toLocaleString() || null,
+      scheduledUtcTime: formatDateForDiagnostic(taskPlan?.at),
+      dueLocalTime: dueAt?.toLocaleString() || (task.dueDate && !task.dueTime ? 'date-only; no time assigned' : null),
+      dueUtcTime: formatDateForDiagnostic(dueAt),
       categoryEnabled: preferences.taskReminders,
       androidPermission: permission,
+      notificationId: id,
       schedulingResult: pendingMatchesPlan ? 'pending' : taskPlan && permission === 'granted' && preferences.taskReminders && !task.completed
         ? taskScheduleStatus.get(task.id) || 'not-present-in-android-pending-queue'
         : 'not-scheduled',
       pendingNotificationId: pendingMatchesPlan ? pendingItem?.id ?? null : null,
       pendingTimestampMatches: pendingMatchesPlan,
-      cancellationReason: cancellationReason || null,
+      cancellationReason: cancellationReason || record.lastCancellationReason || null,
+      lastScheduleAttempt: record.lastScheduleAttempt || null,
+      lastScheduleResult: record.lastScheduleResult || 'unknown',
+      plannedNotifications,
       exactAlarm: await this.checkExactAlarmPermission(),
     };
   },
 
   async addActionListener(listener: (action: { notification: { id: number; extra?: Record<string, unknown> } }) => void) {
-    if (!isNative()) return { remove: async () => {} };
-    return LocalNotifications.addListener('localNotificationActionPerformed', listener);
+    if (!requireNativeNotifications()) return { remove: async () => {} };
+    return LocalNotifications.addListener('localNotificationActionPerformed', action => {
+      const kind = typeof action.notification.extra?.kind === 'string' ? action.notification.extra.kind : 'unknown';
+      updateDiagnostics({ lastActionEvent: { at: new Date().toISOString(), kind, id: action.notification.id } });
+      listener(action);
+    });
   },
 
   async getInitialTapAction() {
     if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('NotificationTapLaunch')) return null;
     const result = await NativeNotificationTapLaunch.getInitialAction();
-    return result.action?.notification && typeof result.action.notification.id === 'number'
+    const action = result.action?.notification && typeof result.action.notification.id === 'number'
       ? { notification: { id: result.action.notification.id, extra: result.action.notification.extra } }
       : null;
+    if (action) updateDiagnostics({ lastActionEvent: { at: new Date().toISOString(), kind: String(action.notification.extra?.kind || 'unknown'), id: action.notification.id } });
+    return action;
   },
 
   async acknowledgeInitialTapAction(id: number) {
@@ -224,12 +309,14 @@ export const NotificationService = {
   },
 
   async cancelTask(task: Task) {
-    try { await cancelIds(['taskReminders', 'upcomingDeadlines', 'overdueAlerts'].map(kind => taskNotificationId(task, kind))); }
-    catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS task notification cancellation failed:', error); throw error; }
+    try {
+      await cancelIds(['taskReminders', 'upcomingDeadlines', 'overdueAlerts'].map(kind => taskNotificationId(task, kind)));
+      updateDiagnostics({ lastCancellationReason: 'task-deleted' });
+    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS task notification cancellation failed.'); throw error; }
   },
 
   async syncHabits(habits: Habit[], preferences: NotificationPreferences) {
-    if (!isNative()) return;
+    if (!requireNativeNotifications()) return;
     try {
     await this.ensureChannel();
     const weekdays = [Weekday.Sunday, Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday, Weekday.Thursday, Weekday.Friday, Weekday.Saturday];
@@ -250,17 +337,17 @@ export const NotificationService = {
       channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
       extra: { kind: 'habitReminder', habitId: habit.id },
     })));
-    } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS habit notification scheduling failed:', error); throw error; }
+    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS habit notification scheduling failed.'); throw error; }
   },
 
   async cancelHabit(habit: Habit) {
     const ids = [1, 2, 3, 4, 5, 6, 7].map(day => notificationId(`habit:${habit.id}:${day}`));
     try { await cancelIds(ids); }
-    catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS habit notification cancellation failed:', error); throw error; }
+    catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS habit notification cancellation failed.'); throw error; }
   },
 
   async syncMilestones(goals: Goal[], milestones: Milestone[], preferences: NotificationPreferences) {
-    if (!isNative()) return;
+    if (!requireNativeNotifications()) return;
     try {
     await this.ensureChannel();
     await cancelPendingKinds(['milestoneReminder']);
@@ -283,41 +370,72 @@ export const NotificationService = {
       }];
     });
     await schedule(notifications);
-    } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS milestone notification scheduling failed:', error); throw error; }
+    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS milestone notification scheduling failed.'); throw error; }
   },
 
   async cancelMilestones(milestones: Milestone[]) {
     try { await cancelIds(milestones.map(milestone => notificationId(`milestone:${milestone.id}`))); }
-    catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS milestone notification cancellation failed:', error); throw error; }
+    catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS milestone notification cancellation failed.'); throw error; }
   },
 
   async ensureChannel() {
-    if (!isNative()) return;
+    if (!requireNativeNotifications()) return;
     if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'LifeOS reminders', description: 'Local task, habit and goal reminders', importance: 4, visibility: 0 })
-      .catch(error => { ensureChannelPromise = null; writeLastError(errorMessage(error)); console.error('LifeOS notification channel creation failed:', error); throw error; });
+      .catch(error => { ensureChannelPromise = null; writeLastError(safeErrorCode(error)); console.warn('LifeOS notification channel creation failed.'); throw error; });
     const pending = ensureChannelPromise;
     try { await pending; }
     finally { if (ensureChannelPromise === pending) ensureChannelPromise = null; }
   },
 
   async getDiagnostics(): Promise<NotificationDiagnostics> {
-    if (!isNative()) return { supported: false, permission: 'unsupported', exactAlarm: 'unsupported', channel: 'unavailable', pendingCount: 0, lastError: readLastError() };
+    const platform = Capacitor.getPlatform();
+    const record = readDiagnosticRecord();
+    const empty: NotificationDiagnostics = {
+      capability: 'unavailable', platform, supported: false, permission: 'unknown', appNotifications: 'unknown',
+      exactAlarm: 'unknown', channel: 'unknown', pendingCount: 0, androidApi: null, packageName: null,
+      versionName: null, versionCode: null, build: LIFEOS_BUILD_INFO, lastScheduleAttempt: record.lastScheduleAttempt || null,
+      lastScheduleResult: record.lastScheduleResult || 'unknown', lastCancellationReason: record.lastCancellationReason || null,
+      lastActionEvent: record.lastActionEvent || null, lastError: record.lastError || '',
+    };
+    if (!Capacitor.isNativePlatform()) return { ...empty, capability: 'unavailable', permission: 'unsupported', exactAlarm: 'unsupported', channel: 'not-applicable' };
+    // Capacitor exposes registered native plugins synchronously. Probe a few
+    // bounded times because this service can be requested during first React
+    // render before the bridge finishes attaching its plugin proxies.
+    let pluginAvailable = false;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      pluginAvailable = Capacitor.isPluginAvailable('LocalNotifications');
+      if (pluginAvailable) break;
+      if (attempt < 4) await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (!pluginAvailable) return { ...empty, capability: 'unavailable', permission: 'unknown', exactAlarm: 'unknown', channel: 'unknown', lastError: 'local-notifications-plugin-not-registered' };
     try {
-      const [permission, exactAlarm, channels, pending] = await Promise.all([
-        this.checkPermission(),
-        this.checkExactAlarmPermission(),
-        LocalNotifications.listChannels(),
-        LocalNotifications.getPending()
-      ]);
+      const [permissionValue, exactAlarmValue, channels, pending, enabled] = await Promise.all([
+        withTimeout(this.checkPermission(), 'permission-check'),
+        withTimeout(this.checkExactAlarmPermission(), 'exact-alarm-check'),
+        withTimeout(LocalNotifications.listChannels(), 'channel-check'),
+        withTimeout(LocalNotifications.getPending(), 'pending-check'),
+        withTimeout(LocalNotifications.areEnabled(), 'app-notification-check'),
+      ] as const);
+      const permission = String(permissionValue);
+      const exactAlarm = String(exactAlarmValue);
+      let runtime: { androidApi: number; packageName: string; versionName: string; versionCode: number } | null = null;
+      if (Capacitor.isPluginAvailable('LifeOSRuntimeInfo')) {
+        try { runtime = await withTimeout(NativeRuntimeInfo.getInfo(), 'runtime-info'); } catch { /* Runtime facts are optional; notification availability is probed independently. */ }
+      }
       const channel = channels.channels.find(item => item.id === 'lifeos-reminders');
       return {
-        supported: true, permission, exactAlarm,
+        ...empty, capability: 'available', platform, supported: true, permission,
+        appNotifications: enabled.value ? 'enabled' : 'disabled', exactAlarm,
         channel: channel ? Number(channel.importance) === 0 ? 'blocked (importance 0)' : `available (importance ${channel.importance ?? 'unknown'})` : 'not created',
-        pendingCount: pending.notifications.length, lastError: readLastError(),
+        pendingCount: pending.notifications.length,
+        androidApi: runtime?.androidApi ?? null, packageName: runtime?.packageName ?? null,
+        versionName: runtime?.versionName ?? null, versionCode: runtime?.versionCode ?? null,
+        lastError: record.lastError || '',
       };
     } catch (error) {
-      writeLastError(errorMessage(error));
-      return { supported: true, permission: 'error', exactAlarm: 'error', channel: 'unavailable', pendingCount: 0, lastError: errorMessage(error) };
+      const code = safeErrorCode(error);
+      writeLastError(code);
+      return { ...empty, capability: 'error', platform, supported: true, permission: 'error', exactAlarm: 'error', channel: 'unknown', lastError: code };
     }
   },
 
@@ -334,7 +452,7 @@ export const NotificationService = {
       if (!pending.notifications.some(item => item.id === testId)) throw new Error('schedule-verification-missing:test-notification');
       writeLastError('');
       return at;
-    } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS test notification failed:', error); throw error; }
+    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS test notification failed.'); throw error; }
   },
 
   async sendImmediateTestNotification() {

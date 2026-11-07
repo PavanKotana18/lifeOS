@@ -109,7 +109,13 @@ export default function App() {
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({ supported: false, permission: 'checking', exactAlarm: 'checking', channel: 'unknown', pendingCount: 0, lastError: '' });
+  const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({
+    capability: 'initializing', platform: 'initializing', supported: false, permission: 'checking',
+    appNotifications: 'checking', exactAlarm: 'checking', channel: 'checking', pendingCount: 0,
+    androidApi: null, packageName: null, versionName: null, versionCode: null, build: __LIFEOS_BUILD_INFO__,
+    lastScheduleAttempt: null, lastScheduleResult: 'unknown', lastCancellationReason: null,
+    lastActionEvent: null, lastError: '',
+  });
   const [taskReminderDiagnostics, setTaskReminderDiagnostics] = useState<Record<string, unknown> | null>(null);
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
@@ -371,6 +377,7 @@ export default function App() {
         if (safeFirstRunBrowse.current && !isEncryptedStorageActivated()) {
           setIsLocked(false);
           setBiometricVerified(false);
+          void refreshNotificationDiagnostics();
           await confirmScreenshotResume();
           setActivityResumeGuard(false);
           return;
@@ -642,7 +649,6 @@ export default function App() {
       )
     );
     if (typeof processPendingTaskNotification === 'function') await processPendingTaskNotification();
-    await refreshNotificationDiagnostics();
     startupComplete.current = true;
     setAppReady(true);
   };
@@ -686,6 +692,40 @@ export default function App() {
   const refreshNotificationDiagnostics = async () => {
     const diagnostics = await NotificationService.getDiagnostics();
     setNotificationDiagnostics(diagnostics);
+    return diagnostics;
+  };
+
+  useEffect(() => {
+    if (!appReady) return;
+    void refreshNotificationDiagnostics();
+  }, [appReady, profileNotificationsOpen]);
+
+  const copyNotificationDiagnostics = async () => {
+    const diagnostics = await refreshNotificationDiagnostics();
+    const report = JSON.stringify({
+      app: { version: diagnostics.versionName || diagnostics.build.appVersion, versionCode: diagnostics.versionCode, commit: diagnostics.build.commit, buildNumber: diagnostics.build.buildNumber, packageName: diagnostics.packageName },
+      androidApi: diagnostics.androidApi,
+      capacitor: diagnostics.build.capacitor,
+      notifications: {
+        capability: diagnostics.capability, platform: diagnostics.platform, permission: diagnostics.permission,
+        appNotifications: diagnostics.appNotifications, exactAlarm: diagnostics.exactAlarm,
+        channel: diagnostics.channel, pendingCount: diagnostics.pendingCount,
+        lastScheduleAttempt: diagnostics.lastScheduleAttempt, lastScheduleResult: diagnostics.lastScheduleResult,
+        lastCancellationReason: diagnostics.lastCancellationReason, lastActionEvent: diagnostics.lastActionEvent,
+        lastError: diagnostics.lastError || null,
+      },
+      lastTaskReminder: taskReminderDiagnostics || null,
+    }, null, 2);
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(report);
+      else {
+        const field = document.createElement('textarea'); field.value = report; field.setAttribute('readonly', '');
+        field.style.position = 'fixed'; field.style.opacity = '0'; document.body.appendChild(field); field.select();
+        const copied = document.execCommand('copy'); field.remove();
+        if (!copied) throw new Error('Clipboard is unavailable.');
+      }
+      showToast('Privacy-safe notification diagnostics copied', 'success');
+    } catch { showToast('Could not copy diagnostics. Refresh and try again.', 'danger'); }
   };
 
   const askNotificationPermission = async () => {
@@ -925,7 +965,10 @@ export default function App() {
       synchronizationFailed = true;
     }
     try {
-      const report = await NotificationService.diagnoseTaskReminder(task, notificationPreferences);
+      const report = await NotificationService.diagnoseTaskReminder(
+        task,
+        effectiveNotificationPreferences(notificationPreferences, notificationsEnabled)
+      );
       setTaskReminderDiagnostics({
         ...report,
         sessionReady: sessionManager.isUnlocked() && isEncryptedStorageActivated(),
@@ -2114,18 +2157,21 @@ export default function App() {
               <p className="text-[11px] text-muted">Financial values use one stored currency and are only reformatted here; no exchange-rate conversion is applied. Distance and volume use canonical storage units for new goal measurements. Speed is saved as a preference for features that use it.</p>
             </section>
 
-            <button onClick={() => setProfileNotificationsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl lifeos-panel border px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-secondary">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-muted" /></button>
+            <button onClick={() => { setProfileNotificationsOpen(true); void refreshNotificationDiagnostics(); }} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl lifeos-panel border px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-secondary">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-muted" /></button>
 
             {profileNotificationsOpen && <div className="lifeos-page fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))]" role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium lifeos-accent-text"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
             <section className="lifeos-panel rounded-xl border p-4 space-y-3">
               <p className="text-xs text-secondary">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
               <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
               <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
-              {!notificationDiagnostics.supported && <p className="text-[11px] text-[var(--warning)]">The native notification plugin is not available in this runtime.</p>}
+              {notificationDiagnostics.capability === 'initializing' && <p role="status" className="text-[11px] text-secondary">Checking Android notification support…</p>}
+              {notificationDiagnostics.capability === 'unavailable' && <p className="text-[11px] text-[var(--warning)]">Android notification support is unavailable in this app build. Your reminder definitions remain saved.</p>}
+              {notificationDiagnostics.capability === 'error' && <p className="text-[11px] text-[var(--warning)]">Android notification diagnostics could not be read. Refresh to retry.</p>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--stroke)] pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
-              <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-[10px] text-secondary"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-[var(--danger)]' : 'text-[var(--success)]'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
+              <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-[10px] text-secondary"><p>Capability: <span className={notificationDiagnostics.capability === 'available' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.capability}</span> · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor core / local notifications: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation reason: {notificationDiagnostics.lastCancellationReason || 'none recorded'}</p><p>Last action event: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-[var(--danger)]' : 'text-[var(--success)]'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
               <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android settings</button></div>
               <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button>
+              <button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
             </section></div></div>}
 
             {/* Demo Data Trigger */}

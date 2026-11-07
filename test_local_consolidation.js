@@ -14,6 +14,24 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(a.netSavings,0.1); assert.equal(a.budgetRows[0].remaining,0.1);
   assert.equal(a.periodRows.at(-1).expenses,0.3); assert.equal(a.periodRows[0].expenses,null);
  }));
+ await test('Selected task reminder, upcoming deadline, overdue alert and date-only policy stay distinct', async () => fixture(async f => {
+  const domain=f.load('src/services/domainUtils.ts');
+  const due=new Date(2030,0,2,12,0,0,0), reminder=new Date(2030,0,2,10,30,0,0);
+  const task={id:'task-distinct',dueDate:'2030-01-02',dueTime:'12:00',reminderAt:reminder.toISOString(),completed:false};
+  const prefs={...f.DEFAULT_NOTIFICATION_PREFERENCES,taskReminders:true,upcomingDeadlines:true,overdueAlerts:true};
+  const plan=domain.buildTaskNotificationPlan(task,prefs,new Date(2030,0,2,8,0,0,0));
+  assert.deepEqual(plan.map(x=>x.kind),['taskReminders','upcomingDeadlines','overdueAlerts']);
+  assert.equal(plan[0].at.getTime(),reminder.getTime(),'reminder fires at user-selected instant');
+  assert.equal(plan[1].at.getTime(),due.getTime()-60*60_000,'deadline alert policy stays separate');
+  assert.equal(plan[2].at.getTime(),due.getTime()+60_000,'overdue alert follows due time');
+  assert.ok(Number.isInteger(domain.stableNotificationId('task:task-distinct:taskReminders')));
+  assert.ok(domain.stableNotificationId('task:task-distinct:taskReminders') > 0 && domain.stableNotificationId('task:task-distinct:taskReminders') <= 2147483646);
+  const dateOnly={id:'date-only',dueDate:'2030-01-02',completed:false};
+  const datePlan=domain.buildTaskNotificationPlan(dateOnly,{...prefs,taskReminders:false},new Date(2030,0,2,8,0,0,0));
+  assert.equal(datePlan.find(x=>x.kind==='upcomingDeadlines').at.getHours(),9,'date-only deadline keeps its existing 09:00 alert policy');
+  assert.equal(domain.getTaskStatus({...dateOnly,dueTime:'12:00',completed:false},new Date(2030,0,2,12,0,0,0)),'Pending','equal-to-deadline minute is not overdue');
+  assert.equal(domain.getTaskStatus({...dateOnly,dueTime:'12:00',completed:false},new Date(2030,0,2,12,0,0,1)),'Overdue','overdue begins after the actual deadline instant');
+ }));
  await test('Exact-alarm denial schedules approximate reminders and is diagnosed', async () => fixture(async f => {
   const ns=f.NotificationService;
   ns.checkExactAlarmPermission=async()=> 'denied';
@@ -22,6 +40,22 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   await ns.syncMilestones([{id:'goal',status:'In Progress'}],[{id:'mile',goalId:'goal',title:'Fixture',targetDate:'2026-12-01'}], {...f.DEFAULT_NOTIFICATION_PREFERENCES,milestoneReminders:true});
   assert.equal(f.pending.size,9, 'task, weekly habit and milestone reminders use the supported inexact fallback'); assert.equal((await ns.getDiagnostics()).exactAlarm,'denied');
   const testAt = await ns.testNotification(1_000); assert.ok(testAt instanceof Date); assert.equal(f.pending.size,10, 'test notification is queued even without exact-alarm access');
+ }));
+ await test('Android capability diagnostics distinguish an available bridge from delivery evidence', async () => fixture(async f => {
+  const report=await f.NotificationService.getDiagnostics();
+  assert.equal(report.capability,'available'); assert.equal(report.supported,true);
+  assert.equal(report.androidApi,35); assert.equal(report.packageName,'com.lifeos.personal');
+  assert.equal(report.appNotifications,'enabled'); assert.equal(report.permission,'granted');
+  assert.equal(report.pendingCount,0,'an empty pending queue says nothing about past delivery');
+  assert.equal(report.build.capacitor.localNotifications,'6.1.3');
+  const raw=global.localStorage.getItem('lifeos.notificationDiagnostics') || '';
+  assert.equal(raw.includes('Private'),false,'diagnostics do not serialize task content');
+ }));
+ await test('A genuinely missing Android notification plugin is explicit and scheduling cannot silently succeed', async () => fixture(async f => {
+  f.setPluginAvailable('LocalNotifications',false);
+  const report=await f.NotificationService.getDiagnostics();
+  assert.equal(report.capability,'unavailable'); assert.equal(report.permission,'unknown');
+  await assert.rejects(f.NotificationService.syncTasks([],f.DEFAULT_NOTIFICATION_PREFERENCES),/native plugin is not registered/i);
  }));
  await test('Task reminder diagnostic reports eligibility and pending ID without task content', async () => fixture(async f => {
   const task = { id: 'safe-task-ref', title: 'SECRET TITLE MUST NOT APPEAR', dueDate: '2026-12-01', reminderAt: '2026-12-01T09:00:00.000Z', completed: false };
@@ -33,6 +67,9 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(report.androidPermission, 'granted');
   assert.equal(report.schedulingResult, 'pending');
   assert.ok(report.pendingNotificationId);
+  assert.equal(report.plannedNotifications.length,1);
+  assert.equal(report.plannedNotifications[0].kind,'taskReminders');
+  assert.equal(report.plannedNotifications[0].inAndroidPendingQueue,true);
   assert.equal(JSON.stringify(report).includes(task.title), false);
  }));
  await test('Persisted task reminder is queued at its saved local-time instant and survives failed reschedule', async () => fixture(async f => {
@@ -99,5 +136,5 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const messages=[];const reset=h.bind(h.buttonHandler('Clear All Application Data'),{...f.appDeps(),showToast:(...args)=>messages.push(args)});
   await reset();assert.equal(await f.lifeOSDatabase.tasks.count(),1);assert.equal(messages.at(-1)[1],'danger');
  }));
- console.log(`LOCAL CONSOLIDATION: ${passed}/8 passed (native simulated)`);
+ console.log(`LOCAL CONSOLIDATION: ${passed}/11 passed (native simulated)`);
 })().catch(e=>{console.error(e);process.exitCode=1;});

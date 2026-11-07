@@ -174,6 +174,28 @@ function unprovisioned(f) {
     assert.equal((await f.native.getKeyState()).recoveryDeferred, true);
     assert.equal((await f.StorageService.transactions.getAll())[0].description, 'Synthetic deferred recovery');
   });
+  await test('First-record gate provisions once and later writes do not repeat the recovery-choice prompt', async f => {
+    const state = unprovisioned(f), authorization = { current: false };
+    let dialogs = 0;
+    const encryptedSession = f.load('src/services/cryptoSessionCoordinator.ts').createProtectedSessionController(
+      f.load('src/services/cryptoService.ts').CryptoService, f.sessionManager, {
+        hasEncryptedRecords: f.hasEncryptedRecords,
+        requestInitialSetup: async () => { if (!authorization.current) return false; authorization.current = false; return true; },
+        confirmRecovery: async () => true, activateStorage: f.activateEncryptedStorage,
+        isStorageActive: f.isEncryptedStorageActivated,
+      });
+    const ensure = h.appFunction('ensurePrivateStorageBeforeWrite');
+    const deps = { ...f.appDeps(), encryptedSession, firstRecordSetupAuthorized: authorization,
+      requestFirstRecordSecurity: async () => { dialogs++; return 'later'; },
+      setSensitiveScreenshotState: async () => {}, setIsLocked() {}, setBiometricEnabled() {},
+      setBiometricVerified() {}, setRecoveryProvisioned() {}, setRecoveryDeferred() {},
+      biometricAuthenticated: { current: false }, safeFirstRunBrowse: { current: true } };
+    const run = h.bind(ensure, deps);
+    await run(); await run();
+    assert.equal(dialogs, 1); assert.equal(state.setups, 1);
+    assert.equal(f.isEncryptedStorageActivated(), true); assert.equal(f.sessionManager.isUnlocked(), true);
+    assert.equal((await f.native.getKeyState()).recoveryDeferred, true);
+  });
   await test('A provisioned key from an interrupted attempt cannot be reclassified as recovery-deferred', async f => {
     const state = unprovisioned(f);
     await assert.rejects(owner(f, { confirmRecovery: async () => false }).open(), /cancelled/);

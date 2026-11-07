@@ -216,6 +216,7 @@ async function fixture({ activate = true } = {}) {
   const pending = new Map();
   const notifications = {
     async createChannel() {}, async listChannels() { return { channels: [] }; },
+    async areEnabled() { return { value: true }; },
     async checkPermissions() { return { display: 'granted' }; },
     async requestPermissions() { return { display: 'granted' }; },
     async checkExactNotificationSetting() { return { exact_alarm: 'granted' }; },
@@ -223,10 +224,11 @@ async function fixture({ activate = true } = {}) {
     async cancel({ notifications }) { notifications.forEach(n => pending.delete(n.id)); },
     async schedule({ notifications }) { notifications.forEach(n => pending.set(n.id, structuredClone(n))); }
   };
-  const plugins = { LifeOSCrypto: native };
+  const plugins = { LifeOSCrypto: native, LifeOSRuntimeInfo: { async getInfo() { return { androidApi: 35, packageName: 'com.lifeos.personal', versionName: 'test', versionCode: 1 }; } } };
+  const availablePlugins = new Set(['LifeOSCrypto', 'LocalNotifications', 'LifeOSRuntimeInfo']);
   const nativeOverrides = {
-    '@capacitor/core': { Capacitor: { isNativePlatform: () => true,
-      isPluginAvailable: name => ['LifeOSCrypto', 'LocalNotifications'].includes(name) },
+    '@capacitor/core': { Capacitor: { isNativePlatform: () => true, getPlatform: () => 'android',
+      isPluginAvailable: name => availablePlugins.has(name) },
       registerPlugin: name => plugins[name] || new Proxy({}, { get: () => () => {
         throw new Error(`Unexpected native interface ${name}`);
       } }) },
@@ -282,6 +284,7 @@ async function fixture({ activate = true } = {}) {
   // security boundary tests explicitly request { activate: false }.
   if (activate) { db.sessionManager.unlock(); await db.activateEncryptedStorage(); }
   return { ...db, native, pending, notifications, load, appDeps, ...notificationModule,
+    setPluginAvailable(name, available) { if (available) availablePlugins.add(name); else availablePlugins.delete(name); },
     async restart() {
       db.sessionManager.lock(); await db.sessionManager.waitForIdle();
       db.lifeOSDatabase.close(); await native.lock();
