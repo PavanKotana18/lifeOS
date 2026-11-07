@@ -275,11 +275,23 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Replaced the generic savings progress bar with a compact theme-aware SVG goal gauge. It reports actual saved/remaining amounts, caps only the visual arc at 100% while preserving over-target values in text, and renders invalid target/current data as unavailable instead of silently showing a fabricated zero. Delete now asks for confirmation and distinguishes deletion failure from a post-delete refresh failure.
 - Added `SavingsGoalProgress.tsx` and `test_savings_goal_visual_20261107.cjs` (19 SSR/source assertions) to the mandatory test chain. The test uses synthetic amounts only.
 - Focused savings visual: PASS (19); TypeScript: PASS; production build: PASS (2,246 modules; Inter locally included; existing large-chunk advisory, main JS 512.09 kB / FinanceCharts 414.76 kB); `git diff --check`: PASS. Android rendering is not validated.
-- This package is local and uncommitted. Next step: inspect/stage only its files plus checkpoint, commit and push to the existing branch/PR #24, then verify CI once.
+- This package was committed/pushed as `f28d1e69bf61c441000a7eee01de3ce25ca12271`; CI run `42354889078` passed automated checks and Android debug build.
 
 ### Budget status and missing-category presentation (local, focused verification complete)
 
 - The budget screen previously capped the reported percentage at 100% and displayed zero remaining after overspend. Added `getBudgetDisplayStatus` to retain the actual percentage and overage while capping only the visual track; over-plan amounts now use neutral text, and an absent monthly limit is not described as remaining money.
-- Budgets whose category reference no longer resolves now show usage as unavailable and ask the user to restore the category; they no longer imply that spending was zero. No budget, category, or transaction records were modified.
-- Added `test_budget_display_20261107.cjs` (14 focused arithmetic/UI assertions) to the mandatory chain. Budget display tests: PASS (14); Finance precision/regression: PASS (7); local consolidation/notifications: PASS (5); TypeScript: PASS; production build: PASS (2,247 modules; existing chunk advisory, main JS 513.09 kB, FinanceCharts 414.76 kB); `git diff --check`: PASS.
+- Budgets whose category reference no longer resolves now show usage as unavailable and ask the user to restore the category; they no longer imply that spending was zero. Budget deletion asks for confirmation, keeps transactions unchanged, and distinguishes delete failure from a post-delete refresh failure. No budget, category, or transaction records were modified.
+- Added `test_budget_display_20261107.cjs` (17 focused arithmetic/UI/deletion assertions) to the mandatory chain. Budget display tests: PASS (17); Finance precision/regression: PASS (7); local consolidation/notifications: PASS (5); TypeScript: PASS; production build: PASS (2,247 modules; existing chunk advisory, main JS 513.43 kB, FinanceCharts 414.76 kB); `git diff --check`: PASS.
 - GitHub run `42354889078` passed automated checks and Android debug build for prior head `f28d1e69bf61c441000a7eee01de3ce25ca12271`. This budget package is local and not yet in CI.
+
+### Budget status checkpoint
+
+- Branch `feature/lifeos2-milestone-a-20261107`, commit `8d345aadbc526202af8416c39f3feb8643bd6eef`, pushed to origin and included in draft PR #24 (target remains PR #23 integration head).
+- Exact-head workflow `42355347997` is in progress. Previous workflow `42354889078` passed automated checks and Android debug build.
+- At that push, the worktree was clean. The current uncommitted follow-up is limited to budget-delete confirmation/error handling, the budget regression test and this progress note. Next exact step: finish this small package, push it, then verify its CI once and confirm the original worktree remains unchanged.
+
+### Budget deletion follow-up
+
+- Added explicit confirmation, scoped rollback messaging, optimistic list removal after successful delete, and separate refresh-failure messaging. Saved transactions are explicitly left unchanged.
+- `test_budget_display_20261107.cjs`: 17/17; TypeScript, production build, and `git diff --check`: PASS. Current local changes are limited to the budget-card handler, its regression assertions and this checkpoint.
+- Awaiting completion of run `42355347997` before pushing another head, to avoid interrupting the active Android release-artifact job.

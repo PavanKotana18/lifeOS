@@ -19,4 +19,7 @@ assert.match(app, /Set a limit to track remaining/);
 assert.match(app, /getBudgetDisplayStatus\(categoryMissing \? Number\.NaN : spent, b\.monthlyAmount\)/, 'orphaned category budgets do not present zero spend as verified');
 assert.match(app, /Restore category to track this plan/);
 assert.match(app, /aria-label=\{`\$\{budgetName\} usage`\}/, 'missing categories are not announced as overall budgets');
-console.log('BUDGET DISPLAY: 14 arithmetic and user-facing status assertions passed with synthetic amounts.');
+assert.match(app, /window\.confirm\(`Delete \$\{budgetName\}\? Saved transactions will remain unchanged\./);
+assert.match(app, /Budget deletion could not be confirmed\. Refresh before retrying\./);
+assert.match(app, /Budget deleted\. Reopen Finance to refresh the latest data\./, 'post-delete refresh failure is not reported as delete failure');
+console.log('BUDGET DISPLAY: 17 arithmetic, status, deletion and accessibility assertions passed with synthetic amounts.');
