@@ -294,4 +294,4 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Added explicit confirmation, scoped rollback messaging, optimistic list removal after successful delete, and separate refresh-failure messaging. Saved transactions are explicitly left unchanged.
 - `test_budget_display_20261107.cjs`: 17/17; TypeScript, production build, and `git diff --check`: PASS. Current local changes are limited to the budget-card handler, its regression assertions and this checkpoint.
-- Awaiting completion of run `42355347997` before pushing another head, to avoid interrupting the active Android release-artifact job.
+- Run `42355347997` has now passed for `8d345aadbc526202af8416c39f3feb8643bd6eef`. The budget deletion follow-up is committed locally as `ff125c4f2dfe1a8f83c882d4bc835e4c34c9b713` and is ready to push after updating PR #24 evidence.
