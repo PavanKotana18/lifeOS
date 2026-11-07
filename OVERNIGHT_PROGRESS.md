@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current Finance analytics precision package: `16ddba897941108d685e8bfff0bbcd0d68dd64d7` (`feat(finance): expose global reporting currency preference`).
+- Latest pushed commit: `dfd69d4cf2992519b7b03d0312da01db52987f0b` (`fix(finance): aggregate analytics by currency minor units`).
 - Finance calculations/projection, LifeOS 2.0 navigation, themes, Finance overview, and incremental screen accessibility work are already on this branch; see completed package notes below.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -223,6 +223,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`), Planner palette (`e42ab50`), Plan schedule (`d1ed7a3`), currency metadata (`07df83c`), Finance charts (`380fe78`), secure dialogs/app shell (`125a234`, `00573ec`) and global reporting currency (`16ddba8`) are pushed. Finance analytics precision is locally verified and part of the current uncommitted checkpoint.
-- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42342561481` for commit `16ddba8` was pending on last check; do not infer hosted success or device rendering from local tests/build.
+- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`), Planner palette (`e42ab50`), Plan schedule (`d1ed7a3`), currency metadata (`07df83c`), Finance charts (`380fe78`), secure dialogs/app shell (`125a234`, `00573ec`), global reporting currency (`16ddba8`) and Finance analytics precision (`dfd69d4`) are pushed.
+- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42343017636` for the current head was pending on last check; do not infer hosted success or device rendering from local tests/build.
+- Exact resumption step: inspect the terminal result of run `42343017636` once. Then proceed only with a device- or toolchain-verifiable release blocker; LOS-001 remains blocked without real encrypted-at-rest and lifecycle/device acceptance evidence.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
