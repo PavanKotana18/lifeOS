@@ -124,8 +124,17 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-settings-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-settings-theme-20261107.log`.
 - Hosted CI run `42337188975` for commit `17146bc1ae6a38156e61bc49f13385b0f5260a08` was `pending` when checked. This local Settings palette completion is not yet included in that run.
 
+### On-demand screen chunks and accessible loading states (local, verified)
+
+- Converted Finance Planning, Explore, Plan and Insights to on-demand React chunks, alongside the existing Finance Charts split. Each route has a concise `role=status` live loading panel styled with semantic tokens; the Today screen remains the eager entry route.
+- Added `test_lazy_screen_loading_20261107.cjs` (12 source-level assertions) and included it in the mandatory test chain. The build confirms separately emitted component chunks.
+- `node test_lazy_screen_loading_20261107.cjs`: PASS (12). Settings palette contract: PASS (17). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0 and six Sentinel suites; SAF OS picker remains runtime-blocked). `npm run build`: PASS (2,242 modules; main JS reduced from 511.59 kB to 491.71 kB; prior >500 kB warning is gone). `git diff --check`: PASS.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-lazy-screens-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-lazy-screens-20261107.log`.
+- Latest observed hosted run for prior commit `17146bc1ae6a38156e61bc49f13385b0f5260a08` was still in progress (`42337188975`). The Settings palette commit `e8b082c833d66cb027dfe1419ec4d8522fc0ebc8` had a queued workflow (`42337583466`); this package is not yet covered by hosted CI.
+
 ## Current checkpoint and next exact steps
 
-- Current branch remains `integration/lifeos-functional-security-20261107`; continue in this same worktree and update the existing draft PR #23 only.
-- The Settings palette completion is locally verified and ready to commit/push. Then check the newest hosted run once and reuse any successful scopes rather than rerunning them.
-- Continue only with a bounded, evidence-led next package. LifeOS 1.0 LOS-001, API36 target compliance, device biometric/SAF/notification acceptance, visual/screen-reader device review, and remaining uncompleted work packages must remain explicit blockers; do not imply release readiness or total overnight completion.
+- Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
+- Settings semantic theme completion is committed and pushed at `e8b082c833d66cb027dfe1419ec4d8522fc0ebc8`. The on-demand screen package is locally verified and is the current uncommitted package; commit/push it to the same branch after reviewing the diff.
+- After pushing, check hosted CI once for latest head; report pending until terminal. Avoid rerunning the unchanged emulator matrix locally.
+- Continue sequentially with bounded, evidence-led work. LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review remain blockers; do not imply release readiness or total overnight completion.

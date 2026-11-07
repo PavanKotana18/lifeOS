@@ -20,10 +20,6 @@ import { DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, conver
 import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
-import FinanceProjection from './components/FinanceProjection';
-import ExploreHub from './components/ExploreHub';
-import PlanHub from './components/PlanHub';
-import InsightsHub from './components/InsightsHub';
 import FinanceSavingsSummary from './components/FinanceSavingsSummary';
 import { PRIMARY_NAVIGATION, type MainTab } from './services/navigationCatalog';
 import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
@@ -34,6 +30,14 @@ import Onboarding, { type AppearancePreference } from './components/Onboarding';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
+const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
+const ExploreHub = React.lazy(() => import('./components/ExploreHub'));
+const PlanHub = React.lazy(() => import('./components/PlanHub'));
+const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
+
+function ScreenLoading({ label }: { label: string }) {
+  return <div className="lifeos-panel rounded-2xl border p-6 text-center text-sm text-secondary" role="status" aria-live="polite">{label}</div>;
+}
 
 const tabSubtitle: Record<MainTab, string> = { dashboard: "Here's your day at a glance.", explore: 'Your life modules, thoughtfully organized.', plan: 'Tasks, routines and goals for what comes next.', insights: 'Progress from the records you have saved.', finance: 'Your finances, thoughtfully organized.', habits: 'Your habits, thoughtfully organized.', goals: 'Your goals, thoughtfully organized.', planner: 'Your planner, thoughtfully organized.', settings: 'Your profile, thoughtfully organized.' };
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -1403,7 +1407,7 @@ export default function App() {
         )}
 
         {/* VIEW 2: FINANCE */}
-        {activeTab === 'explore' && <ExploreHub
+        {activeTab === 'explore' && <Suspense fallback={<ScreenLoading label="Loading your modules…" />}><ExploreHub
           counts={{
             transactions: transactions.length,
             habits: habits.filter(habit => !habit.archived).length,
@@ -1411,12 +1415,12 @@ export default function App() {
             openTasks: tasks.filter(task => !task.completed).length,
           }}
           onNavigate={navigateTo}
-        />}
+        /></Suspense>}
 
-        {activeTab === 'plan' && <PlanHub tasks={tasks} goals={goals} today={todayKey}
-          onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} />}
+        {activeTab === 'plan' && <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
+          onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} /></Suspense>}
 
-        {activeTab === 'insights' && <InsightsHub
+        {activeTab === 'insights' && <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
           month={financeMonth}
           income={financeMetrics.totalIncome}
           expenses={financeMetrics.totalExpenses}
@@ -1432,7 +1436,7 @@ export default function App() {
           onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
           onHabits={() => { setHabitsSubtab('weekly'); navigateTo('habits'); }}
           onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
-        />}
+        /></Suspense>}
 
         {activeTab === 'finance' && (
           <div className="space-y-4">
@@ -1614,17 +1618,17 @@ export default function App() {
               })}
             </div>}
 
-            {financeSubtab === 'planning' && <FinanceProjection
+            {financeSubtab === 'planning' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection
               currencyCode={userPrefs.currency}
               locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
-            />}
+            /></Suspense>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
               <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-slate-400">Based on transactions saved on this device</p></div><label className="text-[10px] text-slate-400">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="mt-1 block rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs" /></label></div>
               <div className="grid grid-cols-2 gap-2.5">
                 {[['Income', financeAnalytics.totalIncome, 'text-emerald-400'], ['Expenses', financeAnalytics.totalExpenses, 'text-rose-400'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-rose-400' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'text-indigo-400']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><p className="text-xs text-slate-400">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
               </div>
-              <Suspense fallback={<div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center text-sm text-slate-400">Loading financial charts…</div>}>
+              <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
                 <FinanceCharts
                   analytics={financeAnalytics}
                   theme={theme}
