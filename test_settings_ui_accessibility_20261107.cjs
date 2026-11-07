@@ -18,7 +18,8 @@ assert.match(app, /role="switch" aria-checked=\{biometricEnabled\}[^\n]*min-h-11
 assert.match(app, /role="switch" aria-checked=\{notificationsEnabled\}[^\n]*min-h-11/);
 assert.match(app, /role="switch" aria-checked=\{notificationPreferences\[key\]\}[^\n]*min-h-11/);
 assert.match(app, /lifeos-input mt-1\.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm/);
-assert.match(preferences, /CURRENCY_CODES\.map\(code => <option key=\{code\} value=\{code\}>\{formatCurrencyChoice\(code, preferences\.locale/);
+assert.match(preferences, /currencyOptions\.map\(code => <option key=\{code\} value=\{code\}>\{formatCurrencyChoice\(code, preferences\.locale/);
+assert.match(preferences, /type="search"/);
 assert.match(preferences, /disabled=\{hasFinancialRecords\}/);
 assert.match(preferences, /saved financial records do not yet store their own currency/);
 assert.match(app, /lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold">Restore JSON/);

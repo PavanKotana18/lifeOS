@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { CURRENCY_CODES, type UserPreferences } from '../services/userPreferences';
 import { formatCurrencyChoice } from '../services/financeCore';
 
@@ -10,13 +11,20 @@ type Props = {
 const selectClass = 'lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm';
 
 export default function ProfilePreferences({ preferences, hasFinancialRecords, onChange }: Props) {
+  const [currencySearch, setCurrencySearch] = useState('');
+  const currencyOptions = useMemo(() => {
+    const query = currencySearch.trim().toLocaleLowerCase(preferences.locale === 'system' ? undefined : preferences.locale);
+    const matched = CURRENCY_CODES.filter(code => !query || code.toLocaleLowerCase().includes(query) || formatCurrencyChoice(code, preferences.locale === 'system' ? undefined : preferences.locale).toLocaleLowerCase().includes(query));
+    return matched.includes(preferences.currency) ? matched : [preferences.currency, ...matched];
+  }, [currencySearch, preferences.currency, preferences.locale]);
   return <div className="space-y-4" data-testid="profile-preferences">
     <section className="lifeos-panel rounded-2xl border p-5 space-y-4">
       <div><h2 className="text-base font-semibold">Preferences</h2><p className="mt-1 text-sm text-secondary">Display choices change how new entries and saved values are shown.</p></div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="text-sm text-secondary">Currency for financial records
+          <input aria-label="Search currencies" type="search" autoComplete="off" value={currencySearch} onChange={event => setCurrencySearch(event.target.value)} placeholder="Search by name, code or symbol" className={selectClass + ' mb-1'} />
           <select aria-label="Currency for financial records" disabled={hasFinancialRecords} value={preferences.currency} onChange={event => onChange('currency', event.target.value)} className={`${selectClass} disabled:opacity-70`}>
-            {CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, preferences.locale === 'system' ? undefined : preferences.locale)}</option>)}
+            {currencyOptions.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, preferences.locale === 'system' ? undefined : preferences.locale)}</option>)}
           </select>
           {hasFinancialRecords && <span className="mt-1 block text-xs leading-5 text-muted">Locked because saved financial records do not yet store their own currency. Changing it could misstate past values.</span>}
         </label>

@@ -341,3 +341,9 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Tests:** Full `npm test` ran through the final Android-runner contract checks with no reported failure; the output is saved at `/data/data/com.termux/files/usr/tmp/lifeos-bulk-npm-test.log`. The added Profile component render test and TypeScript check passed directly.
 - **Hosted CI:** Run `42402575188` completed successfully for the first code checkpoint. Run `42402896503` has passed automated checks and is building the Android APK/release artifact for commit `8c8b3ed72f18874d99742b54153e72c055119b78`.
 - **Next:** Commit/push the test-only additions, verify the final hosted run and update the PR/checkpoint with its actual result.
+
+## Checkpoint G — Searchable currency picker
+- **Change:** Added in-place currency search by localized name, ISO code or symbol. The existing selection stays visible even when it does not match the current search. This is presentation-only; it does not change records.
+- **Tests:** Server-rendered Profile/Preferences test, Settings accessibility test, TypeScript and Vite production build passed. Build still emits the >500 kB chunk advisory.
+- **Hosted CI:** Run `42403261537` passed Automated checks and was building the Debug APK when last checked. This run is for `38db7a4`; the searchable picker will be included in the next pushed commit and require final CI.
+- **Next:** Commit the searchable picker, wait for the active hosted build to finish, then push this final checkpoint and verify its run/artifact.

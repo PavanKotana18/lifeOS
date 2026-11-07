@@ -43,6 +43,8 @@ const subpageMarkup = renderToStaticMarkup(React.createElement(ProfileSubpage, {
 assert.ok(subpageMarkup.includes('Appearance') && subpageMarkup.includes('Preview') && subpageMarkup.includes('Profile'));
 const preferenceMarkup = renderToStaticMarkup(React.createElement(ProfilePreferences, { preferences: DEFAULT_USER_PREFERENCES, hasFinancialRecords: true, onChange: () => {} }));
 assert.match(preferenceMarkup, /Currency for financial records/);
+assert.match(preferenceMarkup, /Search currencies/);
+assert.match(preferenceMarkup, /Search by name, code or symbol/);
 assert.match(preferenceMarkup, /disabled=""/);
 assert.match(preferenceMarkup, /locked because saved financial records do not yet store their own currency/i);
 assert.match(preferenceMarkup, /Swipe between tabs/);
