@@ -1773,26 +1773,26 @@ export default function App() {
           <div className="profile-page space-y-5">
             <div><p className="text-xs font-semibold tracking-wide lifeos-accent-text">PROFILE & PREFERENCES</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Your Profile</h2><p className="mt-1 text-sm text-secondary">Personalize how LifeOS works for you.</p></div>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-              <div className="flex items-center gap-3"><div className="profile-avatar flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-xl font-bold text-white">{profileInitial(displayName) || <UserRound size={21} />}</div><div><p className="text-xs text-slate-400">Your LifeOS profile</p><h3 className="mt-0.5 text-lg font-semibold">{displayName.trim() || 'Personal details'}</h3></div></div>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-4">
+              <div className="flex items-center gap-3"><div className="profile-avatar lifeos-accent-button flex h-14 w-14 items-center justify-center rounded-full text-xl font-bold">{profileInitial(displayName) || <UserRound size={21} />}</div><div><p className="text-xs text-secondary">Your LifeOS profile</p><h3 className="mt-0.5 text-lg font-semibold">{displayName.trim() || 'Personal details'}</h3></div></div>
               <label className="block text-xs text-secondary">Display name<input value={displayName} maxLength={48} onChange={event => { void updateDisplayName(event.target.value); }} placeholder="What should LifeOS call you?" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <p className="text-xs text-secondary">Your name appears in the greeting and Profile avatar.</p>
             </section>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
-              <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-slate-400">Device-level authentication for the app.</p></div>
-              <p className="text-xs text-slate-400">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+              <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-secondary">Device-level authentication for the app.</p></div>
+              <p className="text-xs text-secondary">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
             </section>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-3">
-              <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-slate-400">Choose a theme or follow Android's system setting.</p>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+              <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-secondary">Choose a theme or follow Android's system setting.</p>
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4" aria-labelledby="color-theme-title">
-              <div><h3 id="color-theme-title" className="text-base font-semibold">Color theme</h3><p className="mt-1 text-xs text-slate-400">Preview a coordinated palette. Apply to save it, or cancel to restore your current theme.</p></div>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-4" aria-labelledby="color-theme-title">
+              <div><h3 id="color-theme-title" className="text-base font-semibold">Color theme</h3><p className="mt-1 text-xs text-secondary">Preview a coordinated palette. Apply to save it, or cancel to restore your current theme.</p></div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {(Object.entries(THEME_CATALOG) as Array<[ThemeId, typeof THEME_CATALOG[ThemeId]]>).map(([id, option]) => {
                   const previewTokens = option[theme];
@@ -1810,39 +1810,39 @@ export default function App() {
               </div>
             </section>
 
-            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
-              <div><h3 className="text-base font-semibold">Preferences</h3><p className="mt-1 text-xs text-slate-400">Formats affect display and new input only. Existing amounts are never converted.</p></div>
+            <section className="lifeos-panel rounded-2xl border p-5 space-y-4">
+              <div><h3 className="text-base font-semibold">Preferences</h3><p className="mt-1 text-xs text-secondary">Formats affect display and new input only. Existing amounts are never converted.</p></div>
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs text-slate-300">Currency<select value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value as UserPreferences['currency'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="INR">INR · ₹</option><option value="USD">USD · $</option><option value="EUR">EUR · €</option><option value="GBP">GBP · £</option></select></label>
-                <label className="text-xs text-slate-300">Distance<select value={userPrefs.distance} onChange={event => void saveUserPreference('distance', event.target.value as UserPreferences['distance'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km">Kilometres · km</option><option value="mi">Miles · mi</option></select></label>
-                <label className="text-xs text-slate-300">Speed<select value={userPrefs.speed} onChange={event => void saveUserPreference('speed', event.target.value as UserPreferences['speed'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km/h">Kilometres/hour</option><option value="m/s">Metres/second</option><option value="mph">Miles/hour</option></select></label>
-                <label className="text-xs text-slate-300">Volume<select value={userPrefs.volume} onChange={event => void saveUserPreference('volume', event.target.value as UserPreferences['volume'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="L">Litres · L</option><option value="mL">Millilitres · mL</option><option value="US gal">US gallons</option><option value="Imp gal">Imperial gallons</option></select></label>
-                <label className="text-xs text-slate-300">Date format<select value={userPrefs.dateFormat} onChange={event => void saveUserPreference('dateFormat', event.target.value as UserPreferences['dateFormat'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="DMY">DD/MM/YYYY</option><option value="MDY">MM/DD/YYYY</option><option value="YMD">YYYY-MM-DD</option></select></label>
-                <label className="text-xs text-slate-300">Week starts<select value={userPrefs.firstDayOfWeek} onChange={event => void saveUserPreference('firstDayOfWeek', event.target.value as UserPreferences['firstDayOfWeek'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label>
-                <label className="text-xs text-slate-300">Time format<select value={userPrefs.timeFormat} onChange={event => void saveUserPreference('timeFormat', event.target.value as UserPreferences['timeFormat'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="12h">12-hour</option><option value="24h">24-hour</option></select></label>
-                <label className="text-xs text-slate-300">Number locale<select value={userPrefs.locale} onChange={event => void saveUserPreference('locale', event.target.value as UserPreferences['locale'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="system">Follow device</option><option value="en-IN">English · India</option><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="de-DE">German · Germany</option></select></label>
+                <label className="text-xs text-secondary">Currency<select value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value as UserPreferences['currency'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="INR">INR · ₹</option><option value="USD">USD · $</option><option value="EUR">EUR · €</option><option value="GBP">GBP · £</option></select></label>
+                <label className="text-xs text-secondary">Distance<select value={userPrefs.distance} onChange={event => void saveUserPreference('distance', event.target.value as UserPreferences['distance'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km">Kilometres · km</option><option value="mi">Miles · mi</option></select></label>
+                <label className="text-xs text-secondary">Speed<select value={userPrefs.speed} onChange={event => void saveUserPreference('speed', event.target.value as UserPreferences['speed'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km/h">Kilometres/hour</option><option value="m/s">Metres/second</option><option value="mph">Miles/hour</option></select></label>
+                <label className="text-xs text-secondary">Volume<select value={userPrefs.volume} onChange={event => void saveUserPreference('volume', event.target.value as UserPreferences['volume'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="L">Litres · L</option><option value="mL">Millilitres · mL</option><option value="US gal">US gallons</option><option value="Imp gal">Imperial gallons</option></select></label>
+                <label className="text-xs text-secondary">Date format<select value={userPrefs.dateFormat} onChange={event => void saveUserPreference('dateFormat', event.target.value as UserPreferences['dateFormat'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="DMY">DD/MM/YYYY</option><option value="MDY">MM/DD/YYYY</option><option value="YMD">YYYY-MM-DD</option></select></label>
+                <label className="text-xs text-secondary">Week starts<select value={userPrefs.firstDayOfWeek} onChange={event => void saveUserPreference('firstDayOfWeek', event.target.value as UserPreferences['firstDayOfWeek'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="monday">Monday</option><option value="sunday">Sunday</option></select></label>
+                <label className="text-xs text-secondary">Time format<select value={userPrefs.timeFormat} onChange={event => void saveUserPreference('timeFormat', event.target.value as UserPreferences['timeFormat'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="12h">12-hour</option><option value="24h">24-hour</option></select></label>
+                <label className="text-xs text-secondary">Number locale<select value={userPrefs.locale} onChange={event => void saveUserPreference('locale', event.target.value as UserPreferences['locale'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="system">Follow device</option><option value="en-IN">English · India</option><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="de-DE">German · Germany</option></select></label>
               </div>
-              <p className="text-[11px] text-slate-500">Financial values use one stored currency and are only reformatted here; no exchange-rate conversion is applied. Distance and volume use canonical storage units for new goal measurements. Speed is saved as a preference for features that use it.</p>
+              <p className="text-[11px] text-muted">Financial values use one stored currency and are only reformatted here; no exchange-rate conversion is applied. Distance and volume use canonical storage units for new goal measurements. Speed is saved as a preference for features that use it.</p>
             </section>
 
-            <button onClick={() => setProfileNotificationsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-slate-400">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-slate-500" /></button>
+            <button onClick={() => setProfileNotificationsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl lifeos-panel border px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-secondary">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-muted" /></button>
 
-            {profileNotificationsOpen && <div className="lifeos-page fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))]" role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium text-indigo-400"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
-              <p className="text-xs text-slate-400">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
+            {profileNotificationsOpen && <div className="lifeos-page fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))]" role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium lifeos-accent-text"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
+            <section className="lifeos-panel rounded-xl border p-4 space-y-3">
+              <p className="text-xs text-secondary">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
               <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
-              <p className="text-[11px] text-slate-400">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
-              {!notificationDiagnostics.supported && <p className="text-[11px] text-amber-300">The native notification plugin is not available in this runtime.</p>}
+              <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
+              {!notificationDiagnostics.supported && <p className="text-[11px] text-[var(--warning)]">The native notification plugin is not available in this runtime.</p>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--stroke)] pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
-              <div className="space-y-1 rounded-xl border border-slate-800 p-3 text-[10px] text-slate-400"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-emerald-300' : 'text-amber-300'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-rose-300' : 'text-emerald-300'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
+              <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-[10px] text-secondary"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-[var(--danger)]' : 'text-[var(--success)]'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
               <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Test notification scheduled for ${at.toLocaleTimeString()}`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Test notification · 10 sec</button><button onClick={() => void openNotificationSettings()} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android settings</button></div>
-              <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-slate-700 text-xs font-medium text-slate-300">Refresh diagnostics</button>
+              <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button>
             </section></div></div>}
 
             {/* Demo Data Trigger */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Sample Demonstration Data</h3>
-              <p className="text-xs text-slate-400">Load sample transactions, habits, goals, and tasks to evaluate all features.</p>
+              <p className="text-xs text-secondary">Load sample transactions, habits, goals, and tasks to evaluate all features.</p>
               <button
                 onClick={async () => {
                   await StorageService.backup.seedDemoData();
@@ -1856,9 +1856,9 @@ export default function App() {
             </div>
 
             {/* Backup & Restore */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Backup & Restore</h3>
-              <p className="text-xs text-slate-400">Export a passphrase-encrypted backup, or restore a validated encrypted or legacy JSON backup.</p>
+              <p className="text-xs text-secondary">Export a passphrase-encrypted backup, or restore a validated encrypted or legacy JSON backup.</p>
               <div className="flex gap-2">
                 <button
                   onClick={async () => {
@@ -1920,15 +1920,15 @@ export default function App() {
               }} className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold">Export transactions CSV</button>
             </div>
 
-            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-2">
-              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-slate-400">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-slate-500">Offline-first personal management. Your records are stored in the local app database.</p>
-              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-slate-700 px-3 text-xs font-medium">Restart onboarding</button>
+            <section className="lifeos-panel rounded-xl border p-4 space-y-2">
+              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
+              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
             </section>
 
             {/* Danger Zone */}
-            <div className="p-4 rounded-xl bg-slate-900 border border-rose-900/50 space-y-3">
-              <h3 className="text-sm font-semibold text-rose-400">Data Reset</h3>
-              <p className="text-xs text-slate-400">Permanently erase all personal database records.</p>
+            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-[var(--danger)]">Data Reset</h3>
+              <p className="text-xs text-secondary">Permanently erase all personal database records.</p>
               <button
                 onClick={async () => {
                   if (!window.confirm('Permanently erase all LifeOS data stored on this device? This cannot be undone.')) return;
@@ -1941,7 +1941,7 @@ export default function App() {
                     showToast('Reset did not complete. Please retry; reminder cleanup must succeed before records are erased.', 'danger');
                   }
                 }}
-                className="min-h-11 w-full rounded-xl bg-rose-600 px-3 text-xs font-semibold text-white"
+                className="lifeos-danger min-h-11 w-full rounded-xl border px-3 text-xs font-semibold"
               >
                 Clear All Application Data
               </button>
