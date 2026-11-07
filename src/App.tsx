@@ -14,6 +14,7 @@ import SecureSetupDialog from './components/SecureSetupDialog';
 import { createRecoveryController } from './services/recoveryService';
 import { quoteCsvCell } from './services/csvExportService.ts';
 import { exportBackupFile } from './services/backupExportService';
+import { confirmScreenshotResume, isSensitiveScreenshotState, setSensitiveScreenshotState } from './services/screenshotProtection';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
 import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
@@ -105,7 +106,8 @@ export default function App() {
   const recoveryController = useRef(createRecoveryController(CryptoService, sessionManager, getRecoveryChallenge)).current;
   const [secureSetup, setSecureSetup] = useState<{ prepared?: PreparedRecovery } | null>(null);
   const secureSetupResolver = useRef<((accepted: boolean) => void) | null>(null);
-  const requestSecureSetup = (prepared?: PreparedRecovery): Promise<boolean> => {
+  const requestSecureSetup = async (prepared?: PreparedRecovery): Promise<boolean> => {
+    await setSensitiveScreenshotState(true);
     if (secureSetupResolver.current) return Promise.reject(new Error('Secure setup is already open.'));
     return new Promise(resolve => {
       secureSetupResolver.current = accepted => {
@@ -120,7 +122,9 @@ export default function App() {
   const [backupPrompt, setBackupPrompt] = useState<'export' | 'import' | null>(null);
   const backupPassphraseResolver = useRef<((value: string | null) => void) | null>(null);
   const backupOperation = useRef(false);
-  const requestBackupPassphrase = (purpose: 'export' | 'import'): Promise<string | null> => {
+  const [backupOperationInProgress, setBackupOperationInProgress] = useState(false);
+  const requestBackupPassphrase = async (purpose: 'export' | 'import'): Promise<string | null> => {
+    await setSensitiveScreenshotState(true);
     if (backupPassphraseResolver.current) return Promise.reject(new Error('A backup prompt is already open.'));
     return new Promise(resolve => {
       backupPassphraseResolver.current = value => {
@@ -137,6 +141,8 @@ export default function App() {
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
   const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
   const [biometricMessage, setBiometricMessage] = useState('');
+  const [biometricAuthActive, setBiometricAuthActive] = useState(false);
+  const [activityResumeGuard, setActivityResumeGuard] = useState(false);
   const biometricAuthInFlight = useRef<Promise<boolean> | null>(null);
   const biometricAuthenticated = useRef(false);
   const startupComplete = useRef(false);
@@ -147,6 +153,29 @@ export default function App() {
     activateStorage: activateEncryptedStorage,
     isStorageActive: isEncryptedStorageActivated,
   })).current;
+
+  const sensitiveScreenshot = activityResumeGuard || isSensitiveScreenshotState({
+    appReady,
+    onboardingRequired,
+    onboardingComplete,
+    secureSetupOpen: secureSetup !== null,
+    recoveryOpen,
+    backupPassphraseOpen: backupPrompt !== null,
+    backupOperationInProgress,
+    locked: isLocked,
+    biometricAuthenticationInProgress: biometricAuthActive,
+  });
+  useEffect(() => {
+    // The native Activity defaults to protected. A failed bridge call therefore
+    // leaves screenshots blocked rather than exposing an uncertain screen.
+    const protectUntilRevalidated = () => {
+      setActivityResumeGuard(true);
+      void setSensitiveScreenshotState(true).catch(() => undefined);
+    };
+    window.addEventListener('lifeos:activity-resumed', protectUntilRevalidated);
+    void setSensitiveScreenshotState(sensitiveScreenshot).catch(() => undefined);
+    return () => window.removeEventListener('lifeos:activity-resumed', protectUntilRevalidated);
+  }, [sensitiveScreenshot]);
   const authCoordinator = useRef(createAuthCoordinator(async () => {
     const result = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your identity to access your personal data');
     if (!result.success) setBiometricMessage(result.message || 'Authentication was not completed. Retry when you are ready.');
@@ -269,6 +298,7 @@ export default function App() {
     void CapacitorApp.addListener('appStateChange', async state => {
       if (disposed) return;
       if (!state.isActive) {
+        setActivityResumeGuard(true);
         backupPassphraseResolver.current?.(null);
         secureSetupResolver.current?.(false);
         setIsLocked(true);
@@ -282,6 +312,7 @@ export default function App() {
       }
       if (resumeInProgress) return;
       resumeInProgress = true;
+      setBiometricAuthActive(true);
       try {
         // Wait for any previous background operation drain before reopening.
         await sessionManager.waitForIdle();
@@ -307,6 +338,10 @@ export default function App() {
         await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
           effectiveNotificationPreferences(permissionResume.advanced ? permissionResume.preferences : prefs, permissionResume.advanced || master));
         if (!disposed) await refreshNotificationDiagnostics();
+        if (!disposed) {
+          await confirmScreenshotResume();
+          setActivityResumeGuard(false);
+        }
       } catch (error) {
         if (isEncryptedStorageActivated()) {
           setIsLocked(true);
@@ -315,6 +350,7 @@ export default function App() {
         console.error('LifeOS resume recovery failed.', error);
       } finally {
         resumeInProgress = false;
+        setBiometricAuthActive(false);
       }
     }).then(async listener => {
       if (disposed) await listener.remove();
@@ -658,22 +694,39 @@ export default function App() {
   };
 
   const handleEnableBiometric = async () => {
-    const availability = await BiometricService.isAvailable();
-    if (!availability.isAvailable) return { success: false, message: availability.code === 'NOT_ENROLLED' ? 'No fingerprint or device screen lock is enrolled. Set one up in Android settings, then try again.' : 'Device authentication is not available on this device.' };
-    let result: { success: boolean; message?: string };
-    if (isEncryptedStorageActivated()) {
-      try { await encryptedSession.open(); result = { success: true }; }
-      catch (error) { return { success: false, message: error instanceof Error ? error.message : 'Encryption authentication failed.' }; }
-    } else {
-      result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
+    setBiometricAuthActive(true);
+    try {
+      await setSensitiveScreenshotState(true);
+      const availability = await BiometricService.isAvailable();
+      if (!availability.isAvailable) return { success: false, message: availability.code === 'NOT_ENROLLED' ? 'No fingerprint or device screen lock is enrolled. Set one up in Android settings, then try again.' : 'Device authentication is not available on this device.' };
+      let result: { success: boolean; message?: string };
+      if (isEncryptedStorageActivated()) {
+        try { await encryptedSession.open(); result = { success: true }; }
+        catch (error) { return { success: false, message: error instanceof Error ? error.message : 'Encryption authentication failed.' }; }
+      } else {
+        result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
+      }
+      if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
+      if (!isEncryptedStorageActivated()) sessionManager.unlock();
+      setBiometricEnabled(true); setBiometricVerified(true);
+      biometricAuthenticated.current = true;
+      authCoordinator.markAuthenticated();
+      await StorageService.settings.set('biometricLockEnabled', true);
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Device authentication could not be completed.' };
+    } finally {
+      setBiometricAuthActive(false);
     }
-    if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
-    if (!isEncryptedStorageActivated()) sessionManager.unlock();
-    setBiometricEnabled(true); setBiometricVerified(true);
-    biometricAuthenticated.current = true;
-    authCoordinator.markAuthenticated();
-    await StorageService.settings.set('biometricLockEnabled', true);
-    return { success: true };
+  };
+
+  const openRecovery = async () => {
+    try {
+      await setSensitiveScreenshotState(true);
+      setRecoveryOpen(true);
+    } catch {
+      setStartupError('Recovery cannot open because screenshot protection is unavailable. Your data remains protected.');
+    }
   };
 
   const finishOnboarding = async () => {
@@ -687,8 +740,10 @@ export default function App() {
   const importBackupFile = async (file?: File) => {
     if (!file || backupOperation.current) return;
     backupOperation.current = true;
+    setBackupOperationInProgress(true);
     let restored = false;
     try {
+      await setSensitiveScreenshotState(true);
       if (file.size > MAX_BACKUP_FILE_BYTES) throw new Error('Backup file exceeds the supported size.');
       const text = await decodeBackupForRestore(await file.text(), {
         requestPassphrase: () => requestBackupPassphrase('import'),
@@ -709,13 +764,15 @@ export default function App() {
       showToast('Backup restored successfully', 'success');
     } catch (error) {
       showToast(restored ? 'Backup restored, but the screen could not refresh. Reopen LifeOS to verify.' : error instanceof Error ? error.message : 'Could not restore this backup', 'danger');
-    } finally { backupOperation.current = false; }
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
   };
 
   const triggerBiometricAuth = async () => {
     if (biometricAuthInFlight.current) return biometricAuthInFlight.current;
+    setBiometricAuthActive(true);
     const attempt = (async () => {
       try {
+        await setSensitiveScreenshotState(true);
         await encryptedSession.open();
         if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Authentication expired after app lock.');
         biometricAuthenticated.current = true;
@@ -736,7 +793,7 @@ export default function App() {
       }
     })();
     biometricAuthInFlight.current = attempt;
-    void attempt.then(() => { biometricAuthInFlight.current = null; }, () => { biometricAuthInFlight.current = null; });
+    void attempt.then(() => { biometricAuthInFlight.current = null; setBiometricAuthActive(false); }, () => { biometricAuthInFlight.current = null; setBiometricAuthActive(false); });
     return attempt;
   };
 
@@ -1190,7 +1247,7 @@ export default function App() {
 
   if (backupPrompt) return <BackupPassphraseDialog purpose={backupPrompt} onComplete={value => backupPassphraseResolver.current?.(value)} />;
 
-  if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => setRecoveryOpen(true)}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 lifeos-border" style={{ borderTopColor: 'var(--accent)' }} aria-hidden="true" />}</div>;
+  if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 lifeos-border" style={{ borderTopColor: 'var(--accent)' }} aria-hidden="true" />}</div>;
 
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
@@ -1235,7 +1292,7 @@ export default function App() {
         >
           {biometricMessage ? 'Try again' : 'Verify Biometrics'}
         </button>
-        <button className="lifeos-input mt-3 min-h-11 rounded-xl px-4" onClick={() => setRecoveryOpen(true)}>Recover encryption key</button>
+          <button className="lifeos-input mt-3 min-h-11 rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button>
         {biometricMessage && <p role="status" className="lifeos-warning mt-4 max-w-xs text-sm">{biometricMessage}</p>}
       </div>
     );
@@ -1879,7 +1936,9 @@ export default function App() {
                   onClick={async () => {
                     if (backupOperation.current) return;
                     backupOperation.current = true;
+                    setBackupOperationInProgress(true);
                     try {
+                      await setSensitiveScreenshotState(true);
                       const passphrase = await requestBackupPassphrase('export');
                       if (passphrase === null) return;
                       const token = sessionManager.capture();
@@ -1901,7 +1960,7 @@ export default function App() {
                     } catch (error) {
                       console.error('LifeOS backup export failed:', error);
                       showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
-                    } finally { backupOperation.current = false; }
+                    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
                   }}
                   className="lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold"
                 >

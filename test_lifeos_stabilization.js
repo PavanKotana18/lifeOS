@@ -102,6 +102,7 @@ function financeRows(rows, sort = 'date-desc') {
       effectiveNotificationPreferences: value => value,
       DEFAULT_NOTIFICATION_PREFERENCES: f.DEFAULT_NOTIFICATION_PREFERENCES,
       async refreshNotificationDiagnostics() { f.native.calls.push('refreshPermissionDiagnostics'); },
+      async confirmScreenshotResume() { f.native.calls.push('screenshot-resume-confirmed'); },
       reconcileNotificationOnboardingOnResume,
       NotificationService: {
         async checkPermission() { f.native.calls.push('checkDisplayPermission'); return 'granted'; },
@@ -126,6 +127,7 @@ function financeRows(rows, sort = 'date-desc') {
     assert.ok(f.native.calls.includes('refreshPermissionDiagnostics'), 'Permission diagnostics refresh after return');
     assert.ok(f.native.calls.includes('checkDisplayPermission'));
     assert.ok(f.native.calls.includes('checkExactAlarmPermission'));
+    assert.ok(f.native.calls.indexOf('screenshot-resume-confirmed') > f.native.calls.indexOf('biometric'), 'Screenshot resume fence clears only after biometric session restoration');
     assert.ok(f.native.calls.includes('setting:onboardingStep:4'), 'Granted notification permissions advance onboarding without another tap');
     assert.ok(f.native.calls.includes('setting:notificationsEnabled:true'));
   }));

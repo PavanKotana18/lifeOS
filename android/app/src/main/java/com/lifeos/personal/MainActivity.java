@@ -11,6 +11,11 @@ import android.view.WindowManager;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
+    private boolean sensitiveScreen = true;
+    private boolean activityResumed = false;
+    private boolean webViewCompatibilityBlocked = false;
+    private boolean resumeValidationPending = false;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(BiometricAuthPlugin.class);
@@ -19,20 +24,50 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NotificationSettingsPlugin.class);
         registerPlugin(StorageAccessPlugin.class);
         registerPlugin(SystemAppearancePlugin.class);
+        registerPlugin(ScreenCaptureProtectionPlugin.class);
         super.onCreate(savedInstanceState);
 
-        // Prevent screenshots, screen recording and sensitive recent-app previews.
-        getWindow().setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        );
+        // Start protected for every build. Debug UI may opt into screenshots only
+        // after React confirms that the visible surface contains no secrets.
+        applyScreenshotProtection();
         showWebViewUpdateIfRequired();
+    }
+
+    public void setSensitiveScreen(boolean sensitive) {
+        if (!sensitive && resumeValidationPending) {
+            // A stale pre-background JS update cannot unlock screenshots after resume.
+            sensitiveScreen = true;
+            applyScreenshotProtection();
+            return;
+        }
+        sensitiveScreen = sensitive;
+        applyScreenshotProtection();
+    }
+
+    public void confirmResumeValidation() {
+        if (!activityResumed) return;
+        resumeValidationPending = false;
+        sensitiveScreen = true;
+        applyScreenshotProtection();
+    }
+
+    private void applyScreenshotProtection() {
+        boolean secure = ScreenshotProtectionPolicy.shouldProtect(
+            BuildConfig.DEBUG, sensitiveScreen, activityResumed, webViewCompatibilityBlocked,
+            resumeValidationPending);
+        if (secure) {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        }
     }
 
     private void showWebViewUpdateIfRequired() {
         if (bridge == null || bridge.getWebView() == null) return;
         WebView webView = bridge.getWebView();
         if (WebViewCompatibility.isSupported(webView.getSettings().getUserAgentString())) return;
+        webViewCompatibilityBlocked = true;
+        applyScreenshotProtection();
 
         // This is a compatibility message, never an authenticated app surface.
         // Native views work even when the packaged JavaScript cannot be parsed.
@@ -66,6 +101,17 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
+    private void notifyScreenshotPolicyRefresh() {
+        if (bridge == null || bridge.getWebView() == null) return;
+        final WebView webView = bridge.getWebView();
+        webView.post(() -> {
+            if (isFinishing() || isDestroyed() || bridge == null || bridge.getWebView() != webView) return;
+            if (webView.getVisibility() != android.view.View.VISIBLE) return;
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('lifeos:activity-resumed'))", null);
+        });
+    }
+
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
@@ -74,7 +120,21 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onResume() {
+        // Keep the window protected until JS re-evaluates the current screen.
+        activityResumed = true;
+        sensitiveScreen = true;
+        applyScreenshotProtection();
         super.onResume();
+        notifyScreenshotPolicyRefresh();
         notifyWebTheme(getResources().getConfiguration());
+    }
+
+    @Override
+    public void onPause() {
+        activityResumed = false;
+        sensitiveScreen = true;
+        resumeValidationPending = true;
+        applyScreenshotProtection();
+        super.onPause();
     }
 }

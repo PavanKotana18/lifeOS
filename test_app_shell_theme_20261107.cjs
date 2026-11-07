@@ -27,7 +27,8 @@ assert.ok(lockedStart >= 0 && shellStart > lockedStart && startupStart >= 0 && o
 assert.doesNotMatch(shell, /(?:text|bg|border)-(?:slate|gray|indigo|amber|rose|emerald)-\d+/, 'lock and header use semantic theme tokens');
 assert.doesNotMatch(startup, /(?:text|bg|border)-(?:slate|gray|indigo|amber|rose|emerald)-\d+/, 'startup error and loading states use semantic theme tokens');
 assert.match(shell, /onClick=\{triggerBiometricAuth\}/, 'lock screen retains the existing biometric callback');
-assert.match(shell, /onClick=\{\(\) => setRecoveryOpen\(true\)\}/, 'lock recovery remains accessible');
+assert.match(shell, /onClick=\{\(\) => \{ void openRecovery\(\); \}\}/, 'lock recovery opens through the protection gate');
+assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await setSensitiveScreenshotState\(true\);\s*setRecoveryOpen\(true\);/, 'recovery secrets are not rendered before native screenshot protection is acknowledged');
 assert.match(fsSource.slice(fsSource.indexOf('id="theme-toggle-btn"'), fsSource.indexOf('</button>', fsSource.indexOf('id="theme-toggle-btn"'))), /onClick=\{toggleTheme\}/, 'appearance control retains its existing action');
 assert.match(fsSource, /lifeos-mark lifeos-accent-button/, 'LifeOS mark uses the selected palette accent');
 assert.match(fsSource, /Daily consistency monitor<\/p>/, 'habit heading remains in the semantic palette');

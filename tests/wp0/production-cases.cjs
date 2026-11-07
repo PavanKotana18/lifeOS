@@ -101,6 +101,8 @@ const cases = [
       const expression = h.appFunction('importBackupFile');
       await h.bind(expression, { ...f.appDeps(), ...h.noopSetters(expression),
         StorageService: { backup }, backupOperation: { current: false },
+        setBackupOperationInProgress: () => {},
+        setSensitiveScreenshotState: async () => {},
         decodeBackupForRestore: importer.decodeBackupForRestore,
         MAX_BACKUP_FILE_BYTES: codec.MAX_BACKUP_FILE_BYTES,
         requestBackupPassphrase: async () => { throw new Error('Legacy import must not request a passphrase'); },
@@ -199,6 +201,7 @@ const cases = [
       await seed(f); await f.activate();
       const deps = f.appDeps(), errors = [];
       const realReload = deps.reloadAllData; let reloads = 0;
+      deps.confirmScreenshotResume = async () => {};
       deps.reloadAllData = async () => { const result = await realReload(); reloads++; return result; };
       deps.console = { error: (...args) => errors.push(String(args[1]?.message || args[0])) };
       const expression = h.lifecycleCallback();
