@@ -147,9 +147,16 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused Finance Analytics contract: PASS (13). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0/six Sentinel suites; physical SAF picker still device-blocked). `npm run build`: PASS (2,242 modules; main JS 492.25 kB, no >500 kB warning). `git diff --check`: PASS.
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-finance-analytics-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-finance-analytics-theme-20261107.log`.
 
+### Shared record form theme and dialog accessibility (local, verified)
+
+- Migrated the shared create/edit dialog used by transactions, habits, goals, budgets, tasks and savings records to semantic surfaces, labels, fields, and action colors. Added dialog role, modal semantics and a programmatic heading link. The delete action remains danger-colored; 40 editable fields are confirmed to use semantic inputs and 44px minimum sizing. Validation, save/delete behavior and records are unchanged.
+- Added `test_record_form_theme_20261107.cjs` to the mandatory test chain. It uses the TypeScript JSX AST to inspect all dialog controls and theme contracts (11 source-level assertions, 40 editable controls inspected). A first matcher attempt split tags on `=>` inside JSX handlers; the AST-based inspection now avoids that parser ambiguity.
+- Focused test: PASS (11, 40 controls). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0/six Sentinel suites; physical SAF picker still device-blocked). `npm run build`: PASS (2,242 modules; main JS 492.28 kB, no >500 kB warning). `git diff --check`: PASS.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-record-form-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-record-form-theme-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings palette (`e8b082c`), on-demand screen chunks (`2a23faa`), and Onboarding (`eab78db4257b98523cdc63128a37e530117ec7bb`) packages are pushed. Current local Finance Analytics package is verified and uncommitted; base HEAD is `eab78db`.
-- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42338314656` for `eab78db` was pending at last check and subsequent pushes may cancel it. Check the newest head once after checkpointing; never infer CI success from the local build.
+- Settings palette (`e8b082c`), on-demand screen chunks (`2a23faa`), Onboarding (`eab78db`) and Finance Analytics (`b10ba74`) packages are pushed. Current local record-form package is verified and uncommitted; base HEAD is `b10ba74`.
+- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42338594250` for `b10ba74` was pending at last check and subsequent pushes may cancel it. Check the newest head once after checkpointing; never infer CI success from the local build.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
