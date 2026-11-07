@@ -1234,7 +1234,7 @@ export default function App() {
         >
           {biometricMessage ? 'Try again' : 'Verify Biometrics'}
         </button>
-        <button className="mt-3 min-h-11 rounded border px-4" onClick={() => setRecoveryOpen(true)}>Recover encryption key</button>
+        <button className="lifeos-input mt-3 min-h-11 rounded-xl px-4" onClick={() => setRecoveryOpen(true)}>Recover encryption key</button>
         {biometricMessage && <p role="status" className="lifeos-warning mt-4 max-w-xs text-sm">{biometricMessage}</p>}
       </div>
     );
@@ -1245,7 +1245,7 @@ export default function App() {
       {/* Top Mobile Header */}
       <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-sm font-black text-white logo-${logoPhase}`} aria-hidden="true">
+          <div className={`lifeos-mark lifeos-accent-button flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-black logo-${logoPhase}`} aria-hidden="true">
             <span>L</span>
           </div>
           <div className="min-w-0">
@@ -1661,7 +1661,7 @@ export default function App() {
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold">Habit Tracker</h2>
-                <p className="text-xs text-slate-400">Daily consistency monitor</p>
+                <p className="text-xs text-secondary">Daily consistency monitor</p>
               </div>
               <button onClick={() => openCreateForm('habit')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add habit</button>
             </div>
@@ -1680,7 +1680,7 @@ export default function App() {
                       <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
                       <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${stats.completedToday ? 'border-[var(--success)] text-[var(--surface)]' : 'border-[var(--stroke)] text-secondary'}`} style={stats.completedToday ? { backgroundColor: 'var(--success)' } : undefined}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-secondary' : ''}`}>{h.name}</span><span className="block text-[10px] text-[var(--warning)]">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button type="button" onClick={event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; void handleHabitDeletion(h); }} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Delete</button></div>
                       <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
-                      {h.reminderTime && <p className="mt-2 text-[10px] text-slate-400">Reminder · {h.reminderTime} local</p>}
+                      {h.reminderTime && <p className="mt-2 text-[10px] text-secondary">Reminder · {h.reminderTime} local</p>}
                     </div>
                   );
                 })

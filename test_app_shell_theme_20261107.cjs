@@ -29,6 +29,9 @@ assert.doesNotMatch(startup, /(?:text|bg|border)-(?:slate|gray|indigo|amber|rose
 assert.match(shell, /onClick=\{triggerBiometricAuth\}/, 'lock screen retains the existing biometric callback');
 assert.match(shell, /onClick=\{\(\) => setRecoveryOpen\(true\)\}/, 'lock recovery remains accessible');
 assert.match(fsSource.slice(fsSource.indexOf('id="theme-toggle-btn"'), fsSource.indexOf('</button>', fsSource.indexOf('id="theme-toggle-btn"'))), /onClick=\{toggleTheme\}/, 'appearance control retains its existing action');
+assert.match(fsSource, /lifeos-mark lifeos-accent-button/, 'LifeOS mark uses the selected palette accent');
+assert.match(fsSource, /Daily consistency monitor<\/p>/, 'habit heading remains in the semantic palette');
+assert.match(fsSource, /Reminder · \{h\.reminderTime\} local<\/p>/, 'habit reminder remains in the semantic palette');
 assert.match(footer, /onClick=\{\(\) => void CapacitorApp\.exitApp\(\)\}/, 'exit action remains connected');
 assert.match(footer, /role="status" aria-live="polite"/, 'toast remains announced to assistive technology');
 assert.match(styles, /\.lifeos-warning \{ color: var\(--warning\); \}/, 'warning text maps to the active theme');
@@ -52,4 +55,4 @@ const backup = render(React.createElement(BackupPassphraseDialog, { purpose: 'ex
 assert.match(backup, /role="dialog" aria-modal="true"/);
 assert.match(backup, /minLength="12"/);
 assert.match(backup, /lifeos-input/);
-console.log('APP SHELL THEME: 20 source and production-render security/accessibility checks passed with synthetic recovery data.');
+console.log('APP SHELL THEME: 23 source and production-render security/accessibility checks passed with synthetic recovery data.');
