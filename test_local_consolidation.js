@@ -14,23 +14,23 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(a.netSavings,0.1); assert.equal(a.budgetRows[0].remaining,0.1);
   assert.equal(a.periodRows.at(-1).expenses,0.3); assert.equal(a.periodRows[0].expenses,null);
  }));
- await test('Exact-alarm denial prevents scheduling and is diagnosed', async () => fixture(async f => {
+ await test('Exact-alarm denial schedules approximate reminders and is diagnosed', async () => fixture(async f => {
   const ns=f.NotificationService;
   ns.checkExactAlarmPermission=async()=> 'denied';
   await ns.syncTasks([{id:'task',title:'Private fixture',dueDate:'2026-12-01',completed:false}], {...f.DEFAULT_NOTIFICATION_PREFERENCES,upcomingDeadlines:true});
   await ns.syncHabits([{id:'habit',name:'Private fixture',frequency:'daily',reminderTime:'09:00'}], {...f.DEFAULT_NOTIFICATION_PREFERENCES,habitReminders:true});
   await ns.syncMilestones([{id:'goal',status:'In Progress'}],[{id:'mile',goalId:'goal',title:'Fixture',targetDate:'2026-12-01'}], {...f.DEFAULT_NOTIFICATION_PREFERENCES,milestoneReminders:true});
-  assert.equal(f.pending.size,0); assert.equal((await ns.getDiagnostics()).exactAlarm,'denied');
+  assert.equal(f.pending.size,9, 'task, weekly habit and milestone reminders use the supported inexact fallback'); assert.equal((await ns.getDiagnostics()).exactAlarm,'denied');
   await assert.rejects(ns.testNotification(),/exact-alarm/);
  }));
- await test('Permission UI requires both display and exact-alarm access', async () => fixture(async f => {
+ await test('Permission UI permits approximate reminders without exact-alarm settings detour', async () => fixture(async f => {
   const ns=f.NotificationService;let requested=0;
   ns.checkExactAlarmPermission=async()=> 'denied'; ns.requestExactAlarmPermission=async()=>{ requested++;return 'denied'; };
   const fn=h.appFunction('askNotificationPermission');
   const ask=h.bind(fn,{...f.appDeps(),notificationPermissionRequested:false,setNotificationPermissionRequested(){},
    StorageService:{settings:{async set(){}}}});
-  assert.equal((await ask()).granted,false);assert.equal(requested,1);
-  ns.checkExactAlarmPermission=async()=> 'granted'; assert.equal((await ask()).granted,true);
+  const approximate = await ask(); assert.equal(approximate.granted,true); assert.equal(approximate.status,'approximate'); assert.equal(requested,0);
+  ns.checkExactAlarmPermission=async()=> 'granted'; assert.equal((await ask()).status,'granted');
  }));
  await test('Empty reschedule removes stale kinds and preserves unrelated alarms', async () => fixture(async f => {
   f.pending.set(1,{id:1,extra:{kind:'habitReminder'}}); f.pending.set(2,{id:2,extra:{kind:'milestoneReminder'}});
