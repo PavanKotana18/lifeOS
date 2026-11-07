@@ -170,9 +170,17 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused dashboard theme and summary tests: PASS (8+3). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0/six Sentinel suites; physical SAF picker remains device-blocked). `npm run build`: PASS (2,242 modules; main JS 493.48 kB, no >500 kB warning). `git diff --check`: PASS.
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-dashboard-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-dashboard-theme-20261107.log`.
 
+### Planner semantic palette completion (local, verified)
+
+- Replaced fixed Slate/Indigo status and detail styling with semantic theme tokens for the calendar, task details, filters and task cards. Calendar selected/today state and task priority/status retain their text/accessible labels.
+- No task recurrence, due date, notification, completion or persistence behavior changed. Existing recurrence edge tests pass 9/9.
+- Added `test_planner_theme_20261107.cjs` to the mandatory test chain (11 source-level palette, selection and status checks).
+- Focused Planner theme contract: PASS (11). `node test_tasks_recurrence_edges.js`: PASS (9/9). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0/six Sentinel suites; SAF OS picker is device-blocked). `npm run build`: PASS (2,242 modules; main JS 493.53 kB, no >500 kB warning). `git diff --check`: PASS.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-planner-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-planner-theme-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`) and all Finance views (`8bce794`) are pushed. Current Today dashboard package is locally verified and uncommitted; base HEAD is `8bce794`.
-- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42339461474` for `8bce794` was pending at last check; later pushes may cancel it. Check newest CI once after checkpointing; do not infer CI success from local build results.
+- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`) and Today (`11b063d`) are pushed. Current Planner palette package is locally verified and uncommitted; base HEAD is `11b063d`.
+- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42339818592` for `11b063d` was pending at last check and a newer push may cancel it. Check newest CI once after checkpointing; do not infer CI success from local build results.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
