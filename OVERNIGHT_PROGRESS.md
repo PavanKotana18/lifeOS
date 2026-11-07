@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current reporting-currency preference package: `00573ecdbde9e65917ba2939592ab76add78ca07` (`theme(app): remove remaining fixed shell colors`).
+- Latest pushed commit before the current Finance analytics precision package: `16ddba897941108d685e8bfff0bbcd0d68dd64d7` (`feat(finance): expose global reporting currency preference`).
 - Finance calculations/projection, LifeOS 2.0 navigation, themes, Finance overview, and incremental screen accessibility work are already on this branch; see completed package notes below.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -213,9 +213,16 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - `node test_lifeos.js`: PASS (101/101 assertions, including supported/unsupported preference restore and JPY/KWD formatting). Settings source contract: PASS (18). `npm run test:all`: PASS (Node/WP0/Sentinel suites; physical SAF picker remains device-blocked). TypeScript: PASS. `npm run build`: PASS (2,242 modules; main JS 499.27 kB, below Vite’s 500 KiB warning threshold). No Android/device run was performed.
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-reporting-currency-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-reporting-currency-20261107.log`.
 
+### Finance analytics minor-unit parity (local, verified)
+
+- Confirmed the pre-fix mismatch: `Math.round(1.005 * 100)` yielded analytics expense `1.00` while Finance formatting rounded to `1.01`. Replaced binary floating-point cent accumulation in analytics with BigInt minor-unit sums from the shared Finance core and the selected reporting currency's precision. Budget allocation, category spend, net savings and comparison totals now use the same minor-unit conversion.
+- Added `test_finance_analytics_money_20261107.cjs` with 7 assertions covering the reproduced USD half-cent mismatch, budget parity, JPY zero-decimal rounding, and KWD three-decimal precision. The pre-fix run failed as expected at `1 !== 1.01`; post-fix focused suite passes all 7.
+- `npm run test:all`: PASS (Node/WP0/Sentinel suites; native SAF picker remains device-blocked). TypeScript: PASS. `npm run build`: PASS (2,242 modules; main JS 499.90 kB, just under Vite's 500 kB warning threshold). No Android/emulator run was performed.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-finance-analytics-money-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-finance-analytics-money-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`), Planner palette (`e42ab50`), Plan schedule (`d1ed7a3`), currency metadata (`07df83c`), Finance charts (`380fe78`) and secure dialogs/app shell (`125a234`, `00573ec`) are pushed. Global reporting-currency preference is locally verified and part of the current uncommitted checkpoint.
-- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42342045867` for commit `00573ec` was pending on last check; do not infer hosted success or device rendering from local tests/build.
+- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`), Planner palette (`e42ab50`), Plan schedule (`d1ed7a3`), currency metadata (`07df83c`), Finance charts (`380fe78`), secure dialogs/app shell (`125a234`, `00573ec`) and global reporting currency (`16ddba8`) are pushed. Finance analytics precision is locally verified and part of the current uncommitted checkpoint.
+- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42342561481` for commit `16ddba8` was pending on last check; do not infer hosted success or device rendering from local tests/build.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
