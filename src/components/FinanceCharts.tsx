@@ -27,20 +27,21 @@ export default function FinanceCharts({
 
   return (
     <>
-      <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      <section className="lifeos-panel rounded-2xl border p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
             <h4 className="text-sm font-semibold">Income & expenses</h4>
-            <p className="text-xs text-slate-400">Monthly totals</p>
+            <p className="text-xs text-secondary">Monthly totals</p>
           </div>
           <select aria-label="Analytics time range" value={range}
             onChange={event => onRangeChange(Number(event.target.value) as 3 | 6 | 12)}
-            className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-2 text-xs">
+            className="lifeos-input min-h-11 rounded-lg px-3 py-2 text-xs">
             <option value={3}>3 months</option>
             <option value={6}>6 months</option>
             <option value={12}>12 months</option>
           </select>
         </div>
+        <p className="sr-only">Monthly chart data: {analytics.periodRows.map(row => `${row.month}: ${row.hasRecords ? `income ${formatMoney(row.income)}, expenses ${formatMoney(row.expenses)}` : 'no saved records'}`).join('; ')}.</p>
         <div className="h-56 w-full">
           {analytics.periodRows.some(row => row.hasRecords) ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -55,19 +56,19 @@ export default function FinanceCharts({
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-full items-center justify-center text-center text-sm text-slate-400">Add transactions to see monthly trends.</div>
+            <div role="status" className="flex h-full items-center justify-center text-center text-sm text-secondary">Add transactions to see monthly trends.</div>
           )}
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">Months without transactions are shown as missing data; a recorded month with zero income or expenses is a real zero.</p>
+        <p className="mt-2 text-[11px] text-secondary">Months without transactions are shown as missing data; a recorded month with zero income or expenses is a real zero.</p>
       </section>
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+      <section className="lifeos-panel rounded-2xl border p-4">
         <div className="mb-2">
           <h4 className="text-sm font-semibold">Expense categories</h4>
-          <p className="text-xs text-slate-400">{month} · {formatMoney(analytics.totalExpenses)} total</p>
+          <p className="text-xs text-secondary">{month} · {formatMoney(analytics.totalExpenses)} total</p>
         </div>
         {analytics.categories.length === 0 ? (
-          <div className="py-7 text-center text-sm text-slate-400">No expense records for this month.</div>
+          <div role="status" className="py-7 text-center text-sm text-secondary">No expense records for this month.</div>
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div className="h-52">

@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current Finance catalog package: `d1ed7a3c599a6156c5262713fda99bf7267163f0` (`fix(plan): order task summaries by saved schedule`).
+- Latest pushed commit before the current Finance charts theme package: `07df83ccbfb7372365aaf281bf0fbe3c56c25c80` (`feat(finance): expand offline currency metadata`).
 - Finance calculations/projection, LifeOS 2.0 navigation, themes, Finance overview, and incremental screen accessibility work are already on this branch; see completed package notes below.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -192,9 +192,16 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused Finance core: PASS (53 assertions), including 0/2/3 fraction-digit currencies, unsupported-code rejection, the new catalog version/count, and exact formatting fallback when runtime ICU lacks a snapshot code. Savings summary production-render checks: PASS (6). `npm run test:all`: PASS (Node/WP0/Sentinel suites; Android SAF OS picker remains device-blocked). TypeScript: PASS. `npm run build`: PASS (2,242 modules; main JS 493.85 kB, no >500 kB warning). No Android/emulator run was performed.
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-finance-catalog-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-finance-catalog-20261107.log`.
 
+### Finance charts theme and accessible summaries (local, verified)
+
+- Migrated the Finance analytics chart cards and range selector to semantic theme surfaces and inputs. Empty states now announce status using secondary text; the chart receives a screen-reader summary from its actual month rows, preserving the distinction between missing records and recorded zeroes. Existing category values remain visible as text alongside the chart.
+- Added `test_finance_charts_theme_20261107.cjs` to the mandatory Node chain (9 source-level token, data-summary and empty-state assertions). No financial calculations or stored records changed.
+- Focused checks: PASS (9). `npm run test:all`: PASS (Node/WP0/Sentinel suites; SAF OS picker remains device-blocked). TypeScript: PASS. `npm run build`: PASS (2,242 modules; FinanceCharts lazy chunk 414.76 kB, main JS 493.85 kB, no >500 kB warning). No Android/emulator run was performed.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-finance-charts-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-finance-charts-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`), Planner palette (`e42ab50`) and Plan schedule (`d1ed7a3`) are pushed. The expanded Finance currency snapshot is locally verified and part of the current uncommitted checkpoint.
+- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`), Planner palette (`e42ab50`), Plan schedule (`d1ed7a3`) and currency metadata (`07df83c`) are pushed. Finance charts theme work is locally verified and part of the current uncommitted checkpoint.
 - PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Check the latest CI once after pushing this checkpoint; do not infer CI success from local test/build results.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
