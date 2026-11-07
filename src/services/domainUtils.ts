@@ -107,6 +107,21 @@ export function sortTasksByDeadline<T extends Pick<Task, 'dueDate' | 'dueTime' |
     return (getTaskDeadline(a)?.getTime() ?? Infinity) - (getTaskDeadline(b)?.getTime() ?? Infinity);
   });
 }
+
+/** Chronological ordering for upcoming-task summaries using the saved local schedule. */
+export function sortTasksBySchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'createdAt' | 'id'>>(tasks: T[]): T[] {
+  const scheduleKey = (task: T) => {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || '') ? task.dueDate : '9999-12-31';
+    const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(task.dueTime || '') ? task.dueTime! : '23:59';
+    return `${date}T${time}`;
+  };
+  return [...tasks].sort((a, b) =>
+    scheduleKey(a).localeCompare(scheduleKey(b)) ||
+    a.createdAt.localeCompare(b.createdAt) ||
+    a.id.localeCompare(b.id)
+  );
+}
+
 export const getGoalProgress = (current: number, target: number) => target > 0 ? Math.max(0, Math.min(100, Math.round(current / target * 100))) : 0;
 export function isHabitScheduledOnDate(
   frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly',

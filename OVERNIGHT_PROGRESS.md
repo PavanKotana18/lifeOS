@@ -6,8 +6,8 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current local Goal/Planner checkpoint: `59a705150a6144dcca89829fc5cb52a53e92dfbb`.
-- Dashboard commit `425bb6d` and Finance conversion commit `704fa55` are pushed. This checkpoint edit records final CI results locally; source and test code are clean.
+- Latest pushed commit before the current Plan schedule package: `e42ab50046a53df66d9880ac881c9f65bf3a49c9` (`theme(planner): apply semantic palette to calendar and details`).
+- Finance calculations/projection, LifeOS 2.0 navigation, themes, Finance overview, and incremental screen accessibility work are already on this branch; see completed package notes below.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
 
@@ -178,9 +178,16 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused Planner theme contract: PASS (11). `node test_tasks_recurrence_edges.js`: PASS (9/9). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0/six Sentinel suites; SAF OS picker is device-blocked). `npm run build`: PASS (2,242 modules; main JS 493.53 kB, no >500 kB warning). `git diff --check`: PASS.
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-planner-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-planner-theme-20261107.log`.
 
+### Plan task schedule ordering (local, verified)
+
+- The Plan summary previously sorted only by due date and did not display the optional saved due time. Added `sortTasksBySchedule`, which orders by saved local date/time, treats date-only records as end-of-day (matching Planner semantics), and resolves ties by creation timestamp then record ID. Plan filters completed tasks before using the helper and displays due time or “end of day”; no reminder, recurrence, or persistence behavior changed.
+- Added `test_plan_hub_schedule_20261107.cjs` to the mandatory test chain. It checks same-day ordering, deterministic ties, date-only and un-dated records, non-mutation, and rendered Plan output (7 assertions).
+- Focused regression: PASS (7). `npm run test:all`: PASS (Node/WP0/Sentinel suites); native Android SAF picker remains device-blocked. `npx --no-install tsc --noEmit`: PASS. `npm run build`: PASS (2,242 modules; PlanHub is a 2.74 kB lazy chunk, main JS 493.85 kB, no >500 kB warning). `git diff --check`: PASS. No Android/emulator run was performed for this change.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-plan-schedule-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-plan-schedule-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`) and Today (`11b063d`) are pushed. Current Planner palette package is locally verified and uncommitted; base HEAD is `11b063d`.
-- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42339818592` for `11b063d` was pending at last check and a newer push may cancel it. Check newest CI once after checkpointing; do not infer CI success from local build results.
+- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`), Finance views (`8bce794`), Today (`11b063d`) and Planner palette (`e42ab50`) are pushed. Plan task schedule ordering is locally verified and is part of the current uncommitted checkpoint.
+- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Check the latest CI once after pushing this checkpoint; do not infer CI success from local test/build results.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
