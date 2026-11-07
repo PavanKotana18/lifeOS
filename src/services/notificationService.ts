@@ -139,6 +139,39 @@ export const NotificationService = {
     }
   },
 
+  async diagnoseTaskReminder(task: Task, preferences: NotificationPreferences) {
+    const permission = await this.checkPermission();
+    const kind = 'taskReminders';
+    const id = taskNotificationId(task, kind);
+    const pending = isNative() ? await LocalNotifications.getPending() : { notifications: [] };
+    const planned = buildTaskNotificationPlan(task, { ...DEFAULT_NOTIFICATION_PREFERENCES, ...preferences }, new Date());
+    const taskPlan = planned.find(item => item.kind === kind);
+    const pendingItem = pending.notifications.find(item => item.id === id);
+    let cancellationReason = '';
+    if (task.completed) cancellationReason = 'task-completed';
+    else if (!task.reminderAt) cancellationReason = 'reminder-not-configured';
+    else if (!preferences.taskReminders) cancellationReason = 'category-disabled';
+    else if (permission !== 'granted') cancellationReason = `permission-${permission}`;
+    else if (!taskPlan) cancellationReason = 'invalid-or-past-reminder-time';
+    else if (!pendingItem) cancellationReason = 'not-present-in-android-pending-queue';
+    return {
+      taskReference: task.id,
+      eligible: Boolean(taskPlan && permission === 'granted' && preferences.taskReminders && !task.completed),
+      scheduledLocalTime: taskPlan?.at.toLocaleString() || null,
+      categoryEnabled: preferences.taskReminders,
+      androidPermission: permission,
+      schedulingResult: pendingItem ? 'pending' : cancellationReason ? 'not-scheduled' : 'unknown',
+      pendingNotificationId: pendingItem?.id ?? null,
+      cancellationReason: cancellationReason || null,
+      exactAlarm: await this.checkExactAlarmPermission(),
+    };
+  },
+
+  async addActionListener(listener: (action: { notification: { id: number; extra?: Record<string, unknown> } }) => void) {
+    if (!isNative()) return { remove: async () => {} };
+    return LocalNotifications.addListener('localNotificationActionPerformed', listener);
+  },
+
   async cancelTask(task: Task) {
     try { await cancelIds(['taskReminders', 'upcomingDeadlines', 'overdueAlerts'].map(kind => taskNotificationId(task, kind))); }
     catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS task notification cancellation failed:', error); throw error; }

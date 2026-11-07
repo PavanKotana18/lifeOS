@@ -23,6 +23,18 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(f.pending.size,9, 'task, weekly habit and milestone reminders use the supported inexact fallback'); assert.equal((await ns.getDiagnostics()).exactAlarm,'denied');
   const testAt = await ns.testNotification(1_000); assert.ok(testAt instanceof Date); assert.equal(f.pending.size,10, 'test notification is queued even without exact-alarm access');
  }));
+ await test('Task reminder diagnostic reports eligibility and pending ID without task content', async () => fixture(async f => {
+  const task = { id: 'safe-task-ref', title: 'SECRET TITLE MUST NOT APPEAR', dueDate: '2026-12-01', reminderAt: '2026-12-01T09:00:00.000Z', completed: false };
+  const prefs = { ...f.DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };
+  await f.NotificationService.syncTasks([task], prefs);
+  const report = await f.NotificationService.diagnoseTaskReminder(task, prefs);
+  assert.equal(report.taskReference, task.id);
+  assert.equal(report.categoryEnabled, true);
+  assert.equal(report.androidPermission, 'granted');
+  assert.equal(report.schedulingResult, 'pending');
+  assert.ok(report.pendingNotificationId);
+  assert.equal(JSON.stringify(report).includes(task.title), false);
+ }));
  await test('Permission UI permits approximate reminders without exact-alarm settings detour', async () => fixture(async f => {
   const ns=f.NotificationService;let requested=0;
   ns.checkExactAlarmPermission=async()=> 'denied'; ns.requestExactAlarmPermission=async()=>{ requested++;return 'denied'; };
@@ -45,5 +57,5 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const messages=[];const reset=h.bind(h.buttonHandler('Clear All Application Data'),{...f.appDeps(),showToast:(...args)=>messages.push(args)});
   await reset();assert.equal(await f.lifeOSDatabase.tasks.count(),1);assert.equal(messages.at(-1)[1],'danger');
  }));
- console.log(`LOCAL CONSOLIDATION: ${passed}/5 passed (native simulated)`);
+ console.log(`LOCAL CONSOLIDATION: ${passed}/6 passed (native simulated)`);
 })().catch(e=>{console.error(e);process.exitCode=1;});

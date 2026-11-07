@@ -7,6 +7,7 @@ const permissionFlow = app.slice(app.indexOf('const finishOnboarding'), app.inde
 const notificationService = service;
 const nativeScheduler = fs.readFileSync('node_modules/@capacitor/local-notifications/android/src/main/java/com/capacitorjs/plugins/localnotifications/LocalNotificationManager.java', 'utf8');
 const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
+const bootstrap = fs.readFileSync('src/services/encryptedStorageIntegration.ts', 'utf8');
 assert.match(service, /return isNative\(\) && await this\.checkPermission\(\) === 'granted'/, 'notification display permission gates scheduling');
 assert.match(nativeScheduler, /Notification scheduled with non-exact alarm/);
 assert.match(nativeScheduler, /alarmManager\.setAndAllowWhileIdle/, 'native plugin falls back to inexact allow-while-idle delivery');
@@ -21,4 +22,11 @@ assert.match(permissionFlow, /setOnboardingComplete\(true\)[\s\S]*?requestAnimat
 assert.match(permissionFlow, /checkPermission\(\)[\s\S]*?permission === 'prompt' \|\| permission === 'prompt-with-rationale'[\s\S]*?requestPermission\(\)/, 'already-granted and previously-denied states do not trigger duplicate prompts');
 assert.match(notificationService, /sendImmediateTestNotification/);
 assert.match(notificationService, /schedule-verification-missing:test-notification/, 'test actions distinguish scheduling acceptance from delivery');
+assert.match(app, /taskReminders: true, upcomingDeadlines: true, overdueAlerts: true, habitReminders: true, milestoneReminders: true/, 'new users who grant permission receive defaults for supported categories');
+assert.match(bootstrap, /'notificationPreferences'[\s\S]*?'notificationDefaultsPending'/, 'permission preference initialization is recoverable before first encrypted record');
+assert.match(notificationService, /localNotificationActionPerformed/);
+assert.match(app, /addActionListener/);
+assert.match(app, /isEncryptedStorageActivated\(\)[\s\S]*?processPendingTaskNotification/, 'notification taps wait for the encrypted session before reading task details');
+assert.match(service, /diagnoseTaskReminder/);
+assert.match(app, /Diagnose reminder/);
 console.log('NOTIFICATION DELIVERY CONTRACT: Android permission, inexact fallback, queue verification, privacy and reboot manifest checks passed (source contract only; no delivery test).');
