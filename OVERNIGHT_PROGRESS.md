@@ -245,7 +245,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Added an encrypted-settings-backed Today layout preference with validated/deduplicated section IDs, persistent show/hide and up/down ordering, a non-hideable focus summary, and a restore-default control. Added a separately actionable Coming up list using future-dated open tasks and their saved local due times; empty Goals remain hidden by default.
 - Startup reads the layout only after the encrypted session opens. Saves are serialized to preserve click order and report persistence errors. No domain records, encryption behavior, task scheduling, or notification behavior changed.
-- Added `test_today_layout_20261107.cjs` (15 layout/persistence/UI assertions) to the mandatory test chain. Updated the existing WP0 App fixture with Today-layout and screenshot-resume dependencies used by extracted startup/lifecycle tests.
+- Added `test_today_layout_20261107.cjs` (18 layout/persistence/UI assertions), including an encrypted settings save/read across a synthetic native relock and fresh App-module/database activation, to the mandatory test chain. Updated the existing WP0 App fixture with Today-layout and screenshot-resume dependencies used by extracted startup/lifecycle tests.
 - Focused Today/dashboard/navigation tests: PASS. Authentication lifecycle: 10/10 passed (actual App/Dexie; native simulated). Secure startup: 16 passed. Encryption admission: 6/6 passed. WP0 harness self-test: 148 checks passed. TypeScript: PASS. Production Vite build: PASS (2,245 modules; Inter font asset bundled; existing FinanceCharts/main chunk-size advisory). `git diff --check`: PASS.
 - `npm run test:all`: Node regression chain completed successfully and Sentinel reported 6/6 suites passed, 0 failed, 0 blocked; Sentinel also explicitly marked physical SAF picker execution device-blocked. However, its Node process remained alive after printing `CI GATE STATUS: PASSED`; after >1 minute with no new output I terminated that hung runner. Therefore assertions passed, but the local aggregate command exit status is **incomplete** (terminated 143); do not call the command itself a clean exit. Full log: `/data/data/com.termux/files/home/.cache/lifeos-test-all-milestone-a.log`.
 - Original `~/lifeOS` remains unchanged: `src/App.tsx`, `test_auth_lifecycle.js`, `test_sec01_orphan_keystore.js` modified and `.audit-backup/` untracked, as recorded before this package.
@@ -256,3 +256,8 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Branch: `feature/lifeos2-milestone-a-20261107`; commit: `8cf3cc0` (`feat: add customizable Today dashboard`), based on `060fcfa7d5071ea38dd24b57c95c5cff64f5a49a`.
 - Changes are committed locally and await push/PR CI. No files remain outside this worktree's implementation scope.
 - Next exact step: push this branch, update existing draft PR #24 with the Today customization and the accurate local test-exit caveat, then verify the resulting CI run once.
+
+### Follow-up verification
+
+- GitHub run `42353693163` completed successfully for `297f948586197010adbfe5405b244de511f08e2f`: automated checks and Android debug build passed.
+- The Today regression was then strengthened locally to 18 assertions, adding an actual synthetic encrypted-settings save/restart/read check. Focused execution passes. This test-only update still needs commit, push, and exact-head CI.
