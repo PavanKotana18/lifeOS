@@ -1270,7 +1270,7 @@ export default function App() {
         <div key={activeTab} id={`view-${activeTab}`} className="tab-transition">
         {activeTab === 'dashboard' && (
           <div className="space-y-5">
-            <div><p className="text-sm font-medium text-slate-500">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
+            <div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
 
             {/* Today at a glance: separate counts keep task and routine progress understandable. */}
             <section className="lifeos-panel space-y-3 rounded-2xl border p-4" aria-labelledby="today-overview-title" data-testid="today-overview">
@@ -1293,19 +1293,19 @@ export default function App() {
             </section>
 
             {/* Active Goals Summary */}
-            <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            <section className="lifeos-panel rounded-2xl border p-4">
               <div className="mb-3 flex items-center justify-between">
-                <div><p className="text-[10px] font-bold uppercase tracking-wider text-violet-300">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
-                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold text-violet-300" aria-label="Open Goals">View all →</button>
+                <div><p className="text-[10px] font-bold uppercase tracking-wider lifeos-accent-text">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
+                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all →</button>
               </div>
               {goals.filter(goal => goal.status === 'In Progress').length === 0 ? (
-                <div className="rounded-xl bg-slate-900/50 px-3 py-4 text-center text-xs text-slate-400"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="mt-2 font-semibold text-violet-300">Create your first goal</button></div>
+                <div className="lifeos-raised rounded-xl px-3 py-4 text-center text-xs text-secondary"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
               ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => {
                 const progress = goalProgress(goal);
-                return <button key={goal.id} onClick={() => navigateTo('goals')} className="block w-full rounded-xl bg-slate-900/55 p-3 text-left">
-                  <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{goal.title}</span><span className="shrink-0 text-xs font-bold text-violet-300">{progress}%</span></div>
-                  <div className="my-2 h-1.5 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-violet-500" style={{ width: `${progress}%` }} /></div>
-                  <div className="flex justify-between gap-2 text-[10px] text-slate-400"><span>{displayGoalMeasure(goal.currentValue, goal.unit)} / {displayGoalMeasure(goal.targetValue, goal.unit)}</span><span>{formatDate(goal.targetDate)} · {getDaysRemainingText(goal.targetDate)}</span></div>
+                return <button key={goal.id} onClick={() => navigateTo('goals')} className="lifeos-raised block min-h-11 w-full rounded-xl p-3 text-left">
+                  <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{goal.title}</span><span className="shrink-0 text-xs font-bold lifeos-accent-text">{progress}%</span></div>
+                  <div className="lifeos-progress-track my-2 h-1.5 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${progress}%` }} /></div>
+                  <div className="flex justify-between gap-2 text-[10px] text-secondary"><span>{displayGoalMeasure(goal.currentValue, goal.unit)} / {displayGoalMeasure(goal.targetValue, goal.unit)}</span><span>{formatDate(goal.targetDate)} · {getDaysRemainingText(goal.targetDate)}</span></div>
                 </button>;
               })}</div>}
             </section>
@@ -1314,14 +1314,14 @@ export default function App() {
             <div className="lifeos-panel rounded-2xl border p-4">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Monthly Finance ({financeMonth})</h3>
-                <button onClick={() => navigateTo('finance')} className="text-xs text-indigo-400 font-semibold">Details &rarr;</button>
+                <button onClick={() => navigateTo('finance')} className="min-h-11 text-xs lifeos-accent-text font-semibold">Details &rarr;</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
-                <div className="p-3 rounded-xl bg-slate-800/60">
+                <div className="p-3 rounded-xl lifeos-raised">
                   <p className="text-xs text-secondary">Income</p>
                   <p className="mt-0.5 text-base font-bold tabular-nums" style={{ color: 'var(--success)' }}>{formatMoney(financeAnalytics.totalIncome)}</p>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-800/60">
+                <div className="p-3 rounded-xl lifeos-raised">
                   <p className="text-xs text-secondary">Expenses</p>
                   <p className="mt-0.5 text-base font-bold tabular-nums" style={{ color: 'var(--danger)' }}>{formatMoney(financeAnalytics.totalExpenses)}</p>
                 </div>
@@ -1333,30 +1333,34 @@ export default function App() {
             </div>
 
             {/* Today's Habits Summary */}
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+            <div className="lifeos-panel rounded-2xl border p-4">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Habits Today</h3>
-                <button onClick={() => navigateTo('habits')} className="text-xs text-indigo-400 font-semibold">Manage</button>
+                <button onClick={() => navigateTo('habits')} className="text-xs lifeos-accent-text font-semibold">Manage</button>
               </div>
               {habits.length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-500">No habits configured yet. Create one in Habits tab.</div>
+                <div className="lifeos-raised rounded-xl py-6 text-center text-xs text-secondary"><p>No habits configured yet.</p><button onClick={() => openCreateForm('habit')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Create a habit</button></div>
               ) : (
                 <div className="space-y-2">
                   {habits.slice(0, 4).map(h => {
                     const todayStr = todayKey;
                     const stats = getHabitStreaks(h.id, todayStr);
                     return (
-                      <div key={h.id} className="p-3 rounded-xl bg-slate-800/60 flex items-center justify-between">
+                      <div key={h.id} className="p-3 rounded-xl lifeos-raised flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}
-                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs transition ${stats.completedToday ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600'}`}
+                            type="button"
+                            aria-pressed={stats.completedToday}
+                            aria-label={`${stats.completedToday ? 'Mark' : 'Complete'} ${h.name} ${stats.completedToday ? 'incomplete' : 'for today'}`}
+                            className="lifeos-panel flex min-h-11 min-w-11 items-center justify-center rounded-full border-2 text-xs transition"
+                            style={{ borderColor: stats.completedToday ? 'var(--success)' : 'var(--stroke)', backgroundColor: stats.completedToday ? 'var(--success)' : 'var(--surface)', color: 'var(--page)' }}
                           >
                             {stats.completedToday ? '✓' : ''}
                           </button>
                           <div>
-                            <p className={`text-sm font-medium ${stats.completedToday ? 'line-through text-slate-500' : ''}`}>{h.name}</p>
-                            <p className="text-[10px] text-amber-400 font-semibold">🔥 {stats.currentStreak} day streak</p>
+                            <p className={`text-sm font-medium ${stats.completedToday ? 'line-through text-muted' : ''}`}>{h.name}</p>
+                            <p className="text-[10px] text-[var(--warning)] font-semibold">🔥 {stats.currentStreak} day streak</p>
                           </div>
                         </div>
                       </div>
@@ -1367,35 +1371,39 @@ export default function App() {
             </div>
 
             {/* Pending Tasks */}
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+            <div className="lifeos-panel rounded-2xl border p-4">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Today's Agenda</h3>
-                <button onClick={() => navigateTo('planner')} className="text-xs text-indigo-400 font-semibold">All Tasks</button>
+                <button onClick={() => navigateTo('planner')} className="text-xs lifeos-accent-text font-semibold">All Tasks</button>
               </div>
               {dashboardTasks.length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-500">No tasks due today. You're all caught up!</div>
+                <div className="lifeos-raised rounded-xl py-6 text-center text-xs text-secondary"><p>No tasks due today. You're all caught up!</p><button onClick={() => openCreateForm('task')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Add a task</button></div>
               ) : (
                 <div className="space-y-2">
                   {dashboardTasks.map(t => {
                     const status = getTaskStatus(t, clockNow);
-                    return <div key={t.id} className={`p-3 rounded-xl border flex items-center justify-between ${status === 'Overdue' ? 'border-rose-500/40 bg-rose-950/35' : 'border-slate-800 bg-slate-800/60'}`}>
+                    return <div key={t.id} className="lifeos-panel flex items-center justify-between rounded-xl border p-3" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : 'var(--stroke)' }}>
                       <div className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={t.completed}
-                          onChange={async () => {
-                            await StorageService.tasks.toggleCompleted(t.id, !t.completed);
-                            if (!t.completed) await NotificationService.cancelTask(t);
-                            const records = await reloadAllData();
-                            await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
-                            showToast('Task updated', 'success');
-                          }}
-                          className="w-5 h-5 accent-indigo-600 rounded cursor-pointer"
-                        />
+                        <label className="flex min-h-11 min-w-11 items-center justify-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}
+                            checked={t.completed}
+                            onChange={async () => {
+                              await StorageService.tasks.toggleCompleted(t.id, !t.completed);
+                              if (!t.completed) await NotificationService.cancelTask(t);
+                              const records = await reloadAllData();
+                              await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+                              showToast('Task updated', 'success');
+                            }}
+                            className="h-5 w-5 cursor-pointer rounded"
+                            style={{ accentColor: 'var(--accent)' }}
+                          />
+                        </label>
                         <div>
                           <p className="text-sm font-medium">{t.title}</p>
-                          <p className="text-[10px] text-slate-400">{formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ''}</p>
-                          <div className="mt-1 flex flex-wrap gap-1"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.priority === 'Urgent' ? 'bg-rose-500/20 text-rose-400' : t.priority === 'High' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-300'}`}>{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${status === 'Overdue' ? 'bg-rose-500/20 text-rose-300' : status === 'Completed' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-300'}`}>{status}</span></div>
+                          <p className="text-[10px] text-secondary">{formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ''}</p>
+                          <div className="mt-1 flex flex-wrap gap-1"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.priority === 'Urgent' ? 'lifeos-tint text-[var(--danger)]' : t.priority === 'High' ? 'lifeos-tint text-[var(--warning)]' : 'lifeos-raised text-secondary'}`}>{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${status === 'Overdue' ? 'lifeos-tint text-[var(--danger)]' : status === 'Completed' ? 'lifeos-tint text-[var(--success)]' : 'lifeos-raised text-secondary'}`}>{status}</span></div>
                         </div>
                       </div>
                     </div>

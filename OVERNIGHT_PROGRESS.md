@@ -162,9 +162,17 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused Finance theme contract: PASS (13). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0/six Sentinel suites; SAF OS picker remains device-blocked). `npm run build`: PASS (2,242 modules; main JS 492.62 kB, no >500 kB warning). `git diff --check`: PASS.
 - Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-finance-views-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-finance-views-theme-20261107.log`.
 
+### Today dashboard theme, access and empty states (local, verified)
+
+- Migrated Today goal, Finance, Habit and Agenda cards/statuses to semantic theme tokens. Goal progress uses accessible labeled progress values. Habit completion controls expose `aria-pressed`, a descriptive label and a 44px target. Task checkboxes have descriptive labels and a 44px touch wrapper.
+- Habit and Agenda empty states now provide direct create actions; the Goals empty-state action remains intact. Existing transaction metrics, streaks, task completion, notification cancellation/sync and persistence behavior were not changed.
+- Added `test_dashboard_theme_20261107.cjs` to the mandatory chain (8 source-level checks); existing Today summary and LifeOS task/finance regression suites also ran.
+- Focused dashboard theme and summary tests: PASS (8+3). `npx --no-install tsc --noEmit`: PASS. `npm run test:all`: PASS (Node/WP0/six Sentinel suites; physical SAF picker remains device-blocked). `npm run build`: PASS (2,242 modules; main JS 493.48 kB, no >500 kB warning). `git diff --check`: PASS.
+- Logs: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-dashboard-theme-20261107.log` and `/data/data/com.termux/files/usr/tmp/lifeos-build-dashboard-theme-20261107.log`.
+
 ## Current checkpoint and next exact steps
 
 - Current branch is `integration/lifeos-functional-security-20261107` in the existing worktree. Keep using PR #23, the single open draft, with no merge/release.
-- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`) and shared record forms (`a6a6327`) are pushed. Current full Finance theme package is locally verified and uncommitted; base HEAD is `a6a6327`.
-- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42339083243` for `a6a6327` was pending at last check; later pushes may cancel it. Check newest CI once after checkpointing; do not infer CI success from local build results.
+- Settings palette (`e8b082c`), on-demand chunks (`2a23faa`), Onboarding (`eab78db`), Finance Analytics (`b10ba74`), record forms (`a6a6327`) and all Finance views (`8bce794`) are pushed. Current Today dashboard package is locally verified and uncommitted; base HEAD is `8bce794`.
+- PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42339461474` for `8bce794` was pending at last check; later pushes may cancel it. Check newest CI once after checkpointing; do not infer CI success from local build results.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
