@@ -1,6 +1,6 @@
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
-import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Compass, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Home, Leaf, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords } from './db';
@@ -22,8 +22,8 @@ import { getCurrencyMetadata } from './services/financeCore';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
-import FinanceSavingsSummary from './components/FinanceSavingsSummary';
-import { PRIMARY_NAVIGATION, type MainTab } from './services/navigationCatalog';
+import MoneyHome from './components/MoneyHome';
+import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
@@ -33,7 +33,7 @@ import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLo
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
-const ExploreHub = React.lazy(() => import('./components/ExploreHub'));
+const LifeHub = React.lazy(() => import('./components/LifeHub'));
 const PlanHub = React.lazy(() => import('./components/PlanHub'));
 const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
 
@@ -41,7 +41,7 @@ function ScreenLoading({ label }: { label: string }) {
   return <div className="lifeos-panel rounded-2xl border p-6 text-center text-sm text-secondary" role="status" aria-live="polite">{label}</div>;
 }
 
-const tabSubtitle: Record<MainTab, string> = { dashboard: "Here's your day at a glance.", explore: 'Your life modules, thoughtfully organized.', plan: 'Tasks, routines and goals for what comes next.', insights: 'Progress from the records you have saved.', finance: 'Your finances, thoughtfully organized.', habits: 'Your habits, thoughtfully organized.', goals: 'Your goals, thoughtfully organized.', planner: 'Your planner, thoughtfully organized.', settings: 'Your profile, thoughtfully organized.' };
+const tabSubtitle: Record<MainTab, string> = { dashboard: "Here's your day at a glance.", finance: 'Your recorded cash flow and recent activity.', life: 'Routines, goals and personal progress.', plan: 'Tasks, schedules and what comes next.', insights: 'Progress from the records you have saved.', habits: 'Your habits, thoughtfully organized.', goals: 'Your goals, thoughtfully organized.', planner: 'Your planner, thoughtfully organized.', settings: 'Your profile and preferences.' };
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
 const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -1237,7 +1237,7 @@ export default function App() {
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
   const financeOverviewTransactions = useMemo(
-    () => sortTransactions(transactions.filter(tx => tx.date?.startsWith(financeMonth)), 'date-desc').slice(0, 3),
+    () => sortTransactions(transactions.filter(tx => tx.date?.startsWith(financeMonth)), 'date-desc').slice(0, 4),
     [transactions, financeMonth]
   );
 
@@ -1311,7 +1311,10 @@ export default function App() {
             <p className="mt-0.5 truncate text-xs text-secondary">{tabSubtitle[activeTab]}</p>
           </div>
         </div>
-        <button id="theme-toggle-btn" onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button id="theme-toggle-btn" onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-11 w-11 items-center justify-center rounded-full border transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
+          <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
+        </div>
       </header>
 
       {!isOnline && (
@@ -1473,14 +1476,15 @@ export default function App() {
         )}
 
         {/* VIEW 2: FINANCE */}
-        {activeTab === 'explore' && <Suspense fallback={<ScreenLoading label="Loading your modules…" />}><ExploreHub
-          counts={{
-            transactions: transactions.length,
-            habits: habits.filter(habit => !habit.archived).length,
-            goals: goals.filter(goal => goal.status === 'In Progress').length,
-            openTasks: tasks.filter(task => !task.completed).length,
-          }}
-          onNavigate={navigateTo}
+        {activeTab === 'life' && <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+          routinesDue={todayOverview.routinesDue}
+          completedRoutines={todayOverview.routinesCompleted}
+          weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
+          weeklyTotal={todayOverview.weeklyRoutinesTotal}
+          activeGoals={goals.filter(goal => goal.status === 'In Progress').length}
+          onHabits={() => { setHabitsSubtab('checklist'); navigateTo('habits'); }}
+          onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
+          onInsights={() => navigateTo('insights')}
         /></Suspense>}
 
         {activeTab === 'plan' && <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
@@ -1505,91 +1509,50 @@ export default function App() {
         /></Suspense>}
 
         {activeTab === 'finance' && (
-          <div className="space-y-4">
-            <div className="flex lifeos-panel p-1 rounded-xl gap-1 text-xs font-semibold overflow-x-auto">
-              {(['overview', 'transactions', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => (
-                <button
-                  type="button"
-                  key={sub}
-                  onClick={() => navigateFinanceSubtab(sub)}
-                  aria-current={financeSubtab === sub ? 'page' : undefined}
-                  className={`flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 py-2 capitalize whitespace-nowrap ${financeSubtab === sub ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}
-                >
-                  {sub}
-                </button>
-              ))}
-            </div>
+          <div className="money-page space-y-5">
+            {financeSubtab !== 'overview' && <div className="money-page-toolbar">
+              <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
+              <label className="sr-only" htmlFor="money-destination">Money section</label>
+              <select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)} className="lifeos-input min-h-11 rounded-xl px-3 text-sm font-semibold">
+                {(['transactions', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Financial planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
+              </select>
+            </div>}
 
-            {/* Overview Subtab */}
+            {/* Money home: recorded cash flow, never an inferred account balance. */}
             {financeSubtab === 'overview' && (
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <div><h3 className="text-sm font-semibold">Money this month</h3><p className="text-[10px] text-secondary">{userPrefs.currency} · saved transactions on this device</p></div>
-                  <input
-                    type="month"
-                    value={financeMonth}
-                    onChange={(e) => setFinanceMonth(e.target.value)}
-                    aria-label="Finance overview month"
-                    className="lifeos-input min-h-11 rounded-lg p-2 text-xs"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
-                    <p className="text-xs text-secondary">Income</p>
-                    <p className="mt-1 break-words text-xl font-bold tabular-nums" style={{ color: 'var(--success)' }}>{formatMoney(financeAnalytics.totalIncome)}</p>
-                  </div>
-                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
-                    <p className="text-xs text-secondary">Expenses</p>
-                    <p className="mt-1 break-words text-xl font-bold tabular-nums" style={{ color: 'var(--danger)' }}>{formatMoney(financeAnalytics.totalExpenses)}</p>
-                  </div>
-                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
-                    <p className="text-xs text-secondary">Net this month</p>
-                    <p className="mt-1 break-words text-xl font-bold tabular-nums">{formatMoney(financeAnalytics.netSavings)}</p>
-                    <p className="mt-1 text-[10px] text-secondary">Income less expenses</p>
-                  </div>
-                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
-                    <p className="text-xs text-secondary">Savings rate</p>
-                    <p className="mt-1 text-xl font-bold tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</p>
-                    <p className="mt-1 text-[10px] text-secondary">Net divided by income</p>
-                  </div>
-                </div>
-
-                <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-budget-title" data-testid="finance-overview-budget">
-                  <div className="flex items-center justify-between gap-2"><div><h4 id="overview-budget-title" className="text-sm font-semibold">Budget status</h4><p className="text-[10px] text-secondary">For {financeMonth}</p></div><button onClick={() => navigateFinanceSubtab('budgets')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All budgets</button></div>
-                  {financeAnalytics.budgetRows.length === 0 ? <div className="mt-2"><p className="text-xs text-secondary">No budgets set for this month.</p><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set a budget</button></div> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.slice(0, 3).map((row, index) => {
-                    const percent = row.allocated > 0 ? Math.round(row.spent / row.allocated * 100) : 0;
-                    const width = Math.min(100, Math.max(0, percent));
-                    return <div key={`${row.category}-${index}`}><div className="flex justify-between gap-2 text-xs"><span className="truncate">{row.category}</span><span className="shrink-0 tabular-nums">{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${row.category} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={width}><div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: percent >= 100 ? 'var(--danger)' : percent >= 80 ? 'var(--warning)' : 'var(--accent)' }} /></div><div className="mt-1 flex justify-between gap-2 text-[10px] text-secondary"><span>{percent}% used</span><span>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>;
-                  })}</div>}
-                </section>
-
-                <FinanceSavingsSummary goals={savingsGoals} formatMoney={formatMoney} onViewAll={() => navigateFinanceSubtab('savings')} onCreate={() => openCreateForm('savings')} />
-
-                <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-transactions-title">
-                  <div className="mb-2 flex items-center justify-between gap-2"><div><h4 id="overview-transactions-title" className="text-sm font-semibold">Recent transactions</h4><p className="text-[10px] text-secondary">Newest by date and time</p></div><button onClick={() => navigateFinanceSubtab('transactions')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All transactions</button></div>
-                  {financeOverviewTransactions.length === 0 ? <p className="py-3 text-center text-xs text-secondary">No transactions saved for this month.</p> : <ul className="divide-y" style={{ borderColor: 'var(--stroke)' }}>{financeOverviewTransactions.map(transaction => <li key={transaction.id}><button onClick={() => openEditTransaction(transaction)} className="flex min-h-14 w-full items-center justify-between gap-3 py-2 text-left"><span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.description || transaction.category}</span><span className="block text-[10px] text-secondary">{formatDate(transaction.date)}{transaction.occurredAt ? ` · ${formatTime(new Date(transaction.occurredAt))}` : ''} · {transaction.category}</span></span><span className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: transaction.type === 'income' ? 'var(--success)' : 'var(--danger)' }}>{transaction.type === 'income' ? '+' : '−'}{formatMoney(transaction.amount)}</span></button></li>)}</ul>}
-                </section>
-
-                <div className="lifeos-panel rounded-2xl border p-4">
-                  <div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-semibold">Month-over-month</h4><span className="text-[10px] text-secondary">vs {previousMonthKey(financeMonth)}</span></div>
-                  {[{ label: 'Income', current: financeAnalytics.totalIncome, previous: financeAnalytics.periodRows[financeAnalytics.periodRows.length - 2]?.income ?? null, color: 'var(--success)' }, { label: 'Expenses', current: financeAnalytics.totalExpenses, previous: financeAnalytics.periodRows[financeAnalytics.periodRows.length - 2]?.expenses ?? null, color: 'var(--danger)' }].map(row => {
-                    const max = Math.max(row.current, row.previous || 0, 1);
-                    return <div key={row.label} className="mb-3 last:mb-0"><div className="mb-1 flex justify-between gap-2 text-[10px]"><span>{row.label}</span><span className="text-right tabular-nums">{formatMoney(row.current)} <span className="text-secondary">· {row.previous === null ? 'no prior records' : formatMoney(row.previous)}</span></span></div><div className="flex h-2 gap-1"><div className="h-full rounded" style={{ width: `${row.current / max * 100}%`, backgroundColor: row.color }} />{row.previous !== null && <div className="h-full rounded" style={{ width: `${row.previous / max * 100}%`, backgroundColor: 'var(--surface-raised)' }} />}</div></div>;
-                  })}
-                  <p className="mt-2 text-[10px] text-muted">Current month · previous month</p>
-                </div>
-
-                {/* Quick Add Buttons */}
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => openCreateForm('transaction')}
-                    className="lifeos-accent-button min-h-11 flex-1 rounded-xl py-3 text-xs font-semibold transition active:scale-95"
-                  >
-                    + Record Transaction
-                  </button>
-                </div>
-              </div>
+              <MoneyHome
+                month={financeMonth}
+                income={financeAnalytics.totalIncome}
+                expenses={financeAnalytics.totalExpenses}
+                netCashFlow={financeAnalytics.netSavings}
+                budgetRows={financeAnalytics.budgetRows}
+                largestCategory={financeAnalytics.largestCategory}
+                expenseChange={financeAnalytics.expenseChange}
+                hasPreviousMonthRecords={financeAnalytics.previousMonthHasRecords}
+                transactions={financeOverviewTransactions}
+                formatMoney={formatMoney}
+                formatDate={formatDate}
+                formatTime={formatTime}
+                onMonthChange={setFinanceMonth}
+                onAddExpense={() => openCreateForm('transaction')}
+                onAddIncome={() => {
+                  openCreateForm('transaction');
+                  setCreateDraft(current => ({ ...current, type: 'income', category: categories.find(category => category.type === 'income')?.name || '' }));
+                }}
+                onMoveToSavings={() => {
+                  navigateFinanceSubtab('savings');
+                  if (savingsGoals.length === 1) {
+                    openCreateForm('contribution', savingsGoals[0].id);
+                    setCreateDraft(current => ({ ...current, linkTransfer: 'no' }));
+                  }
+                }}
+                onTransactions={() => navigateFinanceSubtab('transactions')}
+                onBudgets={() => navigateFinanceSubtab('budgets')}
+                onSavings={() => navigateFinanceSubtab('savings')}
+                onAnalytics={() => navigateFinanceSubtab('analytics')}
+                onPlanning={() => navigateFinanceSubtab('planning')}
+                onEditTransaction={openEditTransaction}
+              />
             )}
 
             {/* Transactions Subtab */}
@@ -2133,17 +2096,26 @@ export default function App() {
       {/* Floating Bottom Nav */}
       <nav aria-label="Main navigation" className="lifeos-nav fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-4 border-t px-2 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
-          const Icon = ({ home: Home, compass: Compass, calendar: CalendarDays, insights: Activity })[icon];
+          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, life: Leaf })[icon];
+          const isSelected = primaryDestinationForTab(activeTab) === tab;
           return (
           <button
             key={tab}
             data-tab={tab}
-            onClick={() => navigateTo(tab)}
+            onClick={() => {
+              if (isSelected) {
+                if (activeTab !== tab) { navigateTo(tab); return; }
+                if (tab === 'finance') setFinanceSubtab('overview');
+                if (tab === 'life') { setHabitsSubtab('checklist'); setGoalsSubtab('active'); }
+                return;
+              }
+              navigateTo(tab);
+            }}
             aria-label={label}
-            aria-current={activeTab === tab ? 'page' : undefined}
-            className={`nav-item flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
+            aria-current={isSelected ? 'page' : undefined}
+            className={`nav-item flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium transition duration-200 active:scale-95 ${isSelected ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
           >
-            <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />
+            <Icon size={18} strokeWidth={isSelected ? 2.4 : 1.8} aria-hidden="true" />
             <span>{label}</span>
           </button>
           );
