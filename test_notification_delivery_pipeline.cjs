@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const service = fs.readFileSync('src/services/notificationService.ts', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
+const permissionFlow = app.slice(app.indexOf('const finishOnboarding'), app.indexOf('const importBackupFile'));
+const notificationService = service;
 const nativeScheduler = fs.readFileSync('node_modules/@capacitor/local-notifications/android/src/main/java/com/capacitorjs/plugins/localnotifications/LocalNotificationManager.java', 'utf8');
 const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
 assert.match(service, /return isNative\(\) && await this\.checkPermission\(\) === 'granted'/, 'notification display permission gates scheduling');
@@ -15,4 +17,8 @@ assert.match(service, /visibility: 0/, 'new channel requests private lock-screen
 assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
 assert.match(manifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
 assert.match(app, /const exactAlarm = await NotificationService\.checkExactAlarmPermission\(\);[\s\S]*?status: exactAlarm === 'granted' \? 'granted' : 'approximate'/, 'exact alarm access is reported as precision, not a hard delivery prerequisite');
+assert.match(permissionFlow, /setOnboardingComplete\(true\)[\s\S]*?requestAnimationFrame\(\(\) => requestAnimationFrame/, 'welcome permission waits until after onboarding has committed to Today');
+assert.match(permissionFlow, /checkPermission\(\)[\s\S]*?permission === 'prompt' \|\| permission === 'prompt-with-rationale'[\s\S]*?requestPermission\(\)/, 'already-granted and previously-denied states do not trigger duplicate prompts');
+assert.match(notificationService, /sendImmediateTestNotification/);
+assert.match(notificationService, /schedule-verification-missing:test-notification/, 'test actions distinguish scheduling acceptance from delivery');
 console.log('NOTIFICATION DELIVERY CONTRACT: Android permission, inexact fallback, queue verification, privacy and reboot manifest checks passed (source contract only; no delivery test).');

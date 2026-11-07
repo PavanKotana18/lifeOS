@@ -147,7 +147,7 @@ function financeRows(rows, sort = 'date-desc') {
     const result = await askPermission();
     assert.equal(result.granted, true, 'Android inexact alarm fallback can still schedule reminders');
     assert.equal(result.status, 'approximate');
-    assert.ok(persisted.some(([key, value]) => key === 'notificationPermissionRequested' && value === true));
+    assert.ok(!persisted.some(([key]) => key === 'notificationPermissionRequested'), 'Prompt state is never persisted before encryption setup');
     assert.ok(!sequence.includes('open-exact-settings'), 'Exact access does not launch a settings detour');
   });
 

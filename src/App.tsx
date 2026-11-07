@@ -681,21 +681,17 @@ export default function App() {
   const askNotificationPermission = async () => {
     try {
       if (!NotificationService.isSupported()) return { granted: false, status: 'unsupported', message: 'Install the updated Android build to enable local notifications.' };
-      // Persist the permission-flow intent before any native prompt can launch
-      // Android Settings, including the exact-alarm path when notifications are
-      // already allowed. Resume reconciliation uses this marker after return.
-      if (!notificationPermissionRequested) {
-        setNotificationPermissionRequested(true);
-        await StorageService.settings.set('notificationPermissionRequested', true);
-      }
       let status = await NotificationService.checkPermission();
       if (status !== 'granted') {
-        if (notificationPermissionRequested) {
-          return { granted: false, status, message: 'Notification permission was previously declined. Open Android notification settings to allow it.' };
+        if (status !== 'prompt' && status !== 'prompt-with-rationale') {
+          return { granted: false, status, message: 'Notifications remain off. You can allow them later in Settings → Notifications.' };
         }
+        // Android owns prior-denial policy. Only request while the native plugin
+        // reports a promptable state; never persist an unsafe pre-encryption flag.
+        setNotificationPermissionRequested(true);
         status = await NotificationService.requestPermission();
         if (status !== 'granted') {
-          return { granted: false, status, message: 'Android notification permission was not granted. Enable it in Android settings.' };
+          return { granted: false, status, message: 'Notifications remain off. You can allow them later in Settings → Notifications.' };
         }
       }
 
@@ -847,6 +843,25 @@ export default function App() {
     await StorageService.settings.set('onboardingStep', 0);
     setOnboardingStep(0);
     setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; activeTabRef.current = 'dashboard'; setActiveTab('dashboard');
+    // Let React commit Today and ensure the Android Activity is foregrounded
+    // before invoking the native permission API. Denial never blocks entry.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      void (async () => {
+        try {
+          if (!NotificationService.isSupported()) return;
+          await NotificationService.ensureChannel();
+          const permission = await NotificationService.checkPermission();
+          if (permission === 'prompt' || permission === 'prompt-with-rationale') {
+            setNotificationPermissionRequested(true);
+            await NotificationService.requestPermission();
+          }
+        } catch (error) {
+          console.warn('Welcome notification permission request did not complete.', error);
+        } finally {
+          await refreshNotificationDiagnostics();
+        }
+      })();
+    }));
   };
 
   const importBackupFile = async (file?: File) => {
@@ -2005,7 +2020,7 @@ export default function App() {
               {!notificationDiagnostics.supported && <p className="text-[11px] text-[var(--warning)]">The native notification plugin is not available in this runtime.</p>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--stroke)] pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
               <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-[10px] text-secondary"><p>Plugin: <span className={notificationDiagnostics.supported ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.supported ? 'available' : 'unavailable'}</span></p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending notifications: {notificationDiagnostics.pendingCount}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-[var(--danger)]' : 'text-[var(--success)]'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
-              <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Test notification scheduled for ${at.toLocaleTimeString()}`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Test notification · 10 sec</button><button onClick={() => void openNotificationSettings()} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android settings</button></div>
+              <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android settings</button></div>
               <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button>
             </section></div></div>}
 

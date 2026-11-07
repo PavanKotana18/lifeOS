@@ -237,22 +237,24 @@ export const NotificationService = {
     }
   },
 
-  async testNotification() {
+  async testNotification(delayMs = 10_000) {
     if (!isNative()) throw new Error('Local notifications are available only in the installed Android app.');
     const permission = await this.checkPermission();
-    if (permission !== 'granted') throw new Error(`Android notification permission is ${permission}. Enable it in Android settings first.`);
-    const exactAlarm = await this.checkExactAlarmPermission();
-    if (exactAlarm !== 'granted') {
-      throw new Error(`Android exact-alarm access is ${exactAlarm}. Enable Alarms & reminders for LifeOS in Android settings.`);
-    }
+    if (permission !== 'granted') throw new Error(`Android notification permission is ${permission}. Allow notifications in Android settings.`);
     try {
       await this.ensureChannel();
       await cancelIds([testId]);
-      const at = new Date(Date.now() + 10_000);
+      const at = new Date(Date.now() + Math.max(1_000, delayMs));
       await schedule([{ id: testId, title: 'LifeOS test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent', extra: { kind: 'test' } }]);
+      const pending = await LocalNotifications.getPending();
+      if (!pending.notifications.some(item => item.id === testId)) throw new Error('schedule-verification-missing:test-notification');
       writeLastError('');
       return at;
     } catch (error) { writeLastError(errorMessage(error)); console.error('LifeOS test notification failed:', error); throw error; }
+  },
+
+  async sendImmediateTestNotification() {
+    return this.testNotification(1_000);
   },
 
   async openSettings() {

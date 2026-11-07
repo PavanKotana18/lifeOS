@@ -21,7 +21,7 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   await ns.syncHabits([{id:'habit',name:'Private fixture',frequency:'daily',reminderTime:'09:00'}], {...f.DEFAULT_NOTIFICATION_PREFERENCES,habitReminders:true});
   await ns.syncMilestones([{id:'goal',status:'In Progress'}],[{id:'mile',goalId:'goal',title:'Fixture',targetDate:'2026-12-01'}], {...f.DEFAULT_NOTIFICATION_PREFERENCES,milestoneReminders:true});
   assert.equal(f.pending.size,9, 'task, weekly habit and milestone reminders use the supported inexact fallback'); assert.equal((await ns.getDiagnostics()).exactAlarm,'denied');
-  await assert.rejects(ns.testNotification(),/exact-alarm/);
+  const testAt = await ns.testNotification(1_000); assert.ok(testAt instanceof Date); assert.equal(f.pending.size,10, 'test notification is queued even without exact-alarm access');
  }));
  await test('Permission UI permits approximate reminders without exact-alarm settings detour', async () => fixture(async f => {
   const ns=f.NotificationService;let requested=0;
