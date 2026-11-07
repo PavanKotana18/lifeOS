@@ -1,6 +1,6 @@
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
-import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
+import { Activity, CalendarDays, ChevronLeft, ChevronRight, CircleDollarSign, Compass, Goal as GoalIcon, Home, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords } from './db';
@@ -21,6 +21,10 @@ import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import FinanceProjection from './components/FinanceProjection';
+import ExploreHub from './components/ExploreHub';
+import PlanHub from './components/PlanHub';
+import InsightsHub from './components/InsightsHub';
+import { PRIMARY_NAVIGATION, type MainTab } from './services/navigationCatalog';
 import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
@@ -30,7 +34,7 @@ import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLo
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 
-type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
+const tabSubtitle: Record<MainTab, string> = { dashboard: "Here's your day at a glance.", explore: 'Your life modules, thoughtfully organized.', plan: 'Tasks, routines and goals for what comes next.', insights: 'Progress from the records you have saved.', finance: 'Your finances, thoughtfully organized.', habits: 'Your habits, thoughtfully organized.', goals: 'Your goals, thoughtfully organized.', planner: 'Your planner, thoughtfully organized.', settings: 'Your profile, thoughtfully organized.' };
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
 const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -1235,10 +1239,10 @@ export default function App() {
           </div>
           <div className="min-w-0">
             <h1 className="header-greeting text-[clamp(1.05rem,4.2vw,1.35rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
-            <p className="mt-0.5 truncate text-xs text-slate-400">{activeTab === 'dashboard' ? "Here's your day at a glance." : `Your ${({ finance: 'finances', habits: 'habits', goals: 'goals', planner: 'planner', settings: 'profile' } as Record<string, string>)[activeTab] || 'day'}, thoughtfully organized.`}</p>
+            <p className="mt-0.5 truncate text-xs text-slate-400">{tabSubtitle[activeTab]}</p>
           </div>
         </div>
-        <button onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
+        <button id="theme-toggle-btn" onClick={toggleTheme} aria-label={`Switch appearance from ${theme} theme`} className="app-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-full border bg-slate-800 text-slate-200 transition active:scale-95">{theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}</button>
       </header>
 
       {!isOnline && (
@@ -1252,7 +1256,7 @@ export default function App() {
       {/* Main Container */}
       <main className="max-w-md mx-auto p-4 space-y-4">
         {/* VIEW 1: DASHBOARD */}
-        <div key={activeTab} className="tab-transition">
+        <div key={activeTab} id={`view-${activeTab}`} className="tab-transition">
         {activeTab === 'dashboard' && (
           <div className="space-y-5">
             <div><p className="text-sm font-medium text-slate-500">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
@@ -1392,6 +1396,36 @@ export default function App() {
         )}
 
         {/* VIEW 2: FINANCE */}
+        {activeTab === 'explore' && <ExploreHub
+          counts={{
+            transactions: transactions.length,
+            habits: habits.filter(habit => !habit.archived).length,
+            goals: goals.filter(goal => goal.status === 'In Progress').length,
+            openTasks: tasks.filter(task => !task.completed).length,
+          }}
+          onNavigate={navigateTo}
+        />}
+
+        {activeTab === 'plan' && <PlanHub tasks={tasks} goals={goals} today={todayKey}
+          onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} />}
+
+        {activeTab === 'insights' && <InsightsHub
+          month={financeMonth}
+          income={financeMetrics.totalIncome}
+          expenses={financeMetrics.totalExpenses}
+          balance={financeMetrics.remainingBalance}
+          transactionCount={financeMetrics.count}
+          completedRoutines={todayOverview.routinesCompleted}
+          routinesDue={todayOverview.routinesDue}
+          weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
+          weeklyTotal={todayOverview.weeklyRoutinesTotal}
+          hasHistory={transactions.length > 0 || habits.length > 0 || goals.length > 0}
+          formatMoney={formatMoney}
+          onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
+          onHabits={() => { setHabitsSubtab('weekly'); navigateTo('habits'); }}
+          onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
+        />}
+
         {activeTab === 'finance' && (
           <div className="space-y-4">
             <div className="flex bg-slate-900 p-1 rounded-xl gap-1 text-xs font-semibold overflow-x-auto">
@@ -1994,19 +2028,19 @@ export default function App() {
       )}
 
       {/* Floating Bottom Nav */}
-      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-6 border-t border-slate-800 bg-slate-900/95 px-1 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
-        {(['dashboard', 'finance', 'habits', 'goals', 'planner', 'settings'] as const).map(tab => {
-          const Icon = ({ dashboard: Home, finance: CircleDollarSign, habits: Activity, goals: GoalIcon, planner: CalendarDays, settings: UserRound })[tab];
-          const label = ({ dashboard: 'Home', finance: 'Finance', habits: 'Habits', goals: 'Goals', planner: 'Planner', settings: 'Profile' })[tab];
+      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-4 border-t border-slate-800 bg-slate-900/95 px-2 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
+        {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
+          const Icon = ({ home: Home, compass: Compass, calendar: CalendarDays, insights: Activity })[icon];
           return (
           <button
             key={tab}
+            data-tab={tab}
             onClick={() => navigateTo(tab)}
             aria-label={label}
             aria-current={activeTab === tab ? 'page' : undefined}
-            className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-300 font-bold' : 'text-slate-400'}`}
+            className={`nav-item flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-0.5 text-[10px] leading-none font-medium transition duration-200 active:scale-95 ${activeTab === tab ? 'bg-indigo-500/10 text-indigo-300 font-bold' : 'text-slate-400'}`}
           >
-            {tab === 'settings' ? <span className={`flex h-[21px] w-[21px] items-center justify-center rounded-full text-[10px] font-bold ${displayName.trim() ? 'bg-indigo-500 text-white' : activeTab === tab ? 'bg-indigo-500/20 text-indigo-200' : 'bg-slate-700 text-slate-300'}`} aria-hidden="true">{profileInitial(displayName) || <Icon size={14} />}</span> : <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />}
+            <Icon size={18} strokeWidth={activeTab === tab ? 2.4 : 1.8} aria-hidden="true" />
             <span>{label}</span>
           </button>
           );

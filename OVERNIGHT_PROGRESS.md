@@ -6,8 +6,8 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Last pushed commit: `2734df99e71f9534621fcd9fd864581c1c4c174a`
-- Dashboard update `425bb6d2fd83f5c332025014aecde8f6faa54671` is pushed. Finance conversion package is locally committed at `704fa55b42c7c11e27c9ed3ebbb2efa1c4ec195e` and awaits push.
+- Latest pushed commit: `1455cecb38596ecc0c92413de0a62f7ddecbd1f8`.
+- Dashboard commit `425bb6d` and Finance conversion commit `704fa55` are pushed. This checkpoint edit records final CI results locally; source and test code are clean.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
 
@@ -16,8 +16,8 @@ Updated: 2026-11-07 (Asia/Kolkata)
 ### Android support and current CI
 
 - Minimum SDK raised to API 29. API 34 and 35 remain full application acceptance profiles.
-- Latest CI `42330966848` completed successfully for pushed commit `2734df9`. Build/test APK, native security preflight and all three matrix jobs passed. API 29: JUnit 1 test, 0 failures/skips/errors (the package-qualified unsupported-WebView guidance case); device profile reports Android 10/API29, 1080×1920 at 420 dpi and WebView Chromium 74. API34 and API35 each: JUnit 12 tests, 0 failures, 2 guarded skips, 0 errors; real app launch and IndexedDB persistence passed. Native security preflight: 7 tests, 0 failures/skips/errors.
-- The earlier API 29 failure in run `42329664300` occurred before a test executed: `ClassNotFoundException: WebViewCompatibilityAcceptanceTest` because the matrix filter omitted `com.lifeos.personal`. Commit `2734df9` fully qualifies it and adds a runner contract. The older run `42295887203` showed Chromium 74 below the app Chromium 87 floor. API29 therefore verifies only native recovery and unsupported-WebView guidance, not React/persistence acceptance.
+- Latest CI `42331997256` completed successfully for pushed commit `1455cec`. Build/test APK, native security preflight, and all matrix jobs passed. API 29: JUnit 1 test, 0 failures/skips/errors (package-qualified unsupported-WebView guidance); Android 10/API29, 1080×1920 at 420 dpi, WebView Chromium 74. API34/API35 each: JUnit 12 tests, 0 failures, 2 expected guarded skips, 0 errors; app launch and IndexedDB persistence passed. Native security preflight: 7 tests, 0 failures/skips/errors. CI includes the Finance conversion component.
+- Previous API 29 runner error in `42329664300` was a missing package qualifier (`ClassNotFoundException: WebViewCompatibilityAcceptanceTest`); `2734df9` corrected the filter and added a regression check. API29 remains guidance-only for the app because Chromium 74 is below the app Chromium 87 floor; it does not establish React/persistence acceptance.
 - API 36/Google Play target compliance remains blocked on a validated AGP/Gradle/SDK update. Current build is pinned to AGP 8.2.1 / Gradle 8.2.1 / compile SDK 34; target SDK and signing remain unchanged. Current official Play policy requires API 36 for new apps/updates from 2026-08-31 ([policy](https://support.google.com/googleplay/android-developer/answer/11926878)).
 
 ### Finance, theme and dashboard implementation
@@ -26,11 +26,22 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - `src/services/financeCore.ts` uses integer BigInt minor units, explicit half-away-from-zero input rounding, safe decimal serialization/formatting, bounded savings projections, and rational currency conversion with half-up output rounding. Currency metadata is a versioned subset; this is not yet a currency-aware persisted ledger. Existing financial records are not reinterpreted.
 - Added six light/dark semantic palettes; Soft Ivory + Sage Feather is the default. Theme preference initialization is bounded and validated; preview/apply/cancel/default are wired into Settings. Rollout remains incremental, with no device screenshot/accessibility review yet.
 - Replaced the opaque weighted productivity percentage with separate due/completed task, scheduled routine and weekly routine counts using `getTodayOverview`. Added deterministic summary tests. This avoids implying unlike activities are a single meaningful score.
-- Dashboard changes are pushed. Finance explicit conversion calculator is committed locally at `704fa55` but has not yet been included in hosted CI.
+- Dashboard and Finance explicit conversion calculator are pushed and included in passing CI `42331997256`.
+
+### LifeOS 2.0 navigation package (local, verified, not yet pushed)
+
+- Added four primary destinations: Today, Explore, Plan and Insights. The existing Finance, Habits, Goals, Planner and Settings screens remain available through Explore.
+- Explore shows counts from current local application state. Plan lists upcoming open tasks and active goals and provides working navigation and task creation. Insights displays saved finance and routine summaries, with an explicit empty state and no sample metrics.
+- Added route inventory entries and updated the Sentinel UI navigation exercise to verify all four primary destinations and five Explore modules.
+- Focused navigation contract: `node test_navigation_ia_20261107.cjs` PASS (7 assertions). `sentinel/inventory/routes.json` parses; Sentinel UI runner Python syntax parses.
+- `npx --no-install tsc --noEmit` PASS after navigation implementation.
+- `npm run build` PASS (2,241 modules); Vite reports the existing large main chunk advisory.
+- `npm run test:all` PASS, including the full Node/WP0/security/data suite, 7 navigation checks and all six Sentinel suites. Sentinel Saf picker execution remains explicitly device-blocked; no emulator was run for this local package.
+- No production security, encryption, storage, backup or Android native behavior changed in this package.
 
 ## Tests actually run on current local changes
 
-- `npm run test:all`: PASS on a complete serial run after conversion and dashboard changes. Includes 97/97 core application assertions, 32 habit-wiring checks, 21/21 audit regressions, encrypted storage/migration/coordinator suites, WP0 harness (148 checks and 11 controls), 47 Finance assertions, six-theme contrast checks, 3 Today summary checks, Android runner contract simulations, and all six Sentinel suites.
+- `npm run test:all`: PASS on a complete serial run after conversion and dashboard changes. Includes 97/97 core application assertions, 32 habit-wiring checks, 21/21 audit regressions, encrypted storage/migration/coordinator suites, WP0 harness (148 checks and 11 controls), 47 Finance assertions, six-theme contrast checks, 3 Today summary checks, Android runner contract simulations, and all six Sentinel suites. CI run `42331997256` also passed this command.
 - First `npm run test:all` after dashboard change stopped at an outdated source assertion expecting the removed score. That test was updated to assert scheduled-routine semantics; the complete rerun passed.
 - Focused `node test_dashboard_summary_20261107.cjs`: PASS, 3 checks.
 - `node test_lifeos.js`: PASS, 97/97.
@@ -40,7 +51,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - `npx --no-install tsc --noEmit`: PASS after the Finance converter and dashboard changes.
 - `npm run build`: PASS, 2,237 modules after the Finance converter.
 - `git diff --check`: PASS.
-- Emulator evidence above is from hosted CI commit `2734df9`, before the local Finance converter commit. The conversion feature is locally typechecked and built but awaits hosted CI. No physical-device run is claimed.
+- Emulator evidence and APK compilation above are from the latest hosted commit `1455cec`. No physical-device run is claimed.
 - Sentinel SAF OS file-picker execution remains device-blocked; simulated native interface tests do not count as physical acceptance.
 
 ## Security/release gates
@@ -51,7 +62,6 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## Next exact steps
 
-1. Commit this updated checkpoint with accurate CI status.
-2. Push local Finance conversion commit `704fa55` and the checkpoint only to `integration/lifeos-functional-security-20261107`; update draft PR #23 only.
-3. Run one hosted CI cycle for `704fa55` and verify APK build, test suite and bounded emulator matrix. Do not call API29 a React acceptance pass while Chromium remains 74.
-4. Continue remaining 2.0 screens/theme migration; LOS-001 and physical-device validation remain explicit blockers.
+1. Review and checkpoint the verified navigation package, then continue incremental migration of existing screens to semantic tokens while preserving their models and workflows.
+2. Add focused interaction/back-stack coverage for the new primary destinations and Explore module routes; the current Node test verifies catalog integrity, while the Sentinel UI exercise is syntax-checked locally and still needs hosted UI execution.
+3. Keep LOS-001, API36 target compliance and physical biometric/SAF/notification acceptance visibly blocked pending their specific evidence.
