@@ -16,7 +16,8 @@ import { quoteCsvCell } from './services/csvExportService.ts';
 import { exportBackupFile } from './services/backupExportService';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
-import { DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
+import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
+import { getCurrencyMetadata } from './services/financeCore';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
@@ -1827,7 +1828,7 @@ export default function App() {
             <section className="lifeos-panel rounded-2xl border p-5 space-y-4">
               <div><h3 className="text-base font-semibold">Preferences</h3><p className="mt-1 text-xs text-secondary">Formats affect display and new input only. Existing amounts are never converted.</p></div>
               <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs text-secondary">Currency<select value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value as UserPreferences['currency'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="INR">INR · ₹</option><option value="USD">USD · $</option><option value="EUR">EUR · €</option><option value="GBP">GBP · £</option></select></label>
+                <label className="text-xs text-secondary">Reporting currency<select aria-label="Reporting currency" value={userPrefs.currency} onChange={event => void saveUserPreference('currency', event.target.value)} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{CURRENCY_CODES.map(code => <option key={code} value={code}>{code} · {getCurrencyMetadata(code).fractionDigits} decimals</option>)}</select></label>
                 <label className="text-xs text-secondary">Distance<select value={userPrefs.distance} onChange={event => void saveUserPreference('distance', event.target.value as UserPreferences['distance'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km">Kilometres · km</option><option value="mi">Miles · mi</option></select></label>
                 <label className="text-xs text-secondary">Speed<select value={userPrefs.speed} onChange={event => void saveUserPreference('speed', event.target.value as UserPreferences['speed'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="km/h">Kilometres/hour</option><option value="m/s">Metres/second</option><option value="mph">Miles/hour</option></select></label>
                 <label className="text-xs text-secondary">Volume<select value={userPrefs.volume} onChange={event => void saveUserPreference('volume', event.target.value as UserPreferences['volume'])} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="L">Litres · L</option><option value="mL">Millilitres · mL</option><option value="US gal">US gallons</option><option value="Imp gal">Imperial gallons</option></select></label>

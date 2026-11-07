@@ -83,7 +83,7 @@ export function sumMinorUnits(values: Iterable<bigint>): bigint {
 }
 
 /** Locale formatting that keeps the amount exact even beyond Number precision. */
-export function formatMinorUnits(minorUnits: bigint, currencyCode: string, locale = 'en-IN'): string {
+export function formatMinorUnits(minorUnits: bigint, currencyCode: string, locale?: string): string {
   const { fractionDigits } = getCurrencyMetadata(currencyCode);
   const negative = minorUnits < 0n;
   const magnitude = negative ? -minorUnits : minorUnits;

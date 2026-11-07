@@ -16,7 +16,10 @@ const ts = require('typescript');
 function loadTsModule(path) {
   const loadedModule = { exports: {} };
   const source = fs.readFileSync(path, 'utf8');
-  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: loadedModule, exports: loadedModule.exports, Promise, Intl, Date, Math, Number, String, Object, Array, Error });
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, { module: loadedModule, exports: loadedModule.exports, require: request => {
+    if (request === './financeCore') return loadTsModule('./src/services/financeCore.ts');
+    throw new Error(`Unexpected test module dependency: ${request}`);
+  }, Promise, Intl, Date, Math, Number, String, Object, Array, Error });
   return loadedModule.exports;
 }
 const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
@@ -433,7 +436,9 @@ async function runTestSuite() {
   assert(userPreferenceUtils.resolveSystemDark(false, true) === false && userPreferenceUtils.resolveSystemDark(true, false) === true && userPreferenceUtils.resolveSystemDark(undefined, false) === false, 'Native Android appearance overrides stale WebView media state and browsers fall back to matchMedia');
   const restoredPreferences = userPreferenceUtils.mergeUserPreferences({ currency: 'EUR', distance: 'mi', timeFormat: '24h' }, 'INR');
   assert(restoredPreferences.currency === 'EUR' && restoredPreferences.distance === 'mi' && restoredPreferences.timeFormat === '24h' && restoredPreferences.volume === 'L', 'Stored preferences restore while new fields receive safe defaults');
+  assert(userPreferenceUtils.CURRENCY_CODES.length === 162 && userPreferenceUtils.mergeUserPreferences({ currency: 'AED' }, 'INR').currency === 'AED' && userPreferenceUtils.mergeUserPreferences({}, 'XCG').currency === 'XCG' && userPreferenceUtils.mergeUserPreferences({ currency: 'XYZ' }, 'XYZ').currency === 'INR', 'Reporting currency preferences accept the versioned catalog and reject unknown saved or legacy codes');
   assert(userPreferenceUtils.formatCurrency(1234.5, 'USD', 'en-US') === '$1,234.50' && userPreferenceUtils.formatCurrency(1234.5, 'EUR', 'de-DE').includes('1.234,50'), 'Currency uses locale separators and currency precision');
+  assert(userPreferenceUtils.formatCurrency(123.5, 'JPY', 'en-US').endsWith('124') && /1,234\.500$/.test(userPreferenceUtils.formatCurrency(1234.5, 'KWD', 'en-US')), 'Reporting currency formatting uses zero- and three-decimal metadata with decimal-safe rounding');
   assert(userPreferenceUtils.getNumberLocale('EUR', 'system') === undefined, 'System locale uses the device Intl locale instead of inferring locale from currency');
   assert(userPreferenceUtils.formatTimePreference(new Date(2026, 0, 2, 13, 5), '24h', 'en-GB').includes('13:05') && userPreferenceUtils.formatTimePreference(new Date(2026, 0, 2, 13, 5), '12h', 'en-US').includes('1:05'), 'Time format preference changes display without altering stored timestamps');
   assert(Math.abs(userPreferenceUtils.convertMeasurement(1, 'mi', 'km') - 1.609344) < 1e-12 && Math.abs(userPreferenceUtils.convertMeasurement(500, 'mL', 'L') - 0.5) < 1e-12, 'Distance and volume conversion preserve precise canonical values');
