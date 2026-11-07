@@ -109,6 +109,52 @@ function divideHalfUp(numerator: bigint, denominator: bigint): bigint {
   return quotient + (remainder * 2n >= denominator ? 1n : 0n);
 }
 
+export interface ExchangeRateFreshness {
+  ageDays: number;
+  freshness: 'current' | 'stale';
+}
+
+/** Treats an explicit rate as quote-major units per one base-major unit. */
+export function convertMinorUnits(
+  amountMinorUnits: bigint,
+  fromCurrency: string,
+  toCurrency: string,
+  rateText: string
+): bigint {
+  const fromDigits = getCurrencyMetadata(fromCurrency).fractionDigits;
+  const toDigits = getCurrencyMetadata(toCurrency).fractionDigits;
+  const match = /^(\d{1,9})(?:\.(\d{1,8}))?$/.exec(String(rateText).trim());
+  if (!match) throw new TypeError('Enter a positive exchange rate with up to eight decimal places.');
+  const fractional = match[2] || '';
+  const denominator = pow10(fractional.length);
+  const rateNumerator = BigInt(`${match[1]}${fractional}`);
+  if (rateNumerator <= 0n) throw new RangeError('Exchange rate must be greater than zero.');
+  const negative = amountMinorUnits < 0n;
+  const magnitude = negative ? -amountMinorUnits : amountMinorUnits;
+  const numerator = magnitude * rateNumerator * pow10(toDigits);
+  const divisor = denominator * pow10(fromDigits);
+  const quotient = numerator / divisor;
+  const remainder = numerator % divisor;
+  const rounded = quotient + (remainder * 2n >= divisor ? 1n : 0n);
+  return negative && rounded !== 0n ? -rounded : rounded;
+}
+
+/** Validate rate dates as UTC calendar dates and label rates older than the chosen age. */
+export function assessExchangeRateFreshness(rateDate: string, today: string, maxAgeDays = 7): ExchangeRateFreshness {
+  const parse = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new TypeError('Exchange rate dates must use YYYY-MM-DD.');
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) throw new TypeError('Exchange rate date is not a valid calendar date.');
+    return date.getTime();
+  };
+  if (!Number.isInteger(maxAgeDays) || maxAgeDays < 0 || maxAgeDays > 366) throw new RangeError('Maximum exchange-rate age is invalid.');
+  const ageMs = parse(today) - parse(rateDate);
+  if (ageMs < 0) throw new RangeError('Exchange rate date cannot be in the future.');
+  const ageDays = ageMs / 86_400_000;
+  return { ageDays, freshness: ageDays <= maxAgeDays ? 'current' : 'stale' };
+}
+
 export interface SavingsProjectionInput {
   startingMinorUnits: bigint;
   monthlyContributionMinorUnits: bigint;

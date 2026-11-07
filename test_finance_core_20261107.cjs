@@ -8,6 +8,15 @@ assert.equal(finance.getCurrencyMetadata('inr').fractionDigits, 2);
 assert.equal(finance.getCurrencyMetadata('JPY').fractionDigits, 0);
 assert.equal(finance.getCurrencyMetadata('KWD').fractionDigits, 3);
 assert.throws(() => finance.getCurrencyMetadata('XYZ'), /Unsupported currency/);
+assert.equal(finance.convertMinorUnits(100n, 'USD', 'INR', '83.125'), 8313n);
+assert.equal(finance.convertMinorUnits(-100n, 'USD', 'INR', '83.125'), -8313n);
+assert.equal(finance.convertMinorUnits(100n, 'USD', 'JPY', '1.5'), 2n);
+assert.throws(() => finance.convertMinorUnits(100n, 'USD', 'INR', '0'), /greater than zero/);
+assert.throws(() => finance.convertMinorUnits(100n, 'USD', 'INR', '83.123456789'), /up to eight decimal places/);
+assert.deepEqual(finance.assessExchangeRateFreshness('2026-10-24', '2026-10-31'), { ageDays: 7, freshness: 'current' });
+assert.deepEqual(finance.assessExchangeRateFreshness('2026-10-23', '2026-10-31'), { ageDays: 8, freshness: 'stale' });
+assert.throws(() => finance.assessExchangeRateFreshness('2026-11-01', '2026-10-31'), /cannot be in the future/);
+assert.throws(() => finance.assessExchangeRateFreshness('2026-02-30', '2026-10-31'), /valid calendar date/);
 
 assert.equal(finance.decimalToMinorUnits('0.10', 'USD'), 10n);
 assert.equal(finance.decimalToMinorUnits('0.20', 'USD'), 20n);
@@ -76,4 +85,4 @@ for (const input of [
   { startingMinorUnits: 0n, monthlyContributionMinorUnits: 0n, months: 12, annualReturnBasisPoints: -120000, annualInflationBasisPoints: 0 },
 ]) assert.throws(() => finance.projectSavings(input));
 
-console.log('FINANCE CORE: 38 assertions passed; calculations use integer minor units and synthetic inputs only.');
+console.log('FINANCE CORE: 47 assertions passed; calculations use integer minor units and synthetic inputs only.');

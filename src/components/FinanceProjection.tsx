@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { decimalToMinorUnits, formatMinorUnits, projectSavings } from '../services/financeCore';
+import FinanceCurrencyConverter from './FinanceCurrencyConverter';
 
 type Props = { currencyCode: string; locale?: string };
 type Inputs = {
@@ -88,5 +89,6 @@ export default function FinanceProjection({ currencyCode, locale }: Props) {
       </div>
       <p className="text-xs leading-relaxed text-secondary">Method: monthly return and inflation are annual inputs divided by 12; contributions are added at month end and interest rounds to the currency’s minor unit each month. Excludes taxes, fees and changing market conditions. Results are estimates, not guarantees.</p>
     </>}
+    <FinanceCurrencyConverter currencyCode={currencyCode} locale={locale} />
   </section>;
 }
