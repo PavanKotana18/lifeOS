@@ -1,0 +1,18 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
+const transactionFormStart = app.indexOf("{createKind === 'transaction' && <>");
+const transactionFormEnd = app.indexOf("{createKind === 'habit' && <>", transactionFormStart);
+assert.ok(transactionFormStart >= 0 && transactionFormEnd > transactionFormStart, 'transaction form remains an independently identifiable workflow');
+const transactionForm = app.slice(transactionFormStart, transactionFormEnd);
+assert.match(app, /createKind === 'transaction' \? 'Merchant or description \(optional\)'/);
+assert.match(app, /required=\{createKind !== 'transaction'\}/, 'transaction description is optional while other record titles remain required');
+assert.match(transactionForm, /autoFocus=\{!editingTransactionId\} required type="number" min="0\.01" step="0\.01" inputMode="decimal"/, 'new quick entry focuses a decimal amount field');
+assert.match(transactionForm, /aria-expanded=\{transactionDetailsOpen\} aria-controls="transaction-optional-details"/);
+assert.match(transactionForm, /transactionDetailsOpen && <div id="transaction-optional-details"/, 'optional fields are collapsed for quick entry and expanded for edits');
+assert.match(transactionForm, /Transaction date and time[\s\S]*?type="datetime-local"/, 'optional transaction timestamp can still be edited');
+assert.match(app, /dateTime: formatLocalDateTime\(now\)/, 'new entries default to the current local date and time');
+assert.match(app, /setTransactionDetailsOpen\(true\);[\s\S]*setEditingTransactionId\(transaction\.id\)/, 'editing an existing transaction reveals its optional fields');
+assert.doesNotMatch(transactionForm, /autoCapitalize=|autoCorrect=/, 'text entry keeps platform keyboard behavior without forcing text rewriting');
+console.log('TRANSACTION QUICK ENTRY: 9 source contracts passed; keyboard rendering remains Android-device validation.');

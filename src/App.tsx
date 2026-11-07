@@ -225,6 +225,7 @@ export default function App() {
   const [modalContent, setModalContent] = useState<React.ReactNode | null>(null);
   const [createKind, setCreateKind] = useState<'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress' | null>(null);
   const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
+  const [transactionDetailsOpen, setTransactionDetailsOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
@@ -932,6 +933,7 @@ export default function App() {
     setEditingHabitId(null);
     setEditingTransactionId(null);
     setEditingGoalId(null);
+    setTransactionDetailsOpen(false);
     setCreateKind(kind);
   };
 
@@ -942,6 +944,7 @@ export default function App() {
       dateTime: transaction.occurredAt ? formatLocalDateTime(new Date(transaction.occurredAt)) : '',
       notes: transaction.notes || '', isRecurring: transaction.isRecurring ? 'yes' : '',
     });
+    setTransactionDetailsOpen(true);
     setEditingTransactionId(transaction.id); setEditingTaskId(null); setEditingHabitId(null); setEditingGoalId(null); setCreateKind('transaction');
   };
 
@@ -2038,8 +2041,8 @@ export default function App() {
               <button type="button" aria-label="Close" onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
             </div>
             {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
-              {createKind === 'transaction' ? 'Description' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
-              <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
+              {createKind === 'transaction' ? 'Merchant or description (optional)' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
+              <input autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {createKind === 'transaction' && <>
               <label className="mb-3 block text-xs text-secondary">Type<select value={createDraft.type} onChange={e => {
@@ -2047,7 +2050,7 @@ export default function App() {
                 const category = categories.find(item => item.type === type)?.name || '';
                 setCreateDraft({ ...createDraft, type, category });
               }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
-              <label className="mb-3 block text-xs text-secondary">Amount<input required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Amount<input autoFocus={!editingTransactionId} required type="number" min="0.01" step="0.01" inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-secondary">Category<select required value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">
                 <option value="">Select category</option>
                 {createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type) && (
@@ -2057,10 +2060,13 @@ export default function App() {
                   <option key={category.id} value={category.name}>{category.name}</option>
                 ))}
               </select></label>
-              <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
-              <label className="mb-4 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <button type="button" className="mb-3 min-h-11 rounded-lg px-2 text-left text-xs font-semibold lifeos-accent-text" aria-expanded={transactionDetailsOpen} aria-controls="transaction-optional-details" onClick={() => setTransactionDetailsOpen(open => !open)}>{transactionDetailsOpen ? 'Hide optional details' : 'Add optional details'}</button>
+              {transactionDetailsOpen && <div id="transaction-optional-details" className="transaction-optional-details rounded-xl p-3">
+                <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 block text-xs text-secondary">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
+                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              </div>}
             </>}
             {createKind === 'habit' && <>
               <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>

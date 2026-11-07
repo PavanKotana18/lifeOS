@@ -102,6 +102,8 @@ body {
 .today-order-actions button { min-height: 44px; min-width: 44px; border-radius: 0.65rem; color: var(--ink-secondary); font-size: 1rem; font-weight: 600; }
 .today-order-actions button:disabled { opacity: 0.4; }
 .today-sections button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+.transaction-optional-details { background: var(--surface-raised); }
+.transaction-optional-details button:focus-visible, .transaction-optional-details input:focus-visible, .transaction-optional-details textarea:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 .money-page-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .money-page-toolbar select { max-width: min(64%, 15rem); }
 .money-back-button { display: inline-flex; min-height: 44px; flex: 0 0 auto; align-items: center; gap: 0.2rem; color: var(--accent); font-size: 0.875rem; font-weight: 600; }

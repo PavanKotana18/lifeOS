@@ -261,3 +261,11 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - GitHub run `42353693163` completed successfully for `297f948586197010adbfe5405b244de511f08e2f`: automated checks and Android debug build passed.
 - The Today regression was then strengthened locally to 18 assertions, adding an actual synthetic encrypted-settings save/restart/read check. Focused execution passes. This test-only update still needs commit, push, and exact-head CI.
+
+### Transaction quick-entry flow (local, focused verification complete)
+
+- New transaction forms now focus the decimal amount field first; merchant/description is optional. Type, amount, category and Save stay in the initial flow. Payment method, note, recurrence and editable date/time are in an accessible optional-details disclosure. Existing transaction edits reveal those details by default; date/time still defaults to the current local time for new entries, and text input leaves platform keyboard capitalization/autocorrect behavior untouched.
+- No schema, accounting, account, transfer, currency-per-record or transaction persistence behavior changed. Android IME/keyboard rendering remains unverified without a device/emulator.
+- Added `test_transaction_quick_entry_20261107.cjs` with 9 source-contract assertions to `npm test`. Focused form test: PASS (9); duplicate tests: PASS (17); actual create handler/CSV regression: PASS (4/4); LifeOS domain suite: PASS (101/101). Today encrypted-restart test: PASS (18). TypeScript and production build: PASS; build retains the existing Vite chunk advisory (main JS 510.06 kB; FinanceCharts 414.76 kB).
+- Exact baseline CI run `42354069192` passed automated checks and Android debug build for prior head `70f67f4cb3ee97960ddcfa4ec306b71355724a56`. This quick-entry change is not in CI yet.
+- Local uncommitted scope: `src/App.tsx`, `src/index.css`, `package.json`, new `test_transaction_quick_entry_20261107.cjs`, and this checkpoint. Next exact step: diff-check, commit/push this isolated increment, update PR #24, and verify its CI once.
