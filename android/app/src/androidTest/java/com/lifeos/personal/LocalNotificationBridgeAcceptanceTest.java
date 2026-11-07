@@ -1,12 +1,20 @@
 package com.lifeos.personal;
 
 import android.Manifest;
+import android.app.AlarmManager;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import android.os.ParcelFileDescriptor;
+import android.service.notification.StatusBarNotification;
+import com.capacitorjs.plugins.localnotifications.NotificationStorage;
+import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.junit.Test;
@@ -68,27 +76,33 @@ public class LocalNotificationBridgeAcceptanceTest {
             ParcelFileDescriptor home = InstrumentationRegistry.getInstrumentation().getUiAutomation()
                 .executeShellCommand("input keyevent 3");
             if (home != null) home.close();
-            Thread.sleep(20_000L);
-            ParcelFileDescriptor relaunch = InstrumentationRegistry.getInstrumentation().getUiAutomation()
-                .executeShellCommand("am start -n com.lifeos.personal/.MainActivity");
-            if (relaunch != null) relaunch.close();
-            Thread.sleep(1_000L);
-            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
-            WebViewTestSupport.awaitReactRoot(scenario);
+            Context context = ApplicationProvider.getApplicationContext();
+            NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            NotificationStorage storage = new NotificationStorage(context);
             boolean visible = false;
-            try {
-                String result = WebViewTestSupport.evaluateAsync(scenario,
-                    "(async()=>{const p=window.Capacitor.Plugins.LocalNotifications;const d=await p.getDeliveredNotifications();" +
-                    "return JSON.stringify({visible:d.notifications.some(n=>n.id===" + id + "),pending:(await p.getPending()).notifications.some(n=>n.id===" + id + ")});})()");
-                JSONObject state = new JSONObject(result);
-                visible = state.optBoolean("visible");
-                assertFalse("Delivered notification must leave the plugin's persisted pending store", state.optBoolean("pending"));
-            } finally {
-                WebViewTestSupport.evaluateAsync(scenario,
-                    "(async()=>{const p=window.Capacitor.Plugins.LocalNotifications;await p.cancel({notifications:[{id:" + id + "}]});" +
-                    "await p.removeDeliveredNotifications({notifications:[{id:" + id + "}]});return true;})()");
+            long deliveryDeadline = android.os.SystemClock.elapsedRealtime() + 20_000L;
+            while (android.os.SystemClock.elapsedRealtime() < deliveryDeadline && !visible) {
+                for (StatusBarNotification active : manager.getActiveNotifications()) {
+                    if (active.getId() == id) { visible = true; break; }
+                }
+                if (!visible) Thread.sleep(250L);
             }
-            assertTrue("Native AlarmManager receiver must post the synthetic reminder after app backgrounding; exact-alarm state=" + queued.optString("exact"), visible);
+            try {
+                assertTrue("Native AlarmManager receiver must post the synthetic reminder after app backgrounding; exact-alarm state=" + queued.optString("exact"), visible);
+                assertFalse("Capacitor receiver must retire the persisted pending row after posting",
+                    storage.getSavedNotificationIds().contains(String.valueOf(id)));
+            } finally {
+                manager.cancel(id);
+                Intent alarmIntent = new Intent(context, TimedNotificationPublisher.class);
+                int flags = PendingIntent.FLAG_NO_CREATE;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE;
+                PendingIntent alarm = PendingIntent.getBroadcast(context, id, alarmIntent, flags);
+                if (alarm != null) {
+                    ((AlarmManager) context.getSystemService(Context.ALARM_SERVICE)).cancel(alarm);
+                    alarm.cancel();
+                }
+                storage.deleteNotification(String.valueOf(id));
+            }
         }
     }
 }
