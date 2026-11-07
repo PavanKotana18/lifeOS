@@ -347,3 +347,8 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Tests:** Server-rendered Profile/Preferences test, Settings accessibility test, TypeScript and Vite production build passed. Build still emits the >500 kB chunk advisory.
 - **Hosted CI:** Run `42403261537` passed Automated checks and was building the Debug APK when last checked. This run is for `38db7a4`; the searchable picker will be included in the next pushed commit and require final CI.
 - **Next:** Commit the searchable picker, wait for the active hosted build to finish, then push this final checkpoint and verify its run/artifact.
+
+## Checkpoint H — Search responsiveness
+- **Change:** Currency labels are now prepared once per locale and reused while the user types, avoiding repeated currency-format construction for every search keystroke.
+- **Verification:** Search/profile rendered tests, Settings accessibility test, TypeScript and production build passed after this adjustment.
+- **Hosted CI:** Run `42403261537` passed Automated checks and was still packaging Android when last checked. The upcoming pushed checkpoint will contain this final search optimization.

@@ -58,3 +58,5 @@ The current production path already uses Capacitor Local Notifications, whose An
 - Local Android build/device execution is unavailable in this Termux worktree: no Android SDK variables or connected ADB device, and no checked-in Gradle wrapper. Hosted CI is the Android compilation path.
 
 `ProfilePreferences.tsx` now owns the display/unit/currency/navigation controls as a reusable presentation component; `App.tsx` supplies the existing encrypted settings write callback and record-aware currency lock.
+
+Currency-picker labels are memoized per selected locale, so search filters reuse labels instead of repeatedly constructing currency-format data on each keystroke.
