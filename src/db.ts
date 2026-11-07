@@ -1,9 +1,10 @@
 import Dexie, { Table } from 'dexie';
 import { createSessionManager } from './services/sessionManager';
 import { createLifeOSEncryptedRuntime } from './services/encryptedStorageRuntime';
-import type {
-  LifeOSRawDatabase,
-  LifeOSDatabaseWithTransactions,
+import {
+  BOOTSTRAP_SETTING_KEYS,
+  type LifeOSRawDatabase,
+  type LifeOSDatabaseWithTransactions
 } from './services/encryptedStorageIntegration';
 import { CryptoService } from './services/cryptoService.ts';
 import {
@@ -72,6 +73,17 @@ export async function hasEncryptedRecords(): Promise<boolean> {
        Object.prototype.hasOwnProperty.call(item, 'encrypted'))).first()) return true;
   }
   return false;
+}
+
+/** Counts private rows without returning record contents during fresh-install admission. */
+export async function hasPrivateRows(): Promise<boolean> {
+  const tableCounts = await Promise.all([
+    db.transactions.count(), db.categories.count(), db.budgets.count(),
+    db.savingsGoals.count(), db.savingsContributions.count(), db.habits.count(),
+    db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(),
+    db.settings.where('key').noneOf([...BOOTSTRAP_SETTING_KEYS]).count(),
+  ]);
+  return tableCounts.some(count => count > 0);
 }
 
 let recordIdSequence = 0;
@@ -259,7 +271,7 @@ export interface IDataStorage {
     addGoal(goal: Omit<SavingsGoal, 'id' | 'createdAt'>): Promise<SavingsGoal>;
     updateGoal(id: string, updates: Partial<SavingsGoal>): Promise<void>;
     deleteGoal(id: string): Promise<void>;
-    addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>, linkedExpense?: Omit<Transaction, 'id' | 'createdAt'>): Promise<void>;
+    addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>): Promise<void>;
     getContributions(goalId: string): Promise<SavingsContribution[]>;
   };
   habits: {
@@ -695,7 +707,7 @@ const rawStorageService: IDataStorage = {
         await db.savingsContributions.where('goalId').equals(id).delete();
       });
     },
-    async addContribution(contribution, linkedExpense) {
+    async addContribution(contribution) {
       if (!Number.isFinite(contribution.amount) || contribution.amount <= 0) {
         throw new Error('Savings contribution amount must be a positive finite number');
       }
@@ -704,34 +716,9 @@ const rawStorageService: IDataStorage = {
         'rw',
         db.savingsGoals,
         db.savingsContributions,
-        db.transactions,
-        db.categories,
         async () => {
           const goal = await db.savingsGoals.get(contribution.goalId);
           if (!goal) throw new Error('Savings goal not found');
-
-          if (linkedExpense) {
-            if (
-              linkedExpense.type !== 'expense' ||
-              linkedExpense.amount !== contribution.amount ||
-              linkedExpense.date !== contribution.date
-            ) {
-              throw new Error('Linked savings transfer must match the contribution amount and date');
-            }
-
-            validateTransactionRecord(linkedExpense, true);
-            await assertTransactionCategory(linkedExpense.category, 'expense');
-
-            const transactionId = createRecordId('tx');
-            const createdAt = new Date().toISOString();
-            const transactionRecord: Transaction = {
-              ...linkedExpense,
-              id: transactionId,
-              createdAt,
-              occurredAt: linkedExpense.occurredAt || createdAt
-            };
-            await db.transactions.add(transactionRecord);
-          }
 
           const id = createRecordId('sc');
           await db.savingsGoals.update(goal.id, {
@@ -1223,9 +1210,10 @@ let encryptedStorageActivated = false;
 /**
  * Migrate existing records and activate encrypted storage.
  *
- * The native key must already be unlocked and the caller must have completed
- * recovery provisioning. This function never provisions a key or falls back
- * to raw storage after migration failure.
+ * The native key must already be unlocked and the user must have either
+ * confirmed recovery-kit setup or explicitly deferred it during first setup.
+ * This function never provisions a key or falls back to raw storage after
+ * migration failure.
  */
 export async function activateEncryptedStorage(): Promise<void> {
   if (encryptedStorageActivated) return;
@@ -1246,8 +1234,8 @@ export async function activateEncryptedStorage(): Promise<void> {
     throw new Error('The LifeOS encryption key is not available in Android Keystore.');
   }
 
-  if (!keyState.recoveryProvisioned) {
-    throw new Error('Recovery protection has not been confirmed. Complete recovery setup before activating encrypted storage.');
+  if (!keyState.recoveryProvisioned && !keyState.recoveryDeferred) {
+    throw new Error('Recovery protection has not been confirmed or explicitly deferred. Encrypted storage remains locked.');
   }
 
   if (!keyState.unlocked || !(await CryptoService.isUnlocked())) {
@@ -1267,7 +1255,7 @@ export async function activateEncryptedStorage(): Promise<void> {
       !verifiedState.metadataConsistent ||
       verifiedState.recoveryNeedsRebind ||
       !verifiedState.keyProvisioned ||
-      !verifiedState.recoveryProvisioned ||
+      (!verifiedState.recoveryProvisioned && !verifiedState.recoveryDeferred) ||
       !verifiedState.keystoreAliasPresent ||
       !verifiedState.unlocked ||
       !(await CryptoService.isUnlocked())
@@ -1300,14 +1288,6 @@ export function isEncryptedStorageActivated(): boolean {
   return encryptedStorageActivated;
 }
 
-const BOOTSTRAP_SETTING_KEYS = new Set([
-  'theme',
-  'biometricLockEnabled',
-  'onboardingCompleted',
-  'onboardingStarted',
-  'onboardingStep',
-  'visualTheme'
-]);
 
 const READ_OPERATIONS: Record<string, Set<string>> = {
   transactions: new Set(['getAll', 'getById', 'filter']),
@@ -1362,7 +1342,7 @@ function protectStorage<T extends object>(namespace = ''): T {
         // plaintext backend. This also covers callbacks retained by the UI.
         if (!isBootstrapSetting && !encryptedStorageActivated) {
           sessionManager.lock();
-          throw new Error('Encrypted storage is not ready. Complete secure provisioning and recovery setup before opening private data.');
+          throw new Error('Encrypted storage is not ready. Complete secure provisioning before opening private data.');
         }
 
         const token = isBootstrapSetting

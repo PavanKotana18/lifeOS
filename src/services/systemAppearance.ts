@@ -31,9 +31,15 @@ export async function resolveInitialAppearancePreference(
 /** A cosmetic theme read must not hold the locked app root or authentication flow. */
 export async function resolveInitialVisualTheme(
   readTheme: () => Promise<unknown>,
-  timeoutMs = 1500
+  timeoutMs = 1500,
+  cachedTheme: unknown = undefined
 ): Promise<ThemeId> {
-  return resolveThemeId(await readWithDeadline(readTheme, timeoutMs));
+  const value = await readWithDeadline(readTheme, timeoutMs);
+  // A slow or malformed IndexedDB read is not evidence that the user's saved
+  // cosmetic preference is invalid. Keep the last applied cache instead of
+  // replacing it with the default palette during bootstrap.
+  const resolved = typeof value === 'string' ? resolveThemeId(value) : undefined;
+  return resolved && value === resolved ? resolved : resolveThemeId(cachedTheme);
 }
 
 /** Read Android's actual UI mode when available; media queries are the browser fallback. */

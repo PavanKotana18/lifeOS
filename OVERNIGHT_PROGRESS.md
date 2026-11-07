@@ -227,3 +227,71 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - PR #23 remains the single open draft targeting `security/lifeos-encrypted-startup-20261107`. Run `42343017636` for the current head was pending on last check; do not infer hosted success or device rendering from local tests/build.
 - Exact resumption step: inspect the terminal result of run `42343017636` once. Then proceed only with a device- or toolchain-verifiable release blocker; LOS-001 remains blocked without real encrypted-at-rest and lifecycle/device acceptance evidence.
 - Keep LOS-001 encrypted-at-rest, complete physical biometric/SAF/notification acceptance, API36 target compliance, and visual/screen-reader device review as blockers. Do not imply release readiness or total overnight completion.
+
+## LifeOS 2.0 continuation checkpoint — Milestone A / transaction slice
+
+- Isolated branch/worktree: `feature/lifeos2-milestone-a-20261107` / `/data/data/com.termux/files/home/lifeos-milestone-a-20261107`.
+- Base: verified PR #23 head `a8fb1845e6607139a0e3e0b6545ba455572020b4`; PR #23 remains unchanged and draft. The original dirty `~/lifeOS` worktree and existing integration worktree were left untouched.
+- Latest commit: `04fd44fed968d4d527574ace5d2a75f534c68981`, pushed to origin. Draft PR #24 targets `integration/lifeos-functional-security-20261107`.
+- Implemented: Today/Money/Plan/Life primary navigation; Insights remains linked from Life, Profile is opened from the initials avatar, and Money child pages use a section selector instead of the horizontal tab strip. Money Home shows recorded monthly income/expense/net, actual budget rows, data-derived expense context, recent real transactions and direct entry/savings-goal actions. Added transaction duplication without copying record identity or historic time; legacy date-only entries retain unknown historical time.
+- Typography: locally bundled Inter Variable v4.1 + SIL OFL notice, semantic type scale, tabular amount numerals, Indic script/system fallback stack, and user zoom/text scaling is no longer disabled. Existing six theme palettes and persisted appearance settings are reused.
+- Local verification: `npm run test:all` passed (Node/WP0 and six Sentinel suites; physical SAF remains Sentinel-documented as device-blocked); `npx tsc --noEmit` passed; `npm run build` passed with the existing Vite large-chunk advisory; `git diff --check` passed. Focused SSR regression renders Money Home with synthetic values; duplicate helper tests preserve new-entry time and omit source identity.
+- CI: run `42351971098` passed automated checks and Android debug APK/instrumentation APK compilation for `823da8436e6e42849ae6bca74967a81fecb23890`. New commit run `42352490626` had automated tests, Sentinel, dependency audit, TypeScript and web build pass; Capacitor Android sync was in progress at checkpoint. Do not treat the older APK build as evidence for the new head.
+- Reused work already on PR #23: API 29 minimum, WebView guard, encrypted startup/migration path, finance core/projection, theme catalog, Plan/Insights screens, and security/lifecycle tests. No encryption or native security semantics changed here.
+- Remaining: current-head Android debug build result; Android screenshot/viewport and accessibility review on device; real font rendering for Telugu/Hindi/Tamil/Kannada/Malayalam on Android; transaction filters beyond existing month/category/type/search and account/currency ledger semantics remain future work. Do not claim release-ready or full visual acceptance. LOS-001 has synthetic production startup/Dexie encryption evidence but real Android lifecycle/at-rest inspection remains a release gate.
+- Next exact step: check terminal state of run `42352490626` once, update this checkpoint with its result, and continue only with an independently testable next user workflow. If Android compile passes, proceed to the existing data-backed Today/Plan/Life customization increment; if it fails, fix only a demonstrated issue.
+
+### Today dashboard customization (local, verified; checkpoint pending)
+
+- Added an encrypted-settings-backed Today layout preference with validated/deduplicated section IDs, persistent show/hide and up/down ordering, a non-hideable focus summary, and a restore-default control. Added a separately actionable Coming up list using future-dated open tasks and their saved local due times; empty Goals remain hidden by default.
+- Startup reads the layout only after the encrypted session opens. Saves are serialized to preserve click order and report persistence errors. No domain records, encryption behavior, task scheduling, or notification behavior changed.
+- Added `test_today_layout_20261107.cjs` (18 layout/persistence/UI assertions), including an encrypted settings save/read across a synthetic native relock and fresh App-module/database activation, to the mandatory test chain. Updated the existing WP0 App fixture with Today-layout and screenshot-resume dependencies used by extracted startup/lifecycle tests.
+- Focused Today/dashboard/navigation tests: PASS. Authentication lifecycle: 10/10 passed (actual App/Dexie; native simulated). Secure startup: 16 passed. Encryption admission: 6/6 passed. WP0 harness self-test: 148 checks passed. TypeScript: PASS. Production Vite build: PASS (2,245 modules; Inter font asset bundled; existing FinanceCharts/main chunk-size advisory). `git diff --check`: PASS.
+- `npm run test:all`: Node regression chain completed successfully and Sentinel reported 6/6 suites passed, 0 failed, 0 blocked; Sentinel also explicitly marked physical SAF picker execution device-blocked. However, its Node process remained alive after printing `CI GATE STATUS: PASSED`; after >1 minute with no new output I terminated that hung runner. Therefore assertions passed, but the local aggregate command exit status is **incomplete** (terminated 143); do not call the command itself a clean exit. Full log: `/data/data/com.termux/files/home/.cache/lifeos-test-all-milestone-a.log`.
+- Original `~/lifeOS` remains unchanged: `src/App.tsx`, `test_auth_lifecycle.js`, `test_sec01_orphan_keystore.js` modified and `.audit-backup/` untracked, as recorded before this package.
+- Next exact steps: run final diff/checkpoint review; update PR #24 description with Today customization; commit and push this focused increment to `feature/lifeos2-milestone-a-20261107`; verify its CI once. Continue to the next existing product workflow only after this checkpoint.
+
+### Checkpoint after Today customization commit
+
+- Branch: `feature/lifeos2-milestone-a-20261107`; commit: `8cf3cc0` (`feat: add customizable Today dashboard`), based on `060fcfa7d5071ea38dd24b57c95c5cff64f5a49a`.
+- Changes are committed locally and await push/PR CI. No files remain outside this worktree's implementation scope.
+- Next exact step: push this branch, update existing draft PR #24 with the Today customization and the accurate local test-exit caveat, then verify the resulting CI run once.
+
+### Follow-up verification
+
+- GitHub run `42353693163` completed successfully for `297f948586197010adbfe5405b244de511f08e2f`: automated checks and Android debug build passed.
+- The Today regression was then strengthened locally to 18 assertions, adding an actual synthetic encrypted-settings save/restart/read check. Focused execution passes. This test-only update still needs commit, push, and exact-head CI.
+
+### Transaction quick-entry flow (local, focused verification complete)
+
+- New transaction forms now focus the decimal amount field first; merchant/description is optional. Type, amount, category and Save stay in the initial flow. Payment method, note, recurrence and editable date/time are in an accessible optional-details disclosure. Existing transaction edits reveal those details by default; date/time still defaults to the current local time for new entries, and text input leaves platform keyboard capitalization/autocorrect behavior untouched.
+- No schema, accounting, account, transfer, currency-per-record or transaction persistence behavior changed. Android IME/keyboard rendering remains unverified without a device/emulator.
+- Added `test_transaction_quick_entry_20261107.cjs` with 9 source-contract assertions to `npm test`. Focused form test: PASS (9); duplicate tests: PASS (17); actual create handler/CSV regression: PASS (4/4); LifeOS domain suite: PASS (101/101). Today encrypted-restart test: PASS (18). TypeScript and production build: PASS; build retains the existing Vite chunk advisory (main JS 510.06 kB; FinanceCharts 414.76 kB).
+- Exact baseline CI run `42354069192` passed automated checks and Android debug build for prior head `70f67f4cb3ee97960ddcfa4ec306b71355724a56`. This quick-entry change is not in CI yet.
+- Transaction quick entry was committed/pushed as `1fd950b845438bbbcabad140220f8a68256f8afc`; CI run `42354408058` passed automated checks and Android debug APK build.
+
+### Savings goal progress visual (local, focused verification complete)
+
+- Replaced the generic savings progress bar with a compact theme-aware SVG goal gauge. It reports actual saved/remaining amounts, caps only the visual arc at 100% while preserving over-target values in text, and renders invalid target/current data as unavailable instead of silently showing a fabricated zero. Delete now asks for confirmation and distinguishes deletion failure from a post-delete refresh failure.
+- Added `SavingsGoalProgress.tsx` and `test_savings_goal_visual_20261107.cjs` (19 SSR/source assertions) to the mandatory test chain. The test uses synthetic amounts only.
+- Focused savings visual: PASS (19); TypeScript: PASS; production build: PASS (2,246 modules; Inter locally included; existing large-chunk advisory, main JS 512.09 kB / FinanceCharts 414.76 kB); `git diff --check`: PASS. Android rendering is not validated.
+- This package was committed/pushed as `f28d1e69bf61c441000a7eee01de3ce25ca12271`; CI run `42354889078` passed automated checks and Android debug build.
+
+### Budget status and missing-category presentation (local, focused verification complete)
+
+- The budget screen previously capped the reported percentage at 100% and displayed zero remaining after overspend. Added `getBudgetDisplayStatus` to retain the actual percentage and overage while capping only the visual track; over-plan amounts now use neutral text, and an absent monthly limit is not described as remaining money.
+- Budgets whose category reference no longer resolves now show usage as unavailable and ask the user to restore the category; they no longer imply that spending was zero. Budget deletion asks for confirmation, keeps transactions unchanged, and distinguishes delete failure from a post-delete refresh failure. No budget, category, or transaction records were modified.
+- Added `test_budget_display_20261107.cjs` (17 focused arithmetic/UI/deletion assertions) to the mandatory chain. Budget display tests: PASS (17); Finance precision/regression: PASS (7); local consolidation/notifications: PASS (5); TypeScript: PASS; production build: PASS (2,247 modules; existing chunk advisory, main JS 513.43 kB, FinanceCharts 414.76 kB); `git diff --check`: PASS.
+- GitHub run `42354889078` passed automated checks and Android debug build for prior head `f28d1e69bf61c441000a7eee01de3ce25ca12271`. This budget package is local and not yet in CI.
+
+### Budget status checkpoint
+
+- Branch `feature/lifeos2-milestone-a-20261107`, commit `8d345aadbc526202af8416c39f3feb8643bd6eef`, pushed to origin and included in draft PR #24 (target remains PR #23 integration head).
+- Exact-head workflow `42355347997` is in progress. Previous workflow `42354889078` passed automated checks and Android debug build.
+- At that push, the worktree was clean. The current uncommitted follow-up is limited to budget-delete confirmation/error handling, the budget regression test and this progress note. Next exact step: finish this small package, push it, then verify its CI once and confirm the original worktree remains unchanged.
+
+### Budget deletion follow-up
+
+- Added explicit confirmation, scoped rollback messaging, optimistic list removal after successful delete, and separate refresh-failure messaging. Saved transactions are explicitly left unchanged.
+- `test_budget_display_20261107.cjs`: 17/17; TypeScript, production build, and `git diff --check`: PASS. Current local changes are limited to the budget-card handler, its regression assertions and this checkpoint.
+- Run `42355347997` has now passed for `8d345aadbc526202af8416c39f3feb8643bd6eef`. The budget deletion follow-up is committed locally as `ff125c4f2dfe1a8f83c882d4bc835e4c34c9b713` and is ready to push after updating PR #24 evidence.

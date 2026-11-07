@@ -131,8 +131,68 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
+      - name: Require and configure persistent debug signing
+        id: debug-signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LIFEOS_DEBUG_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LIFEOS_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$KEYSTORE_BASE64" ]] || missing+=(LIFEOS_DEBUG_KEYSTORE_BASE64)
+          [[ -n "$STORE_PASSWORD" ]] || missing+=(LIFEOS_DEBUG_KEYSTORE_PASSWORD)
+          [[ -n "$KEY_ALIAS" ]] || missing+=(LIFEOS_DEBUG_KEY_ALIAS)
+          [[ -n "$KEY_PASSWORD" ]] || missing+=(LIFEOS_DEBUG_KEY_PASSWORD)
+          if (( ${#missing[@]} )); then
+            echo "::error::Debug APK signing is mandatory. Configure missing GitHub Actions secrets: ${missing[*]}"
+            exit 1
+          fi
+
+          KEYSTORE_PATH="$RUNNER_TEMP/lifeos-debug.keystore"
+          PASSWORD_PATH="$RUNNER_TEMP/lifeos-debug-store-password"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          printf '%s' "$STORE_PASSWORD" > "$PASSWORD_PATH"
+          chmod 600 "$KEYSTORE_PATH" "$PASSWORD_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storetype PKCS12 -alias "$KEY_ALIAS" -storepass:file "$PASSWORD_PATH" >/dev/null
+          {
+            echo "LIFEOS_DEBUG_KEYSTORE_PATH=$KEYSTORE_PATH"
+            echo "LIFEOS_DEBUG_KEYSTORE_PASSWORD=$STORE_PASSWORD"
+            echo "LIFEOS_DEBUG_KEY_ALIAS=$KEY_ALIAS"
+            echo "LIFEOS_DEBUG_KEY_PASSWORD=$KEY_PASSWORD"
+            echo "LIFEOS_DEBUG_SIGNING_PASSWORD_FILE=$PASSWORD_PATH"
+          } >> "$GITHUB_ENV"
+          echo "Persistent LifeOS debug signing keystore and alias were validated." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build Debug APK
         run: gradle -p android :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+
+      - name: Report APK signing identity
+        run: gradle -p android :app:signingReport
+
+      - name: Verify debug APK signing identity and package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          EXPECTED="$(keytool -list -v -keystore "$LIFEOS_DEBUG_KEYSTORE_PATH" -storetype PKCS12 -alias "$LIFEOS_DEBUG_KEY_ALIAS" -storepass:file "$LIFEOS_DEBUG_SIGNING_PASSWORD_FILE" | awk '/SHA256:/{print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          [[ -n "$EXPECTED" && "$EXPECTED" == "$ACTUAL" ]] || { echo "::error::Debug APK signer does not match the configured persistent keystore."; exit 1; }
+          BADGING="$("$AAPT" dump badging "$APK")"
+          grep -q "package: name='com.lifeos.personal'" <<< "$BADGING" || { echo "::error::Unexpected LifeOS applicationId in debug APK."; exit 1; }
+          VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
+          VERSION_NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || { echo "::error::Debug APK has an invalid versionCode."; exit 1; }
+          {
+            echo "### Debug APK identity"
+            echo "- SHA-256 signer: $ACTUAL"
+            echo "- applicationId: com.lifeos.personal"
+            echo "- versionCode: $VERSION_CODE"
+            echo "- versionName: $VERSION_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4

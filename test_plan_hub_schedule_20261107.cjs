@@ -38,8 +38,11 @@ const markup = renderToStaticMarkup(React.createElement(PlanHub, {
 assert.ok(markup.indexOf('>early</span>') < markup.indexOf('>late</span>'), 'the Plan screen renders same-day timed tasks chronologically');
 assert.match(markup, /2026-11-07 · Today · 09:00/);
 assert.equal((markup.match(/<li /g) || []).length, 4, 'the Plan screen keeps its four-task summary limit');
+assert.match(markup, /class="plan-hub-row-title type-body"/, 'task content uses the shared readable body scale');
+assert.match(markup, /class="plan-hub-row-meta type-caption"/, 'task metadata uses the shared caption scale');
+assert.doesNotMatch(markup, /truncate/, 'long task and goal titles are not clipped by the Plan summary');
 const dateOnlyMarkup = renderToStaticMarkup(React.createElement(PlanHub, {
   tasks: [task('date-only-display', '2026-11-07', undefined)], goals: [], today: '2026-11-07', onNavigate: () => {}, onCreateTask: () => {},
 }));
 assert.match(dateOnlyMarkup, /2026-11-07 · Today · end of day/);
-console.log('PLAN HUB SCHEDULE: 7 deterministic sorting and production-render checks passed.');
+console.log('PLAN HUB SCHEDULE: 10 deterministic sorting, readable type hierarchy and production-render checks passed.');

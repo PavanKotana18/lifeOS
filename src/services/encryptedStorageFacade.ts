@@ -341,33 +341,13 @@ export function createEncryptedStorageFacade(
       }),
 
       addContribution: async (
-        input: Omit<SavingsContribution, 'id' | 'createdAt'>,
-        linkedExpense?: Omit<Transaction, 'id' | 'createdAt'>
+        input: Omit<SavingsContribution, 'id' | 'createdAt'>
       ) => coordinator.run(async ctx => {
         if (!Number.isFinite(input.amount) || input.amount <= 0) {
           throw new Error('Contribution amount must be greater than zero.');
         }
         const goal = await ctx.get<SavingsGoal>('savingsGoals', input.goalId);
         if (!goal) throw new Error('Savings goal not found.');
-
-        if (linkedExpense) {
-          if (linkedExpense.type !== 'expense' ||
-              linkedExpense.amount !== input.amount ||
-              linkedExpense.date !== input.date) {
-            throw new Error('Linked expense must match the contribution amount and date.');
-          }
-          const categories = await ctx.getAll<Category>('categories');
-          if (!categories.some(c => c.name === linkedExpense.category && c.type === 'expense')) {
-            throw new Error('The selected category does not exist or does not match the transaction type.');
-          }
-          const tx: Transaction = {
-            ...linkedExpense,
-            id: helpers.createRecordId('tx'),
-            createdAt: new Date().toISOString(),
-          };
-          helpers.validateTransactionRecord(tx, true);
-          ctx.add('transactions', tx);
-        }
 
         ctx.put('savingsGoals', {
           ...goal,

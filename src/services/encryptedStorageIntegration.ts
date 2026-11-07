@@ -17,10 +17,19 @@ import {
 
 export const BOOTSTRAP_SETTING_KEYS = new Set([
   'theme',
+  'visualTheme',
   'biometricLockEnabled',
   'onboardingCompleted',
   'onboardingStarted',
-  'onboardingStep'
+  'onboardingStep',
+  // Display name is a profile preference needed before private storage setup;
+  // it is not a user record and remains the single source for the greeting.
+  'displayName',
+  // Notification controls are non-content preferences needed before first unlock.
+  'notificationPreferences',
+  'notificationsEnabled',
+  'notificationPermissionRequested',
+  'notificationDefaultsPending'
 ]);
 
 export type LifeOSRawDatabase = Record<EncryptedTable, DexieTableLike>;

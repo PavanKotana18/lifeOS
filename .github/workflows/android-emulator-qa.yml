@@ -4,7 +4,7 @@ on:
   push:
     branches: [qa/lifeos-android-workflow-coverage-20261106]
   pull_request:
-    branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107]
+    branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107]
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -36,6 +36,36 @@ jobs:
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: "8.2.1"
+      - name: Require and configure persistent debug signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LIFEOS_DEBUG_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LIFEOS_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$KEYSTORE_BASE64" ]] || missing+=(LIFEOS_DEBUG_KEYSTORE_BASE64)
+          [[ -n "$STORE_PASSWORD" ]] || missing+=(LIFEOS_DEBUG_KEYSTORE_PASSWORD)
+          [[ -n "$KEY_ALIAS" ]] || missing+=(LIFEOS_DEBUG_KEY_ALIAS)
+          [[ -n "$KEY_PASSWORD" ]] || missing+=(LIFEOS_DEBUG_KEY_PASSWORD)
+          if (( ${#missing[@]} )); then
+            echo "::error::Debug APK signing is mandatory. Configure missing GitHub Actions secrets: ${missing[*]}"
+            exit 1
+          fi
+          KEYSTORE_PATH="$RUNNER_TEMP/lifeos-debug.keystore"
+          PASSWORD_PATH="$RUNNER_TEMP/lifeos-debug-store-password"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          printf '%s' "$STORE_PASSWORD" > "$PASSWORD_PATH"
+          chmod 600 "$KEYSTORE_PATH" "$PASSWORD_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storetype PKCS12 -alias "$KEY_ALIAS" -storepass:file "$PASSWORD_PATH" >/dev/null
+          {
+            echo "LIFEOS_DEBUG_KEYSTORE_PATH=$KEYSTORE_PATH"
+            echo "LIFEOS_DEBUG_KEYSTORE_PASSWORD=$STORE_PASSWORD"
+            echo "LIFEOS_DEBUG_KEY_ALIAS=$KEY_ALIAS"
+            echo "LIFEOS_DEBUG_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Persistent debug signing keystore validated; secret values are not logged."
       - name: Test instrumentation report parser
         run: node scripts/android-instrumentation-to-junit.cjs --self-test
       - name: Verify pinned Gradle and compile app and instrumentation APKs
@@ -54,7 +84,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  android-api24-recovery-preflight:
+  android-api29-recovery-preflight:
     needs: build-test-apks
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -71,11 +101,11 @@ jobs:
         run: bash scripts/enable-github-runner-kvm.sh
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 24
+          api-level: 29
           target: google_apis
           arch: x86_64
           profile: "Nexus 5X"
-          avd-name: lifeos-api24-recovery-preflight
+          avd-name: lifeos-api29-recovery-preflight
           cores: 2
           ram-size: 2048M
           heap-size: 256M
@@ -91,32 +121,32 @@ jobs:
           import sys, xml.etree.ElementTree as ET
           root = ET.parse('qa-emulator-evidence/junit.xml').getroot()
           tests = root.findall('.//testcase')
-          print(f"API 24 recovery preflight: tests={len(tests)} failures={root.attrib.get('failures', '0')} skipped={root.attrib.get('skipped', '0')}")
+          print(f"API 29 recovery preflight: tests={len(tests)} failures={root.attrib.get('failures', '0')} skipped={root.attrib.get('skipped', '0')}")
           if len(tests) != 1 or root.attrib.get('failures', '0') != '0' or root.attrib.get('skipped', '0') != '0':
               sys.exit(1)
           PY
       - name: Capture sanitized emulator failure evidence
         if: failure()
         run: |
-          mkdir -p qa-api24-recovery-evidence
-          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-api24-recovery-evidence/boot-state.txt 2>&1
-          { timeout 5s adb devices -l || true; } > qa-api24-recovery-evidence/adb-devices.txt 2>&1
-          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-api24-recovery-evidence/logcat-errors.txt 2>&1
-          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-api24-recovery-evidence/failure.png 2>qa-api24-recovery-evidence/screenshot-error.txt
-          cp -R qa-emulator-evidence/. qa-api24-recovery-evidence/ 2>/dev/null || true
-      - name: Upload API 24 recovery evidence
+          mkdir -p qa-api29-recovery-evidence
+          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-api29-recovery-evidence/boot-state.txt 2>&1
+          { timeout 5s adb devices -l || true; } > qa-api29-recovery-evidence/adb-devices.txt 2>&1
+          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-api29-recovery-evidence/logcat-errors.txt 2>&1
+          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-api29-recovery-evidence/failure.png 2>qa-api29-recovery-evidence/screenshot-error.txt
+          cp -R qa-emulator-evidence/. qa-api29-recovery-evidence/ 2>/dev/null || true
+      - name: Upload API 29 recovery evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lifeos-api24-recovery-preflight-evidence
+          name: lifeos-api29-recovery-preflight-evidence
           path: |
             qa-emulator-evidence/**
-            qa-api24-recovery-evidence/**
+            qa-api29-recovery-evidence/**
           if-no-files-found: warn
           retention-days: 7
 
   android-smoke:
-    needs: [build-test-apks, android-api24-recovery-preflight]
+    needs: [build-test-apks, android-api29-recovery-preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -185,8 +215,8 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - id: compact-api24
-            api-level: 24
+          - id: compact-api29
+            api-level: 29
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M

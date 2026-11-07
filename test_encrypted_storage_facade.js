@@ -265,6 +265,7 @@ async function rejects(fn, pattern) {
       targetDate: '2027-01-01',
       category: 'Financial',
     });
+    const transactionsBefore = (await storage.transactions.getAll()).length;
 
     await storage.savings.addContribution({
       goalId: goal.id,
@@ -274,6 +275,9 @@ async function rejects(fn, pattern) {
     });
 
     assert.equal((await storage.savings.getContributions(goal.id)).length, 1);
+    assert.equal((await storage.transactions.getAll()).length, transactionsBefore,
+      'Savings contributions never create an expense transaction');
+    assert.equal((await storage.savings.getGoals()).find(row => row.id === goal.id).currentAmount, 500);
     await storage.savings.deleteGoal(goal.id);
     assert.equal((await storage.savings.getContributions(goal.id)).length, 0);
   });

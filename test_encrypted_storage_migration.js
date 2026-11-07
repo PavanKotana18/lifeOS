@@ -61,7 +61,7 @@ const tables = [
 
 const bootstrapKeys = [
   'theme', 'biometricLockEnabled', 'onboardingCompleted',
-  'onboardingStarted', 'onboardingStep'
+  'onboardingStarted', 'onboardingStep', 'displayName'
 ];
 
 async function createFixture(options = {}) {

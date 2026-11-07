@@ -1,6 +1,9 @@
 package com.lifeos.personal;
 
 import android.os.Bundle;
+import android.animation.ValueAnimator;
+import android.os.Handler;
+import android.os.Looper;
 import android.content.res.Configuration;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
@@ -10,8 +13,11 @@ import android.webkit.WebView;
 import android.widget.TextView;
 import android.view.WindowManager;
 import com.getcapacitor.BridgeActivity;
+import androidx.core.splashscreen.SplashScreen;
 
 public class MainActivity extends BridgeActivity {
+    private boolean coldLaunch;
+    private volatile boolean keepLaunchSplash;
     private boolean sensitiveScreen = true;
     private boolean activityResumed = false;
     private boolean webViewCompatibilityBlocked = false;
@@ -19,6 +25,24 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Save notification taps before Capacitor or React initialize. The native
+        // plugin keeps this action until the authenticated JS router acknowledges it.
+        NotificationTapLaunchPlugin.captureAction(this, getIntent());
+        coldLaunch = savedInstanceState == null;
+        keepLaunchSplash = coldLaunch;
+        SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
+        splashScreen.setKeepOnScreenCondition(() -> keepLaunchSplash);
+        splashScreen.setOnExitAnimationListener(provider -> {
+            if (!ValueAnimator.areAnimatorsEnabled()) {
+                provider.remove();
+                return;
+            }
+            provider.getView().animate().alpha(0f).setDuration(180L)
+                .withEndAction(provider::remove).start();
+        });
+        if (coldLaunch) {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> keepLaunchSplash = false, 2500L);
+        }
         registerPlugin(BiometricAuthPlugin.class);
         registerPlugin(LifeOSCryptoPlugin.class);
         registerPlugin(LifeOSBackupPlugin.class);
@@ -26,12 +50,43 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StorageAccessPlugin.class);
         registerPlugin(SystemAppearancePlugin.class);
         registerPlugin(ScreenCaptureProtectionPlugin.class);
+        registerPlugin(LaunchExperiencePlugin.class);
+        registerPlugin(NotificationTapLaunchPlugin.class);
+        registerPlugin(RuntimeInfoPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Start protected for every build. Debug UI may opt into screenshots only
         // after React confirms that the visible surface contains no secrets.
         applyScreenshotProtection();
+        applySystemFontScale();
         showWebViewUpdateIfRequired();
+    }
+
+    @Override
+    public void onNewIntent(android.content.Intent intent) {
+        setIntent(intent);
+        android.content.Intent notificationAction = new android.content.Intent(intent);
+        super.onNewIntent(intent);
+        NotificationTapLaunchPlugin.captureAction(this, notificationAction);
+    }
+
+    public boolean isColdLaunch() {
+        return coldLaunch;
+    }
+
+    public void releaseLaunchSplash() {
+        keepLaunchSplash = false;
+    }
+
+    static int webTextZoomForFontScale(float fontScale) {
+        if (Float.isNaN(fontScale) || Float.isInfinite(fontScale) || fontScale <= 0f) return 100;
+        return Math.round(fontScale * 100f);
+    }
+
+    private void applySystemFontScale() {
+        if (bridge == null || bridge.getWebView() == null) return;
+        float fontScale = getResources().getConfiguration().fontScale;
+        bridge.getWebView().getSettings().setTextZoom(webTextZoomForFontScale(fontScale));
     }
 
     public void setSensitiveScreen(boolean sensitive) {
@@ -120,6 +175,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        applySystemFontScale();
         notifyWebTheme(newConfig);
     }
 

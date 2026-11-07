@@ -160,13 +160,13 @@ async function fixture({ activate = true } = {}) {
   global.localStorage = memoryStorage();
   let key = crypto.randomBytes(32); // Synthetic, process-local; never logged or persisted.
   let unlocked = true;
-  let recoveryKey = null, recoveryVerified = false;
+  let recoveryKey = null, recoveryVerified = false, recoveryDeferred = false;
   const calls = [];
   const native = {
     calls,
     onStop() { unlocked = false; }, // SIMULATED Android handleOnStop, not Java execution.
     async getKeyState() { calls.push('getKeyState'); return { keyProvisioned: true,
-      recoveryProvisioned: true, recoveryNeedsRebind: recoveryKey !== null, metadataConsistent: true,
+      recoveryProvisioned: !recoveryDeferred, recoveryDeferred, recoveryNeedsRebind: recoveryKey !== null, metadataConsistent: true,
       keystoreAliasPresent: true, unlocked }; },
     async isUnlocked() { calls.push('isUnlocked'); return { unlocked }; },
     async unlock() { calls.push('unlock'); unlocked = true; return { success: true }; },
@@ -193,6 +193,9 @@ async function fixture({ activate = true } = {}) {
       return { success: true };
     },
     async setup() { throw new Error('Unexpected setup in preprovisioned fixture'); },
+    async deferRecovery() { calls.push('deferRecovery'); recoveryDeferred = true; return { success: true }; },
+    async prepareRecovery() { return { success: true, recoveryCode: 'A'.repeat(43), envelope: { version: 1, kdf: 'PBKDF2-HMAC-SHA-256', iterations: 600000, salt: Buffer.alloc(16).toString('base64'), iv: Buffer.alloc(12).toString('base64'), wrappedKey: Buffer.alloc(48).toString('base64') } }; },
+    async confirmRecovery() { recoveryDeferred = false; return { success: true }; },
     async encrypt({ plaintext, aad }) {
       calls.push('encrypt');
       assert.ok(unlocked, 'SIMULATED_NATIVE_KEY_LOCKED');
@@ -211,19 +214,29 @@ async function fixture({ activate = true } = {}) {
     }
   };
   const pending = new Map();
+  const delivered = new Map();
+  const notificationListeners = new Map();
   const notifications = {
     async createChannel() {}, async listChannels() { return { channels: [] }; },
+    async areEnabled() { return { value: true }; },
     async checkPermissions() { return { display: 'granted' }; },
     async requestPermissions() { return { display: 'granted' }; },
     async checkExactNotificationSetting() { return { exact_alarm: 'granted' }; },
     async getPending() { return { notifications: [...pending.values()] }; },
-    async cancel({ notifications }) { notifications.forEach(n => pending.delete(n.id)); },
+    async getDeliveredNotifications() { return { notifications: [...delivered.values()] }; },
+    async addListener(eventName, callback) {
+      const listeners = notificationListeners.get(eventName) || new Set();
+      listeners.add(callback); notificationListeners.set(eventName, listeners);
+      return { async remove() { listeners.delete(callback); } };
+    },
+    async cancel({ notifications }) { notifications.forEach(n => { pending.delete(n.id); delivered.delete(n.id); }); },
     async schedule({ notifications }) { notifications.forEach(n => pending.set(n.id, structuredClone(n))); }
   };
-  const plugins = { LifeOSCrypto: native };
+  const plugins = { LifeOSCrypto: native, LifeOSRuntimeInfo: { async getInfo() { return { androidApi: 35, packageName: 'com.lifeos.personal', versionName: 'test', versionCode: 1, batteryOptimizationExempt: false }; } } };
+  const availablePlugins = new Set(['LifeOSCrypto', 'LocalNotifications', 'LifeOSRuntimeInfo']);
   const nativeOverrides = {
-    '@capacitor/core': { Capacitor: { isNativePlatform: () => true,
-      isPluginAvailable: name => ['LifeOSCrypto', 'LocalNotifications'].includes(name) },
+    '@capacitor/core': { Capacitor: { isNativePlatform: () => true, getPlatform: () => 'android',
+      isPluginAvailable: name => availablePlugins.has(name) },
       registerPlugin: name => plugins[name] || new Proxy({}, { get: () => () => {
         throw new Error(`Unexpected native interface ${name}`);
       } }) },
@@ -238,12 +251,18 @@ async function fixture({ activate = true } = {}) {
   const notificationModule = load('src/services/notificationService.ts');
   const domain = load('src/services/domainUtils.ts');
   const preferences = load('src/services/userPreferences.ts');
-  const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false }, visualThemeId: 'soft-ivory-sage' };
+  const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false }, safeFirstRunBrowse: { current: false }, visualThemeId: 'soft-ivory-sage' };
   function appDeps() {
-    const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...db, ...notificationModule, ...state,
+    const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...load('src/services/todayLayout.ts'), ...db, ...notificationModule, ...state,
       ...load('src/services/csvExportService.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
+      reconcileNotificationPreferences: async () => {},
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
+      ensurePrivateStorageBeforeWrite: async () => {
+        if (!db.isEncryptedStorageActivated() || !db.sessionManager.isUnlocked()) {
+          throw new Error('Synthetic test admission rejected an unprotected write');
+        }
+      },
       encryptedSession: load('src/services/cryptoSessionCoordinator.ts').createProtectedSessionController(
         load('src/services/cryptoService.ts').CryptoService, db.sessionManager, {
           hasEncryptedRecords: db.hasEncryptedRecords,
@@ -253,10 +272,12 @@ async function fixture({ activate = true } = {}) {
           isStorageActive: db.isEncryptedStorageActivated,
         }),
       localStorage: global.localStorage, window: { confirm: () => true },
+      todayLayoutRef: { current: load('src/services/todayLayout.ts').DEFAULT_TODAY_LAYOUT },
       systemDarkPreference: () => false, applyDomTheme() {},
       BiometricService: { async isAvailable() { return { isAvailable: true }; } },
       backupPassphraseResolver: { current: null }, secureSetupResolver: { current: null },
       authCoordinator: { resetForBackground() {} }, notificationsEnabled: false,
+      confirmScreenshotResume: async () => {},
       notificationPreferences: notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
       effectiveNotificationPreferences: (p, master = false) => master ? p : notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
       async triggerBiometricAuth() { throw new Error('Unexpected optional biometric UI call'); },
@@ -270,7 +291,9 @@ async function fixture({ activate = true } = {}) {
   // Default integration fixtures actually migrate through production APIs;
   // security boundary tests explicitly request { activate: false }.
   if (activate) { db.sessionManager.unlock(); await db.activateEncryptedStorage(); }
-  return { ...db, native, pending, load, appDeps, ...notificationModule,
+  return { ...db, native, pending, delivered, notifications, notificationListeners, load, appDeps, ...notificationModule,
+    emitNotification(eventName, payload) { for (const callback of notificationListeners.get(eventName) || []) callback(payload); },
+    setPluginAvailable(name, available) { if (available) availablePlugins.add(name); else availablePlugins.delete(name); },
     async restart() {
       db.sessionManager.lock(); await db.sessionManager.waitForIdle();
       db.lifeOSDatabase.close(); await native.lock();
