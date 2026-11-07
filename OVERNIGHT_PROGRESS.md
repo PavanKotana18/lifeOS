@@ -250,3 +250,9 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - `npm run test:all`: Node regression chain completed successfully and Sentinel reported 6/6 suites passed, 0 failed, 0 blocked; Sentinel also explicitly marked physical SAF picker execution device-blocked. However, its Node process remained alive after printing `CI GATE STATUS: PASSED`; after >1 minute with no new output I terminated that hung runner. Therefore assertions passed, but the local aggregate command exit status is **incomplete** (terminated 143); do not call the command itself a clean exit. Full log: `/data/data/com.termux/files/home/.cache/lifeos-test-all-milestone-a.log`.
 - Original `~/lifeOS` remains unchanged: `src/App.tsx`, `test_auth_lifecycle.js`, `test_sec01_orphan_keystore.js` modified and `.audit-backup/` untracked, as recorded before this package.
 - Next exact steps: run final diff/checkpoint review; update PR #24 description with Today customization; commit and push this focused increment to `feature/lifeos2-milestone-a-20261107`; verify its CI once. Continue to the next existing product workflow only after this checkpoint.
+
+### Checkpoint after Today customization commit
+
+- Branch: `feature/lifeos2-milestone-a-20261107`; commit: `8cf3cc0` (`feat: add customizable Today dashboard`), based on `060fcfa7d5071ea38dd24b57c95c5cff64f5a49a`.
+- Changes are committed locally and await push/PR CI. No files remain outside this worktree's implementation scope.
+- Next exact step: push this branch, update existing draft PR #24 with the Today customization and the accurate local test-exit caveat, then verify the resulting CI run once.
