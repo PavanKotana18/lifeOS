@@ -137,7 +137,7 @@ assert.match(
 );
 console.log('PASS: Recovery metadata cleanup checks persistence');
 
-console.log('\nNATIVE RECOVERY SOURCE TESTS: 11/11 PASSED');
+console.log('\nNATIVE RECOVERY SOURCE TESTS: passed');
 
 
 const keyState = section(
@@ -159,4 +159,23 @@ assert.match(
   /RECOVERY_KDF_ITERATIONS/,
   'Recovery state must verify the supported KDF iteration count'
 );
+
+const deferral = section(
+  'public void deferRecovery(PluginCall call)',
+  'private void clearPendingRecoveryFields()'
+);
+assert.match(deferral, /!recoveryDeferralAllowed/);
+assert.match(deferral, /dataKey\s*==\s*null\s*\|\|\s*recoveryNeedsRebind/);
+assert.match(deferral, /!recoveryAbsent/);
+assert.match(deferral, /keyStore\(\)\.containsAlias\(KEY_ALIAS\)/);
+assert.match(deferral, /putBoolean\("recovery_deferred",\s*true\)[\s\S]*?\.commit\(\)/);
+assert.match(keyState, /result\.put\("recoveryDeferred",\s*recoveryDeferred\)/);
+const setup = section('@PluginMethod\n    public void setup(PluginCall call)', '@PluginMethod\n    public void unlock(PluginCall call)');
+assert.match(setup, /initial_setup_pending/);
+assert.match(setup, /aliasPresent\s*&&\s*!setupPending/, 'Unrecognized existing aliases remain blocked');
+assert.match(setup, /remove\(\"initial_setup_pending\"\)/);
+assert.match(setup, /only this explicitly[\s\S]*interrupted first-time setup may safely reuse the alias/);
+assert.match(setup, /recoveryDeferralAllowed = true;/, 'Only native setup enables one-time deferral');
+assert.equal((source.match(/recoveryDeferralAllowed = true;/g) || []).length, 1, 'No other native path may grant recovery deferral');
+console.log('PASS: recovery deferral is explicit, one-time, key-bound and represented in native state');
 console.log('PASS: Recovery metadata checks the supported KDF version');

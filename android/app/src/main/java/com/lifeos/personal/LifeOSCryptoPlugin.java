@@ -59,6 +59,7 @@ public class LifeOSCryptoPlugin extends Plugin {
     private boolean recoveryKeyVerified;
     private String recoveredSalt, recoveredIv, recoveredWrapped;
     private boolean setupInProgress;
+    private volatile boolean recoveryDeferralAllowed;
     private String pendingRecoverySalt;
     private String pendingRecoveryIv;
     private String pendingRecoveryWrapped;
@@ -495,6 +496,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                     .putString("recovery_wrapped", pendingRecoveryWrapped)
                     .putInt("recovery_version", 1)
                     .putInt("recovery_kdf_iterations", RECOVERY_KDF_ITERATIONS)
+                    .remove("recovery_deferred")
                     .commit();
 
                 if (!persisted) {
@@ -504,6 +506,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                 }
 
                 clearPendingRecoveryFields();
+                recoveryDeferralAllowed = false;
             }
 
             JSObject response = new JSObject();
@@ -515,6 +518,40 @@ public class LifeOSCryptoPlugin extends Plugin {
             call.reject("Unable to confirm recovery envelope");
         } finally {
             cryptoLock.readLock().unlock();
+        }
+    }
+
+    @PluginMethod
+    public void deferRecovery(PluginCall call) {
+        cryptoLock.writeLock().lock();
+        try {
+            if (!recoveryDeferralAllowed || dataKey == null || recoveryNeedsRebind) {
+                call.reject("Recovery can only be deferred immediately after explicit first-time setup");
+                return;
+            }
+            android.content.SharedPreferences prefs = getContext().getSharedPreferences(PREFS, 0);
+            String wrapped = prefs.getString("wrapped_key", null);
+            String iv = prefs.getString("wrapped_iv", null);
+            boolean recoveryAbsent = !prefs.contains("recovery_wrapped") && !prefs.contains("recovery_salt") &&
+                !prefs.contains("recovery_iv") && !prefs.contains("recovery_version") &&
+                !prefs.contains("recovery_kdf_iterations");
+            if (wrapped == null || iv == null || prefs.getInt("key_version", -1) != 1 || !recoveryAbsent ||
+                !keyStore().containsAlias(KEY_ALIAS)) {
+                call.reject("Current encryption state does not permit recovery deferral");
+                return;
+            }
+            if (!prefs.edit().putBoolean("recovery_deferred", true).commit()) {
+                call.reject("Unable to persist recovery preference");
+                return;
+            }
+            recoveryDeferralAllowed = false;
+            JSObject result = new JSObject();
+            result.put("success", true);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("Unable to persist recovery preference");
+        } finally {
+            cryptoLock.writeLock().unlock();
         }
     }
 
@@ -778,12 +815,28 @@ public class LifeOSCryptoPlugin extends Plugin {
 
             String existingWrapped = existingPrefs.getString("wrapped_key", null);
             String existingIv = existingPrefs.getString("wrapped_iv", null);
+            boolean setupPending = existingPrefs.getBoolean("initial_setup_pending", false);
+            boolean recoveryMetadataPresent = existingPrefs.contains("recovery_wrapped") ||
+                existingPrefs.contains("recovery_salt") || existingPrefs.contains("recovery_iv") ||
+                existingPrefs.contains("recovery_version") || existingPrefs.contains("recovery_kdf_iterations") ||
+                existingPrefs.getBoolean("recovery_deferred", false);
+            boolean aliasPresent = keyStore().containsAlias(KEY_ALIAS);
 
-            if (existingWrapped != null || existingIv != null) {
+            if (existingWrapped != null || existingIv != null || existingPrefs.contains("key_version") ||
+                recoveryMetadataPresent || (aliasPresent && !setupPending)) {
                 releaseSetupGuard();
                 call.reject(
-                    "Encryption is already initialized or partially initialized. Refusing to replace the existing key."
+                    "Encryption is already initialized, partially initialized, or has an unrecognized Keystore key. Refusing to replace it."
                 );
+                return;
+            }
+
+            // Persist intent before creating/using a Keystore alias. If Android
+            // cancels authentication or the Activity dies, only this explicitly
+            // interrupted first-time setup may safely reuse the alias on retry.
+            if (!setupPending && !existingPrefs.edit().putBoolean("initial_setup_pending", true).commit()) {
+                releaseSetupGuard();
+                call.reject("Unable to persist secure setup state");
                 return;
             }
 
@@ -812,6 +865,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                         .putString("wrapped_key", Base64.encodeToString(wrapped, Base64.NO_WRAP))
                         .putString("wrapped_iv", Base64.encodeToString(iv, Base64.NO_WRAP))
                         .putInt("key_version", 1)
+                        .remove("initial_setup_pending")
                         .commit();
 
                     if (!persisted) {
@@ -827,6 +881,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                     } finally {
                         cryptoLock.writeLock().unlock();
                     }
+                    recoveryDeferralAllowed = true;
 
                     JSObject response = new JSObject();
                     response.put("success", true);
@@ -1086,6 +1141,7 @@ public class LifeOSCryptoPlugin extends Plugin {
         try {
             lockGeneration++;
             clearDataKey();
+            recoveryDeferralAllowed = false;
             clearPendingRecovery();
         } finally {
             cryptoLock.writeLock().unlock();
@@ -1153,15 +1209,22 @@ public class LifeOSCryptoPlugin extends Plugin {
                 recoveryIv != null &&
                 recoveryIv.matches("[A-Za-z0-9+/]{16}");
 
+            boolean recoveryDeferred = prefs.getBoolean("recovery_deferred", false);
+            boolean initialSetupPending = prefs.getBoolean("initial_setup_pending", false);
+
             boolean aliasPresent = keyStore().containsAlias(KEY_ALIAS);
 
             boolean metadataConsistent =
                 (localAbsent || localComplete) &&
-                (recoveryAbsent || recoveryComplete);
+                (recoveryAbsent || recoveryComplete) &&
+                (!recoveryDeferred || (localComplete && recoveryAbsent)) &&
+                (!initialSetupPending || (localAbsent && recoveryAbsent && !recoveryDeferred));
 
             JSObject result = new JSObject();
             result.put("keyProvisioned", localComplete && aliasPresent);
             result.put("recoveryProvisioned", recoveryComplete);
+            result.put("recoveryDeferred", recoveryDeferred);
+            result.put("initialSetupPending", initialSetupPending);
             result.put("recoveryNeedsRebind", recoveryNeedsRebind);
             result.put("metadataConsistent", metadataConsistent);
             result.put("keystoreAliasPresent", aliasPresent);

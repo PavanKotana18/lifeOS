@@ -81,7 +81,7 @@ function financeRows(rows, sort = 'date-desc') {
     assert.equal(await resolveInitialSystemDark(false, async () => { throw new Error('plugin unavailable'); }), false, 'Browser/media fallback remains available');
   });
 
-  await test('Returning from Android permission settings reconciles onboarding only after biometric session restoration', () => fixture(async f => {
+  await test('Returning from Android permission settings restores protected users without replaying onboarding', () => fixture(async f => {
     const biometricAuthenticated = { current: false };
     const callback = h.bind(h.lifecycleCallback(), {
       ...h.noopSetters(h.lifecycleCallback()),
@@ -95,6 +95,7 @@ function financeRows(rows, sort = 'date-desc') {
       encryptedSession: { async lock() {}, async open() { f.native.calls.push('biometric'); biometricAuthenticated.current = true; } },
       authCoordinator: { resetForBackground() {} },
       startupComplete: { current: true },
+      safeFirstRunBrowse: { current: false },
       setClockNow() {},
       async triggerBiometricAuth() { f.native.calls.push('biometric'); biometricAuthenticated.current = true; return true; },
       async reloadAllData() { return { tasks: [], habits: [], goals: [], milestones: [] }; },
@@ -125,11 +126,9 @@ function financeRows(rows, sort = 'date-desc') {
     await callback({ isActive: true });
     assert.ok(f.native.calls.includes('biometric'), 'Background return must retain biometric authentication');
     assert.ok(f.native.calls.includes('refreshPermissionDiagnostics'), 'Permission diagnostics refresh after return');
-    assert.ok(f.native.calls.includes('checkDisplayPermission'));
-    assert.ok(f.native.calls.includes('checkExactAlarmPermission'));
     assert.ok(f.native.calls.indexOf('screenshot-resume-confirmed') > f.native.calls.indexOf('biometric'), 'Screenshot resume fence clears only after biometric session restoration');
-    assert.ok(f.native.calls.includes('setting:onboardingStep:4'), 'Granted notification permissions advance onboarding without another tap');
-    assert.ok(f.native.calls.includes('setting:notificationsEnabled:true'));
+    assert.ok(!f.native.calls.includes('setting:onboardingStep:4'), 'Permission return does not replay or advance onboarding');
+    assert.ok(!f.native.calls.includes('setting:notificationsEnabled:true'), 'Permission return does not silently enable notifications');
   }));
 
   await test('Exact-alarm settings flow records onboarding intent before Android can background the app', async () => {

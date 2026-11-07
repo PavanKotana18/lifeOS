@@ -54,6 +54,13 @@ async function main() {
     parent.filename &&
     parent.filename.endsWith('/src/db.integration.cjs')
   ) {
+    if (request === './services/encryptedStorageIntegration') {
+      return { BOOTSTRAP_SETTING_KEYS: new Set([
+        'theme', 'visualTheme', 'biometricLockEnabled',
+        'onboardingCompleted', 'onboardingStarted', 'onboardingStep'
+      ]) };
+    }
+
     if (request === './services/encryptedStorageRuntime') {
       return {
         createLifeOSEncryptedRuntime: () => ({

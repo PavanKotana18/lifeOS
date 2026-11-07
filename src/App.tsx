@@ -3,14 +3,15 @@ import packageInfo from '../package.json';
 import { CalendarDays, ChevronLeft, ChevronRight, Home, Leaf, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
-import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords } from './db';
+import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
 import { CryptoService, type PreparedRecovery } from './services/cryptoService.ts';
-import { createProtectedSessionController } from './services/cryptoSessionCoordinator';
+import { createProtectedSessionController, type NewUserRecoveryChoice } from './services/cryptoSessionCoordinator';
 import { encryptBackup, MAX_BACKUP_FILE_BYTES } from './services/backupCryptoService';
 import { decodeBackupForRestore } from './services/backupImportService';
 import BackupPassphraseDialog from './components/BackupPassphraseDialog';
 import RecoveryDialog from './components/RecoveryDialog';
 import SecureSetupDialog from './components/SecureSetupDialog';
+import FirstRecordSecurityDialog from './components/FirstRecordSecurityDialog';
 import { createRecoveryController } from './services/recoveryService';
 import { quoteCsvCell } from './services/csvExportService.ts';
 import { exportBackupFile } from './services/backupExportService';
@@ -29,11 +30,10 @@ import MoneyHome from './components/MoneyHome';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
-import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
-import Onboarding, { type AppearancePreference } from './components/Onboarding';
+import Onboarding from './components/Onboarding';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
@@ -62,6 +62,8 @@ const notificationLabels: Record<keyof NotificationPreferences, string> = {
   habitReminders: 'Habit reminders',
   milestoneReminders: 'Goal milestone reminders',
 };
+
+type AppearancePreference = 'dark' | 'light' | 'system';
 import {
   Transaction,
   Category,
@@ -111,6 +113,26 @@ export default function App() {
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [startupError, setStartupError] = useState('');
   const [appReady, setAppReady] = useState(false);
+  const [firstRecordSecurityOpen, setFirstRecordSecurityOpen] = useState(false);
+  const [recoveryProvisioned, setRecoveryProvisioned] = useState(false);
+  const [recoveryDeferred, setRecoveryDeferred] = useState(false);
+  const pendingDisplayName = useRef('');
+  const safeFirstRunBrowse = useRef(false);
+  const firstRecordSetupAuthorized = useRef(false);
+  const firstRecordSecurityResolver = useRef<((choice: NewUserRecoveryChoice | null) => void) | null>(null);
+  const requestFirstRecordSecurity = async (): Promise<NewUserRecoveryChoice | null> => {
+    await setSensitiveScreenshotState(true);
+    if (firstRecordSecurityResolver.current) throw new Error('Security setup is already open.');
+    return new Promise(resolve => {
+      firstRecordSecurityResolver.current = choice => {
+        firstRecordSecurityResolver.current = null;
+        setFirstRecordSecurityOpen(false);
+        resolve(choice);
+      };
+      setFirstRecordSecurityOpen(true);
+    });
+  };
+  useEffect(() => () => { firstRecordSecurityResolver.current?.(null); }, []);
 
   useEffect(() => {
     if (!appReady && !startupError) return;
@@ -163,7 +185,13 @@ export default function App() {
   const startupComplete = useRef(false);
   const encryptedSession = useRef(createProtectedSessionController(CryptoService, sessionManager, {
     hasEncryptedRecords,
-    requestInitialSetup: () => requestSecureSetup(),
+    requestInitialSetup: () => {
+      if (firstRecordSetupAuthorized.current) {
+        firstRecordSetupAuthorized.current = false;
+        return Promise.resolve(true);
+      }
+      return requestSecureSetup();
+    },
     confirmRecovery: prepared => requestSecureSetup(prepared),
     activateStorage: activateEncryptedStorage,
     isStorageActive: isEncryptedStorageActivated,
@@ -173,7 +201,7 @@ export default function App() {
     appReady,
     onboardingRequired,
     onboardingComplete,
-    secureSetupOpen: secureSetup !== null,
+    secureSetupOpen: secureSetup !== null || firstRecordSecurityOpen,
     recoveryOpen,
     backupPassphraseOpen: backupPrompt !== null,
     backupOperationInProgress,
@@ -335,6 +363,15 @@ export default function App() {
         if (disposed || !startupComplete.current) return;
 
         setClockNow(new Date());
+        // A pristine first install may browse without private storage. Returning
+        // from Android settings must not turn that safe browse into auth setup.
+        if (safeFirstRunBrowse.current && !isEncryptedStorageActivated()) {
+          setIsLocked(false);
+          setBiometricVerified(false);
+          await confirmScreenshotResume();
+          setActivityResumeGuard(false);
+          return;
+        }
         await encryptedSession.open();
         if (disposed || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
         biometricAuthenticated.current = true;
@@ -345,14 +382,10 @@ export default function App() {
         if (disposed) return;
         const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
         const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
-        const permissionResume = await reconcileNotificationOnboardingOnResume(StorageService.settings, NotificationService);
-        if (permissionResume.advanced) {
-          setNotificationPreferences(permissionResume.preferences);
-          setNotificationsEnabled(true);
-          setOnboardingStep(4);
-        }
+        // Returning from Android settings refreshes permissions/diagnostics but
+        // never resumes or advances the removed multi-page onboarding wizard.
         await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
-          effectiveNotificationPreferences(permissionResume.advanced ? permissionResume.preferences : prefs, permissionResume.advanced || master));
+          effectiveNotificationPreferences(prefs, master));
         if (!disposed) await refreshNotificationDiagnostics();
         if (!disposed) {
           await confirmScreenshotResume();
@@ -491,20 +524,48 @@ export default function App() {
           : 'Unavailable on this device'
     );
 
-    // Onboarding progress is intentionally bootstrap-safe.
+    // Only bootstrap-safe markers are read before encryption is active.
     const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
     const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
     let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
 
-    // The native key is authoritative on every process start. This owner
-    // explicitly provisions only databases without any ciphertext, confirms a
-    // memory-only recovery kit, then migrates/verifies before exposing records.
+    const nativeState = await CryptoService.getKeyState();
+    const hasCiphertext = await hasEncryptedRecords();
+    const hasExistingPrivateRows = await hasPrivateRows();
+    const safeFirstRunState = nativeState.metadataConsistent && !nativeState.keyProvisioned &&
+      !nativeState.recoveryProvisioned && !nativeState.recoveryDeferred &&
+      (!nativeState.keystoreAliasPresent || nativeState.initialSetupPending === true) &&
+      !nativeState.unlocked && !nativeState.recoveryNeedsRebind && !hasCiphertext && !hasExistingPrivateRows;
+    if (safeFirstRunState) {
+      // Empty installs and explicitly interrupted initial setup may browse
+      // without private storage; the first private write resumes setup.
+      safeFirstRunBrowse.current = true;
+      startupComplete.current = true;
+      setIsLocked(false);
+      setBiometricVerified(false);
+      setRecoveryProvisioned(false);
+      setRecoveryDeferred(false);
+      setDisplayName('');
+      setOnboardingRequired(!completed);
+      setOnboardingComplete(completed);
+      setOnboardingStep(0);
+      if (!started && !completed) await StorageService.settings.set('onboardingStarted', true);
+      setAppReady(true);
+      return;
+    }
+
+    safeFirstRunBrowse.current = false;
+    // Existing keys, ciphertext, and legacy records retain the existing
+    // authenticated migration/recovery path before private hydration.
     setIsLocked(true);
     await encryptedSession.open();
     if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Secure startup expired after app lock. Retry in the foreground.');
     biometricAuthenticated.current = true;
     setBiometricVerified(true);
     setIsLocked(false);
+    const openedKeyState = await CryptoService.getKeyState();
+    setRecoveryProvisioned(openedKeyState.recoveryProvisioned);
+    setRecoveryDeferred(openedKeyState.recoveryDeferred === true);
 
     // Private preferences are read only after session authorization.
     const storedCurrency = await StorageService.settings.get<UserPreferences['currency']>('currency', 'INR');
@@ -536,15 +597,7 @@ export default function App() {
       ...savedNotificationPreferences
     });
     setNotificationPermissionRequested(hasRequestedNotifications);
-    let notificationsEnabledAfterResume = notificationsOn;
-    const permissionResume = await reconcileNotificationOnboardingOnResume(StorageService.settings, NotificationService);
-    if (permissionResume.advanced) {
-      notificationsEnabledAfterResume = true;
-      savedOnboardingStep = 4;
-      setNotificationPreferences(permissionResume.preferences);
-      setNotificationsEnabled(true);
-      setOnboardingStep(4);
-    }
+    const notificationsEnabledAfterResume = notificationsOn;
 
     // This operation inspects private tables, so it must follow authentication.
     const legacyState = await StorageService.backup.hasData();
@@ -690,8 +743,13 @@ export default function App() {
   };
 
   const updateDisplayName = async (name: string) => {
+    const normalized = name.slice(0, 48).trim();
     setDisplayName(name.slice(0, 48));
-    await StorageService.settings.set('displayName', name.slice(0, 48).trim());
+    if (!isEncryptedStorageActivated()) {
+      pendingDisplayName.current = normalized;
+      return;
+    }
+    await StorageService.settings.set('displayName', normalized);
   };
 
   const toggleNotificationCategory = async (key: keyof NotificationPreferences) => {
@@ -760,6 +818,35 @@ export default function App() {
       setRecoveryOpen(true);
     } catch {
       setStartupError('Recovery cannot open because screenshot protection is unavailable. Your data remains protected.');
+    }
+  };
+
+  const setupRecoveryFromSettings = async () => {
+    if (!isEncryptedStorageActivated() || !sessionManager.isUnlocked()) {
+      showToast('Unlock LifeOS before setting up a recovery kit.', 'danger');
+      return;
+    }
+    try {
+      const state = await CryptoService.getKeyState();
+      if (state.recoveryProvisioned) {
+        setRecoveryProvisioned(true);
+        setRecoveryDeferred(false);
+        showToast('Your recovery kit is already confirmed.', 'info');
+        return;
+      }
+      if (!state.recoveryDeferred) throw new Error('Recovery setup is unavailable for this encryption state. Your data remains protected.');
+      const prepared = await CryptoService.prepareRecovery();
+      if (!(await requestSecureSetup(prepared))) return;
+      await CryptoService.confirmRecovery();
+      const verified = await CryptoService.getKeyState();
+      if (!verified.metadataConsistent || !verified.recoveryProvisioned || verified.recoveryDeferred) {
+        throw new Error('Recovery-kit confirmation could not be verified. Your encrypted records remain protected.');
+      }
+      setRecoveryProvisioned(true);
+      setRecoveryDeferred(false);
+      showToast('Recovery kit confirmed for this device.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not set up a recovery kit.', 'danger');
     }
   };
 
@@ -998,6 +1085,39 @@ export default function App() {
 
   const createOperation = useRef(false);
 
+  const ensurePrivateStorageBeforeWrite = async () => {
+    if (isEncryptedStorageActivated() && sessionManager.isUnlocked()) return;
+    const choice = await requestFirstRecordSecurity();
+    if (!choice) throw new Error('Security setup was cancelled. No private record was saved.');
+    firstRecordSetupAuthorized.current = true;
+    try {
+      await encryptedSession.open({ recoveryChoice: choice });
+    } finally {
+      firstRecordSetupAuthorized.current = false;
+    }
+    if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
+      throw new Error('Encrypted storage could not be verified. No private record was saved.');
+    }
+    safeFirstRunBrowse.current = false;
+    setIsLocked(false);
+    setBiometricEnabled(true);
+    setBiometricVerified(true);
+    biometricAuthenticated.current = true;
+    const state = await CryptoService.getKeyState();
+    if (!state.metadataConsistent || !state.keyProvisioned || !state.unlocked ||
+        (!state.recoveryProvisioned && !state.recoveryDeferred)) {
+      throw new Error('Encryption and recovery state could not be verified. No private record was saved.');
+    }
+    setRecoveryProvisioned(state.recoveryProvisioned);
+    setRecoveryDeferred(state.recoveryDeferred === true);
+    await StorageService.settings.set('biometricLockEnabled', true);
+    if (pendingDisplayName.current) {
+      await StorageService.settings.set('displayName', pendingDisplayName.current);
+      pendingDisplayName.current = '';
+    }
+    await reloadAllData();
+  };
+
   const saveNewRecord = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!createKind || createOperation.current) return;
@@ -1006,6 +1126,7 @@ export default function App() {
     const value = (key: string) => (createDraft[key] || '').trim();
     let reminderCouldNotEnable = false;
     try {
+      await ensurePrivateStorageBeforeWrite();
       if (createKind === 'task' && value('reminderAt') && (!notificationsEnabled || !notificationPreferences.taskReminders)) {
         const permission = await askNotificationPermission();
         if (permission.granted) {
@@ -1270,28 +1391,14 @@ export default function App() {
 
   if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 lifeos-border" style={{ borderTopColor: 'var(--accent)' }} aria-hidden="true" />}</div>;
 
+  if (firstRecordSecurityOpen) return <FirstRecordSecurityDialog onDecision={choice => {
+    void setSensitiveScreenshotState(false).catch(() => {});
+    firstRecordSecurityResolver.current?.(choice);
+  }} />;
+
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
-    preferences={notificationPreferences}
-    appearance={appearance}
-    initialStep={onboardingStep}
-    onStepChange={async step => { await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', step); setOnboardingStep(step); }}
-    onSaveIdentity={async name => { await updateDisplayName(name); }}
-    onEnableBiometric={handleEnableBiometric}
-    onSkipBiometric={() => {}}
-    onAppearance={applyAppearance}
-    onEnableNotifications={async selected => {
-      // Preserve the user's category choices before Android can background the
-      // Activity for permission settings. Keep the master switch off until grants.
-      await saveNotificationSelection(selected, false);
-      const permission = await askNotificationPermission();
-      if (!permission.granted) return { granted: false, status: permission.status, message: permission.message };
-      await saveNotificationSelection(selected, true);
-      await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(selected, true));
-      return { granted: true, status: 'granted' };
-    }}
-    onSkipNotifications={async () => { if (!notificationsEnabled) await saveNotificationSelection(DEFAULT_NOTIFICATION_PREFERENCES); }}
-    onOpenNotificationSettings={openNotificationSettings}
+    onSaveIdentity={updateDisplayName}
     onFinish={finishOnboarding}
   />;
 
@@ -1865,6 +1972,7 @@ export default function App() {
               <p className="text-xs text-secondary">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
+              {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
             </section>
 
             <section className="lifeos-panel rounded-2xl border p-5 space-y-3">

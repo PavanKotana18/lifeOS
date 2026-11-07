@@ -17,6 +17,7 @@ import {
 
 export const BOOTSTRAP_SETTING_KEYS = new Set([
   'theme',
+  'visualTheme',
   'biometricLockEnabled',
   'onboardingCompleted',
   'onboardingStarted',

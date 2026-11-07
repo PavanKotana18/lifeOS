@@ -160,13 +160,13 @@ async function fixture({ activate = true } = {}) {
   global.localStorage = memoryStorage();
   let key = crypto.randomBytes(32); // Synthetic, process-local; never logged or persisted.
   let unlocked = true;
-  let recoveryKey = null, recoveryVerified = false;
+  let recoveryKey = null, recoveryVerified = false, recoveryDeferred = false;
   const calls = [];
   const native = {
     calls,
     onStop() { unlocked = false; }, // SIMULATED Android handleOnStop, not Java execution.
     async getKeyState() { calls.push('getKeyState'); return { keyProvisioned: true,
-      recoveryProvisioned: true, recoveryNeedsRebind: recoveryKey !== null, metadataConsistent: true,
+      recoveryProvisioned: !recoveryDeferred, recoveryDeferred, recoveryNeedsRebind: recoveryKey !== null, metadataConsistent: true,
       keystoreAliasPresent: true, unlocked }; },
     async isUnlocked() { calls.push('isUnlocked'); return { unlocked }; },
     async unlock() { calls.push('unlock'); unlocked = true; return { success: true }; },
@@ -193,6 +193,9 @@ async function fixture({ activate = true } = {}) {
       return { success: true };
     },
     async setup() { throw new Error('Unexpected setup in preprovisioned fixture'); },
+    async deferRecovery() { calls.push('deferRecovery'); recoveryDeferred = true; return { success: true }; },
+    async prepareRecovery() { return { success: true, recoveryCode: 'A'.repeat(43), envelope: { version: 1, kdf: 'PBKDF2-HMAC-SHA-256', iterations: 600000, salt: Buffer.alloc(16).toString('base64'), iv: Buffer.alloc(12).toString('base64'), wrappedKey: Buffer.alloc(48).toString('base64') } }; },
+    async confirmRecovery() { recoveryDeferred = false; return { success: true }; },
     async encrypt({ plaintext, aad }) {
       calls.push('encrypt');
       assert.ok(unlocked, 'SIMULATED_NATIVE_KEY_LOCKED');
@@ -238,12 +241,17 @@ async function fixture({ activate = true } = {}) {
   const notificationModule = load('src/services/notificationService.ts');
   const domain = load('src/services/domainUtils.ts');
   const preferences = load('src/services/userPreferences.ts');
-  const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false }, visualThemeId: 'soft-ivory-sage' };
+  const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false }, safeFirstRunBrowse: { current: false }, visualThemeId: 'soft-ivory-sage' };
   function appDeps() {
     const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...load('src/services/todayLayout.ts'), ...db, ...notificationModule, ...state,
       ...load('src/services/csvExportService.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
+      ensurePrivateStorageBeforeWrite: async () => {
+        if (!db.isEncryptedStorageActivated() || !db.sessionManager.isUnlocked()) {
+          throw new Error('Synthetic test admission rejected an unprotected write');
+        }
+      },
       encryptedSession: load('src/services/cryptoSessionCoordinator.ts').createProtectedSessionController(
         load('src/services/cryptoService.ts').CryptoService, db.sessionManager, {
           hasEncryptedRecords: db.hasEncryptedRecords,

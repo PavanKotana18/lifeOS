@@ -30,6 +30,8 @@ export interface PreparedRecovery {
 export interface CryptoKeyState {
   keyProvisioned: boolean;
   recoveryProvisioned: boolean;
+  recoveryDeferred?: boolean;
+  initialSetupPending?: boolean;
   recoveryNeedsRebind: boolean;
   metadataConsistent: boolean;
   keystoreAliasPresent: boolean;
@@ -44,6 +46,7 @@ interface NativeCryptoPlugin {
     envelope: RecoveryEnvelope;
   }>;
   confirmRecovery(): Promise<{ success: boolean }>;
+  deferRecovery(): Promise<{ success: boolean }>;
   recoverWithSecret(options: {
     recoveryCode: string;
     envelope: RecoveryEnvelope;
@@ -170,6 +173,14 @@ export const CryptoService = Object.freeze({
     }
   },
 
+  async deferRecovery(): Promise<void> {
+    assertNativeCryptoAvailable();
+    const result = await nativeCrypto.deferRecovery();
+    if (!result || result.success !== true) {
+      throw new Error('Native recovery deferral could not be confirmed.');
+    }
+  },
+
   async recoverWithSecret(
     recoveryCode: string,
     envelope: RecoveryEnvelope
@@ -246,7 +257,11 @@ export const CryptoService = Object.freeze({
       throw new Error('Native encryption returned an invalid key state.');
     }
 
-    return state;
+    return {
+      ...state,
+      recoveryDeferred: state.recoveryDeferred === true,
+      initialSetupPending: state.initialSetupPending === true
+    };
   },
 
   async isUnlocked(): Promise<boolean> {

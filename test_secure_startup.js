@@ -19,21 +19,106 @@ function owner(f, overrides = {}) {
     });
 }
 function unprovisioned(f) {
-  let provisioned = false, recovery = false, setups = 0, preparations = 0;
+  let provisioned = false, recovery = false, recoveryDeferred = false, setups = 0, preparations = 0;
   const read = f.native.getKeyState;
   f.native.getKeyState = async () => ({ ...await read(), keyProvisioned: provisioned,
-    recoveryProvisioned: recovery, keystoreAliasPresent: provisioned,
+    recoveryProvisioned: recovery, recoveryDeferred, keystoreAliasPresent: provisioned,
     unlocked: provisioned && (await f.native.isUnlocked()).unlocked });
   f.native.setup = async () => { setups++; provisioned = true; return f.native.unlock(); };
   f.native.prepareRecovery = async () => { preparations++; return { success: true,
     recoveryCode: 'A'.repeat(43), envelope: { version: 1, kdf: 'PBKDF2-HMAC-SHA-256', iterations: 600000,
       salt: Buffer.alloc(16).toString('base64'), iv: Buffer.alloc(12).toString('base64'), wrappedKey: Buffer.alloc(48).toString('base64') } }; };
-  f.native.confirmRecovery = async () => { recovery = true; return { success: true }; };
+  f.native.confirmRecovery = async () => { recovery = true; recoveryDeferred = false; return { success: true }; };
+  f.native.deferRecovery = async () => { recoveryDeferred = true; return { success: true }; };
   return { get setups() { return setups; }, get preparations() { return preparations; } };
 }
 (async () => {
-  await test('Actual App fresh setup waits for explicit consent and complete-kit confirmation', async f => {
+  await test('A pristine first install reaches welcome without native authentication or private hydration', async f => {
+    f.native.getKeyState = async () => ({ keyProvisioned: false, recoveryProvisioned: false,
+      recoveryDeferred: false, recoveryNeedsRebind: false, metadataConsistent: true,
+      keystoreAliasPresent: false, unlocked: false });
+    let openCalls = 0, privateReads = 0;
+    const init = h.appFunction('initApp');
+    const deps = { ...f.appDeps(), ...h.noopSetters(init), safeFirstRunBrowse: { current: false }, encryptedSession: {
+      open: async () => { openCalls++; throw new Error('Fresh onboarding must not auto-authenticate'); },
+      lock: async () => {},
+    } };
+    const original = f.StorageService.transactions.getAll;
+    f.StorageService.transactions.getAll = async () => { privateReads++; throw new Error('Private read before setup'); };
+    try {
+      await h.bind(init, deps)();
+      assert.equal(openCalls, 0);
+      assert.equal(privateReads, 0);
+      assert.equal(f.sessionManager.isUnlocked(), false);
+      assert.equal(f.isEncryptedStorageActivated(), false);
+      assert.equal(deps.startupComplete.current, true);
+      assert.equal(await f.StorageService.settings.get('onboardingStarted', false), true);
+      f.native.getKeyState = async () => ({ keyProvisioned: false, recoveryProvisioned: false,
+        recoveryDeferred: false, initialSetupPending: true, recoveryNeedsRebind: false,
+        metadataConsistent: true, keystoreAliasPresent: true, unlocked: false });
+      const retryDeps = { ...f.appDeps(), ...h.noopSetters(init), safeFirstRunBrowse: { current: false }, encryptedSession: {
+        open: async () => { openCalls++; throw new Error('Interrupted setup should wait for the first private write'); }, lock: async () => {},
+      } };
+      await h.bind(init, retryDeps)();
+      assert.equal(openCalls, 0);
+      assert.equal(retryDeps.safeFirstRunBrowse.current, true);
+      assert.equal(f.isEncryptedStorageActivated(), false);
+    } finally { f.StorageService.transactions.getAll = original; }
+  });
+  await test('An interrupted native setup may retry only its marked orphan alias', async f => {
+    let state = { keyProvisioned: false, recoveryProvisioned: false, recoveryDeferred: false,
+      initialSetupPending: true, recoveryNeedsRebind: false, metadataConsistent: true,
+      keystoreAliasPresent: true, unlocked: false };
+    f.native.getKeyState = async () => ({ ...state });
+    let setups = 0;
+    f.native.setup = async () => { setups++; state = { ...state, keyProvisioned: true,
+      initialSetupPending: false, unlocked: true }; return { success: true }; };
+    f.native.deferRecovery = async () => { state = { ...state, recoveryDeferred: true }; return { success: true }; };
+    const c = owner(f);
+    await c.open({ recoveryChoice: 'later' });
+    assert.equal(setups, 1);
+    assert.equal((await f.native.getKeyState()).initialSetupPending, false);
+    assert.equal((await f.native.getKeyState()).recoveryDeferred, true);
+    assert.equal(f.isEncryptedStorageActivated(), true);
+  });
+  await test('First-record gate encrypts the pending name before the caller may write', async f => {
+    const state = unprovisioned(f);
+    const expression = h.appFunction('ensurePrivateStorageBeforeWrite');
+    const c = owner(f);
+    const deps = { ...f.appDeps(), encryptedSession: c, requestFirstRecordSecurity: async () => 'later',
+      firstRecordSetupAuthorized: { current: false }, safeFirstRunBrowse: { current: true },
+      pendingDisplayName: { current: 'Synthetic User' }, biometricAuthenticated: { current: false },
+      setIsLocked() {}, setBiometricEnabled() {}, setBiometricVerified() {},
+      setRecoveryProvisioned() {}, setRecoveryDeferred() {}, async reloadAllData() {} };
+    await h.bind(expression, deps)();
+    assert.equal(state.setups, 1);
+    assert.equal(state.preparations, 0);
+    assert.equal(deps.safeFirstRunBrowse.current, false);
+    assert.equal(deps.pendingDisplayName.current, '');
+    assert.equal(f.isEncryptedStorageActivated(), true);
+    const nameRow = await f.lifeOSDatabase.settings.get('displayName');
+    assert.equal(nameRow.__lifeosEncrypted, 1);
+    assert.equal(nameRow.value, undefined);
+    await f.StorageService.categories.add({ id: 'synthetic-food', name: 'Food', type: 'expense' });
+    const tx = await f.StorageService.transactions.add({ type: 'expense', amount: 2.5, category: 'Food', description: 'Synthetic record', date: '2026-11-07', paymentMethod: 'Cash' });
+    assert.equal((await f.lifeOSDatabase.transactions.get(tx.id)).__lifeosEncrypted, 1);
+  });
+  await test('Cancelling contextual first-record security does not provision or write private data', async f => {
+    const state = unprovisioned(f), expression = h.appFunction('ensurePrivateStorageBeforeWrite');
+    const ensure = h.bind(expression, { ...f.appDeps(), encryptedSession: owner(f), requestFirstRecordSecurity: async () => null,
+      firstRecordSetupAuthorized: { current: false }, safeFirstRunBrowse: { current: true },
+      pendingDisplayName: { current: 'Synthetic User' }, biometricAuthenticated: { current: false },
+      setIsLocked() {}, setBiometricEnabled() {}, setBiometricVerified() {}, setRecoveryProvisioned() {},
+      setRecoveryDeferred() {}, async reloadAllData() {} });
+    await assert.rejects(ensure(), /cancelled/);
+    assert.equal(state.setups, 0);
+    assert.equal(f.isEncryptedStorageActivated(), false);
+    assert.equal(await f.lifeOSDatabase.transactions.count(), 0);
+    await assert.rejects(f.StorageService.settings.set('displayName', 'Synthetic User'), /Encrypted storage is not ready/);
+  });
+  await test('Legacy-data startup waits for explicit consent and complete-kit confirmation', async f => {
     const state = unprovisioned(f), consent = deferred(), kit = deferred(), shown = deferred();
+    await f.lifeOSDatabase.categories.put({ id: 'synthetic-legacy', name: 'Synthetic legacy', type: 'expense' });
     const c = owner(f, { requestInitialSetup: () => consent.promise,
       confirmRecovery: prepared => { assert.equal(prepared.recoveryCode.length, 43); shown.resolve(); return kit.promise; } });
     const init = h.appFunction('initApp');
@@ -47,14 +132,46 @@ function unprovisioned(f) {
     await shown.promise;
     assert.equal(f.isEncryptedStorageActivated(), false);
     assert.equal(f.sessionManager.isUnlocked(), false);
-    assert.equal(await f.lifeOSDatabase.categories.count(), 0);
+    assert.equal(await f.lifeOSDatabase.categories.count(), 1);
     kit.resolve(true); await opening;
     assert.equal(state.setups, 1); assert.equal(f.isEncryptedStorageActivated(), true);
+    await f.StorageService.categories.add({ id: 'synthetic-food', name: 'Food', type: 'expense' });
     const tx = await f.StorageService.transactions.add({ type: 'expense', amount: 12.34,
       category: 'Food', description: 'Synthetic startup fixture', date: '2026-11-06', paymentMethod: 'Cash' });
     const raw = await f.lifeOSDatabase.transactions.get(tx.id);
     assert.equal(raw.__lifeosEncrypted, 1); assert.equal(raw.description, undefined);
     assert.equal((await f.StorageService.transactions.getAll())[0].description, 'Synthetic startup fixture');
+  });
+  await test('New user may explicitly defer recovery after native setup and activate encrypted storage', async f => {
+    const state = unprovisioned(f);
+    await owner(f).open({ recoveryChoice: 'later' });
+    const keyState = await f.native.getKeyState();
+    assert.equal(state.setups, 1);
+    assert.equal(state.preparations, 0);
+    assert.equal(keyState.recoveryDeferred, true);
+    assert.equal(keyState.recoveryProvisioned, false);
+    assert.equal(f.isEncryptedStorageActivated(), true);
+    await f.StorageService.categories.add({ id: 'synthetic-food', name: 'Food', type: 'expense' });
+    const id = await f.StorageService.transactions.add({ type: 'expense', amount: 9.5, category: 'Food', description: 'Synthetic deferred recovery', date: '2026-11-07', paymentMethod: 'Cash' });
+    const raw = await f.lifeOSDatabase.transactions.get(id.id);
+    assert.equal(raw.__lifeosEncrypted, 1);
+    assert.equal(raw.description, undefined);
+    const reopen = owner(f, { confirmRecovery: async () => { throw new Error('Deferred existing key must not demand a recovery kit'); } });
+    await owner(f).lock();
+    await reopen.open();
+    assert.equal((await f.native.getKeyState()).recoveryDeferred, true);
+    assert.equal((await f.StorageService.transactions.getAll())[0].description, 'Synthetic deferred recovery');
+  });
+  await test('A provisioned key from an interrupted attempt cannot be reclassified as recovery-deferred', async f => {
+    const state = unprovisioned(f);
+    await assert.rejects(owner(f, { confirmRecovery: async () => false }).open(), /cancelled/);
+    await owner(f).open({ recoveryChoice: 'later' });
+    const keyState = await f.native.getKeyState();
+    assert.equal(state.setups, 1);
+    assert.equal(state.preparations, 2);
+    assert.equal(keyState.recoveryDeferred, false);
+    assert.equal(keyState.recoveryProvisioned, true);
+    assert.equal(f.isEncryptedStorageActivated(), true);
   });
   await test('Fresh consent cancellation leaves key and private records unchanged', async f => {
     const state = unprovisioned(f);
