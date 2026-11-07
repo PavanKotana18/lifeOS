@@ -163,6 +163,14 @@ check(
   app.includes('{weekly.completed}/{weekly.scheduled} days'),
   'Habit UI displays scheduled-day denominator'
 );
+check(
+  app.includes('aria-pressed={stats.completedToday}') && app.includes('flex h-11 w-11'),
+  'UI source: completion control exposes pressed state and a 44px touch target'
+);
+check(
+  app.includes('role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`}'),
+  'UI source: weekly completion indicator exposes a text alternative'
+);
 
 // Habit UI write paths must be centralised and surface persistence/refresh failures.
 check(
@@ -200,5 +208,5 @@ check(
   'Habits tab uses the shared deletion handler'
 );
 
-console.log(`PRODUCTION HABIT ANALYTICS TESTS: ${passed}/32 PASSED`);
-if (passed !== 32) process.exitCode = 1;
+console.log(`HABIT ANALYTICS AND UI WIRING: ${passed}/34 checks PASSED`);
+if (passed !== 34) process.exitCode = 1;
