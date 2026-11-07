@@ -1,0 +1,18 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const service = fs.readFileSync('src/services/notificationService.ts', 'utf8');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
+const nativeScheduler = fs.readFileSync('node_modules/@capacitor/local-notifications/android/src/main/java/com/capacitorjs/plugins/localnotifications/LocalNotificationManager.java', 'utf8');
+const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
+assert.match(service, /return isNative\(\) && await this\.checkPermission\(\) === 'granted'/, 'notification display permission gates scheduling');
+assert.match(nativeScheduler, /Notification scheduled with non-exact alarm/);
+assert.match(nativeScheduler, /alarmManager\.setAndAllowWhileIdle/, 'native plugin falls back to inexact allow-while-idle delivery');
+assert.doesNotMatch(service, /body: task\.title/, 'scheduled reminder body must not expose the task title');
+assert.match(service, /permission-denied-or-revoked/, 'permission loss is diagnostically distinguishable');
+assert.match(service, /schedule-verification-missing/, 'scheduling is checked against the native pending queue');
+assert.match(service, /visibility: 0/, 'new channel requests private lock-screen visibility');
+assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
+assert.match(manifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
+assert.match(app, /const exactAlarm = await NotificationService\.checkExactAlarmPermission\(\);[\s\S]*?status: exactAlarm === 'granted' \? 'granted' : 'approximate'/, 'exact alarm access is reported as precision, not a hard delivery prerequisite');
+console.log('NOTIFICATION DELIVERY CONTRACT: Android permission, inexact fallback, queue verification, privacy and reboot manifest checks passed (source contract only; no delivery test).');

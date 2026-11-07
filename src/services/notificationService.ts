@@ -96,20 +96,24 @@ export const NotificationService = {
   },
 
   async canScheduleNotifications() {
-    if (!isNative()) return false;
-    if (await this.checkPermission() !== 'granted') return false;
-    return await this.checkExactAlarmPermission() === 'granted';
+    // Capacitor's Android scheduler uses setAndAllowWhileIdle when exact-alarm
+    // access is unavailable. POST_NOTIFICATIONS is the delivery gate; exact
+    // access controls precision and must not disable all reminders.
+    return isNative() && await this.checkPermission() === 'granted';
   },
 
   async syncTasks(tasks: Task[], preferences: NotificationPreferences) {
     if (!isNative()) return;
     try {
       await this.ensureChannel();
+      if (!(await this.canScheduleNotifications())) {
+        writeLastError('permission-denied-or-revoked');
+        return;
+      }
       const pending = await LocalNotifications.getPending();
       const taskKinds = new Set(['taskReminders', 'upcomingDeadlines', 'overdueAlerts']);
       const oldTaskNotifications = pending.notifications.filter(item => taskKinds.has(String(item.extra?.kind || '')));
       await cancelIds(oldTaskNotifications.map(item => item.id));
-      if (!(await this.canScheduleNotifications())) return;
 
       const labels: Record<string, string> = {
         taskReminders: 'Task reminder', upcomingDeadlines: 'Upcoming deadline', overdueAlerts: 'Task overdue',
@@ -120,7 +124,13 @@ export const NotificationService = {
         schedule: { at: plan.at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: plan.kind, taskId: task.id },
       })));
-      if (notifications.length) await schedule(notifications);
+      if (notifications.length) {
+        await schedule(notifications);
+        const after = await LocalNotifications.getPending();
+        const scheduledIds = new Set(after.notifications.map(item => item.id));
+        const missing = notifications.filter(item => !scheduledIds.has(item.id));
+        if (missing.length) throw new Error(`schedule-verification-missing:${missing.length}`);
+      }
       writeLastError('');
     } catch (error) {
       writeLastError(errorMessage(error));
@@ -148,7 +158,7 @@ export const NotificationService = {
     });
     await cancelPendingKinds(['habitReminder']);
     await cancelIds(habits.flatMap(habit => [1, 2, 3, 4, 5, 6, 7].map(day => notificationId(`habit:${habit.id}:${day}`))));
-    if (!preferences.habitReminders || !(await this.canScheduleNotifications())) return;
+    if (!preferences.habitReminders || !(await this.canScheduleNotifications())) { if (preferences.habitReminders) writeLastError('permission-denied-or-revoked'); return; }
     await schedule(entries.map(({ habit, hour, minute, weekday }) => ({
       id: notificationId(`habit:${habit.id}:${weekday}`),
       title: 'Habit reminder', body: `Time for: ${habit.name}`,
@@ -174,7 +184,7 @@ export const NotificationService = {
     const activeMilestones = milestones.filter(milestone => !milestone.completed && milestone.targetDate && !completedGoalIds.has(milestone.goalId));
     const ids = milestones.map(milestone => notificationId(`milestone:${milestone.id}`));
     await cancelIds(ids);
-    if (!preferences.milestoneReminders || !(await this.canScheduleNotifications())) return;
+    if (!preferences.milestoneReminders || !(await this.canScheduleNotifications())) { if (preferences.milestoneReminders) writeLastError('permission-denied-or-revoked'); return; }
     const goalById = new Map(goals.map(goal => [goal.id, goal]));
     const now = new Date();
     const notifications = activeMilestones.flatMap(milestone => {

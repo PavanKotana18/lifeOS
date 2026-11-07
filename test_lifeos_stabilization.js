@@ -131,7 +131,7 @@ function financeRows(rows, sort = 'date-desc') {
     assert.ok(!f.native.calls.includes('setting:notificationsEnabled:true'), 'Permission return does not silently enable notifications');
   }));
 
-  await test('Exact-alarm settings flow records onboarding intent before Android can background the app', async () => {
+  await test('Missing exact-alarm access keeps contextual reminders enabled with approximate delivery', async () => {
     const persisted = [];
     const sequence = [];
     const askPermission = h.bind(h.appFunction('askNotificationPermission'), {
@@ -142,16 +142,13 @@ function financeRows(rows, sort = 'date-desc') {
         isSupported: () => true,
         async checkPermission() { sequence.push('check-display'); return 'granted'; },
         async checkExactAlarmPermission() { sequence.push('check-exact'); return 'denied'; },
-        async requestExactAlarmPermission() {
-          assert.ok(persisted.some(([key, value]) => key === 'notificationPermissionRequested' && value === true));
-          sequence.push('open-exact-settings');
-          return 'denied';
-        },
       },
     });
     const result = await askPermission();
-    assert.equal(result.granted, false);
-    assert.ok(sequence.indexOf('persist:notificationPermissionRequested') < sequence.indexOf('open-exact-settings'));
+    assert.equal(result.granted, true, 'Android inexact alarm fallback can still schedule reminders');
+    assert.equal(result.status, 'approximate');
+    assert.ok(persisted.some(([key, value]) => key === 'notificationPermissionRequested' && value === true));
+    assert.ok(!sequence.includes('open-exact-settings'), 'Exact access does not launch a settings detour');
   });
 
   console.log(`LIFEOS STABILIZATION: ${passed}/5 passed`);

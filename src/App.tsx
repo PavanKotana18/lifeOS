@@ -699,20 +699,11 @@ export default function App() {
         }
       }
 
-      // LifeOS schedules reminders with allowWhileIdle; Android exact-alarm
-      // access is a separate permission from notification display access.
-      let exactAlarm = await NotificationService.checkExactAlarmPermission();
-      if (exactAlarm !== 'granted') {
-        exactAlarm = await NotificationService.requestExactAlarmPermission();
-      }
-      if (exactAlarm !== 'granted') {
-        return {
-          granted: false,
-          status: 'exact-alarm-' + exactAlarm,
-          message: 'Allow Alarms & reminders for LifeOS in Android settings to schedule reminders.'
-        };
-      }
-      return { granted: true, status: 'granted' };
+      // Android can deliver approximate reminders without exact-alarm access.
+      // Keep the exact-alarm state visible in Settings, but never interrupt task
+      // creation or claim reminders cannot schedule solely for that reason.
+      const exactAlarm = await NotificationService.checkExactAlarmPermission();
+      return { granted: true, status: exactAlarm === 'granted' ? 'granted' : 'approximate' };
 
 
     } catch (error) {
