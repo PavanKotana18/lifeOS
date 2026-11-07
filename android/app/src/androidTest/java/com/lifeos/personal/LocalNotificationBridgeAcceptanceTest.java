@@ -69,6 +69,10 @@ public class LocalNotificationBridgeAcceptanceTest {
                 .executeShellCommand("input keyevent 3");
             if (home != null) home.close();
             Thread.sleep(20_000L);
+            ParcelFileDescriptor relaunch = InstrumentationRegistry.getInstrumentation().getUiAutomation()
+                .executeShellCommand("am start -n com.lifeos.personal/.MainActivity");
+            if (relaunch != null) relaunch.close();
+            Thread.sleep(1_000L);
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
             WebViewTestSupport.awaitReactRoot(scenario);
             boolean visible = false;
