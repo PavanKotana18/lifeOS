@@ -164,7 +164,8 @@ check(
 
 // UI explains that goal progress is not an expense.
 check(
-  app.includes('Account transfers are not available yet') &&
+  app.includes('A contribution updates this savings goal only') &&
+  app.includes('record that separately as a transfer') &&
   !app.includes('Record this contribution as an expense in monthly cash flow'),
   'Savings contribution UI distinguishes saving from spending'
 );

@@ -5,6 +5,7 @@ const path = require('path');
 const Module = require('module');
 const ts = require('typescript');
 const assert = require('assert');
+const Dexie = require('dexie');
 
 async function main() {
   const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db, rawStorageService as legacyStorageService };\n';
@@ -27,6 +28,16 @@ async function main() {
   financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.atomicity.cjs');
   financeLoaded.paths = module.paths;
   financeLoaded._compile(financeCompiled, financeLoaded.filename);
+  const accountingSource = fs.readFileSync(path.join(__dirname, 'src/services/financialAccounting.ts'), 'utf8');
+  const accountingCompiled = ts.transpileModule(accountingSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const accountingLoaded = new Module(path.join(__dirname, 'src/services/financialAccounting.atomicity.cjs'), module);
+  accountingLoaded.filename = path.join(__dirname, 'src/services/financialAccounting.atomicity.cjs');
+  accountingLoaded.paths = module.paths;
+  const accountingRequire = accountingLoaded.require.bind(accountingLoaded);
+  accountingLoaded.require = request => request === './financeCore' ? financeLoaded.exports : accountingRequire(request);
+  accountingLoaded._compile(accountingCompiled, accountingLoaded.filename);
   const sessionSource = fs.readFileSync(
     path.join(__dirname, 'src/services/sessionManager.ts'),
     'utf8'
@@ -62,6 +73,7 @@ async function main() {
     parent.filename.endsWith('/src/db.atomicity.cjs')
   ) {
     if (request === './services/financeCore') return financeLoaded.exports;
+    if (request === './services/financialAccounting') return accountingLoaded.exports;
     if (request === './services/encryptedStorageIntegration') {
       return { BOOTSTRAP_SETTING_KEYS: new Set([
         'theme', 'visualTheme', 'biometricLockEnabled',
@@ -107,7 +119,8 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const { db, legacyStorageService: StorageService, sessionManager } = loaded.exports;
+  const { db, LifeOSDatabase, legacyStorageService: StorageService, sessionManager } = loaded.exports;
+  const { calculateAccountBalances } = accountingLoaded.exports;
   await db.open();
 
   let passed = 0;
@@ -687,6 +700,117 @@ async function main() {
     await StorageService.savings.deleteContribution(exactContribution.id);
     check((await db.savingsGoals.get('sg-exact')).currentAmountMinor === '10' && await db.savingsContributions.where('goalId').equals('sg-exact').count() === 0,
       'Deleting a contribution atomically reconciles goal progress without changing transactions');
+
+    const cash = await StorageService.accounts.add({ name: 'Everyday cash', type: 'cash', currencyCode: 'USD', openingBalanceMinor: '10000', isActive: true });
+    const bank = await StorageService.accounts.add({ name: 'Main bank', type: 'bank', currencyCode: 'USD', openingBalanceMinor: '5000', isActive: true });
+    const card = await StorageService.accounts.add({ name: 'Credit card', type: 'credit-card', currencyCode: 'USD', openingBalanceMinor: '20000', isActive: true });
+    const rupees = await StorageService.accounts.add({ name: 'Rupee wallet', type: 'wallet', currencyCode: 'INR', openingBalanceMinor: '0', isActive: true });
+    const unusedNonzero = await StorageService.accounts.add({ name: 'Unused funded wallet', type: 'wallet', currencyCode: 'USD', openingBalanceMinor: '500', isActive: true });
+    await assert.rejects(StorageService.accounts.delete(unusedNonzero.id), /non-zero opening balance/i);
+    check(Boolean(await db.financialAccounts.get(unusedNonzero.id)), 'Deleting an unused funded account cannot erase its opening amount');
+    await StorageService.accounts.archive(unusedNonzero.id);
+    const unusedEmpty = await StorageService.accounts.add({ name: 'Empty wallet', type: 'wallet', currencyCode: 'USD', openingBalanceMinor: '0', isActive: true });
+    await StorageService.accounts.delete(unusedEmpty.id);
+    check(!(await db.financialAccounts.get(unusedEmpty.id)), 'An unused zero-balance account can be deleted safely');
+    const transactionCountBeforeAccounts = await db.transactions.count();
+    const openingBalances = calculateAccountBalances([cash, bank, card, rupees], [], []);
+    check(openingBalances.get(cash.id) === 10000n && openingBalances.get(card.id) === 20000n && await db.transactions.count() === transactionCountBeforeAccounts,
+      'Opening balances affect account balances only and never create income records');
+
+    const transactionCountBeforePosting = await db.transactions.count();
+    await StorageService.transactions.add({ type: 'expense', amount: 12.34, amountMinor: '1234', currencyCode: 'USD', accountId: cash.id,
+      category: 'Food', description: 'Account-linked purchase', date: '2026-11-08', paymentMethod: 'Cash' });
+    await StorageService.transactions.add({ type: 'income', amount: 3, amountMinor: '300', currencyCode: 'USD', accountId: cash.id,
+      category: 'Salary', description: 'Account-linked income', date: '2026-11-08', paymentMethod: 'Bank' });
+    await StorageService.transactions.add({ type: 'expense', amount: 10, amountMinor: '1000', currencyCode: 'USD', accountId: card.id,
+      category: 'Food', description: 'Card purchase', date: '2026-11-08', paymentMethod: 'Credit card' });
+    const transferId = 'transfer-idempotency-test';
+    const transfer = await StorageService.accounts.addTransfer({ id: transferId, fromAccountId: cash.id, toAccountId: bank.id,
+      fromAmountMinor: '500', toAmountMinor: '500', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08' });
+    await assert.rejects(StorageService.accounts.addTransfer({ id: transferId, fromAccountId: cash.id, toAccountId: bank.id,
+      fromAmountMinor: '500', toAmountMinor: '500', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08' }));
+    await StorageService.accounts.addTransfer({ fromAccountId: bank.id, toAccountId: card.id, fromAmountMinor: '1000', toAmountMinor: '1000',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08', notes: 'Card payment' });
+    await assert.rejects(StorageService.accounts.update(cash.id, { openingBalanceMinor: '1' }), /opening balance cannot change/i);
+    check((await db.financialAccounts.get(cash.id)).openingBalanceMinor === '10000',
+      'Account opening balance cannot be rewritten after transactions or transfers exist');
+    await StorageService.accounts.addTransfer({ fromAccountId: cash.id, toAccountId: rupees.id, fromAmountMinor: '100', toAmountMinor: '8300',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'INR', exchangeRate: '83', date: '2026-11-08' });
+    const balances = calculateAccountBalances([cash, bank, card, rupees], await db.transactions.toArray(), await db.accountTransfers.toArray());
+    check(balances.get(cash.id) === 8466n && balances.get(bank.id) === 4500n && balances.get(card.id) === 20000n && balances.get(rupees.id) === 8300n,
+      'Account balances reconcile opening amounts, income, expenses, liabilities, same-currency and explicit FX transfers');
+    check(await db.transactions.count() === transactionCountBeforePosting + 3 && await db.accountTransfers.count() === 3,
+      'Transfers remain separately linked ledger entries and do not inflate income or expense transactions');
+    await assert.rejects(StorageService.accounts.addTransfer({ fromAccountId: cash.id, toAccountId: rupees.id, fromAmountMinor: '100', toAmountMinor: '1',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'INR', exchangeRate: '83', date: '2026-11-08' }), /rate/i);
+    check(await db.accountTransfers.count() === 3, 'An invalid cross-currency transfer leaves no partial record');
+    const originalFxTransfer = (await db.accountTransfers.toArray()).find(row => row.fromAccountId === cash.id && row.toAccountId === rupees.id);
+    const reversal = await StorageService.accounts.reverseTransfer(originalFxTransfer.id, '2026-11-09');
+    check(reversal.reversalOfId === originalFxTransfer.id && reversal.fromAmountMinor === originalFxTransfer.toAmountMinor && reversal.toAmountMinor === originalFxTransfer.fromAmountMinor && reversal.exchangeRate === undefined,
+      'Cross-currency reversal preserves the exact original minor-unit amounts as a linked counter-entry');
+    await assert.rejects(StorageService.accounts.reverseTransfer(originalFxTransfer.id, '2026-11-09'), /already been reversed/i);
+    await assert.rejects(StorageService.accounts.updateTransfer(originalFxTransfer.id, { notes: 'change' }), /reversed/i);
+    await assert.rejects(StorageService.accounts.deleteTransfer(originalFxTransfer.id), /Remove the reversal/i);
+    const reversedBalances = calculateAccountBalances([cash, bank, card, rupees], await db.transactions.toArray(), await db.accountTransfers.toArray());
+    check(reversedBalances.get(cash.id) === 8566n && reversedBalances.get(rupees.id) === 0n, 'Exact reversal returns each cross-currency account to its pre-transfer balance');
+    await StorageService.accounts.deleteTransfer(reversal.id);
+    await StorageService.accounts.updateTransfer(transfer.id, { fromAmountMinor: '600', toAmountMinor: '600' });
+    check((await db.accountTransfers.get(transfer.id)).fromAmountMinor === '600', 'Transfer edits replace one linked transfer record without duplicate postings');
+    await StorageService.accounts.deleteTransfer(transfer.id);
+    check(!(await db.accountTransfers.get(transfer.id)), 'Transfer deletion removes the linked entry and derived balances recalculate');
+    await assert.rejects(StorageService.accounts.update(cash.id, { currencyCode: 'EUR' }), /cannot change/i);
+    await assert.rejects(StorageService.accounts.delete(bank.id), /archive/i);
+    await StorageService.accounts.archive(bank.id);
+    check((await StorageService.accounts.getAll()).find(account => account.id === bank.id)?.isActive === false,
+      'Archived accounts remain persisted and available for historical reports');
+
+    const rate = await StorageService.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '83.125', effectiveDate: '2026-11-08', sourceLabel: 'Manual statement' });
+    await assert.rejects(StorageService.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '84', effectiveDate: '2026-11-08' }), /already exists/i);
+    await StorageService.exchangeRates.update(rate.id, { rate: '83.25' });
+    check((await StorageService.exchangeRates.getAll())[0].rate === '83.25', 'Manual offline exchange rates support history and safe edits');
+    await StorageService.exchangeRates.delete(rate.id);
+
+    const beforeCommitmentTransactions = await db.transactions.count();
+    const commitment = await StorageService.commitments.add({ title: 'Monthly rent', amount: 1200, amountMinor: '120000', currencyCode: 'USD',
+      frequency: 'monthly', nextDueDate: '2026-12-01', categoryId: 'cat_rent', accountId: cash.id, status: 'active' });
+    check(await db.transactions.count() === beforeCommitmentTransactions && (await StorageService.commitments.getAll())[0].id === commitment.id,
+      'A planned bill is stored separately and never posts an actual expense');
+    await StorageService.commitments.update(commitment.id, { status: 'paused' });
+    check((await StorageService.commitments.getAll())[0].status === 'paused', 'Commitments can be paused without posting a transaction');
+    await assert.rejects(StorageService.accounts.delete(cash.id), /archive/i);
+    await StorageService.commitments.delete(commitment.id);
+
+    const migrationName = `lifeos-v1-upgrade-${Date.now()}`;
+    const legacyDb = new Dexie(migrationName);
+    legacyDb.version(1).stores({ transactions: 'id, date, category, type, createdAt', categories: 'id, type, name', budgets: 'id, monthYear, categoryId',
+      savingsGoals: 'id, targetDate', savingsContributions: 'id, goalId, date', habits: 'id, frequency, createdAt', habitLogs: 'id, habitId, date, [habitId+date]',
+      goals: 'id, category, priority, status, targetDate', milestones: 'id, goalId', tasks: 'id, dueDate, priority, completed', settings: 'key' });
+    await legacyDb.open();
+    const legacyRecord = { id: 'legacy-tx', type: 'expense', amount: 1.23, category: 'Food', description: 'legacy row', date: '2026-11-01', paymentMethod: 'Cash', createdAt: stamp };
+    const legacyCategory = { id: 'legacy-cat', name: 'Food', type: 'expense', color: '#123456' };
+    const legacyBudget = { id: 'legacy-budget', monthYear: '2026-11', monthlyAmount: 100, categoryId: 'legacy-cat' };
+    const legacyTask = { id: 'legacy-task', title: 'Preserved task', dueDate: '2026-11-09', priority: 'Medium', recurring: 'None', completed: false };
+    await legacyDb.table('transactions').put(legacyRecord);
+    await legacyDb.table('categories').put(legacyCategory);
+    await legacyDb.table('budgets').put(legacyBudget);
+    await legacyDb.table('tasks').put(legacyTask);
+    await legacyDb.table('settings').put({ key: 'displayName', value: 'Existing profile' });
+    legacyDb.close();
+    const upgradedDb = new LifeOSDatabase(migrationName);
+    await upgradedDb.open();
+    check(upgradedDb.verno === 2 && JSON.stringify(await upgradedDb.transactions.get('legacy-tx')) === JSON.stringify(legacyRecord),
+      'Version 1 upgrade adds finance stores without rewriting existing transactions');
+    check(['transactions', 'categories', 'budgets', 'savingsGoals', 'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings'].every(name => upgradedDb.tables.some(table => table.name === name)),
+      'Version 2 schema retains every pre-existing Dexie table and relationship store');
+    check(JSON.stringify(await upgradedDb.categories.get('legacy-cat')) === JSON.stringify(legacyCategory) &&
+      JSON.stringify(await upgradedDb.budgets.get('legacy-budget')) === JSON.stringify(legacyBudget) &&
+      JSON.stringify(await upgradedDb.tasks.get('legacy-task')) === JSON.stringify(legacyTask) &&
+      (await upgradedDb.settings.get('displayName')).value === 'Existing profile',
+      'Version 1 upgrade preserves records from every existing store, including task and profile data');
+    check(await upgradedDb.financialAccounts.count() === 0 && await upgradedDb.accountTransfers.count() === 0 &&
+      await upgradedDb.manualExchangeRates.count() === 0 && await upgradedDb.plannedCommitments.count() === 0,
+      'Version 1 upgrade starts new financial stores empty without guessing history');
+    await upgradedDb.delete();
 
     console.log(`\nDATABASE ATOMICITY TESTS: ${passed} legacy-internal assertions PASSED`);
   } finally {

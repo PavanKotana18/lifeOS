@@ -8,11 +8,13 @@ assert.ok(transactionFormStart >= 0 && transactionFormEnd > transactionFormStart
 const transactionForm = app.slice(transactionFormStart, transactionFormEnd);
 assert.match(app, /createKind === 'transaction' \? 'Merchant or description \(optional\)'/);
 assert.match(app, /required=\{createKind !== 'transaction'\}/, 'transaction description is optional while other record titles remain required');
-assert.match(transactionForm, /autoFocus=\{!editingTransactionId\} required type="number" min=\{10 \*\* -getCurrencyMetadata\(userPrefs\.currency\)\.fractionDigits\} step=\{10 \*\* -getCurrencyMetadata\(userPrefs\.currency\)\.fractionDigits\} inputMode="decimal"/, 'new quick entry focuses an amount field with the selected currency minor unit');
+assert.match(transactionForm, /autoFocus=\{!editingTransactionId\} required type="number" min=\{10 \*\* -getCurrencyMetadata\(createDraft\.currencyCode \|\| userPrefs\.currency\)\.fractionDigits\} step=\{10 \*\* -getCurrencyMetadata\(createDraft\.currencyCode \|\| userPrefs\.currency\)\.fractionDigits\} inputMode="decimal"/, 'new quick entry focuses an amount field with the selected currency minor unit');
+assert.match(transactionForm, /Currency<select value=\{createDraft\.currencyCode \|\| userPrefs\.currency\}/, 'each new transaction can use an explicit currency');
+assert.match(transactionForm, /Account \(optional\)<select/, 'account assignment remains optional');
 assert.match(transactionForm, /aria-expanded=\{transactionDetailsOpen\} aria-controls="transaction-optional-details"/);
 assert.match(transactionForm, /transactionDetailsOpen && <div id="transaction-optional-details"/, 'optional fields are collapsed for quick entry and expanded for edits');
 assert.match(transactionForm, /Transaction date and time[\s\S]*?type="datetime-local"/, 'optional transaction timestamp can still be edited');
 assert.match(app, /dateTime: formatLocalDateTime\(now\)/, 'new entries default to the current local date and time');
 assert.match(app, /setTransactionDetailsOpen\(true\);[\s\S]*setEditingTransactionId\(transaction\.id\)/, 'editing an existing transaction reveals its optional fields');
 assert.doesNotMatch(transactionForm, /autoCapitalize=|autoCorrect=/, 'text entry keeps platform keyboard behavior without forcing text rewriting');
-console.log('TRANSACTION QUICK ENTRY: 9 source contracts passed; keyboard rendering remains Android-device validation.');
+console.log('TRANSACTION QUICK ENTRY: 11 source contracts passed; keyboard rendering remains Android-device validation.');

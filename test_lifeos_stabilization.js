@@ -19,11 +19,11 @@ function fixture(run) {
     try { await run(f); } finally { await f.dispose(); }
   });
 }
-function financeRows(rows, sort = 'date-desc') {
+function financeRows(rows, sort = 'date-desc', filters = {}) {
   return h.bind(h.appFunction('filteredTransactions'), {
     useMemo: callback => callback(), sortTransactions,
     transactions: rows, financeMonth: '2026-11',
-    financeTypeFilter: 'all', financeCategoryFilter: 'all', financeSearch: '', financeSort: sort,
+    financeTypeFilter: 'all', financeCategoryFilter: 'all', financeAccountFilter: 'all', financeCurrencyFilter: 'all', userPrefs: { currency: 'INR' }, financeSearch: '', financeSort: sort, ...filters,
   });
 }
 
@@ -43,6 +43,17 @@ function financeRows(rows, sort = 'date-desc') {
     assert.deepEqual(financeRows(rows, 'date-asc').map(row => row.id), [
       'previous-day', 'older', 'equal-earlier-created', 'equal-later-created', 'newer', 'legacy-date-only',
     ]);
+  });
+
+  await test('Transaction filters keep account and currency identity explicit', () => {
+    const rows = [
+      { id: 'a-usd', type: 'expense', amount: 2, currencyCode: 'USD', accountId: 'bank-a', category: 'Food', description: 'One', paymentMethod: 'Cash', date: '2026-11-06', createdAt: '2026-11-06T10:00:00Z' },
+      { id: 'b-inr', type: 'expense', amount: 3, currencyCode: 'INR', accountId: 'bank-b', category: 'Food', description: 'Two', paymentMethod: 'Cash', date: '2026-11-06', createdAt: '2026-11-06T11:00:00Z' },
+      { id: 'legacy', type: 'expense', amount: 4, category: 'Food', description: 'Legacy', paymentMethod: 'Cash', date: '2026-11-06', createdAt: '2026-11-06T12:00:00Z' },
+    ];
+    assert.deepEqual(financeRows(rows, 'date-desc', { financeAccountFilter: 'bank-a' }).map(row => row.id), ['a-usd']);
+    assert.deepEqual(financeRows(rows, 'date-desc', { financeCurrencyFilter: 'USD' }).map(row => row.id), ['a-usd']);
+    assert.deepEqual(financeRows(rows, 'date-desc', { financeCurrencyFilter: 'INR' }).map(row => row.id), ['b-inr', 'legacy'], 'untagged history keeps the locked reporting-currency interpretation');
   });
 
   await test('Finance create, edit, reload and delete preserve entered local date-time without inventing legacy time', () => fixture(async f => {
@@ -151,5 +162,5 @@ function financeRows(rows, sort = 'date-desc') {
     assert.ok(!sequence.includes('open-exact-settings'), 'Exact access does not launch a settings detour');
   });
 
-  console.log(`LIFEOS STABILIZATION: ${passed}/5 passed`);
+  console.log(`LIFEOS STABILIZATION: ${passed}/6 passed`);
 })().catch(error => { console.error(error); process.exitCode = 1; });

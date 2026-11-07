@@ -19,7 +19,8 @@ import { confirmScreenshotResume, isSensitiveScreenshotState, setSensitiveScreen
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
 import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
-import { createMoneyRecordAmount, decimalToMinorUnits, formatCurrencyChoice, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
+import { createMoneyRecordAmount, decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
+import { calculateAccountBalances } from './services/financialAccounting';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { getBudgetDisplayStatus } from './services/budgetDisplay';
 import { buildDuplicateTransactionDraft } from './services/transactionDraft';
@@ -27,6 +28,8 @@ import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodayS
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
+import MoneyAccounts from './components/MoneyAccounts';
+import MoneyPlanning from './components/MoneyPlanning';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import { ProfileHome, ProfileSubpage, type ProfileSection } from './components/ProfileSettings';
@@ -35,7 +38,7 @@ import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './se
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { resolvePrimarySwipe } from './services/navigationGestures';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
-import type { NotificationPreferences, SavingsContribution } from './types';
+import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
@@ -245,6 +248,10 @@ export default function App() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [savingsContributions, setSavingsContributions] = useState<SavingsContribution[]>([]);
+  const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>([]);
+  const [accountTransfers, setAccountTransfers] = useState<AccountTransfer[]>([]);
+  const [manualExchangeRates, setManualExchangeRates] = useState<ManualExchangeRate[]>([]);
+  const [plannedCommitments, setPlannedCommitments] = useState<PlannedCommitment[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
   const [habitLogs, setHabitLogs] = useState<HabitLog[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -252,11 +259,13 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
 
   // Subtab & Filter States
-  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
+  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
   const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [financeCategoryFilter, setFinanceCategoryFilter] = useState<string>('all');
+  const [financeAccountFilter, setFinanceAccountFilter] = useState<string>('all');
+  const [financeCurrencyFilter, setFinanceCurrencyFilter] = useState<string>('all');
   const [financeSearch, setFinanceSearch] = useState<string>('');
   const [financeSort, setFinanceSort] = useState<string>('date-desc');
   const [financeAnalyticsRange, setFinanceAnalyticsRange] = useState<3 | 6 | 12>(6);
@@ -283,6 +292,7 @@ export default function App() {
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
+  const [editingSavingsGoalId, setEditingSavingsGoalId] = useState<string | null>(null);
 
   const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation });
   backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation };
@@ -1128,12 +1138,16 @@ export default function App() {
   };
 
   const reloadAllData = async () => {
-    const [txs, cats, bgs, sgs, scs, hbs, hLogs, gls, mls, tks] = await Promise.all([
+    const [txs, cats, bgs, sgs, scs, accounts, transfers, rates, commitments, hbs, hLogs, gls, mls, tks] = await Promise.all([
       StorageService.transactions.getAll(),
       StorageService.categories.getAll(),
       StorageService.budgets.getAll(),
       StorageService.savings.getGoals(),
       StorageService.savings.getContributions(),
+      StorageService.accounts.getAll(),
+      StorageService.accounts.getTransfers(),
+      StorageService.exchangeRates.getAll(),
+      StorageService.commitments.getAll(),
       StorageService.habits.getAll(),
       StorageService.habits.getLogs(),
       StorageService.goals.getAll(),
@@ -1146,6 +1160,10 @@ export default function App() {
     setBudgets(bgs);
     setSavingsGoals(sgs);
     setSavingsContributions(scs);
+    setFinancialAccounts(accounts);
+    setAccountTransfers(transfers);
+    setManualExchangeRates(rates);
+    setPlannedCommitments(commitments);
     setHabits(hbs);
     setHabitLogs(hLogs);
     setGoals(gls);
@@ -1224,7 +1242,7 @@ export default function App() {
     setCreateDraft({
       title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
-      type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
+      currencyCode: userPrefs.currency, accountId: '', type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
       goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
     });
     setEditingTaskId(null);
@@ -1232,6 +1250,7 @@ export default function App() {
     setEditingTransactionId(null);
     setEditingGoalId(null);
     setEditingContributionId(null);
+    setEditingSavingsGoalId(null);
     setTransactionDetailsOpen(false);
     setCreateKind(kind);
   };
@@ -1240,11 +1259,17 @@ export default function App() {
     setCreateDraft({
       title: transaction.description || '', amount: String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
+      currencyCode: transaction.currencyCode || userPrefs.currency, accountId: transaction.accountId || '',
       dateTime: transaction.occurredAt ? formatLocalDateTime(new Date(transaction.occurredAt)) : '',
       notes: transaction.notes || '', isRecurring: transaction.isRecurring ? 'yes' : '',
     });
     setTransactionDetailsOpen(true);
     setEditingTransactionId(transaction.id); setEditingTaskId(null); setEditingHabitId(null); setEditingGoalId(null); setCreateKind('transaction');
+  };
+
+  const openEditSavingsGoal = (goal: SavingsGoal) => {
+    setCreateDraft({ title: goal.title, target: String(goal.targetAmount), current: String(goal.currentAmount), category: goal.category || '', date: goal.targetDate });
+    setEditingSavingsGoalId(goal.id); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setCreateKind('savings');
   };
 
   const openEditContribution = (contribution: SavingsContribution) => {
@@ -1345,7 +1370,9 @@ export default function App() {
       if (createKind === 'transaction') {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
         const preserveUnknownTime = Boolean(existingTransaction && !existingTransaction.occurredAt && !value('dateTime'));
-        const values = buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined), category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' });
+        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: value('accountId') || existingTransaction?.accountId };
+        const accountId = values.accountId;
+        if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
         else await StorageService.transactions.add(values);
       } else if (createKind === 'habit') {
@@ -1359,9 +1386,15 @@ export default function App() {
         const money = createMoneyRecordAmount(value('amount'), userPrefs.currency);
         await StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month') });
       } else if (createKind === 'savings') {
-        const target = createMoneyRecordAmount(value('target'), userPrefs.currency);
-        const current = createMoneyRecordAmount(value('current') || '0', userPrefs.currency, true);
-        await StorageService.savings.addGoal({ title: value('title'), targetAmount: target.amount, currentAmount: current.amount, targetAmountMinor: target.amountMinor, currentAmountMinor: current.amountMinor, currencyCode: userPrefs.currency, targetDate: value('date'), category: value('category') || undefined });
+        const target = createMoneyRecordAmount(value('target'), editingSavingsGoalId ? savingsGoals.find(goal => goal.id === editingSavingsGoalId)?.currencyCode || userPrefs.currency : userPrefs.currency);
+        if (editingSavingsGoalId) {
+          const existing = savingsGoals.find(goal => goal.id === editingSavingsGoalId);
+          if (!existing) throw new Error('This savings goal is no longer available. Refresh Savings before editing.');
+          await StorageService.savings.updateGoal(editingSavingsGoalId, { title: value('title'), targetAmount: target.amount, targetAmountMinor: target.amountMinor, currencyCode: existing.currencyCode || target.currencyCode, ...(existing.currentAmountMinor ? {} : { currentAmountMinor: decimalToMinorUnits(String(existing.currentAmount), existing.currencyCode || target.currencyCode).toString() }), targetDate: value('date'), category: value('category') || undefined });
+        } else {
+          const current = createMoneyRecordAmount(value('current') || '0', userPrefs.currency, true);
+          await StorageService.savings.addGoal({ title: value('title'), targetAmount: target.amount, currentAmount: current.amount, targetAmountMinor: target.amountMinor, currentAmountMinor: current.amountMinor, currencyCode: userPrefs.currency, targetDate: value('date'), category: value('category') || undefined });
+        }
       } else if (createKind === 'contribution') {
         if (editingContributionId) {
           const existingContribution = savingsContributions.find(row => row.id === editingContributionId);
@@ -1423,7 +1456,7 @@ export default function App() {
       committed = true;
       setCreateKind(null);
       setEditingTaskId(null); setEditingHabitId(null);
-      setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null);
+      setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null);
       const records = await reloadAllData();
       const reminderOptedIn = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable;
       const schedulePreferences = { ...notificationPreferences, taskReminders: reminderOptedIn || notificationPreferences.taskReminders };
@@ -1439,6 +1472,9 @@ export default function App() {
       showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
     } finally { createOperation.current = false; }
   };
+
+  const accountBalances = useMemo(() => calculateAccountBalances(financialAccounts, transactions, accountTransfers), [financialAccounts, transactions, accountTransfers]);
+  const accountSummaries = financialAccounts.filter(account => account.isActive).map(account => ({ id: account.id, name: account.name, type: account.type, currencyCode: account.currencyCode, balanceMinor: (accountBalances.get(account.id) || 0n).toString() }));
 
   const formatMoney = (amount: number, currencyCode: string = userPrefs.currency) => {
     return formatCurrency(Number(amount) || 0, currencyCode, userPrefs.locale);
@@ -1597,9 +1633,11 @@ export default function App() {
     return tx.date?.startsWith(financeMonth)
       && (financeTypeFilter === 'all' || tx.type === financeTypeFilter)
       && (financeCategoryFilter === 'all' || tx.category === financeCategoryFilter)
+      && (financeAccountFilter === 'all' || (financeAccountFilter === 'unassigned' ? !tx.accountId : tx.accountId === financeAccountFilter))
+      && (financeCurrencyFilter === 'all' || (tx.currencyCode || userPrefs.currency) === financeCurrencyFilter)
       && (!query || haystack.includes(query));
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
-  [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
+  [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeAccountFilter, financeCurrencyFilter, userPrefs.currency, financeSearch, financeSort]);
   const financeOverviewTransactions = useMemo(
     () => sortTransactions(transactions.filter(tx => tx.date?.startsWith(financeMonth)), 'date-desc').slice(0, 4),
     [transactions, financeMonth]
@@ -1878,7 +1916,7 @@ export default function App() {
               <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
               <label className="sr-only" htmlFor="money-destination">Money section</label>
               <select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)} className="lifeos-input min-h-11 rounded-xl px-3 text-sm font-semibold">
-                {(['transactions', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Financial planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
+                {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Financial planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
               </select>
             </div>}
 
@@ -1915,9 +1953,22 @@ export default function App() {
                 onSavings={() => navigateFinanceSubtab('savings')}
                 onAnalytics={() => navigateFinanceSubtab('analytics')}
                 onPlanning={() => navigateFinanceSubtab('planning')}
+                onAccounts={() => navigateFinanceSubtab('accounts')}
+                accountSummaries={accountSummaries}
+                savingsGoals={savingsGoals}
+                legacyCurrency={userPrefs.currency}
                 onEditTransaction={openEditTransaction}
               />
             )}
+
+            {financeSubtab === 'accounts' && <MoneyAccounts accounts={financialAccounts} transactions={transactions} transfers={accountTransfers} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
+              onCreateAccount={async input => { await StorageService.accounts.add(input); await reloadAllData(); }}
+              onUpdateAccount={async (id, input) => { await StorageService.accounts.update(id, input); await reloadAllData(); }}
+              onDeleteAccount={async id => { await StorageService.accounts.delete(id); await reloadAllData(); }}
+              onCreateTransfer={async input => { await StorageService.accounts.addTransfer(input); await reloadAllData(); }}
+              onUpdateTransfer={async (id, input) => { await StorageService.accounts.updateTransfer(id, input); await reloadAllData(); }}
+              onReverseTransfer={async (id, date) => { await StorageService.accounts.reverseTransfer(id, date); await reloadAllData(); }}
+              onDeleteTransfer={async id => { await StorageService.accounts.deleteTransfer(id); await reloadAllData(); }} />}
 
             {/* Transactions Subtab */}
             {financeSubtab === 'transactions' && (
@@ -1932,7 +1983,7 @@ export default function App() {
                   />
                   <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
                 </div>
-                <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label></div>
+                <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
 
                 {/* Filters */}
                 <div className="flex gap-1.5 overflow-x-auto text-xs pb-1">
@@ -1958,7 +2009,7 @@ export default function App() {
                         <div className="transaction-history-main">
                           <button type="button" onClick={() => openEditTransaction(t)} aria-label={`Edit transaction ${t.description || t.category}`} className="transaction-history-copy">
                             <strong>{t.description || t.category}</strong>
-                            <span>{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ' · time not recorded'} &bull; {t.category} ({t.paymentMethod || 'Other'})</span>
+                            <span>{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ' · time not recorded'} &bull; {t.category} ({t.paymentMethod || 'Other'}){t.accountId ? ` · ${financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'}` : ''}</span>
                           </button>
                           <span className={`transaction-history-amount ${t.type === 'income' ? 'is-income' : 'is-expense'}`}>
                             {t.type === 'income' ? '+' : '−'}{formatMoney(t.amount, t.currencyCode || userPrefs.currency)}
@@ -2007,7 +2058,7 @@ export default function App() {
 
             {financeSubtab === 'savings' && <div className="space-y-3">
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
-              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
+              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
                   if (!window.confirm(`Delete this ${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} contribution? The saved goal total will be adjusted.`)) return;
                   try { await StorageService.savings.deleteContribution(contribution.id); await reloadAllData(); showToast('Contribution deleted and savings total updated', 'success'); }
                   catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); }
@@ -2029,10 +2080,13 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection
-              currencyCode={userPrefs.currency}
-              locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
-            /></Suspense>}
+            {financeSubtab === 'planning' && <div className="space-y-5"><Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense><MoneyPlanning commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories}
+              onAddCommitment={async input => { await StorageService.commitments.add(input); await reloadAllData(); }}
+              onUpdateCommitment={async (id, input) => { await StorageService.commitments.update(id, input); await reloadAllData(); }}
+              onDeleteCommitment={async id => { await StorageService.commitments.delete(id); await reloadAllData(); }}
+              onAddRate={async input => { await StorageService.exchangeRates.add(input); await reloadAllData(); }}
+              onUpdateRate={async (id, input) => { await StorageService.exchangeRates.update(id, input); await reloadAllData(); }}
+              onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /></div>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
               <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-secondary">Based on transactions saved on this device</p></div><label className="text-[10px] text-secondary">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="lifeos-input mt-1 block min-h-11 rounded-lg px-2 py-2 text-xs" /></label></div>
@@ -2357,7 +2411,7 @@ export default function App() {
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
           <form onSubmit={saveNewRecord} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
-              <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? 'Add savings goal' : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
+              <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
             </div>
             {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
@@ -2370,7 +2424,7 @@ export default function App() {
                 const category = categories.find(item => item.type === type)?.name || '';
                 setCreateDraft({ ...createDraft, type, category });
               }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
-              <label className="mb-3 block text-xs text-secondary">Amount · {userPrefs.currency}<input autoFocus={!editingTransactionId} required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Amount · {createDraft.currencyCode || userPrefs.currency}<input autoFocus={!editingTransactionId} required type="number" min={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-secondary">Category<select required value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">
                 <option value="">Select category</option>
                 {createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type) && (
@@ -2382,6 +2436,8 @@ export default function App() {
               </select></label>
               <button type="button" className="mb-3 min-h-11 rounded-lg px-2 text-left text-xs font-semibold lifeos-accent-text" aria-expanded={transactionDetailsOpen} aria-controls="transaction-optional-details" onClick={() => setTransactionDetailsOpen(open => !open)}>{transactionDetailsOpen ? 'Hide optional details' : 'Add optional details'}</button>
               {transactionDetailsOpen && <div id="transaction-optional-details" className="transaction-optional-details rounded-xl p-3">
+                <label className="mb-3 block text-xs text-secondary">Currency<select value={createDraft.currencyCode || userPrefs.currency} onChange={e => setCreateDraft({ ...createDraft, currencyCode: e.target.value, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e.target.value) ? createDraft.accountId : '' })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</option>)}</select><span className="mt-1 block">This labels the transaction. Changing the reporting currency does not convert saved records.</span></label>
+                <label className="mb-3 block text-xs text-secondary">Account (optional)<select value={createDraft.accountId || ''} onChange={e => { const account = financialAccounts.find(row => row.id === e.target.value); setCreateDraft({ ...createDraft, accountId: e.target.value, ...(account ? { currencyCode: account.currencyCode } : {}) }); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="">Unassigned</option>{financialAccounts.filter(account => account.isActive).map(account => <option key={account.id} value={account.id}>{account.name} · {account.currencyCode}</option>)}</select></label>
                 <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
@@ -2409,14 +2465,14 @@ export default function App() {
               <label className="mb-4 block text-xs text-secondary">Month<input required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'savings' && <>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target amount · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Already saved<input type="number" min="0" step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target amount · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>{!editingSavingsGoalId && <label className="text-xs text-secondary">Already saved<input type="number" min="0" step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}</div>
               <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={40} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'contribution' && <>
               {editingContributionId ? <p className="mb-3 text-xs text-secondary">Savings goal · {savingsGoals.find(goal => goal.id === createDraft.goalId)?.title || 'Unavailable'}</p> : <label className="mb-3 block text-xs text-secondary">Savings goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{savingsGoals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
               {(() => { const contributionCurrency = savingsContributions.find(item => item.id === editingContributionId)?.currencyCode || savingsGoals.find(goal => goal.id === createDraft.goalId)?.currencyCode || userPrefs.currency; const digits = getCurrencyMetadata(contributionCurrency).fractionDigits; return <label className="mb-3 block text-xs text-secondary">Amount · {contributionCurrency}<input required type="number" min={10 ** -digits} step={10 ** -digits} inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>; })()}
               <label className="mb-3 block text-xs text-secondary">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs leading-relaxed text-secondary">A contribution updates this savings goal only. It does not record a cash movement or reduce expense and budget totals. Account transfers are not available yet.</p>
+                <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs leading-relaxed text-secondary">A contribution updates this savings goal only; it does not record a cash movement or reduce expense and budget totals. If money moves between tracked accounts, record that separately as a transfer.</p>
             </>}
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
@@ -2431,7 +2487,7 @@ export default function App() {
             {!['habit', 'budget', 'task', 'transaction', 'goal-progress'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">{createKind === 'goal' || createKind === 'savings' ? 'Target date' : createKind === 'milestone' ? 'Target date (optional)' : 'Date'}<input type="date" required={createKind !== 'milestone'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
             {editingTransactionId && <button type="button" onClick={async () => { if (!window.confirm('Delete this transaction? This cannot be undone.')) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
             {editingContributionId && <button type="button" onClick={async () => { if (!window.confirm('Delete this contribution and subtract it from the saved goal total?')) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
-            <button type="submit" className="w-full rounded-xl lifeos-accent-button px-4 py-3 text-sm font-semibold active:scale-[.99]">{editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button>
+            <button type="submit" className="w-full rounded-xl lifeos-accent-button px-4 py-3 text-sm font-semibold active:scale-[.99]">{editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button>
           </form>
         </div>
       )}

@@ -8,6 +8,7 @@ type Props = {
   formatDate: (date: string) => string;
   contributions?: SavingsContribution[];
   onContribute: () => void;
+  onEditGoal: () => void;
   onDelete: () => void;
   onEditContribution: (contribution: SavingsContribution) => void;
   onDeleteContribution: (contribution: SavingsContribution) => void;
@@ -15,7 +16,7 @@ type Props = {
 
 const circumference = 2 * Math.PI * 39;
 
-export default function SavingsGoalProgress({ goal, formatMoney, formatDate, contributions = [], onContribute, onDelete, onEditContribution, onDeleteContribution }: Props) {
+export default function SavingsGoalProgress({ goal, formatMoney, formatDate, contributions = [], onContribute, onDelete, onEditGoal, onEditContribution, onDeleteContribution }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const targetValid = Number.isFinite(goal.targetAmount) && goal.targetAmount > 0;
   const savedValid = Number.isFinite(goal.currentAmount) && goal.currentAmount >= 0;
@@ -43,6 +44,7 @@ export default function SavingsGoalProgress({ goal, formatMoney, formatDate, con
       <p className="savings-goal-status" aria-live="polite">{status}</p>
       <p className="savings-goal-target">Target · {targetValid ? formatMoney(target, goal.currencyCode) : 'Unavailable'}</p>
       <div className="savings-goal-actions">
+        <button type="button" onClick={onEditGoal} className="savings-goal-delete" aria-label={`Edit ${goal.title}`}><Pencil size={16} aria-hidden="true" /><span>Edit</span></button>
         <button type="button" onClick={onContribute} className="savings-goal-contribute">Add contribution <ArrowRight size={15} aria-hidden="true" /></button>
         <button type="button" onClick={onDelete} className="savings-goal-delete" aria-label={`Delete ${goal.title}`}><Trash2 size={16} aria-hidden="true" /><span>Delete</span></button>
       </div>

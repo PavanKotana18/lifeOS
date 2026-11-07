@@ -11,7 +11,8 @@ require('fake-indexeddb/auto');
 const { IDBFactory } = require('fake-indexeddb');
 const ROOT = path.resolve(__dirname, '../..');
 const TABLES = ['transactions', 'categories', 'budgets', 'savingsGoals',
-  'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings'];
+  'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings',
+  'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments'];
 let checks = 0;
 function check(value, message) { checks++; assert.ok(value, message); }
 function equal(actual, expected, message) { checks++; assert.deepEqual(actual, expected, message); }

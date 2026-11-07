@@ -121,6 +121,10 @@ async function run() {
     'lifeos-record', 1, 'transactions', 'txn-123', 1
   ]);
   check(true, 'AAD is canonical and binds table, record and schema version');
+  for (const table of ['financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments']) {
+    assert.ok(buildRecordAad(table, `fixture-${table}`, 1));
+  }
+  check(true, 'New account, transfer, exchange-rate and commitment tables are accepted for authenticated encryption');
 
   assert.throws(
     () => buildRecordAad('unknown-table', 'id-1', 1),
@@ -246,7 +250,7 @@ async function run() {
   await assert.rejects(CryptoService.unlock(), /unavailable/);
   check(true, 'Web or unsupported platforms fail closed');
 
-  console.log(`CRYPTO SERVICE TESTS: ${passed}/25 PASSED`);
+  console.log(`CRYPTO SERVICE TESTS: ${passed}/26 PASSED`);
 }
 
 run().catch(error => {

@@ -5,7 +5,7 @@ const esbuild = require('esbuild');
 
 const TABLES = [
   'transactions', 'categories', 'budgets', 'savingsGoals',
-  'savingsContributions', 'habits', 'habitLogs', 'goals',
+  'savingsContributions', 'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'habits', 'habitLogs', 'goals',
   'milestones', 'tasks', 'settings'
 ];
 
@@ -161,7 +161,7 @@ async function rejects(fn, pattern) {
     storage = makeEnvironment();
     for (const key of [
       'transactions', 'categories', 'budgets', 'savings',
-      'habits', 'goals', 'tasks', 'settings', 'backup'
+      'accounts', 'exchangeRates', 'commitments', 'habits', 'goals', 'tasks', 'settings', 'backup'
     ]) {
       assert.ok(storage[key], `Missing facade domain: ${key}`);
     }
@@ -305,6 +305,46 @@ async function rejects(fn, pattern) {
     await storage.savings.deleteContribution(contribution.id);
     assert.equal((await storage.savings.getGoals()).find(row => row.id === goal.id).currentAmountMinor, '10');
     assert.equal((await storage.savings.getContributions(goal.id)).length, 0);
+  });
+
+  await test('encrypted account, transfer, rate and commitment records enforce links and duplicate safety', async () => {
+    storage = makeEnvironment();
+    const cash = await storage.accounts.add({ name: 'Cash', type: 'cash', currencyCode: 'USD', openingBalanceMinor: '10000', isActive: true });
+    const bank = await storage.accounts.add({ name: 'Bank', type: 'bank', currencyCode: 'USD', openingBalanceMinor: '0', isActive: true });
+    assert.equal((await storage.accounts.getAll()).length, 2);
+    const fundedUnused = await storage.accounts.add({ name: 'Funded unused', type: 'cash', currencyCode: 'USD', openingBalanceMinor: '100', isActive: true });
+    await rejects(() => storage.accounts.delete(fundedUnused.id), /non-zero opening balance/i);
+    assert.ok((await storage.accounts.getAll()).some(row => row.id === fundedUnused.id));
+    await storage.accounts.archive(fundedUnused.id);
+    const emptyUnused = await storage.accounts.add({ name: 'Empty unused', type: 'cash', currencyCode: 'USD', openingBalanceMinor: '0', isActive: true });
+    await storage.accounts.delete(emptyUnused.id);
+    assert.ok(!(await storage.accounts.getAll()).some(row => row.id === emptyUnused.id));
+    const first = await storage.accounts.addTransfer({ id: 'stable-transfer', fromAccountId: cash.id, toAccountId: bank.id, fromAmountMinor: '500', toAmountMinor: '500', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08' });
+    await rejects(() => storage.accounts.addTransfer({ id: 'stable-transfer', fromAccountId: cash.id, toAccountId: bank.id, fromAmountMinor: '500', toAmountMinor: '500', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08' }));
+    assert.equal((await storage.accounts.getTransfers(cash.id)).length, 1);
+    await rejects(() => storage.accounts.update(cash.id, { currencyCode: 'EUR' }), /cannot change/i);
+    await rejects(() => storage.accounts.update(cash.id, { openingBalanceMinor: '1' }), /opening balance cannot change/i);
+    await rejects(() => storage.accounts.delete(cash.id), /archive/i);
+    await storage.accounts.archive(cash.id);
+    assert.equal((await storage.accounts.getAll()).find(row => row.id === cash.id).isActive, false);
+    const rate = await storage.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '83.25', effectiveDate: '2026-11-08', sourceLabel: 'Manual' });
+    await rejects(() => storage.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '84', effectiveDate: '2026-11-08' }), /already exists/i);
+    assert.equal((await storage.exchangeRates.getAll())[0].id, rate.id);
+    const commitment = await storage.commitments.add({ title: 'Rent', amount: 500, amountMinor: '50000', currencyCode: 'USD', frequency: 'monthly', nextDueDate: '2026-12-01', status: 'active' });
+    assert.equal((await storage.commitments.getAll())[0].id, commitment.id);
+    await rejects(() => storage.commitments.add({ title: 'Bad account link', amount: 10, amountMinor: '1000', currencyCode: 'USD', frequency: 'monthly', nextDueDate: '2026-12-01', accountId: 'missing', status: 'active' }), /account/i);
+    const reversal = await storage.accounts.reverseTransfer(first.id, '2026-11-09');
+    assert.equal(reversal.reversalOfId, first.id);
+    assert.equal(reversal.fromAmountMinor, first.toAmountMinor);
+    await rejects(() => storage.accounts.reverseTransfer(first.id, '2026-11-09'), /already been reversed/i);
+    await rejects(() => storage.accounts.updateTransfer(first.id, { notes: 'change original' }), /reversed/i);
+    await rejects(() => storage.accounts.deleteTransfer(first.id), /Remove the reversal/i);
+    await storage.accounts.deleteTransfer(reversal.id);
+    await storage.accounts.updateTransfer(first.id, { notes: 'Edited safely' });
+    await storage.accounts.deleteTransfer(first.id);
+    await storage.exchangeRates.delete(rate.id);
+    await storage.commitments.delete(commitment.id);
+    assert.equal(state.accountTransfers.size, 0);
   });
 
   await test('invalid calendar date rejects without RangeError', async () => {

@@ -25,6 +25,16 @@ const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.
 financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.test.cjs');
 financeLoaded.paths = module.paths;
 financeLoaded._compile(financeCompiled, financeLoaded.filename);
+const accountingSource = fs.readFileSync(path.join(__dirname, 'src/services/financialAccounting.ts'), 'utf8');
+const accountingCompiled = ts.transpileModule(accountingSource, { compilerOptions: {
+  module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+} }).outputText;
+const accountingLoaded = new Module(path.join(__dirname, 'src/services/financialAccounting.validation.test.cjs'), module);
+accountingLoaded.filename = path.join(__dirname, 'src/services/financialAccounting.validation.test.cjs');
+accountingLoaded.paths = module.paths;
+const accountingRequire = accountingLoaded.require.bind(accountingLoaded);
+accountingLoaded.require = request => request === './financeCore' ? financeLoaded.exports : accountingRequire(request);
+accountingLoaded._compile(accountingCompiled, accountingLoaded.filename);
 
 const sessionSource = fs.readFileSync(
   path.join(__dirname, 'src/services/sessionManager.ts'),
@@ -51,6 +61,7 @@ const originalModuleLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (parent && parent.filename === loaded.filename) {
     if (request === './services/financeCore') return financeLoaded.exports;
+    if (request === './services/financialAccounting') return accountingLoaded.exports;
     if (request === './services/sessionManager') {
       return sessionLoaded.exports;
     }
@@ -167,8 +178,10 @@ function rejects(data, expected) {
   assert.throws(() => validate(data), expected);
 }
 
-test('Accepts a valid backup containing all 11 tables', () => {
-  assert.strictEqual(validate(sample()).length, 11);
+test('Accepts a legacy backup with 11 tables and adds empty arrays for the new optional financial tables', () => {
+  const backup = sample();
+  assert.strictEqual(validate(backup).length, 15);
+  for (const table of ['financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments']) assert.deepStrictEqual(backup[table], []);
 });
 
 test('Rejects missing table arrays', () => {
@@ -190,9 +203,9 @@ test('Accepts explicit currency and exact minor units while preserving legacy ro
   const d = sample();
   d.transactions[0].currencyCode = 'INR';
   d.transactions[0].amountMinor = '10000';
-  assert.strictEqual(validate(d).length, 11);
+  assert.strictEqual(validate(d).length, 15);
   const legacy = sample();
-  assert.strictEqual(validate(legacy).length, 11);
+  assert.strictEqual(validate(legacy).length, 15);
 });
 
 test('Rejects exact amounts without a currency or with invalid minor-unit values', () => {
@@ -271,7 +284,7 @@ test('Accepts valid recurrence metadata in task backups', () => {
   const d = sample();
   d.tasks[0].recurrenceRootId = 'root-task';
   d.tasks[0].spawnedTaskId = 'rec_root-task_2026-11-03';
-  assert.strictEqual(validate(d).length, 11);
+  assert.strictEqual(validate(d).length, 15);
 });
 
 test('Rejects non-string recurrence metadata in task backups', () => {
@@ -304,7 +317,7 @@ test('Accepts demo-style Food budget with the seeded cat_food reference', () => 
     monthYear: '2026-11',
     createdAt: '2026-11-01T00:00:00.000Z'
   });
-  assert.strictEqual(validate(d).length, 11);
+  assert.strictEqual(validate(d).length, 15);
 });
 
 console.log(`\nBackup validation tests: ${passed}/23 passed`);
