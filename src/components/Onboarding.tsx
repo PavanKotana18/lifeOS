@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bell, Check, Fingerprint, Moon, ShieldCheck, Sun } from 'lucide-react';
 import type { NotificationPreferences } from '../types';
+import { LifeOSBrand } from './LifeOSBrand';
 
 export type AppearancePreference = 'dark' | 'light' | 'system';
 type CategoryKey = keyof NotificationPreferences;
@@ -46,7 +47,7 @@ export default function Onboarding(props: Props) {
 
   return <div className="onboarding-root lifeos-page fixed inset-0 z-[70] overflow-y-auto px-5 py-[max(1.25rem,env(safe-area-inset-top))]" role="dialog" aria-modal="true" aria-label="LifeOS onboarding">
     <div className="mx-auto flex min-h-full max-w-md flex-col justify-center py-5">
-      <div className="mb-8 flex items-center gap-3"><div className="lifeos-accent-button flex h-11 w-11 items-center justify-center rounded-2xl font-black">L</div><div><div className="font-bold tracking-tight">LifeOS</div><div className="text-[11px] text-secondary">A little more in sync, every day</div></div></div>
+      <div className="mb-8"><LifeOSBrand className="lifeos-onboarding-brand" markClassName="lifeos-onboarding-mark" /><div className="ml-[3.75rem] -mt-1 text-[11px] text-secondary">A little more in sync, every day</div></div>
       <div className="mb-6 flex gap-1.5" aria-label={`Step ${step + 1} of 5`} role="progressbar" aria-valuemin={1} aria-valuemax={5} aria-valuenow={step + 1}>{Array.from({ length: 5 }, (_, index) => <span key={index} aria-hidden="true" className={`h-1 flex-1 rounded-full ${index <= step ? 'bg-[var(--accent)]' : 'bg-[var(--stroke)]'}`} />)}</div>
       <div key={step} className="onboarding-step">
         {step === 0 && <section>

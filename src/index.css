@@ -262,6 +262,18 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
 .lifeos-progress-track { background: var(--surface-raised); }
 .lifeos-progress-fill { background: var(--accent); }
 .lifeos-mark { box-shadow: 0 2px 8px rgb(0 0 0 / 18%); }
+.lifeos-mark { color: var(--accent); background: var(--accent-tint); --brand-mark-vein: var(--accent-tint); box-shadow: none; }
+.lifeos-brand { display: inline-flex; align-items: center; gap: .72rem; color: var(--ink); }
+.lifeos-brand > svg { width: 2.8rem; height: 2.8rem; flex: none; padding: .25rem; border-radius: 1rem; color: var(--accent); background: var(--accent-tint); --brand-mark-vein: var(--accent-tint); }
+.lifeos-brand-word { font-size: 1.08rem; line-height: 1.15; font-weight: 650; letter-spacing: -.035em; }
+.lifeos-onboarding-mark { width: 2.9rem !important; height: 2.9rem !important; }
+.lifeos-launch-reveal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; overflow: hidden; color: var(--ink); background: var(--page); padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem max(1.5rem, env(safe-area-inset-bottom)); }
+.lifeos-launch-lockup { display: grid; justify-items: center; transform-origin: center; animation: lifeos-launch-arrive 1600ms cubic-bezier(.2,.72,.2,1) both; }
+.lifeos-launch-mark { display: grid; width: 6.25rem; height: 6.25rem; place-items: center; color: var(--accent); border-radius: 2rem; background: var(--accent-tint); --brand-mark-vein: var(--accent-tint); animation: lifeos-launch-illumination 1600ms ease-out both; }
+.lifeos-launch-mark svg { width: 4.6rem; height: 4.6rem; }
+.lifeos-launch-word { margin-top: 1.25rem; font-size: 1.8rem; line-height: 1.1; font-weight: 650; letter-spacing: -.045em; }
+.lifeos-launch-caption { margin-top: .55rem; color: var(--ink-secondary); font-size: .84rem; letter-spacing: .015em; opacity: 0; animation: lifeos-launch-caption-in 500ms 500ms ease-out forwards; }
+.lifeos-launch-reveal.is-reduced-motion .lifeos-launch-lockup, .lifeos-launch-reveal.is-reduced-motion .lifeos-launch-mark, .lifeos-launch-reveal.is-reduced-motion .lifeos-launch-caption { animation: none; opacity: 1; transform: none; }
 .logo-brand { animation: lifeos-logo-in 220ms ease-out both; }
 .logo-portrait { animation: lifeos-logo-shift 360ms ease-in-out both; }
 .logo-rest { animation: lifeos-logo-settle 220ms ease-out both; }
@@ -292,6 +304,9 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
 @keyframes lifeos-logo-in { from { opacity: .5; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
 @keyframes lifeos-logo-shift { 0% { opacity: 0; transform: scale(.92); } 35% { opacity: 1; transform: scale(1); } 100% { opacity: 1; transform: scale(1); } }
 @keyframes lifeos-logo-settle { from { opacity: .75; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes lifeos-launch-arrive { 0% { opacity: 0; transform: scale(.94); } 36% { opacity: 1; transform: scale(1.015); } 68% { transform: scale(1); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes lifeos-launch-illumination { 0% { box-shadow: 0 0 0 0 rgb(65 107 81 / 0%); } 42% { box-shadow: 0 0 36px 2px rgb(65 107 81 / 17%); } 100% { box-shadow: 0 0 0 0 rgb(65 107 81 / 0%); } }
+@keyframes lifeos-launch-caption-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
 :focus-visible {
   outline: 2px solid var(--focus-color);

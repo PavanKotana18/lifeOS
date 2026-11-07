@@ -10,7 +10,11 @@
         <item name="android:forceDarkAllowed">false</item>
     </style>
 
-    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme">
-        <item name="android:windowBackground">@color/windowBackground</item>
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/lifeos_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/lifeos_splash_mark</item>
+        <item name="windowSplashScreenAnimationDuration">500</item>
+        <item name="postSplashScreenTheme">@style/AppTheme</item>
+        <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>

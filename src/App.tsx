@@ -26,6 +26,7 @@ import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodayS
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
+import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
@@ -110,6 +111,12 @@ export default function App() {
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [startupError, setStartupError] = useState('');
   const [appReady, setAppReady] = useState(false);
+
+  useEffect(() => {
+    if (!appReady && !startupError) return;
+    (window as Window & { lifeosStartupReady?: boolean }).lifeosStartupReady = true;
+    window.dispatchEvent(new Event('lifeos:startup-ready'));
+  }, [appReady, startupError]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const recoveryController = useRef(createRecoveryController(CryptoService, sessionManager, getRecoveryChallenge)).current;
   const [secureSetup, setSecureSetup] = useState<{ prepared?: PreparedRecovery } | null>(null);
@@ -1317,8 +1324,8 @@ export default function App() {
       {/* Top Mobile Header */}
       <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
         <div className="flex min-w-0 items-center gap-3">
-          <div className={`lifeos-mark lifeos-accent-button flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-black logo-${logoPhase}`} aria-hidden="true">
-            <span>L</span>
+          <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
+            <BrandMark className="h-8 w-8" />
           </div>
           <div className="min-w-0">
             <h1 className="header-greeting text-[clamp(1.05rem,4.2vw,1.35rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>

@@ -1,6 +1,7 @@
 package com.lifeos.personal;
 
 import android.os.Bundle;
+import android.animation.ValueAnimator;
 import android.content.res.Configuration;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
@@ -10,8 +11,10 @@ import android.webkit.WebView;
 import android.widget.TextView;
 import android.view.WindowManager;
 import com.getcapacitor.BridgeActivity;
+import androidx.core.splashscreen.SplashScreen;
 
 public class MainActivity extends BridgeActivity {
+    private boolean coldLaunch;
     private boolean sensitiveScreen = true;
     private boolean activityResumed = false;
     private boolean webViewCompatibilityBlocked = false;
@@ -19,6 +22,16 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        coldLaunch = savedInstanceState == null;
+        SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
+        splashScreen.setOnExitAnimationListener(provider -> {
+            if (!ValueAnimator.areAnimatorsEnabled()) {
+                provider.remove();
+                return;
+            }
+            provider.getView().animate().alpha(0f).setDuration(180L)
+                .withEndAction(provider::remove).start();
+        });
         registerPlugin(BiometricAuthPlugin.class);
         registerPlugin(LifeOSCryptoPlugin.class);
         registerPlugin(LifeOSBackupPlugin.class);
@@ -26,6 +39,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StorageAccessPlugin.class);
         registerPlugin(SystemAppearancePlugin.class);
         registerPlugin(ScreenCaptureProtectionPlugin.class);
+        registerPlugin(LaunchExperiencePlugin.class);
         super.onCreate(savedInstanceState);
 
         // Start protected for every build. Debug UI may opt into screenshots only
@@ -33,6 +47,10 @@ public class MainActivity extends BridgeActivity {
         applyScreenshotProtection();
         applySystemFontScale();
         showWebViewUpdateIfRequired();
+    }
+
+    public boolean isColdLaunch() {
+        return coldLaunch;
     }
 
     static int webTextZoomForFontScale(float fontScale) {

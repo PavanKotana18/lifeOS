@@ -20,7 +20,7 @@ check('Application database is Dexie-backed local IndexedDB', () => {
 
 check('Application bootstrap reads local settings before rendering', () => {
   assert.match(main, /StorageService\.settings\.get/);
-  assert.match(main, /renderApp\(\)/);
+  assert.match(main, /renderApp\(info\.coldStart\)/);
 });
 
 check('Application initial data loading uses local StorageService and Dexie tables', () => {

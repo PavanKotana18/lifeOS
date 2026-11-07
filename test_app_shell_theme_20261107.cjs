@@ -30,7 +30,8 @@ assert.match(shell, /onClick=\{triggerBiometricAuth\}/, 'lock screen retains the
 assert.match(shell, /onClick=\{\(\) => \{ void openRecovery\(\); \}\}/, 'lock recovery opens through the protection gate');
 assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await setSensitiveScreenshotState\(true\);\s*setRecoveryOpen\(true\);/, 'recovery secrets are not rendered before native screenshot protection is acknowledged');
 assert.match(fsSource.slice(fsSource.indexOf('id="theme-toggle-btn"'), fsSource.indexOf('</button>', fsSource.indexOf('id="theme-toggle-btn"'))), /onClick=\{toggleTheme\}/, 'appearance control retains its existing action');
-assert.match(fsSource, /lifeos-mark lifeos-accent-button/, 'LifeOS mark uses the selected palette accent');
+assert.match(fsSource, /lifeos-mark/, 'LifeOS mark uses its semantic shell class');
+assert.match(fsSource, /BrandMark/, 'App shell renders the shared original vector brand mark');
 assert.match(fsSource, /Daily consistency monitor<\/p>/, 'habit heading remains in the semantic palette');
 assert.match(fsSource, /Reminder · \{h\.reminderTime\} local<\/p>/, 'habit reminder remains in the semantic palette');
 assert.match(footer, /onClick=\{\(\) => void CapacitorApp\.exitApp\(\)\}/, 'exit action remains connected');
