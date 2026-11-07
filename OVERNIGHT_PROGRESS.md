@@ -462,3 +462,16 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Verification:** Full `npm test` PASS after the transfer, opening-balance, and deletion protections. Latest `npx tsc --noEmit` PASS. Latest `npm run build` PASS (Vite reports the existing large-chunk advisory). Latest Sentinel log reports all 6 suites passed and CI gate PASSED, but its Node process remained alive after printing the final summary; after a bounded 2-minute wait I interrupted only that local run. This is recorded as a runner teardown limitation, not concealed as a clean process exit. An earlier Sentinel run in this checkpoint exited normally with 6/6 PASS.
 - **Android:** No local Gradle command/wrapper or Android SDK build setup was found. Hosted CI must provide the signed debug APK and instrumentation compilation result; no physical device was used.
 - **Next:** Final diff/status review, commit and push the verified changes to the existing PR #25 branch, then inspect GitHub Actions and artifact availability.
+
+## Money 2.0 continuation — 2026-11-08, pushed checkpoint
+
+- **Commit:** `0c3740ebcd60e7801bbe96891c28503cc63bcfe7` — `feat(finance): add encrypted accounts transfers and planned bills`.
+- **Branch/PR:** Pushed only to `feature/lifeos2-bulk-development-20261107`; PR #25 remains OPEN and draft, stacked on the existing LifeOS 2 milestone branch. The remote branch matched before push; no rebase/reset was needed.
+- **Local verification:** Full `npm test` PASS; TypeScript PASS; production build PASS; targeted encrypted facade, transfer/reversal, database migration/atomicity, and disposable IndexedDB backup tests PASS. Sentinel summary reports 6/6 suites PASS; the final rerun did not terminate after its pass summary and was bounded-interrupted, while the earlier Sentinel run completed normally.
+- **Hosted validation:** Build/APK workflow run `42413790049` is currently in progress for this exact commit. Await terminal status and signed APK artifact before final handoff.
+
+## Money 2.0 continuation — 2026-11-08, hosted artifact and release-branch guard
+
+- **Hosted run `42413790049`:** Automated checks and Android Debug build succeeded for `0c3740ebcd60e7801bbe96891c28503cc63bcfe7`. It built the Debug APK, verified the persistent signer/package/version, and compiled the instrumentation APK (not executed). The existing workflow also generated a signed release APK on this feature-branch push; it was not published as a GitHub Release or to Play, and its generated Actions artifact was deleted. The Debug APK artifact was retained.
+- **Correction:** Added a workflow condition so release-signing secrets and packaging are only eligible on `main`, `develop`, or `release/*` refs, not feature pushes or pull requests. Added a signing-workflow regression; it passes.
+- **Next:** Push this focused CI safety follow-up and verify that a new run builds the Debug APK without creating a release artifact. The existing draft PR stays open.
