@@ -56,6 +56,9 @@ public class ScreenshotProtectionAcceptanceTest {
             assertEquals("Safe resumed debug screen may be captured", 0, safe.get());
             assertEquals("Sensitive state restores FLAG_SECURE", 1, sensitive.get());
 
+            // Isolate Activity's resume fence from LifeOS's asynchronous resume
+            // validation, which is exercised by the application lifecycle suite.
+            scenario.onActivity(activity -> activity.getBridge().getWebView().setVisibility(android.view.View.GONE));
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED);
             AtomicInteger paused = new AtomicInteger();
             scenario.onActivity(activity -> paused.set(hasSecureFlag(activity) ? 1 : 0));

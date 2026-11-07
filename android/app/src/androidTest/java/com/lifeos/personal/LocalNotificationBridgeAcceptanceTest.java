@@ -1,7 +1,11 @@
 package com.lifeos.personal;
 
+import android.Manifest;
+import android.os.Build;
 import androidx.test.core.app.ActivityScenario;
+import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.platform.app.InstrumentationRegistry;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.junit.Test;
@@ -14,6 +18,10 @@ public class LocalNotificationBridgeAcceptanceTest {
     @Test public void registeredPluginCanScheduleAndReadBackSyntheticTaskReminder() throws Exception {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             WebViewTestSupport.awaitReactRoot(scenario);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                InstrumentationRegistry.getInstrumentation().getUiAutomation().grantRuntimePermission(
+                    ApplicationProvider.getApplicationContext().getPackageName(), Manifest.permission.POST_NOTIFICATIONS);
+            }
             assertTrue("Runtime information plugin must be registered", WebViewTestSupport.evaluate(
                 scenario, "window.Capacitor.isPluginAvailable('LifeOSRuntimeInfo')").contains("true"));
             assertTrue("LocalNotifications must be registered in the native bridge", WebViewTestSupport.evaluate(
@@ -29,7 +37,7 @@ public class LocalNotificationBridgeAcceptanceTest {
                 "finally{await p.cancel({notifications:[{id}]});}})())");
             Object value = new JSONTokener(result).nextValue();
             JSONObject report = new JSONObject(String.valueOf(value));
-            assertTrue("Native queue must contain the synthetic reminder after schedule", report.optBoolean("scheduled"));
+            assertTrue("Native queue must contain the synthetic reminder after schedule: " + result, report.optBoolean("scheduled"));
             assertNotNull("Native schedule must return the selected UTC instant", report.optString("at", null));
         }
     }

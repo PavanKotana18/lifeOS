@@ -2,6 +2,7 @@ package com.lifeos.personal;
 
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.Context;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -22,7 +23,11 @@ public class NotificationTapLaunchPlugin extends Plugin {
     @Override
     public void load() {
         super.load();
-        Intent intent = getActivity().getIntent();
+        captureAction(getContext(), getActivity().getIntent());
+    }
+
+    /** Persist a tap before JavaScript/WebView startup so cold-start actions cannot be lost. */
+    static void captureAction(Context context, Intent intent) {
         if (intent == null || !Intent.ACTION_MAIN.equals(intent.getAction()) || !intent.hasExtra(NOTIFICATION_ID)) return;
         int id = intent.getIntExtra(NOTIFICATION_ID, Integer.MIN_VALUE);
         String source = intent.getStringExtra(NOTIFICATION_JSON);
@@ -36,7 +41,7 @@ public class NotificationTapLaunchPlugin extends Plugin {
             JSObject action = new JSObject();
             action.put("actionId", intent.getStringExtra(ACTION_ID));
             action.put("notification", notification);
-            getContext().getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putString(PENDING_ACTION, action.toString()).apply();
             // Prevent Activity recreation from treating this launch as a second tap.
             intent.removeExtra(NOTIFICATION_ID);

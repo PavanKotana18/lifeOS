@@ -31,6 +31,8 @@ assert.match(bootstrap, /'notificationPreferences'[\s\S]*?'notificationDefaultsP
 assert.match(notificationService, /localNotificationActionPerformed/);
 assert.match(notificationService, /getInitialTapAction/);
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationTapLaunchPlugin.java', 'utf8'), /LocalNotficationObject[\s\S]*?getInitialAction[\s\S]*?acknowledgeInitialAction/, 'cold-start tap actions are held until JS routes them');
+assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/MainActivity.java', 'utf8'), /captureAction\(this, getIntent\(\)\);[\s\S]*?super\.onCreate/, 'cold-start tap is persisted before Capacitor/WebView startup');
+assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/MainActivity.java', 'utf8'), /void onNewIntent[\s\S]*?super\.onNewIntent\(intent\)[\s\S]*?captureAction\(this, notificationAction\)/, 'background tap reaches the Capacitor listener before a durable cold-start copy is captured');
 assert.match(app, /addActionListener/);
 assert.match(app, /isEncryptedStorageActivated\(\)[\s\S]*?processPendingTaskNotification/, 'notification taps wait for the encrypted session before reading task details');
 assert.match(app, /getInitialTapAction[\s\S]*?handleAction\(initialAction\)/, 'cold-start taps are processed after action listener registration');

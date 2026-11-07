@@ -25,6 +25,9 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // Save notification taps before Capacitor or React initialize. The native
+        // plugin keeps this action until the authenticated JS router acknowledges it.
+        NotificationTapLaunchPlugin.captureAction(this, getIntent());
         coldLaunch = savedInstanceState == null;
         keepLaunchSplash = coldLaunch;
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
@@ -57,6 +60,14 @@ public class MainActivity extends BridgeActivity {
         applyScreenshotProtection();
         applySystemFontScale();
         showWebViewUpdateIfRequired();
+    }
+
+    @Override
+    public void onNewIntent(android.content.Intent intent) {
+        setIntent(intent);
+        android.content.Intent notificationAction = new android.content.Intent(intent);
+        super.onNewIntent(intent);
+        NotificationTapLaunchPlugin.captureAction(this, notificationAction);
     }
 
     public boolean isColdLaunch() {

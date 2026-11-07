@@ -26,7 +26,7 @@ public class NotificationTapLaunchAcceptanceTest {
                 "const taskId=action&&action.notification&&action.notification.extra&&action.notification.extra.taskId;" +
                 "if(id===2147000002)await p.acknowledgeInitialAction({id});const second=await p.getInitialAction();" +
                 "return {available:true,id,taskId,cleared:!second.action};})())");
-            assertTrue("Cold-start tap action must be delivered to the registered native bridge", result.contains("synthetic-tap-task"));
+            assertTrue("Cold-start tap action must be delivered to the registered native bridge: " + result, result.contains("synthetic-tap-task"));
             assertTrue("The pending action is acknowledged only after routing consumes it", result.contains("\"cleared\":true"));
         }
     }
