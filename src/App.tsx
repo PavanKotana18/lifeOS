@@ -21,6 +21,7 @@ import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canon
 import { getCurrencyMetadata } from './services/financeCore';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { buildDuplicateTransactionDraft } from './services/transactionDraft';
+import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodaySectionVisible, TODAY_SECTION_LABELS, type TodayLayout, type TodaySectionId } from './services/todayLayout';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
@@ -76,6 +77,10 @@ export default function App() {
   const activeTabRef = useRef<MainTab>('dashboard');
   const navigationHistory = useRef<MainTab[]>([]);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+  const [todayLayout, setTodayLayout] = useState<TodayLayout>(DEFAULT_TODAY_LAYOUT);
+  const todayLayoutRef = useRef<TodayLayout>(DEFAULT_TODAY_LAYOUT);
+  const todayLayoutSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const [todayCustomizationOpen, setTodayCustomizationOpen] = useState(false);
   const [plannerSelectedDate, setPlannerSelectedDate] = useState(() => formatLocalDate(new Date()));
   const [plannerDisplayedMonth, setPlannerDisplayedMonth] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); });
   const [plannerDetailTaskId, setPlannerDetailTaskId] = useState<string | null>(null);
@@ -417,6 +422,21 @@ export default function App() {
     setTimeout(() => setToast(null), 3200);
   };
 
+  const persistTodayLayout = (next: TodayLayout) => {
+    const normalized = normalizeTodayLayout(next);
+    todayLayoutRef.current = normalized;
+    setTodayLayout(normalized);
+    todayLayoutSaveQueue.current = todayLayoutSaveQueue.current
+      .catch(() => undefined)
+      .then(() => StorageService.settings.set('todayLayout', normalized))
+      .catch(() => showToast('Today layout could not be saved. Your previous layout will return after restart.', 'danger'));
+  };
+
+  const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
+    order: todayLayout.order.indexOf(id) + 2,
+    display: todayLayout.hidden.includes(id) ? 'none' : undefined,
+  });
+
   const requestCloseForm = () => {
     if (!backState.current.createKind) return;
     if (!window.confirm('Close this form? Any unsaved changes will be lost.')) return;
@@ -481,6 +501,9 @@ export default function App() {
     const savedUserPrefs = await StorageService.settings.get<Partial<UserPreferences>>('userPreferences', {});
     setUserPrefs(mergeUserPreferences(savedUserPrefs, storedCurrency));
     setDisplayName(await StorageService.settings.get<string>('displayName', ''));
+    const savedTodayLayout = normalizeTodayLayout(await StorageService.settings.get<unknown>('todayLayout', DEFAULT_TODAY_LAYOUT));
+    todayLayoutRef.current = savedTodayLayout;
+    setTodayLayout(savedTodayLayout);
 
     const savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>(
       'notificationPreferences',
@@ -1213,6 +1236,7 @@ export default function App() {
   }, [tasks]);
   const selectedPlannerDateLabel = new Date(`${plannerSelectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const dashboardTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => getTaskStatus(task, clockNow) === 'Overdue' || task.dueDate === todayKey), clockNow).slice(0, 5), [tasks, clockNow, todayKey]);
+  const dashboardUpcomingTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => !task.completed && task.dueDate > todayKey), clockNow).slice(0, 4), [tasks, clockNow, todayKey]);
   const visiblePlannerTasks = useMemo(() => {
     const dateScopedTasks = ['today', 'tomorrow', 'upcoming'].includes(plannerFilter) ? tasks : getTasksForDate(tasks, plannerSelectedDate);
     return sortTasksByDeadline(dateScopedTasks.filter(task => {
@@ -1336,11 +1360,20 @@ export default function App() {
         {/* VIEW 1: DASHBOARD */}
         <div key={activeTab} id={`view-${activeTab}`} className="tab-transition">
         {activeTab === 'dashboard' && (
-          <div className="space-y-5">
-            <div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
+          <div className="today-sections">
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
+
+            {todayCustomizationOpen && <section id="today-customization" aria-labelledby="today-customization-title" className="lifeos-panel rounded-2xl border p-4" style={{ order: 1 }}>
+              <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order.</p></div>
+              <ul className="today-customization-list">{todayLayout.order.map((id, index) => <li key={id}>
+                <label className="today-section-toggle"><input type="checkbox" checked={!todayLayout.hidden.includes(id)} disabled={id === 'focus'} onChange={event => persistTodayLayout(setTodaySectionVisible(todayLayoutRef.current, id, event.target.checked))} /><span>{TODAY_SECTION_LABELS[id]}</span></label>
+                <div className="today-order-actions"><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} up`} disabled={index === 0} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, -1))}>↑</button><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} down`} disabled={index === todayLayout.order.length - 1} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, 1))}>↓</button></div>
+              </li>)}</ul>
+              <button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="mt-3 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button>
+            </section>}
 
             {/* Today at a glance: separate counts keep task and routine progress understandable. */}
-            <section className="lifeos-panel space-y-3 rounded-2xl border p-4" aria-labelledby="today-overview-title" data-testid="today-overview">
+            <section className="lifeos-panel space-y-3 rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">At a glance</p>
                 <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s focus</h3>
@@ -1360,7 +1393,7 @@ export default function App() {
             </section>
 
             {/* Active Goals Summary */}
-            <section className="lifeos-panel rounded-2xl border p-4">
+            <section className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('goals')}>
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-[10px] font-bold uppercase tracking-wider lifeos-accent-text">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
                 <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all →</button>
@@ -1378,7 +1411,7 @@ export default function App() {
             </section>
 
             {/* Financial Overview Card */}
-            <div className="lifeos-panel rounded-2xl border p-4">
+            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Monthly Finance ({financeMonth})</h3>
                 <button onClick={() => navigateTo('finance')} className="min-h-11 text-xs lifeos-accent-text font-semibold">Details &rarr;</button>
@@ -1400,7 +1433,7 @@ export default function App() {
             </div>
 
             {/* Today's Habits Summary */}
-            <div className="lifeos-panel rounded-2xl border p-4">
+            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('habits')}>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Habits Today</h3>
                 <button onClick={() => navigateTo('habits')} className="text-xs lifeos-accent-text font-semibold">Manage</button>
@@ -1437,8 +1470,14 @@ export default function App() {
               )}
             </div>
 
+            {/* Future dated tasks are separate from today's agenda. */}
+            <section className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
+              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
+              {dashboardUpcomingTasks.length === 0 ? <div className="lifeos-raised rounded-xl px-3 py-4 text-center text-xs text-secondary"><p>No upcoming tasks yet.</p><button type="button" onClick={() => openCreateForm('task')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Add a task</button></div> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
+            </section>
+
             {/* Pending Tasks */}
-            <div className="lifeos-panel rounded-2xl border p-4">
+            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('agenda')}>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Today's Agenda</h3>
                 <button onClick={() => navigateTo('planner')} className="text-xs lifeos-accent-text font-semibold">All Tasks</button>

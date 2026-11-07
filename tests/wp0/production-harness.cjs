@@ -240,7 +240,7 @@ async function fixture({ activate = true } = {}) {
   const preferences = load('src/services/userPreferences.ts');
   const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false }, visualThemeId: 'soft-ivory-sage' };
   function appDeps() {
-    const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...db, ...notificationModule, ...state,
+    const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...load('src/services/todayLayout.ts'), ...db, ...notificationModule, ...state,
       ...load('src/services/csvExportService.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
@@ -253,10 +253,12 @@ async function fixture({ activate = true } = {}) {
           isStorageActive: db.isEncryptedStorageActivated,
         }),
       localStorage: global.localStorage, window: { confirm: () => true },
+      todayLayoutRef: { current: load('src/services/todayLayout.ts').DEFAULT_TODAY_LAYOUT },
       systemDarkPreference: () => false, applyDomTheme() {},
       BiometricService: { async isAvailable() { return { isAvailable: true }; } },
       backupPassphraseResolver: { current: null }, secureSetupResolver: { current: null },
       authCoordinator: { resetForBackground() {} }, notificationsEnabled: false,
+      confirmScreenshotResume: async () => {},
       notificationPreferences: notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
       effectiveNotificationPreferences: (p, master = false) => master ? p : notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
       async triggerBiometricAuth() { throw new Error('Unexpected optional biometric UI call'); },
