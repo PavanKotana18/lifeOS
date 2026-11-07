@@ -1440,12 +1440,14 @@ export default function App() {
 
         {activeTab === 'finance' && (
           <div className="space-y-4">
-            <div className="flex bg-slate-900 p-1 rounded-xl gap-1 text-xs font-semibold overflow-x-auto">
+            <div className="flex lifeos-panel p-1 rounded-xl gap-1 text-xs font-semibold overflow-x-auto">
               {(['overview', 'transactions', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => (
                 <button
+                  type="button"
                   key={sub}
                   onClick={() => navigateFinanceSubtab(sub)}
-                  className={`flex-1 py-2 px-3 rounded-lg capitalize whitespace-nowrap ${financeSubtab === sub ? 'bg-slate-800 text-white' : 'text-slate-400'}`}
+                  aria-current={financeSubtab === sub ? 'page' : undefined}
+                  className={`flex min-h-11 flex-1 items-center justify-center rounded-lg px-3 py-2 capitalize whitespace-nowrap ${financeSubtab === sub ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}
                 >
                   {sub}
                 </button>
@@ -1504,19 +1506,19 @@ export default function App() {
                 </section>
 
                 <div className="lifeos-panel rounded-2xl border p-4">
-                  <div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-semibold">Month-over-month</h4><span className="text-[10px] text-slate-400">vs {previousMonthKey(financeMonth)}</span></div>
+                  <div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-semibold">Month-over-month</h4><span className="text-[10px] text-secondary">vs {previousMonthKey(financeMonth)}</span></div>
                   {[{ label: 'Income', current: financeAnalytics.totalIncome, previous: financeAnalytics.periodRows[financeAnalytics.periodRows.length - 2]?.income ?? null, color: 'var(--success)' }, { label: 'Expenses', current: financeAnalytics.totalExpenses, previous: financeAnalytics.periodRows[financeAnalytics.periodRows.length - 2]?.expenses ?? null, color: 'var(--danger)' }].map(row => {
                     const max = Math.max(row.current, row.previous || 0, 1);
                     return <div key={row.label} className="mb-3 last:mb-0"><div className="mb-1 flex justify-between gap-2 text-[10px]"><span>{row.label}</span><span className="text-right tabular-nums">{formatMoney(row.current)} <span className="text-secondary">· {row.previous === null ? 'no prior records' : formatMoney(row.previous)}</span></span></div><div className="flex h-2 gap-1"><div className="h-full rounded" style={{ width: `${row.current / max * 100}%`, backgroundColor: row.color }} />{row.previous !== null && <div className="h-full rounded" style={{ width: `${row.previous / max * 100}%`, backgroundColor: 'var(--surface-raised)' }} />}</div></div>;
                   })}
-                  <p className="mt-2 text-[10px] text-slate-500">Current month · previous month</p>
+                  <p className="mt-2 text-[10px] text-muted">Current month · previous month</p>
                 </div>
 
                 {/* Quick Add Buttons */}
                 <div className="flex gap-2">
                   <button
                     onClick={() => openCreateForm('transaction')}
-                    className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-semibold text-xs active:scale-95 transition"
+                    className="lifeos-accent-button min-h-11 flex-1 rounded-xl py-3 text-xs font-semibold transition active:scale-95"
                   >
                     + Record Transaction
                   </button>
@@ -1533,11 +1535,11 @@ export default function App() {
                     placeholder="Search description, category..."
                     value={financeSearch}
                     onChange={(e) => setFinanceSearch(e.target.value)}
-                    className="flex-1 p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white"
+                    className="lifeos-input min-h-11 flex-1 rounded-xl px-3 py-2.5 text-xs"
                   />
-                  <button onClick={() => openCreateForm('transaction')} className="shrink-0 rounded-xl bg-indigo-600 px-3 text-xs font-semibold text-white">+ Add</button>
+                  <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
                 </div>
-                <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-slate-400">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-800 bg-slate-900 px-2 py-2 text-xs text-white" /></label><label className="text-[10px] text-slate-400">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-800 bg-slate-900 px-2 py-2 text-xs text-white"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label></div>
+                <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label></div>
 
                 {/* Filters */}
                 <div className="flex gap-1.5 overflow-x-auto text-xs pb-1">
@@ -1545,27 +1547,27 @@ export default function App() {
                     <button
                       key={t}
                       onClick={() => setFinanceTypeFilter(t)}
-                      className={`px-3 py-1.5 rounded-full capitalize whitespace-nowrap ${financeTypeFilter === t ? 'bg-indigo-600 text-white font-semibold' : 'bg-slate-900 text-slate-400 border border-slate-800'}`}
+                      className={`px-3 py-1.5 rounded-full capitalize whitespace-nowrap ${financeTypeFilter === t ? 'lifeos-accent-button font-semibold' : 'lifeos-panel text-secondary border border-[var(--stroke)]'}`}
                     >
                       {t}
                     </button>
                   ))}
                 </div>
-                <label className="flex items-center justify-between text-[10px] text-slate-400">Sort<select value={financeSort} onChange={e => setFinanceSort(e.target.value)} className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-2 text-xs text-white"><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="amount-desc">Largest amount</option></select></label>
+                <label className="flex items-center justify-between text-[10px] text-secondary">Sort<select value={financeSort} onChange={e => setFinanceSort(e.target.value)} className="lifeos-input min-h-11 rounded-lg px-2 py-2 text-xs"><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="amount-desc">Largest amount</option></select></label>
 
                 {/* Transactions List */}
                 <div className="space-y-2">
                   {filteredTransactions.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-slate-500">No transactions match these filters.</div>
+                    <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
                   ) : (
                     filteredTransactions.map(t => (
-                        <div key={t.id} role="button" tabIndex={0} aria-label={`Edit transaction ${t.description || t.category}`} onClick={() => openEditTransaction(t)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openEditTransaction(t); } }} className="cursor-pointer p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center transition hover:border-indigo-500/50 active:scale-[.995]">
+                        <div key={t.id} role="button" tabIndex={0} aria-label={`Edit transaction ${t.description || t.category}`} onClick={() => openEditTransaction(t)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openEditTransaction(t); } }} className="cursor-pointer p-3.5 rounded-xl lifeos-panel border border-[var(--stroke)] flex justify-between items-center transition hover:border-[var(--accent)] active:scale-[.995]">
                           <div>
                             <p className="font-semibold text-sm">{t.description || t.category}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ''} &bull; {t.category} ({t.paymentMethod})</p>
+                            <p className="text-xs text-secondary mt-0.5">{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ''} &bull; {t.category} ({t.paymentMethod})</p>
                           </div>
                           <div className="text-right">
-                            <p className={`font-bold text-sm ${t.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            <p className={`font-bold text-sm ${t.type === 'income' ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
                               {t.type === 'income' ? '+' : '-'}{formatMoney(t.amount)}
                             </p>
                             <button
@@ -1576,7 +1578,7 @@ export default function App() {
                                 await reloadAllData();
                                 showToast('Transaction deleted', 'info');
                               }}
-                              className="text-[10px] text-slate-500 hover:text-rose-400 mt-1"
+                              className="text-[10px] text-muted hover:text-[var(--danger)] mt-1"
                             >
                               Delete
                             </button>
@@ -1589,20 +1591,20 @@ export default function App() {
             )}
 
             {financeSubtab === 'budgets' && <div className="space-y-3">
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Monthly budgets</h3><p className="text-xs text-slate-400">Track spending against a monthly limit</p></div><button onClick={() => openCreateForm('budget')} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">+ Add budget</button></div>
-              {budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900 py-8 text-center text-sm text-slate-400">No budget set for {financeMonth}.</div> : budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).map(b => {
+              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Monthly budgets</h3><p className="text-xs text-secondary">Track spending against a monthly limit</p></div><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add budget</button></div>
+              {budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No budget set for {financeMonth}.</div> : budgets.filter(b => !b.monthYear || b.monthYear === financeMonth).map(b => {
                 const budgetCategoryName = b.categoryId ? categories.find(category => category.id === b.categoryId)?.name : undefined;
                 const spent = b.categoryId ? (budgetCategoryName ? financeMetrics.categoryExpenses[budgetCategoryName] || 0 : 0) : financeMetrics.totalExpenses;
                 const pct = b.monthlyAmount > 0 ? Math.min(100, Math.round(spent / b.monthlyAmount * 100)) : 0;
-                return <div key={b.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between text-sm"><strong>{b.categoryId ? (budgetCategoryName || 'Unavailable category') : 'Overall budget'}</strong><span>{formatMoney(spent)} / {formatMoney(b.monthlyAmount)}</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className={`h-full rounded-full ${pct >= 100 ? 'bg-rose-500' : 'bg-indigo-500'}`} style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{pct}% used</span><span>{formatMoney(Math.max(0, b.monthlyAmount - spent))} remaining</span></div><button onClick={async () => { await StorageService.budgets.delete(b.id); await reloadAllData(); showToast('Budget deleted', 'info'); }} className="mt-2 text-xs text-slate-400">Delete</button></div>;
+                return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{b.categoryId ? (budgetCategoryName || 'Unavailable category') : 'Overall budget'}</strong><span>{formatMoney(spent)} / {formatMoney(b.monthlyAmount)}</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetCategoryName || 'Overall'} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className={`h-full rounded-full ${pct >= 100 ? 'bg-[var(--danger)]' : 'bg-[var(--accent)]'}`} style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-secondary"><span>{pct}% used</span><span>{formatMoney(Math.max(0, b.monthlyAmount - spent))} remaining</span></div><button onClick={async () => { await StorageService.budgets.delete(b.id); await reloadAllData(); showToast('Budget deleted', 'info'); }} className="mt-2 text-xs text-secondary">Delete</button></div>;
               })}
             </div>}
 
             {financeSubtab === 'savings' && <div className="space-y-3">
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-slate-400">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white">+ Add goal</button></div>
-              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-slate-800 bg-slate-900 py-8 text-center text-sm text-slate-400">No savings goals yet.</div> : savingsGoals.map(goal => {
+              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
+              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : savingsGoals.map(goal => {
                 const pct = goal.targetAmount > 0 ? Math.min(100, Math.round(goal.currentAmount / goal.targetAmount * 100)) : 0;
-                return <div key={goal.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-slate-400">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold text-indigo-400">{pct}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-slate-400"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => {
+                return <div key={goal.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between gap-3"><div><h4 className="font-semibold">{goal.title}</h4><p className="text-xs text-secondary">{goal.category || 'Personal'} · target {formatDate(goal.targetDate)}</p></div><span className="text-sm font-bold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} savings progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="h-full rounded-full bg-[var(--success)]" style={{ width: `${pct}%` }} /></div><div className="mt-2 flex justify-between text-xs text-secondary"><span>{formatMoney(goal.currentAmount)} saved</span><span>of {formatMoney(goal.targetAmount)}</span></div><div className="mt-3 flex gap-4"><button onClick={() => {
                   const expenseCategories = categories.filter(category => category.type === 'expense');
                   const preferredCategory = expenseCategories.find(category => category.name === 'Investments') || expenseCategories[0];
                   setCreateDraft({
@@ -1614,7 +1616,7 @@ export default function App() {
                     transferCategory: preferredCategory?.name || ''
                   });
                   setCreateKind('contribution');
-                }} className="text-xs font-semibold text-indigo-400">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-slate-400">Delete</button></div></div>;
+                }} className="text-xs font-semibold lifeos-accent-text">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-secondary">Delete</button></div></div>;
               })}
             </div>}
 
