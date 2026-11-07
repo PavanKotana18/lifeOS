@@ -27,14 +27,14 @@ public class LocalNotificationBridgeAcceptanceTest {
             assertTrue("LocalNotifications must be registered in the native bridge", WebViewTestSupport.evaluate(
                 scenario, "window.Capacitor.isPluginAvailable('LocalNotifications')").contains("true"));
 
-            String result = WebViewTestSupport.evaluate(scenario,
-                "JSON.stringify((async()=>{const p=window.Capacitor.Plugins.LocalNotifications;const id=2147000001;" +
+            String result = WebViewTestSupport.evaluateAsync(scenario,
+                "(async()=>{const p=window.Capacitor.Plugins.LocalNotifications;const id=2147000001;" +
                 "await p.createChannel({id:'lifeos-reminders',name:'LifeOS reminders',importance:4,visibility:0});" +
                 "const at=new Date(Date.now()+120000);await p.schedule({notifications:[{id,title:'LifeOS QA reminder',body:'Synthetic test only'," +
                 "schedule:{at,allowWhileIdle:true},channelId:'lifeos-reminders',smallIcon:'ic_transparent',extra:{kind:'taskReminders',taskId:'synthetic-qa'} }]});" +
                 "let found=null;try{const pending=await p.getPending();found=pending.notifications.find(n=>n.id===id)||null;" +
                 "return {scheduled:!!found,at:found&&new Date(found.schedule.at).toISOString()};}" +
-                "finally{await p.cancel({notifications:[{id}]});}})())");
+                "finally{await p.cancel({notifications:[{id}]});}})()");
             Object value = new JSONTokener(result).nextValue();
             JSONObject report = new JSONObject(String.valueOf(value));
             assertTrue("Native queue must contain the synthetic reminder after schedule: " + result, report.optBoolean("scheduled"));

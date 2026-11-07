@@ -58,7 +58,11 @@ public class ScreenshotProtectionAcceptanceTest {
 
             // Isolate Activity's resume fence from LifeOS's asynchronous resume
             // validation, which is exercised by the application lifecycle suite.
-            scenario.onActivity(activity -> activity.getBridge().getWebView().setVisibility(android.view.View.GONE));
+            scenario.onActivity(activity -> {
+                activity.getBridge().getWebView().getSettings().setJavaScriptEnabled(false);
+                activity.getBridge().getWebView().setVisibility(android.view.View.GONE);
+            });
+            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED);
             AtomicInteger paused = new AtomicInteger();
             scenario.onActivity(activity -> paused.set(hasSecureFlag(activity) ? 1 : 0));

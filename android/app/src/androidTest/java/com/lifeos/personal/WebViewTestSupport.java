@@ -2,6 +2,8 @@ package com.lifeos.personal;
 
 import android.util.Log;
 import androidx.test.core.app.ActivityScenario;
+import org.json.JSONObject;
+import org.json.JSONTokener;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -39,6 +41,28 @@ final class WebViewTestSupport {
         assertTrue("WebView evaluation callback timed out", done.await(10, TimeUnit.SECONDS));
         assertNull(failure.get(), failure.get());
         return result.get();
+    }
+
+    /** evaluateJavascript serializes a Promise as {}, so explicitly await async test operations. */
+    static String evaluateAsync(ActivityScenario<MainActivity> scenario, String expression) throws Exception {
+        String start = "(()=>{window.__lifeosNativeTestResult='PENDING';Promise.resolve(" + expression +
+            ").then(v=>window.__lifeosNativeTestResult=JSON.stringify({ok:true,value:v})," +
+            "e=>window.__lifeosNativeTestResult=JSON.stringify({ok:false,error:String(e)}));return 'started';})()";
+        evaluate(scenario, start);
+        long deadline = android.os.SystemClock.elapsedRealtime() + 15000;
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            String raw = evaluate(scenario, "window.__lifeosNativeTestResult");
+            Object encoded = new JSONTokener(raw).nextValue();
+            if (encoded instanceof String && !"PENDING".equals(encoded)) {
+                JSONObject outcome = new JSONObject((String) encoded);
+                if (!outcome.optBoolean("ok")) throw new AssertionError("Async WebView test operation failed: " + outcome.optString("error"));
+                Object value = outcome.opt("value");
+                return value == null ? "null" : value.toString();
+            }
+            Thread.sleep(50);
+        }
+        fail("Async WebView test operation timed out");
+        return null;
     }
 
     static void awaitReactRoot(ActivityScenario<MainActivity> scenario) throws Exception {
