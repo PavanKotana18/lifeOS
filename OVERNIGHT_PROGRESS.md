@@ -475,3 +475,11 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Hosted run `42413790049`:** Automated checks and Android Debug build succeeded for `0c3740ebcd60e7801bbe96891c28503cc63bcfe7`. It built the Debug APK, verified the persistent signer/package/version, and compiled the instrumentation APK (not executed). The existing workflow also generated a signed release APK on this feature-branch push; it was not published as a GitHub Release or to Play, and its generated Actions artifact was deleted. The Debug APK artifact was retained.
 - **Correction:** Added a workflow condition so release-signing secrets and packaging are only eligible on `main`, `develop`, or `release/*` refs, not feature pushes or pull requests. Added a signing-workflow regression; it passes.
 - **Next:** Push this focused CI safety follow-up and verify that a new run builds the Debug APK without creating a release artifact. The existing draft PR stays open.
+
+## Money 2.0 continuation — 2026-11-08, delivery complete
+
+- **Final code/CI checkpoint:** `102c1fa4505fa94744aaa04ca331b70ff43626ae` passed hosted run `42414286404`, including all automated checks, Sentinel, web build, Capacitor sync, signed Debug APK construction, and signature/package/version verification. Feature-branch release signing was skipped. Artifacts: Debug APK `13590843125`; instrumentation APK `13590299671` (compiled only; not run).
+- **PR:** https://github.com/PavanKotana18/lifeOS/pull/25 remains OPEN and draft, stacked on PR #24. The PR description contains the migration rules, accounting invariants, test results, known limits, and artifact links.
+- **Limitations:** No physical-device or Android instrumentation execution. Mixed-currency reports do not automatically convert; commitments do not auto-advance/post/remind. Local final Sentinel output reported 6/6 pass, but its last invocation did not exit cleanly after the final summary; the earlier invocation exited normally, and hosted Sentinel passed.
+- **Release-artifact safety:** The first run created a signed release APK artifact due the former workflow condition. It was deleted, not published. A branch guard was added; final run confirms release signing/upload skipped.
+- **Next:** User review of PR #25 and physical install/acceptance of the Debug APK. Do not merge or release.
