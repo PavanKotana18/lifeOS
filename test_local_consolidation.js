@@ -47,6 +47,8 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(report.androidApi,35); assert.equal(report.packageName,'com.lifeos.personal');
   assert.equal(report.appNotifications,'enabled'); assert.equal(report.permission,'granted');
   assert.equal(report.pendingCount,0,'an empty pending queue says nothing about past delivery');
+  assert.equal(report.visibleNotificationCount,0,'active shade notifications are queried separately from pending schedules');
+  assert.equal(report.batteryOptimizationExempt,false,'runtime facts report OS power allowlisting without requesting exemption');
   assert.equal(report.build.capacitor.localNotifications,'6.1.3');
   const raw=global.localStorage.getItem('lifeos.notificationDiagnostics') || '';
   assert.equal(raw.includes('Private'),false,'diagnostics do not serialize task content');
@@ -97,6 +99,58 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(report.pendingTimestampMatches, false);
   assert.equal(new Date(f.pending.get(stableId(`task:${task.id}:taskReminders`)).schedule.at).getTime(), firstAt.getTime(), 'failed replacement leaves the previously valid alarm intact');
  }));
+ await test('Resume catches up a still-persisted past inexact reminder without claiming delivery', async () => fixture(async f => {
+  const ns=f.NotificationService;
+  ns.checkExactAlarmPermission=async()=> 'denied';
+  const stableId=f.load('src/services/domainUtils.ts').stableNotificationId;
+  const prefs={...f.DEFAULT_NOTIFICATION_PREFERENCES,taskReminders:true};
+  const selectedAt=new Date(Date.now()-5*60_000);
+  const task=await f.StorageService.tasks.add({title:'Synthetic late reminder',dueDate:'2030-01-01',priority:'Medium',recurring:'None',completed:false,reminderAt:selectedAt.toISOString()});
+  const id=stableId(`task:${task.id}:taskReminders`);
+  f.pending.set(id,{id,title:'Task reminder',schedule:{at:selectedAt},extra:{kind:'taskReminders',taskId:task.id}});
+  await ns.syncTasks([task],prefs);
+  let queued=f.pending.get(id);
+  assert.ok(queued,'task resynchronization preserves and replaces the still-persisted past reminder');
+  assert.equal(queued.extra.lateCatchUp,true);
+  assert.equal(queued.extra.originalReminderAt,selectedAt.toISOString());
+  const firstCatchUpAt=new Date(queued.schedule.at).getTime();
+  assert.ok(firstCatchUpAt>Date.now(),'catch-up is scheduled immediately in the foreground');
+  await ns.syncTasks([task],prefs);
+  queued=f.pending.get(id);
+  assert.equal(new Date(queued.schedule.at).getTime(),firstCatchUpAt,'repeat sync does not postpone or duplicate the catch-up alarm');
+  let report=await ns.diagnoseTaskReminder(task,prefs);
+  assert.equal(report.schedulingResult,'late-delivery-pending');
+  assert.equal(report.deliveryEvidence,'pending-store-only');
+  assert.equal(report.pendingNotificationId,id);
+  assert.equal(report.visibleInNotificationShade,false);
+  assert.match(report.deliveryTiming,/inexact-approximate/);
+  assert.notEqual(report.schedulingResult,'delivered');
+  f.pending.delete(id);
+  f.delivered.set(id,{id});
+  report=await ns.diagnoseTaskReminder(task,prefs);
+  assert.equal(report.schedulingResult,'currently-visible-in-android-shade');
+  assert.equal(report.deliveryEvidence,'currently-visible');
+  assert.equal(report.visibleInNotificationShade,true,'active Android shade state is reported separately from pending schedule state');
+ }));
+ await test('Capacitor reboot-restored reminder is recognized and retained instead of cancelled', async () => fixture(async f => {
+  const ns=f.NotificationService;
+  const stableId=f.load('src/services/domainUtils.ts').stableNotificationId;
+  const prefs={...f.DEFAULT_NOTIFICATION_PREFERENCES,taskReminders:true};
+  const selectedAt=new Date(Date.now()-2*60_000);
+  const task=await f.StorageService.tasks.add({title:'Synthetic reboot reminder',dueDate:'2030-01-01',priority:'Medium',recurring:'None',completed:false,reminderAt:selectedAt.toISOString()});
+  const id=stableId(`task:${task.id}:taskReminders`);
+  // Capacitor Local Notifications 6.1.3 rewrites an elapsed trigger to now+15s
+  // in its BOOT_COMPLETED receiver while preserving legacy extra metadata.
+  f.pending.set(id,{id,title:'Task reminder',schedule:{at:new Date(Date.now()+15_000)},extra:{kind:'taskReminders',taskId:task.id}});
+  await ns.syncTasks([task],prefs);
+  const queued=f.pending.get(id);
+  assert.ok(queued,'boot-restored alarm is not treated as an unrelated future reminder');
+  assert.equal(queued.extra.lateCatchUp,true,'stale restore trigger is normalized to one immediate catch-up');
+  assert.equal(queued.extra.originalReminderAt,selectedAt.toISOString());
+  assert.ok(new Date(queued.schedule.at).getTime()>Date.now());
+  await ns.syncTasks([task],prefs);
+  assert.equal(new Date(f.pending.get(id).schedule.at).getTime(),new Date(queued.schedule.at).getTime(),'repeated resume synchronization is idempotent');
+ }));
  await test('Task sync removes completed or deleted task schedules without affecting unrelated reminders', async () => fixture(async f => {
   const prefs = { ...f.DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };
   const stableId = f.load('src/services/domainUtils.ts').stableNotificationId;
@@ -136,5 +190,5 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const messages=[];const reset=h.bind(h.buttonHandler('Clear All Application Data'),{...f.appDeps(),showToast:(...args)=>messages.push(args)});
   await reset();assert.equal(await f.lifeOSDatabase.tasks.count(),1);assert.equal(messages.at(-1)[1],'danger');
  }));
- console.log(`LOCAL CONSOLIDATION: ${passed}/11 passed (native simulated)`);
+ console.log(`LOCAL CONSOLIDATION: ${passed}/13 passed (native simulated)`);
 })().catch(e=>{console.error(e);process.exitCode=1;});

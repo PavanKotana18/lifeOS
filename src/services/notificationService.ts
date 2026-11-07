@@ -17,7 +17,7 @@ const notificationId = stableNotificationId;
 const taskNotificationId = (task: Task, kind: string) => notificationId(`task:${task.id}:${kind}`);
 const testId = notificationId('lifeos:test-notification');
 const isNative = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('LocalNotifications');
-const NativeRuntimeInfo = registerPlugin<{ getInfo(): Promise<{ androidApi: number; packageName: string; versionName: string; versionCode: number }> }>('LifeOSRuntimeInfo');
+const NativeRuntimeInfo = registerPlugin<{ getInfo(): Promise<{ androidApi: number; packageName: string; versionName: string; versionCode: number; batteryOptimizationExempt?: boolean | null }> }>('LifeOSRuntimeInfo');
 const NativeNotificationSettings = registerPlugin<{ open(): Promise<void> }>('NotificationSettings');
 const NativeNotificationTapLaunch = registerPlugin<{
   getInitialAction(): Promise<{ action?: { notification?: { id?: number; extra?: Record<string, unknown> } } }>;
@@ -37,6 +37,9 @@ export interface NotificationDiagnostics {
   exactAlarm: string;
   channel: string;
   pendingCount: number;
+  visibleNotificationCount: number;
+  visibleNotificationIds: number[];
+  batteryOptimizationExempt: boolean | null;
   androidApi: number | null;
   packageName: string | null;
   versionName: string | null;
@@ -87,6 +90,10 @@ function pendingTimeMatches(actual: unknown, expected: Date) {
   if (actual === undefined || actual === null) return false;
   const actualTime = actual instanceof Date ? actual.getTime() : new Date(actual as string | number).getTime();
   return Number.isFinite(actualTime) && Math.abs(actualTime - expected.getTime()) < 1000;
+}
+function asDate(value: unknown) {
+  if (value instanceof Date) return new Date(value.getTime());
+  return new Date(value as string | number);
 }
 
 function localDateTime(date: string, time: string) {
@@ -170,6 +177,7 @@ export const NotificationService = {
         return;
       }
       const pending = await LocalNotifications.getPending();
+      const delivered = await LocalNotifications.getDeliveredNotifications();
       const taskKinds = new Set(['taskReminders', 'upcomingDeadlines', 'overdueAlerts']);
       const oldTaskNotifications = pending.notifications.filter(item => taskKinds.has(String(item.extra?.kind || '')));
 
@@ -180,9 +188,53 @@ export const NotificationService = {
       const notifications = tasks.flatMap(task => buildTaskNotificationPlan(task, preferences, now).map(plan => ({
         id: taskNotificationId(task, plan.kind), title: labels[plan.kind] || 'LifeOS reminder', body: 'Unlock LifeOS to view your reminder.',
         schedule: { at: plan.at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
-        extra: { kind: plan.kind, taskId: task.id },
+        extra: { kind: plan.kind, taskId: task.id,
+          ...(plan.kind === 'taskReminders' && task.reminderAt ? { originalReminderAt: task.reminderAt } : {}) },
       })));
       const desiredIds = new Set(notifications.map(item => item.id));
+      const tasksById = new Map(tasks.map(task => [String(task.id), task]));
+      const visibleIds = new Set(delivered.notifications.map(item => Number(item.id)).filter(Number.isInteger));
+      const lateCatchUps: LocalNotificationSchema[] = [];
+      const retainedLateIds = new Set<number>();
+      for (const item of oldTaskNotifications) {
+        if (String(item.extra?.kind || '') !== 'taskReminders') continue;
+        const taskId = String(item.extra?.taskId || '');
+        const task = tasksById.get(taskId);
+        if (!task || task.completed || !preferences.taskReminders || !task.reminderAt) continue;
+        const selectedAt = new Date(task.reminderAt);
+        if (!Number.isFinite(selectedAt.getTime()) || selectedAt > now) continue;
+        const originalAt = item.extra?.originalReminderAt
+          ? asDate(item.extra.originalReminderAt)
+          : item.schedule?.at ? asDate(item.schedule.at) : new Date(NaN);
+        const existingTrigger = item.schedule?.at ? asDate(item.schedule.at) : null;
+        // Plugin 6.1.3 rewrites elapsed schedules to now+15s on reboot but
+        // keeps legacy extras unchanged. Recognize that narrow restore window
+        // when the selected reminder itself is already past.
+        const looksBootRestored = !item.extra?.originalReminderAt && existingTrigger !== null &&
+          existingTrigger > now && existingTrigger.getTime() - now.getTime() <= 60_000;
+        if (!pendingTimeMatches(originalAt, selectedAt) && !looksBootRestored) continue;
+        if (visibleIds.has(item.id)) {
+          retainedLateIds.add(item.id);
+          continue;
+        }
+        const catchUpStillPending = item.extra?.lateCatchUp === true && existingTrigger !== null && existingTrigger > now;
+        if (!catchUpStillPending) {
+          // The Capacitor pending list is persisted plugin state, not direct
+          // AlarmManager introspection. The plugin receiver removes the saved
+          // row after posting. A still-persisted missed reminder is therefore
+          // eligible for one foreground catch-up rather than stale cancellation.
+          lateCatchUps.push({
+            id: item.id,
+            title: 'Task reminder',
+            body: 'Unlock LifeOS to view your reminder.',
+            schedule: { at: new Date(now.getTime() + 5_000), allowWhileIdle: true },
+            channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+            extra: { kind: 'taskReminders', taskId, lateCatchUp: true, originalReminderAt: task.reminderAt },
+          });
+        }
+        retainedLateIds.add(item.id);
+      }
+      for (const id of retainedLateIds) desiredIds.add(id);
       const notificationOwners = new Map<number, string>();
       for (const item of notifications) {
         const owner = `${String(item.extra?.kind)}:${String(item.extra?.taskId)}`;
@@ -190,13 +242,13 @@ export const NotificationService = {
         if (existing && existing !== owner) throw new Error('notification-id-collision');
         notificationOwners.set(item.id, owner);
       }
-      if (notifications.length) {
+      if (notifications.length || lateCatchUps.length) {
         // Queue the replacement set first. A failed update must not erase
         // reminders which were already queued successfully.
-        await schedule(notifications);
+        await schedule([...notifications, ...lateCatchUps]);
         const after = await LocalNotifications.getPending();
         const pendingById = new Map(after.notifications.map(item => [item.id, item]));
-        const missing = notifications.filter(item => {
+        const missing = [...notifications, ...lateCatchUps].filter(item => {
           const pendingItem = pendingById.get(item.id);
           return !pendingItem || !pendingTimeMatches(pendingItem.schedule?.at, item.schedule.at);
         });
@@ -207,7 +259,14 @@ export const NotificationService = {
       // cancelling each other's schedules during rapid task edits/resume.
       const stale = oldTaskNotifications.filter(item => !desiredIds.has(item.id));
       await cancelIds(stale.map(item => item.id));
-      if (stale.length) updateDiagnostics({ lastCancellationReason: 'task-removed-completed-or-no-longer-eligible' });
+      if (stale.length) {
+        const staleTask = tasksById.get(String(stale[0].extra?.taskId || ''));
+        const reason = !staleTask ? 'task-deleted'
+          : staleTask.completed ? 'task-completed'
+            : String(stale[0].extra?.kind) === 'taskReminders' && !preferences.taskReminders ? 'category-disabled'
+              : 'task-reminder-replaced-or-ineligible';
+        updateDiagnostics({ lastCancellationReason: reason });
+      }
       const finalPending = await LocalNotifications.getPending();
       const finalIds = new Set(finalPending.notifications.map(item => item.id));
       for (const task of tasks) {
@@ -235,8 +294,11 @@ export const NotificationService = {
     const permission = await this.checkPermission();
     const kind = 'taskReminders';
     const id = taskNotificationId(task, kind);
-    const pending = isNative() ? await LocalNotifications.getPending() : { notifications: [] };
-    const planned = buildTaskNotificationPlan(task, { ...DEFAULT_NOTIFICATION_PREFERENCES, ...preferences }, new Date());
+    const [pending, delivered] = isNative() ? await Promise.all([
+      LocalNotifications.getPending(), LocalNotifications.getDeliveredNotifications(),
+    ]) : [{ notifications: [] }, { notifications: [] }];
+    const now = new Date();
+    const planned = buildTaskNotificationPlan(task, { ...DEFAULT_NOTIFICATION_PREFERENCES, ...preferences }, now);
     const plannedNotifications = planned.map(item => {
       const notificationId = taskNotificationId(task, item.kind);
       const pendingNotification = pending.notifications.find(entry => entry.id === notificationId);
@@ -250,37 +312,55 @@ export const NotificationService = {
     });
     const taskPlan = planned.find(item => item.kind === kind);
     const pendingItem = pending.notifications.find(item => item.id === id);
+    const visibleItem = delivered.notifications.find(item => Number(item.id) === id);
     const pendingMatchesPlan = Boolean(pendingItem && taskPlan && pendingTimeMatches(pendingItem.schedule?.at, taskPlan.at));
+    const selectedReminderAt = task.reminderAt ? new Date(task.reminderAt) : null;
+    const persistedOriginalAt = pendingItem?.extra?.originalReminderAt
+      ? asDate(pendingItem.extra.originalReminderAt)
+      : pendingItem?.schedule?.at ? asDate(pendingItem.schedule.at) : null;
+    const latePending = Boolean(pendingItem && selectedReminderAt && !Number.isNaN(selectedReminderAt.getTime()) &&
+      selectedReminderAt <= now && pendingTimeMatches(persistedOriginalAt, selectedReminderAt));
     let cancellationReason = '';
     if (task.completed) cancellationReason = 'task-completed';
     else if (!task.reminderAt) cancellationReason = 'reminder-not-configured';
     else if (!preferences.taskReminders) cancellationReason = 'category-disabled';
     else if (permission !== 'granted') cancellationReason = `permission-${permission}`;
-    else if (!taskPlan) cancellationReason = 'invalid-or-past-reminder-time';
+    else if (visibleItem || latePending) cancellationReason = '';
+    else if (!taskPlan) cancellationReason = selectedReminderAt && !Number.isNaN(selectedReminderAt.getTime()) && selectedReminderAt <= now
+      ? 'reminder-time-passed;delivery-not-observable' : 'invalid-reminder-time';
     else if (pendingItem && !pendingMatchesPlan) cancellationReason = 'pending-time-mismatch';
     else if (!pendingItem) cancellationReason = 'not-present-in-android-pending-queue';
     const dueAt = task.dueTime ? localDateTime(task.dueDate, task.dueTime) : null;
     const record = readDiagnosticRecord();
+    const exactAlarm = await this.checkExactAlarmPermission();
     return {
       taskReference: task.id,
-      eligible: Boolean(taskPlan && permission === 'granted' && preferences.taskReminders && !task.completed),
-      scheduledLocalTime: taskPlan?.at.toLocaleString() || null,
-      scheduledUtcTime: formatDateForDiagnostic(taskPlan?.at),
+      eligible: Boolean((taskPlan || latePending || visibleItem) && permission === 'granted' && preferences.taskReminders && !task.completed),
+      schedulingState: visibleItem ? 'currently-visible-in-android-shade' : latePending
+        ? pendingItem?.extra?.lateCatchUp === true ? 'late-catch-up-pending' : 'past-time-still-persisted;delivery-unconfirmed'
+        : taskPlan ? 'scheduled-for-future' : 'not-scheduled',
+      deliveryEvidence: visibleItem ? 'currently-visible' : pendingItem ? 'pending-store-only' : 'unknown-no-active-or-pending-record',
+      scheduledLocalTime: selectedReminderAt && !Number.isNaN(selectedReminderAt.getTime()) ? selectedReminderAt.toLocaleString() : null,
+      scheduledUtcTime: formatDateForDiagnostic(selectedReminderAt),
+      pendingScheduledLocalTime: pendingItem?.schedule?.at ? asDate(pendingItem.schedule.at).toLocaleString() : null,
+      pendingScheduledUtcTime: pendingItem?.schedule?.at ? formatDateForDiagnostic(asDate(pendingItem.schedule.at)) : null,
       dueLocalTime: dueAt?.toLocaleString() || (task.dueDate && !task.dueTime ? 'date-only; no time assigned' : null),
       dueUtcTime: formatDateForDiagnostic(dueAt),
       categoryEnabled: preferences.taskReminders,
       androidPermission: permission,
       notificationId: id,
-      schedulingResult: pendingMatchesPlan ? 'pending' : taskPlan && permission === 'granted' && preferences.taskReminders && !task.completed
+      schedulingResult: visibleItem ? 'currently-visible-in-android-shade' : latePending ? 'late-delivery-pending' : pendingMatchesPlan ? 'pending' : taskPlan && permission === 'granted' && preferences.taskReminders && !task.completed
         ? taskScheduleStatus.get(task.id) || 'not-present-in-android-pending-queue'
         : 'not-scheduled',
-      pendingNotificationId: pendingMatchesPlan ? pendingItem?.id ?? null : null,
-      pendingTimestampMatches: pendingMatchesPlan,
-      cancellationReason: cancellationReason || record.lastCancellationReason || null,
+      pendingNotificationId: pendingMatchesPlan || latePending ? pendingItem?.id ?? null : null,
+      pendingTimestampMatches: pendingMatchesPlan || latePending,
+      visibleInNotificationShade: Boolean(visibleItem),
+      exactAlarm,
+      deliveryTiming: exactAlarm === 'granted' ? 'exact-capability-available' : 'inexact-approximate; Android may defer during idle or device power management',
+      cancellationReason: cancellationReason || (visibleItem || latePending ? null : record.lastCancellationReason) || null,
       lastScheduleAttempt: record.lastScheduleAttempt || null,
       lastScheduleResult: record.lastScheduleResult || 'unknown',
       plannedNotifications,
-      exactAlarm: await this.checkExactAlarmPermission(),
     };
   },
 
@@ -392,7 +472,8 @@ export const NotificationService = {
     const record = readDiagnosticRecord();
     const empty: NotificationDiagnostics = {
       capability: 'unavailable', platform, supported: false, permission: 'unknown', appNotifications: 'unknown',
-      exactAlarm: 'unknown', channel: 'unknown', pendingCount: 0, androidApi: null, packageName: null,
+      exactAlarm: 'unknown', channel: 'unknown', pendingCount: 0, visibleNotificationCount: 0,
+      visibleNotificationIds: [], batteryOptimizationExempt: null, androidApi: null, packageName: null,
       versionName: null, versionCode: null, build: LIFEOS_BUILD_INFO, lastScheduleAttempt: record.lastScheduleAttempt || null,
       lastScheduleResult: record.lastScheduleResult || 'unknown', lastCancellationReason: record.lastCancellationReason || null,
       lastActionEvent: record.lastActionEvent || null, lastError: record.lastError || '',
@@ -409,16 +490,17 @@ export const NotificationService = {
     }
     if (!pluginAvailable) return { ...empty, capability: 'unavailable', permission: 'unknown', exactAlarm: 'unknown', channel: 'unknown', lastError: 'local-notifications-plugin-not-registered' };
     try {
-      const [permissionValue, exactAlarmValue, channels, pending, enabled] = await Promise.all([
+      const [permissionValue, exactAlarmValue, channels, pending, delivered, enabled] = await Promise.all([
         withTimeout(this.checkPermission(), 'permission-check'),
         withTimeout(this.checkExactAlarmPermission(), 'exact-alarm-check'),
         withTimeout(LocalNotifications.listChannels(), 'channel-check'),
         withTimeout(LocalNotifications.getPending(), 'pending-check'),
+        withTimeout(LocalNotifications.getDeliveredNotifications(), 'delivered-check'),
         withTimeout(LocalNotifications.areEnabled(), 'app-notification-check'),
       ] as const);
       const permission = String(permissionValue);
       const exactAlarm = String(exactAlarmValue);
-      let runtime: { androidApi: number; packageName: string; versionName: string; versionCode: number } | null = null;
+      let runtime: { androidApi: number; packageName: string; versionName: string; versionCode: number; batteryOptimizationExempt?: boolean | null } | null = null;
       if (Capacitor.isPluginAvailable('LifeOSRuntimeInfo')) {
         try { runtime = await withTimeout(NativeRuntimeInfo.getInfo(), 'runtime-info'); } catch { /* Runtime facts are optional; notification availability is probed independently. */ }
       }
@@ -428,6 +510,9 @@ export const NotificationService = {
         appNotifications: enabled.value ? 'enabled' : 'disabled', exactAlarm,
         channel: channel ? Number(channel.importance) === 0 ? 'blocked (importance 0)' : `available (importance ${channel.importance ?? 'unknown'})` : 'not created',
         pendingCount: pending.notifications.length,
+        visibleNotificationCount: delivered.notifications.length,
+        visibleNotificationIds: delivered.notifications.map(item => Number(item.id)).filter(Number.isInteger),
+        batteryOptimizationExempt: runtime?.batteryOptimizationExempt ?? null,
         androidApi: runtime?.androidApi ?? null, packageName: runtime?.packageName ?? null,
         versionName: runtime?.versionName ?? null, versionCode: runtime?.versionCode ?? null,
         lastError: record.lastError || '',

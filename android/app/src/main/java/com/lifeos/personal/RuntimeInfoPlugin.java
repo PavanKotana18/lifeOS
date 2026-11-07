@@ -1,6 +1,7 @@
 package com.lifeos.personal;
 
 import android.os.Build;
+import android.os.PowerManager;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import com.getcapacitor.JSObject;
@@ -28,6 +29,9 @@ public class RuntimeInfoPlugin extends Plugin {
             result.put("versionName", info.versionName == null ? "unknown" : info.versionName);
             result.put("versionCode", Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
                 ? info.getLongVersionCode() : info.versionCode);
+            PowerManager power = (PowerManager) getContext().getSystemService(android.content.Context.POWER_SERVICE);
+            result.put("batteryOptimizationExempt", Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && power != null
+                ? power.isIgnoringBatteryOptimizations(getContext().getPackageName()) : false);
             call.resolve(result);
         } catch (Exception error) {
             call.reject("Could not read app runtime version information.", error);

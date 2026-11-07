@@ -214,6 +214,7 @@ async function fixture({ activate = true } = {}) {
     }
   };
   const pending = new Map();
+  const delivered = new Map();
   const notifications = {
     async createChannel() {}, async listChannels() { return { channels: [] }; },
     async areEnabled() { return { value: true }; },
@@ -221,10 +222,11 @@ async function fixture({ activate = true } = {}) {
     async requestPermissions() { return { display: 'granted' }; },
     async checkExactNotificationSetting() { return { exact_alarm: 'granted' }; },
     async getPending() { return { notifications: [...pending.values()] }; },
-    async cancel({ notifications }) { notifications.forEach(n => pending.delete(n.id)); },
+    async getDeliveredNotifications() { return { notifications: [...delivered.values()] }; },
+    async cancel({ notifications }) { notifications.forEach(n => { pending.delete(n.id); delivered.delete(n.id); }); },
     async schedule({ notifications }) { notifications.forEach(n => pending.set(n.id, structuredClone(n))); }
   };
-  const plugins = { LifeOSCrypto: native, LifeOSRuntimeInfo: { async getInfo() { return { androidApi: 35, packageName: 'com.lifeos.personal', versionName: 'test', versionCode: 1 }; } } };
+  const plugins = { LifeOSCrypto: native, LifeOSRuntimeInfo: { async getInfo() { return { androidApi: 35, packageName: 'com.lifeos.personal', versionName: 'test', versionCode: 1, batteryOptimizationExempt: false }; } } };
   const availablePlugins = new Set(['LifeOSCrypto', 'LocalNotifications', 'LifeOSRuntimeInfo']);
   const nativeOverrides = {
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true, getPlatform: () => 'android',
@@ -283,7 +285,7 @@ async function fixture({ activate = true } = {}) {
   // Default integration fixtures actually migrate through production APIs;
   // security boundary tests explicitly request { activate: false }.
   if (activate) { db.sessionManager.unlock(); await db.activateEncryptedStorage(); }
-  return { ...db, native, pending, notifications, load, appDeps, ...notificationModule,
+  return { ...db, native, pending, delivered, notifications, load, appDeps, ...notificationModule,
     setPluginAvailable(name, available) { if (available) availablePlugins.add(name); else availablePlugins.delete(name); },
     async restart() {
       db.sessionManager.lock(); await db.sessionManager.waitForIdle();

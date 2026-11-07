@@ -16,6 +16,10 @@ assert.doesNotMatch(service, /body: task\.title/, 'scheduled reminder body must 
 assert.match(service, /permission-denied-or-revoked/, 'permission loss is diagnostically distinguishable');
 assert.match(service, /schedule-verification-missing/, 'scheduling is checked against the native pending queue');
 assert.match(service, /pendingTimeMatches/, 'task reminder queue verification compares the scheduled instant, not just an ID');
+assert.match(service, /getDeliveredNotifications\(\)/, 'diagnostics separate persisted pending schedules from notifications currently visible in Android');
+assert.match(service, /lateCatchUp/, 'resume recovery retains a delayed still-persisted reminder instead of cancelling it as past');
+assert.match(service, /delivery-not-observable/, 'a missing pending record is not misreported as a confirmed delivery');
+assert.match(service, /setAndAllowWhileIdle|approximate/, 'denied exact-alarm access is explicitly approximate');
 assert.match(service, /taskSyncQueue\.then\(run, run\)/, 'task schedule updates are serialized');
 assert.match(taskSave, /await ensurePrivateStorageBeforeWrite\(\)[\s\S]*?StorageService\.tasks\.add[\s\S]*?await reloadAllData\(\)[\s\S]*?syncNotificationSchedules/, 'task storage is secure, persisted, reloaded, then synchronized');
 assert.match(service, /visibility: 0/, 'new channel requests private lock-screen visibility');
@@ -54,4 +58,6 @@ assert.match(app, /Copy privacy-safe diagnostics/);
 assert.match(fs.readFileSync('src/services/buildInfo.ts', 'utf8'), /LIFEOS_BUILD_INFO/);
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/MainActivity.java', 'utf8'), /registerPlugin\(RuntimeInfoPlugin\.class\)/);
 assert.match(fs.readFileSync('android/app/src/androidTest/java/com/lifeos/personal/LocalNotificationBridgeAcceptanceTest.java', 'utf8'), /registeredPluginCanScheduleAndReadBackSyntheticTaskReminder/);
+assert.match(fs.readFileSync('android/app/src/androidTest/java/com/lifeos/personal/LocalNotificationBridgeAcceptanceTest.java', 'utf8'), /backgroundedSyntheticTaskReminderIsActuallyPosted/, 'native test waits for a synthetic task notification after backgrounding');
+assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/RuntimeInfoPlugin.java', 'utf8'), /isIgnoringBatteryOptimizations/, 'diagnostics inspect OS power allowlisting without requesting exemption');
 console.log('NOTIFICATION DELIVERY CONTRACT: Android permission, inexact fallback, queue verification, privacy and reboot manifest checks passed (source contract only; no delivery test).');
