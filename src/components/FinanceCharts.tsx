@@ -19,8 +19,9 @@ export default function FinanceCharts({
   analytics, theme, locale, formatMoney, month, range, onRangeChange
 }: FinanceChartsProps) {
   const tooltipStyle = {
-    background: theme === 'dark' ? '#111827' : '#fff',
-    borderColor: theme === 'dark' ? '#334155' : '#cbd5e1',
+    background: 'var(--surface)',
+    color: 'var(--ink)',
+    borderColor: 'var(--stroke)',
     borderRadius: 12
   };
 
@@ -44,13 +45,13 @@ export default function FinanceCharts({
           {analytics.periodRows.some(row => row.hasRecords) ? (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={analytics.periodRows} margin={{ top: 8, right: 4, left: -18, bottom: 2 }}>
-                <CartesianGrid vertical={false} stroke={theme === 'dark' ? '#263244' : '#dbe3ed'} />
-                <XAxis dataKey="month" tick={{ fill: theme === 'dark' ? '#aebbd0' : '#475569', fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={value => Number(value).toLocaleString(locale)} tick={{ fill: theme === 'dark' ? '#aebbd0' : '#475569', fontSize: 10 }} tickLine={false} axisLine={false} />
+                <CartesianGrid vertical={false} stroke="var(--stroke)" />
+                <XAxis dataKey="month" tick={{ fill: 'var(--ink-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={value => Number(value).toLocaleString(locale)} tick={{ fill: 'var(--ink-secondary)', fontSize: 10 }} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(value: number | null, name: string) => [value === null ? 'No records' : formatMoney(value), name]} labelFormatter={(_, rows) => rows?.[0]?.payload?.key || ''} />
                 <Legend />
-                <Bar dataKey="income" name="Income" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expenses" name="Expenses" fill="#f97316" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="income" name="Income" fill="var(--success)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expenses" name="Expenses" fill="var(--danger)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -73,9 +74,9 @@ export default function FinanceCharts({
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={analytics.categories} dataKey="amount" nameKey="name" innerRadius={50} outerRadius={78} paddingAngle={2}>
-                    <Cell fill="#4f46e5" />
+                    <Cell fill="var(--chart-1)" />
                     {analytics.categories.slice(1).map((entry, index) => (
-                      <Cell key={entry.name} fill={['#0f766e', '#d97706', '#0284c7', '#7c3aed', '#be123c', '#475569'][index % 6]} />
+                      <Cell key={entry.name} fill={['var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'][index % 4]} />
                     ))}
                   </Pie>
                   <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(value)} />
@@ -86,7 +87,7 @@ export default function FinanceCharts({
               {analytics.categories.map((entry, index) => (
                 <div key={entry.name} className="flex items-center justify-between gap-3 text-xs">
                   <span className="flex min-w-0 items-center gap-2">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: ['#4f46e5', '#0f766e', '#d97706', '#0284c7', '#7c3aed', '#be123c', '#475569'][index % 7] }} />
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'][index % 5] }} />
                     <span className="truncate">{entry.name}</span>
                   </span>
                   <span className="shrink-0 text-right text-secondary">{formatMoney(entry.amount)} · {entry.percentage.toFixed(1)}%</span>

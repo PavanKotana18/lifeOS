@@ -4,7 +4,7 @@ export default function BackupPassphraseDialog({ purpose, onComplete }: {
   purpose: 'export' | 'import'; onComplete(value: string | null): void;
 }) {
   const [value, setValue] = useState('');
-  return <main className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950 p-6 text-white">
+  return <main className="lifeos-page fixed inset-0 z-[100] flex items-center justify-center p-6">
     <form className="w-full max-w-sm space-y-4" onSubmit={event => {
       event.preventDefault(); const result = value; setValue(''); onComplete(result);
     }}>

@@ -44,7 +44,7 @@ export default function Onboarding(props: Props) {
     finally { setBusy(false); }
   };
 
-  return <div className="onboarding-root fixed inset-0 z-[70] overflow-y-auto bg-[#090d16] px-5 py-[max(1.25rem,env(safe-area-inset-top))] text-white" role="dialog" aria-modal="true" aria-label="LifeOS onboarding">
+  return <div className="onboarding-root lifeos-page fixed inset-0 z-[70] overflow-y-auto px-5 py-[max(1.25rem,env(safe-area-inset-top))]" role="dialog" aria-modal="true" aria-label="LifeOS onboarding">
     <div className="mx-auto flex min-h-full max-w-md flex-col justify-center py-5">
       <div className="mb-8 flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-600 font-black">L</div><div><div className="font-bold tracking-tight">LifeOS</div><div className="text-[11px] text-slate-400">A little more in sync, every day</div></div></div>
       <div className="mb-6 flex gap-1.5" aria-label={`Step ${step + 1} of 5`}>{Array.from({ length: 5 }, (_, index) => <span key={index} className={`h-1 flex-1 rounded-full ${index <= step ? 'bg-indigo-400' : 'bg-slate-800'}`} />)}</div>
@@ -62,7 +62,7 @@ export default function Onboarding(props: Props) {
         </section>}
         {step === 2 && <section>
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400/10 text-amber-300"><Sun /></div><h1 className="text-3xl font-bold tracking-tight">Choose your experience.</h1><p className="mt-3 text-sm leading-6 text-slate-400">Pick a look that feels comfortable. You can change it anytime in Profile.</p>
-          <div className="mt-7 space-y-2">{([['dark', 'Dark theme', Moon], ['light', 'Light theme', Sun], ['system', 'Follow system theme', Check]] as const).map(([value, label, Icon]) => <button key={value} onClick={() => void props.onAppearance(value)} aria-pressed={props.appearance === value} className={`flex min-h-14 w-full items-center gap-3 rounded-xl border px-4 text-left text-sm ${props.appearance === value ? 'border-indigo-400 bg-indigo-500/10 text-white' : 'border-slate-800 bg-slate-900 text-slate-300'}`}><Icon size={18} /><span className="flex-1">{label}</span>{props.appearance === value && <Check size={17} className="text-indigo-300" />}</button>)}</div>
+          <div className="mt-7 space-y-2">{([['dark', 'Dark theme', Moon], ['light', 'Light theme', Sun], ['system', 'Follow system theme', Check]] as const).map(([value, label, Icon]) => <button key={value} onClick={() => void props.onAppearance(value)} aria-pressed={props.appearance === value} className={`flex min-h-14 w-full items-center gap-3 rounded-xl border px-4 text-left text-sm ${props.appearance === value ? 'border-indigo-400 bg-indigo-500/10 text-indigo-200' : 'border-slate-800 bg-slate-900 text-slate-300'}`}><Icon size={18} /><span className="flex-1">{label}</span>{props.appearance === value && <Check size={17} className="text-indigo-300" />}</button>)}</div>
           <button onClick={() => void advance(async () => {}, 3)} className="mt-5 min-h-12 w-full rounded-xl bg-indigo-600 px-4 text-sm font-semibold">Continue</button>
         </section>}
         {step === 3 && <section>

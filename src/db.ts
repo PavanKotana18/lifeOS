@@ -1305,7 +1305,8 @@ const BOOTSTRAP_SETTING_KEYS = new Set([
   'biometricLockEnabled',
   'onboardingCompleted',
   'onboardingStarted',
-  'onboardingStep'
+  'onboardingStep',
+  'visualTheme'
 ]);
 
 const READ_OPERATIONS: Record<string, Set<string>> = {

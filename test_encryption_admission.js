@@ -21,6 +21,8 @@ async function test(name, run) {
     assert.equal(await f.lifeOSDatabase.transactions.count(),0);
     await f.StorageService.settings.set('theme','light');
     assert.equal(await f.StorageService.settings.get('theme','system'),'light');
+    await f.StorageService.settings.set('visualTheme','soft-ivory-sage');
+    assert.equal(await f.StorageService.settings.get('visualTheme',''),'soft-ivory-sage');
   });
   await test('Actual startup activates encrypted storage before private hydration',async f=>{
     const init=h.appFunction('initApp');

@@ -18,6 +18,9 @@ import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
 import { DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
+import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
+import { resolveInitialVisualTheme } from './services/systemAppearance';
+import FinanceProjection from './components/FinanceProjection';
 import { reconcileNotificationOnboardingOnResume } from './services/notificationOnboarding';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
@@ -29,10 +32,11 @@ const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 
 type MainTab = 'dashboard' | 'finance' | 'habits' | 'goals' | 'planner' | 'settings';
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
-const applyDomTheme = (theme: 'dark' | 'light') => {
+const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
+  applyThemeTokens(themeId, theme);
   document.documentElement.style.colorScheme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#090d16' : '#f8fafc');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#101712' : '#FAFAF7');
 };
 
 const notificationLabels: Record<keyof NotificationPreferences, string> = {
@@ -67,6 +71,10 @@ export default function App() {
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
+  const [visualThemeId, setVisualThemeId] = useState<ThemeId>(() => {
+    try { return resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { return DEFAULT_THEME_ID; }
+  });
+  const [themePreviewId, setThemePreviewId] = useState<ThemeId | null>(null);
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [displayName, setDisplayName] = useState('');
   const [clockNow, setClockNow] = useState(() => new Date());
@@ -147,7 +155,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
 
   // Subtab & Filter States
-  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'budgets' | 'savings' | 'analytics'>('overview');
+  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
   const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -329,14 +337,14 @@ export default function App() {
 
   useEffect(() => {
     if (appearance !== 'system') return;
-    const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved); };
+    const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved, themePreviewId || visualThemeId); };
     const nativeTheme = (event: Event) => update((event as CustomEvent<{ dark: boolean }>).detail.dark ? 'dark' : 'light');
     window.addEventListener('lifeos:system-appearance', nativeTheme);
     const stopMedia = typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
       ? () => {}
       : watchSystemTheme(window.matchMedia('(prefers-color-scheme: dark)'), update);
     return () => { stopMedia(); window.removeEventListener('lifeos:system-appearance', nativeTheme); };
-  }, [appearance]);
+  }, [appearance, visualThemeId, themePreviewId]);
 
   useEffect(() => {
     if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
@@ -382,10 +390,13 @@ export default function App() {
   const initApp = async () => {
     // Bootstrap-safe preferences only.
     const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'system');
+    const savedVisualTheme = await resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', visualThemeId));
+    setVisualThemeId(savedVisualTheme);
     setAppearancePreference(savedTheme);
     const resolvedTheme = resolveAppearance(savedTheme, systemDarkPreference());
     setTheme(resolvedTheme);
-    applyDomTheme(resolvedTheme);
+    applyDomTheme(resolvedTheme, savedVisualTheme);
+    try { localStorage.setItem('lifeos-theme-id', savedVisualTheme); } catch { /* Cosmetic cache is optional. */ }
     localStorage.setItem('lifeos-appearance', savedTheme);
 
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
@@ -497,9 +508,34 @@ export default function App() {
     setAppearancePreference(preference);
     const resolved = resolveAppearance(preference, systemDarkPreference());
     setTheme(resolved);
-    applyDomTheme(resolved);
+    applyDomTheme(resolved, themePreviewId || visualThemeId);
     await StorageService.settings.set('theme', preference);
     localStorage.setItem('lifeos-appearance', preference);
+  };
+
+  const previewVisualTheme = (themeId: ThemeId) => {
+    setThemePreviewId(themeId);
+    applyDomTheme(theme, themeId);
+  };
+
+  const cancelVisualThemePreview = () => {
+    setThemePreviewId(null);
+    applyDomTheme(theme, visualThemeId);
+  };
+
+  const applyVisualTheme = async () => {
+    if (!themePreviewId) return;
+    try {
+      await StorageService.settings.set('visualTheme', themePreviewId);
+      setVisualThemeId(themePreviewId);
+      try { localStorage.setItem('lifeos-theme-id', themePreviewId); } catch { /* Persistent setting remains authoritative. */ }
+      setThemePreviewId(null);
+      applyDomTheme(theme, themePreviewId);
+      showToast('Color theme applied', 'success');
+    } catch (error) {
+      cancelVisualThemePreview();
+      showToast(error instanceof Error ? error.message : 'Could not save this theme.', 'danger');
+    }
   };
 
   const refreshNotificationDiagnostics = async () => {
@@ -785,7 +821,7 @@ export default function App() {
     const next = theme === 'dark' ? 'light' : 'dark';
     setTheme(next);
     setAppearancePreference(next);
-    applyDomTheme(next);
+    applyDomTheme(next, themePreviewId || visualThemeId);
     await StorageService.settings.set('theme', next);
     localStorage.setItem('lifeos-appearance', next);
   };
@@ -1152,7 +1188,7 @@ export default function App() {
 
   if (backupPrompt) return <BackupPassphraseDialog purpose={backupPrompt} onComplete={value => backupPassphraseResolver.current?.(value)} />;
 
-  if (!appReady) return <div className={`fixed inset-0 flex items-center justify-center px-6 ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-slate-300">{startupError}</p><button className="mt-5 min-h-11 rounded-xl bg-indigo-600 px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="mt-3 block min-h-11 w-full rounded border border-slate-600 px-4" onClick={() => setRecoveryOpen(true)}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-400" />}</div>;
+  if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-slate-300">{startupError}</p><button className="mt-5 min-h-11 rounded-xl bg-indigo-600 px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="mt-3 block min-h-11 w-full rounded border border-slate-600 px-4" onClick={() => setRecoveryOpen(true)}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-indigo-400" />}</div>;
 
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
@@ -1182,7 +1218,7 @@ export default function App() {
   // If App is Biometrically Locked, render Lock Screen Overlay
   if (isLocked) {
     return (
-      <div className={`fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`}>
+      <div className="lifeos-page fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center">
         <div className="w-20 h-20 rounded-3xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center mb-6">
           <svg className="w-10 h-10 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
@@ -1204,7 +1240,7 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} style={{ paddingBottom: 'calc(6.25rem + env(safe-area-inset-bottom))' }}>
+    <div className="lifeos-page min-h-screen" style={{ paddingBottom: 'calc(6.25rem + env(safe-area-inset-bottom))' }}>
       {/* Top Mobile Header */}
       <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
         <div className="flex min-w-0 items-center gap-3">
@@ -1377,7 +1413,7 @@ export default function App() {
         {activeTab === 'finance' && (
           <div className="space-y-4">
             <div className="flex bg-slate-900 p-1 rounded-xl gap-1 text-xs font-semibold overflow-x-auto">
-              {(['overview', 'transactions', 'budgets', 'savings', 'analytics'] as const).map(sub => (
+              {(['overview', 'transactions', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => (
                 <button
                   key={sub}
                   onClick={() => navigateFinanceSubtab(sub)}
@@ -1534,6 +1570,11 @@ export default function App() {
                 }} className="text-xs font-semibold text-indigo-400">Add contribution</button><button onClick={async () => { await StorageService.savings.deleteGoal(goal.id); await reloadAllData(); showToast('Savings goal deleted', 'info'); }} className="text-xs text-slate-400">Delete</button></div></div>;
               })}
             </div>}
+
+            {financeSubtab === 'planning' && <FinanceProjection
+              currencyCode={userPrefs.currency}
+              locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
+            />}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
               <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-slate-400">Based on transactions saved on this device</p></div><label className="text-[10px] text-slate-400">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="mt-1 block rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs" /></label></div>
@@ -1705,6 +1746,25 @@ export default function App() {
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`flex min-h-12 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'border-indigo-400 bg-indigo-500/10 text-indigo-200' : 'border-slate-700 bg-slate-800 text-slate-300'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
 
+            <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4" aria-labelledby="color-theme-title">
+              <div><h3 id="color-theme-title" className="text-base font-semibold">Color theme</h3><p className="mt-1 text-xs text-slate-400">Preview a coordinated palette. Apply to save it, or cancel to restore your current theme.</p></div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {(Object.entries(THEME_CATALOG) as Array<[ThemeId, typeof THEME_CATALOG[ThemeId]]>).map(([id, option]) => {
+                  const previewTokens = option[theme];
+                  const selected = (themePreviewId || visualThemeId) === id;
+                  return <button key={id} type="button" aria-pressed={selected} aria-label={`Preview ${option.label}`} onClick={() => previewVisualTheme(id)} className={`lifeos-panel flex min-h-14 items-center gap-2 rounded-xl border p-2 text-left text-xs ${selected ? 'ring-2 ring-offset-2 ring-offset-[var(--page)]' : ''}`} style={selected ? { outlineColor: previewTokens.focus, ['--tw-ring-color' as string]: previewTokens.focus } as React.CSSProperties : undefined}>
+                    <span className="flex shrink-0 gap-0.5" aria-hidden="true">{[previewTokens.background, previewTokens.accent, ...previewTokens.chartSeries.slice(1, 3)].map(color => <span key={color} className="h-5 w-2.5 rounded-full border" style={{ backgroundColor: color, borderColor: previewTokens.border }} />)}</span>
+                    <span className="font-medium">{option.label}</span>
+                  </button>;
+                })}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => previewVisualTheme(DEFAULT_THEME_ID)} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm">Restore default</button>
+                <button type="button" disabled={!themePreviewId} onClick={cancelVisualThemePreview} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50">Cancel</button>
+                <button type="button" disabled={!themePreviewId} onClick={() => void applyVisualTheme()} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">Apply theme</button>
+              </div>
+            </section>
+
             <section className="profile-panel rounded-2xl border border-slate-800 bg-slate-900 p-5 space-y-4">
               <div><h3 className="text-base font-semibold">Preferences</h3><p className="mt-1 text-xs text-slate-400">Formats affect display and new input only. Existing amounts are never converted.</p></div>
               <div className="grid grid-cols-2 gap-3">
@@ -1722,7 +1782,7 @@ export default function App() {
 
             <button onClick={() => setProfileNotificationsOpen(true)} className="flex min-h-16 w-full items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 px-4 text-left transition active:scale-[.99]"><span><span className="block text-sm font-semibold">Notification preferences</span><span className="mt-0.5 block text-xs text-slate-400">{notificationsEnabled ? 'Notifications enabled' : 'Notifications paused'} · {notificationDiagnostics.permission === 'granted' ? 'Android permission granted' : 'Check permission'}</span></span><ChevronRight size={18} className="shrink-0 text-slate-500" /></button>
 
-            {profileNotificationsOpen && <div className={`fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))] ${theme === 'dark' ? 'bg-[#090d16] text-white' : 'bg-slate-50 text-slate-900'}`} role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium text-indigo-400"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
+            {profileNotificationsOpen && <div className="lifeos-page fixed inset-0 z-40 overflow-y-auto px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1.25rem,env(safe-area-inset-bottom))]" role="dialog" aria-modal="true" aria-label="Notification preferences"><div className="mx-auto max-w-md space-y-4"><button onClick={() => setProfileNotificationsOpen(false)} className="flex min-h-11 items-center gap-2 rounded-lg pr-3 text-sm font-medium text-indigo-400"><ChevronLeft size={18} />Your Profile</button><div><p className="text-xs font-semibold uppercase tracking-wide text-indigo-400">Preferences</p><h2 className="text-xl font-semibold">Local notifications</h2></div>
             <section className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-3">
               <p className="text-xs text-slate-400">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
               <div className="flex min-h-11 items-center justify-between rounded-xl bg-slate-800/60 px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-9 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>

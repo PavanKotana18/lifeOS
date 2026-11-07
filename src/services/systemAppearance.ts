@@ -1,3 +1,4 @@
+import { resolveThemeId, type ThemeId } from './themeCatalog';
 export type AppearancePreference = 'dark' | 'light' | 'system';
 
 // Appearance is cosmetic: a stalled preferences store or native plugin must not
@@ -25,6 +26,14 @@ export async function resolveInitialAppearancePreference(
 ): Promise<AppearancePreference> {
   const value = await readWithDeadline(readPreference, timeoutMs);
   return value === 'dark' || value === 'light' ? value : 'system';
+}
+
+/** A cosmetic theme read must not hold the locked app root or authentication flow. */
+export async function resolveInitialVisualTheme(
+  readTheme: () => Promise<unknown>,
+  timeoutMs = 1500
+): Promise<ThemeId> {
+  return resolveThemeId(await readWithDeadline(readTheme, timeoutMs));
 }
 
 /** Read Android's actual UI mode when available; media queries are the browser fallback. */

@@ -9,7 +9,7 @@ export default function RecoveryDialog({ onRecover, onClose }: {
   const inFlight = useRef(false);
   const fileGeneration = useRef(0);
   useEffect(() => () => { fileGeneration.current++; }, []);
-  return <main className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950 p-6 text-white">
+  return <main className="lifeos-page fixed inset-0 z-[100] flex items-center justify-center p-6">
     <section className="max-w-md space-y-4">
       <h1 className="text-xl font-semibold">Recover the existing encryption key</h1>
       <p className="text-sm text-slate-300">Select your complete private recovery kit. LifeOS verifies it against an existing encrypted record before biometric re-binding. Database records are never replaced.</p>
@@ -21,7 +21,7 @@ export default function RecoveryDialog({ onRecover, onClose }: {
             () => { if (generation === fileGeneration.current) setMessage('The file could not be read.'); });
         }} /></label>
       {message && <p role="status" className="text-sm text-amber-200">{message}</p>}
-      <button disabled={busy || !kit} className="rounded bg-indigo-600 px-4 py-3 disabled:opacity-40"
+      <button disabled={busy || !kit} className="lifeos-accent-button rounded px-4 py-3 disabled:opacity-40"
         onClick={() => { if (inFlight.current) return; inFlight.current = true; setBusy(true); setMessage(''); void onRecover(kit).then(() => {
           setMessage('The existing key was verified and re-bound. Your encrypted records can now reopen after authentication.');
         }, error => setMessage(error instanceof Error ? error.message : 'Recovery failed; data remains locked.'))

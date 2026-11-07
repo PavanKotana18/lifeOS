@@ -3,7 +3,8 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { StorageService } from './db';
 import { resolveAppearance } from './services/domainUtils';
-import { resolveInitialAppearancePreference, resolveInitialSystemDark } from './services/systemAppearance';
+import { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveInitialVisualTheme } from './services/systemAppearance';
+import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId } from './services/themeCatalog';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import './index.css';
 
@@ -13,9 +14,12 @@ const root = document.getElementById('root')!;
 const renderApp = () => ReactDOM.createRoot(root).render(<React.StrictMode><App /></React.StrictMode>);
 
 async function bootstrapAppearance() {
-  const preference = await resolveInitialAppearancePreference(
-    () => StorageService.settings.get('theme', 'system')
-  );
+  let cachedTheme = DEFAULT_THEME_ID;
+  try { cachedTheme = resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { /* Cosmetic cache is optional. */ }
+  const [themeId, preference] = await Promise.all([
+    resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', cachedTheme)),
+    resolveInitialAppearancePreference(() => StorageService.settings.get('theme', 'system')),
+  ]);
   const mediaDark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const systemDark = await resolveInitialSystemDark(mediaDark, Capacitor.isNativePlatform()
     ? () => SystemAppearance.getSystemAppearance()
@@ -23,8 +27,10 @@ async function bootstrapAppearance() {
   const dark = resolveAppearance(preference, systemDark) === 'dark';
   (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark = systemDark;
   document.documentElement.classList.toggle('dark', dark);
+  applyThemeTokens(themeId, dark ? 'dark' : 'light');
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#090d16' : '#f8fafc');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#101712' : '#FAFAF7');
+  try { localStorage.setItem('lifeos-theme-id', themeId); } catch { /* Cosmetic cache is optional. */ }
   try { localStorage.setItem('lifeos-appearance', preference); } catch { /* Cosmetic cache is optional. */ }
 }
 

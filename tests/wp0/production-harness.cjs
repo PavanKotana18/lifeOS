@@ -238,9 +238,9 @@ async function fixture({ activate = true } = {}) {
   const notificationModule = load('src/services/notificationService.ts');
   const domain = load('src/services/domainUtils.ts');
   const preferences = load('src/services/userPreferences.ts');
-  const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false } };
+  const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false }, visualThemeId: 'soft-ivory-sage' };
   function appDeps() {
-    const deps = { ...domain, ...preferences, ...db, ...notificationModule, ...state,
+    const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...db, ...notificationModule, ...state,
       ...load('src/services/csvExportService.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       CryptoService: load('src/services/cryptoService.ts').CryptoService,

@@ -124,16 +124,22 @@ jobs:
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M
+            test-filter: "WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage"
+            required-test: "WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage"
           - id: standard-api34
             api-level: 34
             profile: pixel_6
             ram-size: 3072M
             heap-size: 512M
+            test-filter: ""
+            required-test: "LocalPersistenceAcceptanceTest#committedIndexedDbRecordSurvivesBackgroundAndActivityRecreation"
           - id: large-api35
             api-level: 35
             profile: pixel_7_pro
             ram-size: 4096M
             heap-size: 512M
+            test-filter: ""
+            required-test: "LocalPersistenceAcceptanceTest#committedIndexedDbRecordSurvivesBackgroundAndActivityRecreation"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -159,7 +165,7 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            ANDROID_REQUIRED_TEST='LocalPersistenceAcceptanceTest#committedIndexedDbRecordSurvivesBackgroundAndActivityRecreation' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+            ANDROID_TEST_FILTER='${{ matrix.test-filter }}' ANDROID_REQUIRED_TEST='${{ matrix.required-test }}' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
       - name: Verify nonzero JUnit test count and passing smoke test
         if: success()
         run: |

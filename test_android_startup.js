@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 require('./scripts/register-ts-test-loader.cjs');
-const { resolveInitialAppearancePreference, resolveInitialSystemDark } = require('./src/services/systemAppearance.ts');
+const { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveInitialVisualTheme } = require('./src/services/systemAppearance.ts');
+const themeCatalog = require('./src/services/themeCatalog.ts');
 
 (async () => {
   let checks = 0;
@@ -10,6 +11,10 @@ const { resolveInitialAppearancePreference, resolveInitialSystemDark } = require
   check(await resolveInitialAppearancePreference(async () => 'bad preference'), 'system');
   check(await resolveInitialAppearancePreference(() => { throw new Error('store unavailable'); }), 'system');
   check(await resolveInitialAppearancePreference(() => new Promise(() => {}), 5), 'system');
+  check(await resolveInitialVisualTheme(async () => 'ocean-mist'), 'ocean-mist');
+  check(await resolveInitialVisualTheme(async () => 'invalid'), 'soft-ivory-sage');
+  check(await resolveInitialVisualTheme(() => Promise.reject(new Error('store unavailable')), 5), 'soft-ivory-sage');
+  check(await resolveInitialVisualTheme(() => new Promise(() => {}), 5), 'soft-ivory-sage');
   check(await resolveInitialSystemDark(true, () => new Promise(() => {}), 5), true);
   check(await resolveInitialSystemDark(false, () => Promise.reject(new Error('bridge unavailable'))), false);
   check(await resolveInitialSystemDark(false, async () => ({ dark: true })), true);
@@ -37,7 +42,8 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
   let renderCount = 0;
   let ready = false;
   const root = {};
-  const html = { classList: { toggle() {} }, style: {}, dataset: {} };
+  const themeValues = new Map();
+  const html = { classList: { toggle() {} }, style: { setProperty: (key, value) => themeValues.set(key, value) }, dataset: {} };
   let resolveRendered;
   const rendered = new Promise(resolve => { resolveRendered = resolve; });
   const react = { createElement: () => ({}), StrictMode: {} };
@@ -49,9 +55,13 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
     react,
     'react-dom/client': dom,
     './App': () => {},
-    './db': { StorageService: { settings: { get: readPreference } } },
+    './db': { StorageService: { settings: { get: (_key, fallback) => readPreference ? readPreference() : Promise.resolve(fallback) } } },
     './services/domainUtils': { resolveAppearance: (preference, systemDark) => preference === 'system' ? systemDark ? 'dark' : 'light' : preference },
-    './services/systemAppearance': { resolveInitialAppearancePreference, resolveInitialSystemDark },
+    './services/systemAppearance': { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveInitialVisualTheme },
+    './services/themeCatalog': {
+      ...themeCatalog,
+      applyThemeTokens: (id, mode) => themeCatalog.applyThemeTokens(id, mode, html),
+    },
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true }, registerPlugin: () => ({ getSystemAppearance: nativeAppearance }) },
     './index.css': {},
   };
@@ -68,6 +78,7 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
     await Promise.race([rendered, new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('entrypoint did not render')), 4500); })]);
     assert.equal(renderCount, 1, 'Entry point must create exactly one application root');
     assert.equal(ready, true, 'Appearance completion marker precedes app render');
+    assert.equal(themeValues.has('--accent'), true, 'Validated theme tokens are set before app render');
   } finally { clearTimeout(deadline); }
 }
 (async () => {
