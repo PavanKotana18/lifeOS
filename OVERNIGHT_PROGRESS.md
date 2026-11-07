@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current local Habits accessibility package: `9e555b16fe44cb4157cee3ce79ec4b6524fc4bcb`.
+- Latest pushed commit before the current local Goals accessibility package: `d9c7a33fe5f3fa336e0f5ab7d0b8b662619fc754`.
 - Dashboard commit `425bb6d` and Finance conversion commit `704fa55` are pushed. This checkpoint edit records final CI results locally; source and test code are clean.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -71,6 +71,13 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused habit suite: 34/34 checks PASS, including 32 domain/UI wiring checks and 2 explicitly source-level accessibility checks. Full `npm run test:all` PASS (all Node/WP0 and six Sentinel suites). TypeScript and production build PASS (2,242 modules; main chunk 512.20 kB with Vite advisory). `git diff --check` PASS.
 - Test log: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-habits-ui-20261107.log`. No Android visual, screen-reader or physical-device acceptance is claimed.
 
+### Goals screen accessibility and theme pass (local, verified)
+
+- Goal status controls expose `aria-pressed`; progress uses the production goal percentage with accessible progress-bar semantics and semantic theme colors. Active goals have a direct create-goal empty state. Milestone checkboxes now have a 44px row target. Action buttons have larger targets and theme status colors.
+- No goal-state, milestone, notification or persistence behavior changed.
+- `test_goal_status_ui.js`: 15/15 source-level UI checks plus the existing F12 integrity checks PASS. Full `npm run test:all` PASS; TypeScript and build PASS (2,242 modules; 512.29 kB main JS, Vite advisory). `git diff --check` PASS.
+- Full log: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-goals-ui-20261107.log`. Runtime visual and screen-reader acceptance not performed.
+
 ## Tests actually run on current local changes
 
 - `npm run test:all`: PASS on a complete serial run after conversion and dashboard changes. Includes 97/97 core application assertions, 32 habit-wiring checks, 21/21 audit regressions, encrypted storage/migration/coordinator suites, WP0 harness (148 checks and 11 controls), 47 Finance assertions, six-theme contrast checks, 3 Today summary checks, Android runner contract simulations, and all six Sentinel suites. CI run `42331997256` also passed this command.
@@ -84,6 +91,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - `npm run build`: PASS, 2,237 modules after the Finance converter.
 - `git diff --check`: PASS.
 - Emulator evidence and APK compilation above are from the latest hosted commit `1455cec`. No physical-device run is claimed.
+- Hosted run `42334646139` passed build/test/APK compilation and native security preflight, API34/API35 emulator tests, but API29 failed before instrumentation execution. The runner reported `Android Emulator: Error on ZipFile unknown archive` while `sdkmanager` installed the emulator package, followed by ADB connection refusal during emulator cleanup. This is a hosted runner package-download/setup failure, not an app/test assertion; no speculative workflow change was made. A newer run for commit `d9c7a33` was pending at last check; the current Goals package is not yet on GitHub.
 - Sentinel SAF OS file-picker execution remains device-blocked; simulated native interface tests do not count as physical acceptance.
 
 ## Security/release gates
@@ -94,7 +102,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## Next exact steps
 
-1. Commit and push the verified Habits accessibility package to the existing PR #23 branch; do not create another PR.
-2. Verify CI for the latest published head and report Android matrix counts only from completed jobs. The latest pre-Habits workflow was waiting in queue.
-3. Continue with one focused Goals or Planner theme/accessibility migration, preserving existing business logic.
+1. Commit and push the verified Goals accessibility package to the existing PR #23 branch; do not create another PR.
+2. Verify CI for the latest published head. Treat an API29 `sdkmanager` package-download failure as infrastructure-blocked unless a new log demonstrates an application/test defect.
+3. Continue with one focused Planner theme/accessibility migration, preserving existing business logic.
 4. Keep LOS-001, API36 target compliance and physical biometric/SAF/notification acceptance visibly blocked pending their specific evidence.
