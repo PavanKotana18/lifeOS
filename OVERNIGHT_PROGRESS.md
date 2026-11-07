@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current local Goals accessibility package: `d9c7a33fe5f3fa336e0f5ab7d0b8b662619fc754`.
+- Latest pushed commit before the current local Planner accessibility package: `acfddce2c62ee921d3573e4733a300035886f82d`.
 - Dashboard commit `425bb6d` and Finance conversion commit `704fa55` are pushed. This checkpoint edit records final CI results locally; source and test code are clean.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -78,6 +78,13 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - `test_goal_status_ui.js`: 15/15 source-level UI checks plus the existing F12 integrity checks PASS. Full `npm run test:all` PASS; TypeScript and build PASS (2,242 modules; 512.29 kB main JS, Vite advisory). `git diff --check` PASS.
 - Full log: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-goals-ui-20261107.log`. Runtime visual and screen-reader acceptance not performed.
 
+### Planner accessibility and theme pass (local, verified)
+
+- Planner calendar dates and month controls now meet 44px touch sizing and use semantic active-theme colors. Search/filter controls, empty state, task status chips and task delete actions use semantic tokens. Task checkboxes have task-specific labels. Calendar status continues to include text/accessible labels; colors supplement those labels.
+- No recurrence, deadline, notification, task completion or persistence logic changed.
+- Focused recurrence edge checks: 9/9 PASS; core LifeOS suite: 99/99 PASS. Full `npm run test:all` PASS (Node/WP0 plus six Sentinel suites); TypeScript and build PASS (2,242 modules; 512.50 kB main JS, Vite advisory). `git diff --check` PASS.
+- Full run log: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-planner-ui-20261107.log`. No Android visual or physical-device planner acceptance claimed.
+
 ## Tests actually run on current local changes
 
 - `npm run test:all`: PASS on a complete serial run after conversion and dashboard changes. Includes 97/97 core application assertions, 32 habit-wiring checks, 21/21 audit regressions, encrypted storage/migration/coordinator suites, WP0 harness (148 checks and 11 controls), 47 Finance assertions, six-theme contrast checks, 3 Today summary checks, Android runner contract simulations, and all six Sentinel suites. CI run `42331997256` also passed this command.
@@ -102,7 +109,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## Next exact steps
 
-1. Commit and push the verified Goals accessibility package to the existing PR #23 branch; do not create another PR.
+1. Commit and push the verified Planner accessibility package to the existing PR #23 branch; do not create another PR.
 2. Verify CI for the latest published head. Treat an API29 `sdkmanager` package-download failure as infrastructure-blocked unless a new log demonstrates an application/test defect.
-3. Continue with one focused Planner theme/accessibility migration, preserving existing business logic.
+3. Continue with a focused Settings/theme accessibility migration, preserving existing preference, permission and backup behavior.
 4. Keep LOS-001, API36 target compliance and physical biometric/SAF/notification acceptance visibly blocked pending their specific evidence.
