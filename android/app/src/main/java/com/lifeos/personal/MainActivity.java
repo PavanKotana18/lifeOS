@@ -2,6 +2,8 @@ package com.lifeos.personal;
 
 import android.os.Bundle;
 import android.animation.ValueAnimator;
+import android.os.Handler;
+import android.os.Looper;
 import android.content.res.Configuration;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
@@ -15,6 +17,7 @@ import androidx.core.splashscreen.SplashScreen;
 
 public class MainActivity extends BridgeActivity {
     private boolean coldLaunch;
+    private volatile boolean keepLaunchSplash;
     private boolean sensitiveScreen = true;
     private boolean activityResumed = false;
     private boolean webViewCompatibilityBlocked = false;
@@ -23,7 +26,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         coldLaunch = savedInstanceState == null;
+        keepLaunchSplash = coldLaunch;
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
+        splashScreen.setKeepOnScreenCondition(() -> keepLaunchSplash);
         splashScreen.setOnExitAnimationListener(provider -> {
             if (!ValueAnimator.areAnimatorsEnabled()) {
                 provider.remove();
@@ -32,6 +37,9 @@ public class MainActivity extends BridgeActivity {
             provider.getView().animate().alpha(0f).setDuration(180L)
                 .withEndAction(provider::remove).start();
         });
+        if (coldLaunch) {
+            new Handler(Looper.getMainLooper()).postDelayed(() -> keepLaunchSplash = false, 2500L);
+        }
         registerPlugin(BiometricAuthPlugin.class);
         registerPlugin(LifeOSCryptoPlugin.class);
         registerPlugin(LifeOSBackupPlugin.class);
@@ -51,6 +59,10 @@ public class MainActivity extends BridgeActivity {
 
     public boolean isColdLaunch() {
         return coldLaunch;
+    }
+
+    public void releaseLaunchSplash() {
+        keepLaunchSplash = false;
     }
 
     static int webTextZoomForFontScale(float fontScale) {

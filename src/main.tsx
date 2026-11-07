@@ -11,16 +11,23 @@ import './index.css';
 import { LifeOSLaunchReveal } from './components/LifeOSBrand';
 
 const SystemAppearance = registerPlugin<{ getSystemAppearance: () => Promise<{ dark: boolean }> }>('SystemAppearance');
-const LaunchExperience = registerPlugin<{ getLaunchInfo: () => Promise<{ coldStart: boolean }> }>('LaunchExperience');
+const LaunchExperience = registerPlugin<{
+  getLaunchInfo: () => Promise<{ coldStart: boolean }>;
+  releaseNativeSplash: () => Promise<void>;
+}>('LaunchExperience');
 
 const root = document.getElementById('root')!;
 function readLaunchInfo(): Promise<{ coldStart: boolean }> {
   if (!Capacitor.isNativePlatform()) return Promise.resolve({ coldStart: false });
   return new Promise(resolve => {
-    const timeout = window.setTimeout(() => resolve({ coldStart: false }), 700);
+    const fallback = () => {
+      void LaunchExperience.releaseNativeSplash().catch(() => {});
+      resolve({ coldStart: false });
+    };
+    const timeout = window.setTimeout(fallback, 700);
     LaunchExperience.getLaunchInfo().then(
       info => { window.clearTimeout(timeout); resolve({ coldStart: info.coldStart === true }); },
-      () => { window.clearTimeout(timeout); resolve({ coldStart: false }); },
+      () => { window.clearTimeout(timeout); fallback(); },
     );
   });
 }
@@ -29,6 +36,9 @@ function BootstrappedApp({ coldStart }: { coldStart: boolean }) {
   const [showReveal, setShowReveal] = useState(coldStart);
   useEffect(() => {
     if (!coldStart) return;
+    // This effect runs after React committed the same branded cover under the
+    // native splash, preventing a blank WebView handoff.
+    void LaunchExperience.releaseNativeSplash().catch(() => {});
     let elapsed = false;
     let ready = (window as Window & { lifeosStartupReady?: boolean }).lifeosStartupReady === true;
     const finishIfReady = () => { if (elapsed && ready) setShowReveal(false); };

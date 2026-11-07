@@ -17,4 +17,12 @@ public class LaunchExperiencePlugin extends Plugin {
         result.put("coldStart", coldStart);
         call.resolve(result);
     }
+
+    @PluginMethod
+    public void releaseNativeSplash(PluginCall call) {
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).releaseLaunchSplash();
+        }
+        call.resolve();
+    }
 }
