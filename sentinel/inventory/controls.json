@@ -6,7 +6,7 @@
       "route": "#dashboard",
       "controls": [
         { "id": "btn_theme_toggle", "selector": "#theme-toggle-btn", "type": "button", "description": "Toggle between dark and light themes", "expected": "Flips document class between 'dark' and 'light'", "testStatus": "automated" },
-        { "id": "score_card_link", "selector": "#dashboard-perf-card", "type": "card", "description": "Daily productivity score display", "expected": "Displays weighted habit and task adherence score", "testStatus": "automated" },
+        { "id": "today_overview", "selector": "[data-testid=\"today-overview\"]", "type": "summary", "description": "Separate task and routine progress counts", "expected": "Shows actual due/completed task counts and scheduled routine counts without a composite score", "testStatus": "automated" },
         { "id": "btn_details_finance", "selector": "#btn-dash-finance-details", "type": "button", "description": "Navigate to Finance tab", "expected": "Switches active view to #finance", "testStatus": "automated" },
         { "id": "btn_manage_habits", "selector": "#btn-dash-habits-manage", "type": "button", "description": "Navigate to Habits tab", "expected": "Switches active view to #habits", "testStatus": "automated" },
         { "id": "btn_all_tasks", "selector": "#btn-dash-tasks-all", "type": "button", "description": "Navigate to Planner tab", "expected": "Switches active view to #planner", "testStatus": "automated" },

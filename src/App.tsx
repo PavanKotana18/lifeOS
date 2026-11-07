@@ -26,7 +26,7 @@ import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { NotificationPreferences } from './types';
 import Onboarding, { type AppearancePreference } from './components/Onboarding';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, isHabitScheduledOnDate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 
@@ -1119,25 +1119,11 @@ export default function App() {
     return { ...stats, totalCount: new Set(habitLogs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)).size };
   };
 
-  // Productivity Score Calculation
-  const productivityScore = useMemo(() => {
-    const todayStr = formatLocalDate(clockNow);
-    const completedHabits = habits.filter(h => {
-      if (h.frequency === 'weekly') return calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency).completed > 0;
-      if (!isHabitScheduledOnDate(h.frequency, todayStr)) return true;
-      return getHabitStreaks(h.id, todayStr).completedToday;
-    }).length;
-    const habitWeight = habits.length > 0 ? (completedHabits / habits.length) * 50 : 50;
-
-    const todayTasks = tasks.filter(t => t.dueDate === todayStr || (!t.dueDate && !t.completed));
-    const completedTasks = todayTasks.filter(t => t.completed).length;
-    const taskWeight = todayTasks.length > 0 ? (completedTasks / todayTasks.length) * 50 : 50;
-
-    if (habits.length === 0 && todayTasks.length === 0) return null;
-    return Math.min(100, Math.round(habitWeight + taskWeight));
-  }, [habits, habitLogs, tasks, clockNow]);
-
   const todayKey = formatLocalDate(clockNow);
+  const todayOverview = useMemo(
+    () => getTodayOverview(tasks, habits, habitLogs, todayKey),
+    [tasks, habits, habitLogs, todayKey]
+  );
   const tomorrowDate = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 1);
   const tomorrowKey = formatLocalDate(tomorrowDate);
   const calendarDays = useMemo(() => getMonthCalendarDays(plannerDisplayedMonth.getFullYear(), plannerDisplayedMonth.getMonth(), userPrefs.firstDayOfWeek === 'monday'), [plannerDisplayedMonth, userPrefs.firstDayOfWeek]);
@@ -1271,29 +1257,25 @@ export default function App() {
           <div className="space-y-5">
             <div><p className="text-sm font-medium text-slate-500">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div>
 
-            {/* Productivity Score Card */}
-            {productivityScore === null ? (
-              <div className="dashboard-score p-4 rounded-2xl bg-slate-900 border border-slate-800">
-                <h3 className="text-lg font-bold">Productivity Score</h3>
-                <p className="mt-1 text-xs text-slate-400">No tasks or habits scheduled today.</p>
+            {/* Today at a glance: separate counts keep task and routine progress understandable. */}
+            <section className="lifeos-panel space-y-3 rounded-2xl border p-4" aria-labelledby="today-overview-title" data-testid="today-overview">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">At a glance</p>
+                <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s focus</h3>
               </div>
-            ) : (
-            <div className="dashboard-score p-4 rounded-2xl bg-slate-900 border border-slate-800">
-              <div className="flex justify-between items-center">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400">Daily Performance</span>
-                  <h3 className="text-lg font-bold mt-1">Productivity Score</h3>
-                  <p className="text-xs text-slate-400 mt-0.5">{productivityScore}% adherence today</p>
-                </div>
-                <div className="w-14 h-14 rounded-full border-4 border-indigo-500 bg-slate-900 flex items-center justify-center text-base font-black text-indigo-400">
-                  {productivityScore}%
-                </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button onClick={() => navigateTo('planner')} className="lifeos-raised min-h-16 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" aria-label={`Open Planner: ${todayOverview.tasksCompleted} of ${todayOverview.tasksDue} tasks due today complete`}>
+                  <span className="block text-xs text-secondary">Tasks due today</span>
+                  <span className="mt-1 block text-base font-semibold tabular-nums">{todayOverview.tasksCompleted} <span className="text-sm font-normal text-secondary">of {todayOverview.tasksDue} complete</span></span>
+                </button>
+                <button onClick={() => navigateTo('habits')} className="lifeos-raised min-h-16 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" aria-label={`Open Habits: ${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} routines complete today`}>
+                  <span className="block text-xs text-secondary">Routines today</span>
+                  <span className="mt-1 block text-base font-semibold tabular-nums">{todayOverview.routinesCompleted} <span className="text-sm font-normal text-secondary">of {todayOverview.routinesDue} checked</span></span>
+                </button>
               </div>
-              <div className="w-full h-2 rounded-full bg-slate-800 mt-3 overflow-hidden">
-                <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${productivityScore}%` }} />
-              </div>
-            </div>
-            )}
+              {todayOverview.weeklyRoutinesTotal > 0 && <p className="text-xs text-secondary">Weekly routines · {todayOverview.weeklyRoutinesCompleted} of {todayOverview.weeklyRoutinesTotal} checked this week</p>}
+              {todayOverview.tasksDue === 0 && todayOverview.routinesDue === 0 && todayOverview.weeklyRoutinesTotal === 0 && <p className="text-sm text-secondary">Nothing scheduled for today yet. Add a task or routine when you’re ready.</p>}
+            </section>
 
             {/* Active Goals Summary */}
             <section className="rounded-2xl border border-slate-800 bg-slate-900 p-4">

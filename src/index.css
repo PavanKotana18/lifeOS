@@ -88,8 +88,6 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
 .logo-rest { animation: lifeos-logo-settle 220ms ease-out both; }
 .profile-page > section, .profile-panel { box-shadow: 0 1px 2px rgb(15 23 42 / 5%); }
 .profile-page > section, .profile-page > button { transition: border-color 160ms ease, background-color 160ms ease; }
-.dashboard-score { border-color: #29354a; }
-.dashboard-score > div:first-child > div:last-child { background-color: #151e2e; }
 .app-icon-button { border-color: #334155; }
 .header-greeting { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 
@@ -176,8 +174,6 @@ html:not(.dark) .app-header { border-color: var(--stroke); background: var(--sur
 html:not(.dark) .app-icon-button { border-color: var(--stroke); background: var(--surface-raised); color: var(--ink-secondary); }
 html:not(.dark) .profile-panel { border-color: var(--stroke); background: var(--surface); box-shadow: 0 1px 3px rgb(15 23 42 / 7%); }
 html:not(.dark) .profile-avatar { background: var(--accent); color: var(--accent-foreground); }
-html:not(.dark) .dashboard-score { border-color: var(--stroke); background: var(--surface); }
-html:not(.dark) .dashboard-score > div:first-child > div:last-child { background-color: var(--surface-raised); }
 html:not(.dark) nav[aria-label="Main navigation"] { border-color: var(--stroke); background: var(--surface); }
 html:not(.dark) nav button[aria-current="page"] { background-color: var(--accent-tint); color: var(--accent); }
 html:not(.dark) nav button:not([aria-current="page"]) { color: var(--ink-secondary); }

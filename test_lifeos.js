@@ -20,6 +20,7 @@ function loadTsModule(path) {
   return loadedModule.exports;
 }
 const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
+const { getTodayOverview } = loadTsModule('./src/services/domainUtils.ts');
 const userPreferenceUtils = loadTsModule('./src/services/userPreferences.ts');
 const { buildFinanceAnalytics } = loadTsModule('./src/services/financeAnalytics.ts');
 const { pushTabHistory, popTabHistory } = loadTsModule('./src/services/tabHistory.ts');
@@ -531,10 +532,15 @@ async function runTestSuite() {
   const updatedTasks = await db.toArray('tasks');
   assert(updatedTasks.filter(t => !t.completed).length === 1, 'Dashboard dynamically reflects new pending task');
 
-  // Productivity Score Calculation Test
-  // Productivity score = (Habits completed / total habits * 50) + (Tasks completed / total tasks due today * 50)
-  const prodScore = Math.round((1 / 1 * 50) + (1 / 2 * 50));
-  assert(prodScore === 75, `Verify dynamic productivity score calculation: ${prodScore}%`);
+  // Dashboard progress remains separated into concrete task/routine counts.
+  const overview = getTodayOverview(
+    [{ dueDate: '2026-10-31', completed: true }, { dueDate: '2026-10-31', completed: false }],
+    [{ id: 'daily', frequency: 'daily' }, { id: 'weekly', frequency: 'weekly' }],
+    [{ habitId: 'daily', date: '2026-10-31', completed: true }, { habitId: 'weekly', date: '2026-10-29', completed: true }],
+    '2026-10-31'
+  );
+  assert(overview.tasksCompleted === 1 && overview.tasksDue === 2, 'Dashboard reports actual completed and due task counts');
+  assert(overview.routinesCompleted === 1 && overview.routinesDue === 1, 'Dashboard counts only routines scheduled today');
 
   // --- 6. BACKUP & RESTORE TESTS ---
   console.log('\n--- 6. Testing Backup & Restore Module ---');

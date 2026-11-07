@@ -1,4 +1,4 @@
-import type { NotificationPreferences, Task, Transaction } from '../types';
+import type { Habit, HabitLog, NotificationPreferences, Task, Transaction } from '../types';
 export type AppearancePreference = 'dark' | 'light' | 'system';
 
 export const profileInitial = (name: string) => name.trim().charAt(0).toLocaleUpperCase() || '';
@@ -169,6 +169,40 @@ export function calculateWeeklyHabitRate(
     completed,
     scheduled: eligibleDates.length,
     rate: eligibleDates.length ? Math.round(completed / eligibleDates.length * 100) : 0
+  };
+}
+
+export interface TodayOverview {
+  tasksCompleted: number;
+  tasksDue: number;
+  routinesCompleted: number;
+  routinesDue: number;
+  weeklyRoutinesCompleted: number;
+  weeklyRoutinesTotal: number;
+}
+
+/** Counts actual work by domain; it deliberately avoids an opaque combined score. */
+export function getTodayOverview(
+  tasks: Pick<Task, 'dueDate' | 'completed'>[],
+  habits: Pick<Habit, 'id' | 'frequency'>[],
+  logs: Pick<HabitLog, 'habitId' | 'date' | 'completed'>[],
+  date: string
+): TodayOverview {
+  const [year, month, day] = date.split('-').map(Number);
+  const today = new Date(year, month - 1, day, 12);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || today.getFullYear() !== year || today.getMonth() !== month - 1 || today.getDate() !== day) {
+    throw new TypeError('Today overview requires a valid local calendar date.');
+  }
+  const dueTasks = tasks.filter(task => task.dueDate === date);
+  const routines = habits.filter(habit => habit.frequency !== 'weekly' && isHabitScheduledOnDate(habit.frequency, date));
+  const weeklyRoutines = habits.filter(habit => habit.frequency === 'weekly');
+  return {
+    tasksCompleted: dueTasks.filter(task => task.completed).length,
+    tasksDue: dueTasks.length,
+    routinesCompleted: routines.filter(habit => logs.some(log => log.habitId === habit.id && log.date === date && log.completed)).length,
+    routinesDue: routines.length,
+    weeklyRoutinesCompleted: weeklyRoutines.filter(habit => calculateWeeklyHabitRate(logs, habit.id, today, habit.frequency).completed > 0).length,
+    weeklyRoutinesTotal: weeklyRoutines.length,
   };
 }
 

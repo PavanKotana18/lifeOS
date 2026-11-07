@@ -155,8 +155,9 @@ check(
   'App passes frequency into weekly rate calculation'
 );
 check(
-  app.includes('isHabitScheduledOnDate(h.frequency, todayStr)'),
-  'Productivity score respects unscheduled days'
+  domainSource.includes("habit.frequency !== 'weekly' && isHabitScheduledOnDate(habit.frequency, date)") &&
+  domainSource.includes('weeklyRoutinesCompleted'),
+  'Dashboard summary respects scheduled routines and separates weekly routines'
 );
 check(
   app.includes('{weekly.completed}/{weekly.scheduled} days'),

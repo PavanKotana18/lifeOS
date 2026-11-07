@@ -5,7 +5,7 @@
     {
       "name": "dashboard",
       "selector": "[aria-current='page'][data-tab='dashboard']",
-      "description": "Daily productivity score, quick glance metrics, urgent tasks, and navigation hubs",
+      "description": "Today overview with separate task/routine counts, finance, goals, priorities, and navigation hubs",
       "transitions": ["finance", "habits", "goals", "planner", "settings"]
     },
     {
