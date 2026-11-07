@@ -464,6 +464,9 @@ async function runTestSuite() {
   const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');
+  const overspendRate = buildFinanceAnalytics([{ date: '2026-10-01', amount: 100, type: 'income' }, { date: '2026-10-02', amount: 130, type: 'expense' }], [], '2026-10');
+  assert(overspendRate.savingsRate === -30 && overspendRate.netSavings === -30, 'Savings rate accurately shows a negative result when saved expenses exceed income');
+  assert(noBaseline.savingsRate === null, 'Savings rate is unavailable when there is no income baseline');
   let financeHistory = [];
   financeHistory = pushTabHistory(financeHistory, 'overview', 'transactions');
   financeHistory = pushTabHistory(financeHistory, 'transactions', 'budgets');

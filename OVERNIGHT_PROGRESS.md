@@ -6,7 +6,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 - Existing worktree: `/data/data/com.termux/files/home/lifeos-ws-integration-20261107`
 - Branch: `integration/lifeos-functional-security-20261107`
-- Latest pushed commit before the current local Insights checkpoint: `6f2646c78be4bc59833253f192154674fe1f8380`.
+- Latest pushed commit before the current local Finance overview package: `1c89fc589bdf8454fd68604e1b4d050269be6a43`.
 - Dashboard commit `425bb6d` and Finance conversion commit `704fa55` are pushed. This checkpoint edit records final CI results locally; source and test code are clean.
 - PR #23 remains draft, targeting `security/lifeos-encrypted-startup-20261107`.
 - PR remote head matched local before that push. No other worktrees or the original dirty `/data/data/com.termux/files/home/lifeOS` were modified.
@@ -54,6 +54,14 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Focused Insights (5) and navigation (9) checks PASS; TypeScript PASS; full `npm run test:all` PASS (all Node, WP0 and six Sentinel suites); `npm run build` PASS (2,241 modules; existing >500 kB bundle advisory).
 - Full local run output retained outside the repository at `/data/data/com.termux/files/usr/tmp/lifeos-test-all-overnight-20261107.log`. Sentinel SAF OS picker remains blocked without Android runtime; no handset claim.
 
+### Finance overview workflow (local, verified)
+
+- The Today snapshot and Finance overview now label income-less-expenses as “Net this month” instead of implying available cash. Both use the cent-rounded `buildFinanceAnalytics` totals and display negative savings rates truthfully; no-income months show unavailable (`—`). Added regression assertions for negative rates and no-income state.
+- Finance overview now shows up to three current-month budgets, up to two saved savings goals, and the three newest date-time-sorted transactions. Budget/savings progress uses accessible progress-bar roles, caps visual width without hiding over-budget percentages, and links to existing screens/forms. Empty budgets have a working set-budget action. The rate-source text distinguishes prior-month with no records from a zero-value month.
+- Finance tiles, progress and comparison indicators use semantic theme tokens, tabular numerals, and 44px-or-larger controls where applicable.
+- `node test_lifeos.js`: PASS (99 assertions, including negative savings-rate and missing income cases). `node test_lifeos_stabilization.js`: PASS (5 checks, including transaction date-time parity). `npm run test:all`: PASS (full Node/WP0/Sentinel suite). TypeScript and production build PASS (2,241 modules; main chunk now 511.19 kB and still emits Vite’s advisory). `git diff --check` PASS.
+- Full suite log: `/data/data/com.termux/files/usr/tmp/lifeos-test-all-finance-ui-20261107.log`. This Finance UI package has not yet been pushed or exercised by Android CI.
+
 ## Tests actually run on current local changes
 
 - `npm run test:all`: PASS on a complete serial run after conversion and dashboard changes. Includes 97/97 core application assertions, 32 habit-wiring checks, 21/21 audit regressions, encrypted storage/migration/coordinator suites, WP0 harness (148 checks and 11 controls), 47 Finance assertions, six-theme contrast checks, 3 Today summary checks, Android runner contract simulations, and all six Sentinel suites. CI run `42331997256` also passed this command.
@@ -77,7 +85,7 @@ Updated: 2026-11-07 (Asia/Kolkata)
 
 ## Next exact steps
 
-1. Commit and push the verified Insights goal progress and navigation history package to the same PR #23 branch; avoid adding another PR.
-2. Verify the consolidated GitHub Actions run and actual Android test counts. The last known runner for the shell-only checkpoint was queued behind the prior emulator matrix.
-3. Continue only after that checkpoint with incremental accessibility/theme review and a focused existing-screen migration; do not rewrite Finance, Habits, Goals or Planner models.
+1. Commit and push the verified Finance overview package to the existing PR #23 branch; do not create another PR.
+2. Verify CI for the latest published head and report Android matrix counts only from completed jobs. The latest run before this package was still compiling APKs.
+3. Continue with incremental accessibility/theme review and a focused existing-screen migration; do not rewrite Finance, Habits, Goals or Planner models.
 3. Keep LOS-001, API36 target compliance and physical biometric/SAF/notification acceptance visibly blocked pending their specific evidence.

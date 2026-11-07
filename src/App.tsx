@@ -1173,6 +1173,10 @@ export default function App() {
       && (!query || haystack.includes(query));
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeSearch, financeSort]);
+  const financeOverviewTransactions = useMemo(
+    () => sortTransactions(transactions.filter(tx => tx.date?.startsWith(financeMonth)), 'date-desc').slice(0, 3),
+    [transactions, financeMonth]
+  );
 
   if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared} onDecision={accepted => secureSetupResolver.current?.(accepted)} />;
 
@@ -1302,24 +1306,24 @@ export default function App() {
             </section>
 
             {/* Financial Overview Card */}
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+            <div className="lifeos-panel rounded-2xl border p-4">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Monthly Finance ({financeMonth})</h3>
                 <button onClick={() => navigateTo('finance')} className="text-xs text-indigo-400 font-semibold">Details &rarr;</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
                 <div className="p-3 rounded-xl bg-slate-800/60">
-                  <p className="text-xs text-slate-400">Total Income</p>
-                  <p className="text-base font-bold text-emerald-400 mt-0.5">{formatMoney(financeMetrics.totalIncome)}</p>
+                  <p className="text-xs text-secondary">Income</p>
+                  <p className="mt-0.5 text-base font-bold tabular-nums" style={{ color: 'var(--success)' }}>{formatMoney(financeAnalytics.totalIncome)}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-slate-800/60">
-                  <p className="text-xs text-slate-400">Total Expenses</p>
-                  <p className="text-base font-bold text-rose-400 mt-0.5">{formatMoney(financeMetrics.totalExpenses)}</p>
+                  <p className="text-xs text-secondary">Expenses</p>
+                  <p className="mt-0.5 text-base font-bold tabular-nums" style={{ color: 'var(--danger)' }}>{formatMoney(financeAnalytics.totalExpenses)}</p>
                 </div>
               </div>
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>Net Balance: <strong className={financeMetrics.remainingBalance >= 0 ? 'text-white' : 'text-rose-400'}>{formatMoney(financeMetrics.remainingBalance)}</strong></span>
-                <span>Savings: <strong className="text-indigo-400">{financeMetrics.savingsRate}%</strong></span>
+              <div className="flex justify-between gap-3 text-xs text-secondary">
+                <span>Net this month: <strong className="text-primary tabular-nums">{formatMoney(financeAnalytics.netSavings)}</strong></span>
+                <span>Savings rate: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
               </div>
             </div>
 
@@ -1447,39 +1451,58 @@ export default function App() {
             {financeSubtab === 'overview' && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-sm font-semibold">Monthly Focus</h3>
+                  <div><h3 className="text-sm font-semibold">Money this month</h3><p className="text-[10px] text-secondary">{userPrefs.currency} · saved transactions on this device</p></div>
                   <input
                     type="month"
                     value={financeMonth}
                     onChange={(e) => setFinanceMonth(e.target.value)}
-                    className="p-1.5 text-xs bg-slate-900 border border-slate-800 rounded-lg text-white"
+                    aria-label="Finance overview month"
+                    className="lifeos-input min-h-11 rounded-lg p-2 text-xs"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-2.5">
-                  <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                    <p className="text-xs text-slate-400">Total Income</p>
-                    <p className="text-xl font-bold text-emerald-400 mt-1">{formatMoney(financeMetrics.totalIncome)}</p>
+                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
+                    <p className="text-xs text-secondary">Income</p>
+                    <p className="mt-1 break-words text-xl font-bold tabular-nums" style={{ color: 'var(--success)' }}>{formatMoney(financeAnalytics.totalIncome)}</p>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                    <p className="text-xs text-slate-400">Total Expenses</p>
-                    <p className="text-xl font-bold text-rose-400 mt-1">{formatMoney(financeMetrics.totalExpenses)}</p>
+                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
+                    <p className="text-xs text-secondary">Expenses</p>
+                    <p className="mt-1 break-words text-xl font-bold tabular-nums" style={{ color: 'var(--danger)' }}>{formatMoney(financeAnalytics.totalExpenses)}</p>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                    <p className="text-xs text-slate-400">Remaining Balance</p>
-                    <p className="text-xl font-bold mt-1">{formatMoney(financeMetrics.remainingBalance)}</p>
+                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
+                    <p className="text-xs text-secondary">Net this month</p>
+                    <p className="mt-1 break-words text-xl font-bold tabular-nums">{formatMoney(financeAnalytics.netSavings)}</p>
+                    <p className="mt-1 text-[10px] text-secondary">Income less expenses</p>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-900 border border-slate-800">
-                    <p className="text-xs text-slate-400">Savings Rate</p>
-                    <p className="text-xl font-bold text-indigo-400 mt-1">{financeMetrics.savingsRate}%</p>
+                  <div className="lifeos-panel min-w-0 rounded-2xl border p-4">
+                    <p className="text-xs text-secondary">Savings rate</p>
+                    <p className="mt-1 text-xl font-bold tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</p>
+                    <p className="mt-1 text-[10px] text-secondary">Net divided by income</p>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+                <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-budget-title" data-testid="finance-overview-budget">
+                  <div className="flex items-center justify-between gap-2"><div><h4 id="overview-budget-title" className="text-sm font-semibold">Budget status</h4><p className="text-[10px] text-secondary">For {financeMonth}</p></div><button onClick={() => navigateFinanceSubtab('budgets')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All budgets</button></div>
+                  {financeAnalytics.budgetRows.length === 0 ? <div className="mt-2"><p className="text-xs text-secondary">No budgets set for this month.</p><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set a budget</button></div> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.slice(0, 3).map((row, index) => {
+                    const percent = row.allocated > 0 ? Math.round(row.spent / row.allocated * 100) : 0;
+                    const width = Math.min(100, Math.max(0, percent));
+                    return <div key={`${row.category}-${index}`}><div className="flex justify-between gap-2 text-xs"><span className="truncate">{row.category}</span><span className="shrink-0 tabular-nums">{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${row.category} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={width}><div className="h-full rounded-full" style={{ width: `${width}%`, backgroundColor: percent >= 100 ? 'var(--danger)' : percent >= 80 ? 'var(--warning)' : 'var(--accent)' }} /></div><div className="mt-1 flex justify-between gap-2 text-[10px] text-secondary"><span>{percent}% used</span><span>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>;
+                  })}</div>}
+                </section>
+
+                {savingsGoals.length > 0 && <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-savings-title"><div className="flex items-center justify-between gap-2"><div><h4 id="overview-savings-title" className="text-sm font-semibold">Savings goals</h4><p className="text-[10px] text-secondary">Saved progress, not projected returns</p></div><button onClick={() => navigateFinanceSubtab('savings')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All goals</button></div><div className="mt-3 space-y-3">{savingsGoals.slice(0, 2).map(goal => { const percent = goal.targetAmount > 0 ? Math.min(100, Math.max(0, Math.round(goal.currentAmount / goal.targetAmount * 100))) : 0; return <div key={goal.id}><div className="flex justify-between gap-2 text-xs"><span className="truncate font-medium">{goal.title}</span><span className="shrink-0 tabular-nums">{percent}%</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} savings progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${percent}%` }} /></div><p className="mt-1 text-[10px] text-secondary">{formatMoney(goal.currentAmount)} of {formatMoney(goal.targetAmount)}</p></div>; })}</div></section>}
+
+                <section className="lifeos-panel rounded-2xl border p-4" aria-labelledby="overview-transactions-title">
+                  <div className="mb-2 flex items-center justify-between gap-2"><div><h4 id="overview-transactions-title" className="text-sm font-semibold">Recent transactions</h4><p className="text-[10px] text-secondary">Newest by date and time</p></div><button onClick={() => navigateFinanceSubtab('transactions')} className="min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">All transactions</button></div>
+                  {financeOverviewTransactions.length === 0 ? <p className="py-3 text-center text-xs text-secondary">No transactions saved for this month.</p> : <ul className="divide-y" style={{ borderColor: 'var(--stroke)' }}>{financeOverviewTransactions.map(transaction => <li key={transaction.id}><button onClick={() => openEditTransaction(transaction)} className="flex min-h-14 w-full items-center justify-between gap-3 py-2 text-left"><span className="min-w-0"><span className="block truncate text-sm font-medium">{transaction.description || transaction.category}</span><span className="block text-[10px] text-secondary">{formatDate(transaction.date)}{transaction.occurredAt ? ` · ${formatTime(new Date(transaction.occurredAt))}` : ''} · {transaction.category}</span></span><span className="shrink-0 text-sm font-semibold tabular-nums" style={{ color: transaction.type === 'income' ? 'var(--success)' : 'var(--danger)' }}>{transaction.type === 'income' ? '+' : '−'}{formatMoney(transaction.amount)}</span></button></li>)}</ul>}
+                </section>
+
+                <div className="lifeos-panel rounded-2xl border p-4">
                   <div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-semibold">Month-over-month</h4><span className="text-[10px] text-slate-400">vs {previousMonthKey(financeMonth)}</span></div>
-                  {[{ label: 'Income', current: financeMetrics.totalIncome, previous: financeMetrics.previousMonthIncome, color: 'bg-emerald-500' }, { label: 'Expenses', current: financeMetrics.totalExpenses, previous: financeMetrics.previousMonthExpenses, color: 'bg-rose-500' }].map(row => {
-                    const max = Math.max(row.current, row.previous, 1);
-                    return <div key={row.label} className="mb-3 last:mb-0"><div className="mb-1 flex justify-between text-[10px]"><span>{row.label}</span><span>{formatMoney(row.current)} <span className="text-slate-500">· {formatMoney(row.previous)}</span></span></div><div className="flex h-2 gap-1"><div className={`h-full rounded ${row.color}`} style={{ width: `${row.current / max * 100}%` }} /><div className="h-full rounded bg-slate-600" style={{ width: `${row.previous / max * 100}%` }} /></div></div>;
+                  {[{ label: 'Income', current: financeAnalytics.totalIncome, previous: financeAnalytics.periodRows[financeAnalytics.periodRows.length - 2]?.income ?? null, color: 'var(--success)' }, { label: 'Expenses', current: financeAnalytics.totalExpenses, previous: financeAnalytics.periodRows[financeAnalytics.periodRows.length - 2]?.expenses ?? null, color: 'var(--danger)' }].map(row => {
+                    const max = Math.max(row.current, row.previous || 0, 1);
+                    return <div key={row.label} className="mb-3 last:mb-0"><div className="mb-1 flex justify-between gap-2 text-[10px]"><span>{row.label}</span><span className="text-right tabular-nums">{formatMoney(row.current)} <span className="text-secondary">· {row.previous === null ? 'no prior records' : formatMoney(row.previous)}</span></span></div><div className="flex h-2 gap-1"><div className="h-full rounded" style={{ width: `${row.current / max * 100}%`, backgroundColor: row.color }} />{row.previous !== null && <div className="h-full rounded" style={{ width: `${row.previous / max * 100}%`, backgroundColor: 'var(--surface-raised)' }} />}</div></div>;
                   })}
                   <p className="mt-2 text-[10px] text-slate-500">Current month · previous month</p>
                 </div>
