@@ -341,6 +341,7 @@ const cases = [
       h.check(typeof contents === 'string', 'Actual UI export must invoke file bridge');
       const rows = parseCsv(contents), column = rows[0].indexOf('description');
       h.check(column >= 0 && rows.length === descriptions.length + 1, 'CSV header and row counts');
+      h.check(!rows[0].includes('id') && !rows.flat().some(cell => cell.startsWith('wp0-')), 'CSV omits internal transaction identifiers');
       h.equal(rows.at(-1)[column], descriptions.at(-1), 'Literal commas/quotes/newlines survive production export');
       h.contract(rows.slice(1, -1).map(r => r[column]), payloads.map(p => "'" + p));
     }); }
