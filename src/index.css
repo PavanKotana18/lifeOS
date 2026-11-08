@@ -183,11 +183,11 @@ body {
 .money-page-toolbar select { max-width: min(64%, 15rem); }
 .money-back-button { display: inline-flex; min-height: 44px; flex: 0 0 auto; align-items: center; gap: 0.2rem; color: var(--accent); font-size: 0.875rem; font-weight: 600; }
 
-.money-home { display: flex; flex-direction: column; gap: 1.5rem; }
+.money-home { display: flex; flex-direction: column; gap: 1.1rem; }
 .money-home-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
 .money-period { display: grid; flex: 0 0 auto; gap: 0.25rem; color: var(--ink-secondary); }
 .money-period input { width: 9.5rem; border: 1px solid var(--stroke); border-radius: 0.8rem; background: var(--surface); color: var(--ink); padding: 0 0.6rem; font-size: 0.8125rem; }
-.money-cashflow { overflow: hidden; border-radius: 1.75rem; background: var(--surface-raised); padding: clamp(1.1rem, 5vw, 1.6rem); }
+.money-cashflow { overflow: hidden; border: 1px solid var(--stroke); border-radius: 1.5rem; background: linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 88%, var(--accent)), var(--surface-raised)); padding: clamp(1rem, 4.5vw, 1.4rem); }
 .money-cashflow-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .money-cashflow-mark { display: grid; width: 2.75rem; height: 2.75rem; flex: 0 0 auto; place-items: center; border-radius: 1rem; background: var(--accent-tint); color: var(--accent); }
 .money-cashflow .type-display-amount { margin-top: 1.1rem; }
@@ -222,6 +222,11 @@ body {
 .money-action strong, .money-action small { display: block; overflow-wrap: anywhere; }
 .money-action strong { font-size: 0.8125rem; font-weight: 600; line-height: 1.3; }
 .money-action small { margin-top: 0.2rem; color: var(--ink-secondary); font-size: 0.6875rem; line-height: 1.35; }
+.money-savings-action { display: flex; min-height: 3.25rem; align-items: center; gap: 0.65rem; border: 1px solid var(--stroke); border-radius: 0.95rem; padding: 0.5rem 0.75rem; color: var(--accent); text-align: left; }
+.money-savings-action > span { display: grid; min-width: 0; flex: 1; gap: 0.12rem; }
+.money-savings-action strong { font-size: 0.8rem; font-weight: 600; }
+.money-savings-action small { color: var(--ink-secondary); font-size: 0.7rem; }
+.money-savings-action:focus-visible, .money-tools summary:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 3px; }
 .money-activity, .money-tools { min-width: 0; }
 .money-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; }
 .money-text-action { display: inline-flex; min-height: 44px; align-items: center; gap: 0.35rem; padding-inline: 0.25rem; color: var(--accent); font-size: 0.8125rem; font-weight: 600; }
@@ -241,6 +246,11 @@ body {
 .money-tool-row { display: flex; width: 100%; min-height: 4.25rem; align-items: center; gap: 0.75rem; text-align: left; }
 .money-tool-icon { width: 2.35rem; height: 2.35rem; border-radius: 0.75rem; background: transparent; color: var(--accent); }
 .money-tool-row > svg:last-child { flex: 0 0 auto; color: var(--ink-muted); }
+.money-tools summary { cursor: pointer; list-style: none; }
+.money-tools summary::-moz-list-bullet { list-style-type: none; }
+.money-tools summary::-webkit-details-marker { display: none; }
+.money-tools-hint { color: var(--ink-secondary); font-size: 0.75rem; }
+.money-tools[open] summary { margin-bottom: 0.6rem; }
 .transaction-history-item { min-width: 0; }
 .transaction-history-main { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
 .transaction-history-copy { display: grid; min-width: 0; flex: 1; gap: 0.22rem; padding: 0; text-align: left; }

@@ -303,6 +303,7 @@ export default function App() {
 
   // Subtab & Filter States
   const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
+  const [openMoneyTransferOnAccounts, setOpenMoneyTransferOnAccounts] = useState(false);
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
   const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -2117,6 +2118,7 @@ export default function App() {
                   openCreateForm('transaction');
                   setCreateDraft(current => ({ ...current, type: 'income', category: categories.find(category => category.type === 'income')?.name || '' }));
                 }}
+                onTransfer={() => { setOpenMoneyTransferOnAccounts(true); navigateFinanceSubtab('accounts'); }}
                 onMoveToSavings={() => {
                   navigateFinanceSubtab('savings');
                   if (savingsGoals.length === 1) {
@@ -2137,6 +2139,7 @@ export default function App() {
             )}
 
             {financeSubtab === 'accounts' && <MoneyAccounts accounts={financialAccounts} transactions={transactions} transfers={accountTransfers} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
+              autoOpenTransfer={openMoneyTransferOnAccounts} onTransferRequestHandled={() => setOpenMoneyTransferOnAccounts(false)}
               onCreateAccount={async input => { await StorageService.accounts.add(input); await reloadAllData(); }}
               onUpdateAccount={async (id, input) => { await StorageService.accounts.update(id, input); await reloadAllData(); }}
               onDeleteAccount={async id => { await StorageService.accounts.delete(id); await reloadAllData(); }}

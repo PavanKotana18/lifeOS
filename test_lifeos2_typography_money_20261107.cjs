@@ -19,6 +19,7 @@ const css = fs.readFileSync('src/index.css', 'utf8');
 const tailwind = fs.readFileSync('tailwind.config.cjs', 'utf8');
 const viewport = fs.readFileSync('index.html', 'utf8');
 const moneyHome = fs.readFileSync('src/components/MoneyHome.tsx', 'utf8');
+const moneyAccounts = fs.readFileSync('src/components/MoneyAccounts.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 
 assert.ok(font.size > 300_000, 'locally bundled variable Inter font is present');
@@ -40,7 +41,7 @@ assert.doesNotMatch(viewport, /user-scalable\s*=\s*no|max(?:imum)?-scale\s*=\s*1
 for (const [code, locale, symbol] of [['INR', 'en-IN', '₹'], ['USD', 'en-US', '$'], ['EUR', 'de-DE', '€'], ['GBP', 'en-GB', '£'], ['JPY', 'en-US', '¥']]) assert.ok(formatCurrency(1234567.89, code, locale).includes(symbol), `${code} currency symbol is rendered`);
 assert.ok(formatCurrency(1234567.89, 'INR', 'en-IN').includes('12,34,567.89'), 'Indian currency grouping and paise precision are retained');
 assert.ok(!formatCurrency(1234567.89, 'JPY', 'en-US').includes('.'), 'zero-minor-unit currency omits decimals');
-assert.match(moneyHome, /Recorded cash flow/);
+assert.match(moneyHome, /Income minus expenses/);
 assert.match(moneyHome, /formatMoney\(netCashFlow\)/);
 assert.match(app, /aria-label="Open profile and settings"/);
 assert.match(app, /primaryDestinationForTab\(activeTab\)/);
@@ -52,13 +53,21 @@ const markup = renderToStaticMarkup(React.createElement(MoneyHome, {
   transactions: [{ id: 'synthetic-1', type: 'expense', amount: 1250, date: '2026-11-07', occurredAt: '2026-11-07T08:30:00.000Z', category: 'Food', description: 'Lunch' }],
   formatMoney: amount => formatCurrency(amount, 'INR', 'en-IN'), formatDate: date => date, formatTime: date => date.toISOString().slice(11, 16),
   accountSummaries: [], savingsGoals: [], legacyCurrency: 'INR', onAccounts() {},
-  onMonthChange() {}, onAddExpense() {}, onAddIncome() {}, onMoveToSavings() {}, onTransactions() {}, onBudgets() {}, onSavings() {}, onAnalytics() {}, onPlanning() {}, onEditTransaction() {},
+  onMonthChange() {}, onAddExpense() {}, onAddIncome() {}, onTransfer() {}, onMoveToSavings() {}, onTransactions() {}, onBudgets() {}, onSavings() {}, onAnalytics() {}, onPlanning() {}, onEditTransaction() {},
 }));
-assert.match(markup, /Recorded cash flow/);
+assert.match(markup, /Income minus expenses/);
 assert.match(markup, /₹17,200/);
 assert.match(markup, /Lunch/);
 assert.match(markup, /2026-11-07/);
 assert.match(markup, /Add to savings/);
+assert.match(markup, /Move between accounts/);
+assert.match(markup, /<details class="money-tools">/);
+const primaryActions = markup.match(/<section aria-label="Quick money actions"[\s\S]*?<\/section>/)?.[0] || '';
+assert.ok(primaryActions.indexOf('Add expense') < primaryActions.indexOf('Add income') && primaryActions.indexOf('Add income') < primaryActions.indexOf('Transfer'), 'expense, income, and transfer remain equally visible primary actions');
+assert.match(app, /onTransfer=\{\(\) => \{ setOpenMoneyTransferOnAccounts\(true\); navigateFinanceSubtab\('accounts'\); \}\}/, 'Money transfer quick action opens Accounts and requests the transfer form');
+assert.match(app, /autoOpenTransfer=\{openMoneyTransferOnAccounts\}/);
+assert.match(moneyAccounts, /if \(active\.length >= 2\) beginTransfer\(\)/, 'transfer form opens directly when two accounts are available');
+assert.match(moneyAccounts, /Add at least two active accounts before making a transfer/);
 assert.match(markup, /Overall plan/);
 assert.match(markup, /22,200\.00 left/);
 assert.match(markup, /largest recorded expense category is <strong>Food<\/strong>/);

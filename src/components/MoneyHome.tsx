@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, CalendarClock, ChartNoAxesCombined, PiggyBank, Receipt, WalletCards } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, ArrowRight, ArrowUpRight, BarChart3, CalendarClock, ChartNoAxesCombined, PiggyBank, Receipt, WalletCards } from 'lucide-react';
 import type { SavingsGoal, Transaction } from '../types';
 import { decimalToMinorUnits, formatMinorUnits } from '../services/financeCore';
 
@@ -19,6 +19,7 @@ type Props = {
   onMonthChange: (month: string) => void;
   onAddExpense: () => void;
   onAddIncome: () => void;
+  onTransfer: () => void;
   onMoveToSavings: () => void;
   onTransactions: () => void;
   onBudgets: () => void;
@@ -42,7 +43,7 @@ const moneyDestinations = [
 ] as const;
 
 export default function MoneyHome({ month, income, expenses, netCashFlow, budgetRows, largestCategory, expenseChange, hasPreviousMonthRecords, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
-  onAddExpense, onAddIncome, onMoveToSavings, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, accountSummaries = [], savingsGoals = [], legacyCurrency, onEditTransaction }: Props) {
+  onAddExpense, onAddIncome, onTransfer, onMoveToSavings, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, accountSummaries = [], savingsGoals = [], legacyCurrency, onEditTransaction }: Props) {
   const destinationActions = { transactions: onTransactions, accounts: onAccounts, budgets: onBudgets, savings: onSavings, analytics: onAnalytics, planning: onPlanning };
   const monthDate = /^\d{4}-\d{2}$/.test(month) ? new Date(`${month}-01T12:00:00`) : new Date();
   const monthLabel = monthDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -54,9 +55,9 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
     </header>
 
     <section className="money-cashflow" aria-labelledby="money-cashflow-title">
-      <div className="money-cashflow-top"><div><p className="type-eyebrow">{monthLabel.toUpperCase()}</p><h3 id="money-cashflow-title" className="type-section-title">Recorded cash flow</h3></div><span className="money-cashflow-mark" aria-hidden="true"><BarChart3 size={20} strokeWidth={1.8} /></span></div>
+      <div className="money-cashflow-top"><div><p className="type-eyebrow">{monthLabel.toUpperCase()}</p><h3 id="money-cashflow-title" className="type-section-title">Income minus expenses</h3></div><span className="money-cashflow-mark" aria-hidden="true"><BarChart3 size={20} strokeWidth={1.8} /></span></div>
       <p className="type-display-amount" data-testid="money-net-cashflow">{formatMoney(netCashFlow)}</p>
-      <p className="money-cashflow-caption">Income less expenses saved for this month</p>
+      <p className="money-cashflow-caption">Saved income less saved spending. Transfers do not change this amount.</p>
       <div className="money-flow-split" aria-label={`Income ${formatMoney(income)}; expenses ${formatMoney(expenses)}`}>
         <div><span>Income</span><strong>{formatMoney(income)}</strong></div>
         <div><span>Expenses</span><strong>{formatMoney(expenses)}</strong></div>
@@ -72,8 +73,10 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
     <section aria-label="Quick money actions" className="money-quick-actions">
       <button type="button" onClick={onAddExpense} className="money-action money-action-expense"><span className="money-action-icon"><ArrowUpRight size={19} /></span><span><strong>Add expense</strong><small>Record money spent</small></span></button>
       <button type="button" onClick={onAddIncome} className="money-action money-action-income"><span className="money-action-icon"><ArrowDownLeft size={19} /></span><span><strong>Add income</strong><small>Record money received</small></span></button>
-      <button type="button" onClick={onMoveToSavings} className="money-action money-action-savings"><span className="money-action-icon"><PiggyBank size={19} /></span><span><strong>Add to savings</strong><small>Contribute to a goal</small></span></button>
+      <button type="button" onClick={onTransfer} className="money-action money-action-transfer"><span className="money-action-icon"><ArrowLeftRight size={19} /></span><span><strong>Transfer</strong><small>Move between accounts</small></span></button>
     </section>
+
+    <button type="button" onClick={onMoveToSavings} className="money-savings-action"><PiggyBank size={17} aria-hidden="true" /><span><strong>Add to savings</strong><small>Contribute toward a goal</small></span><ArrowRight size={15} aria-hidden="true" /></button>
 
     <section className="money-context" aria-label="Budget context and recorded insights">
       <div className="money-context-heading"><div><p className="type-eyebrow">THIS MONTH</p><h3 className="type-section-title">Plan and patterns</h3></div><button type="button" onClick={onBudgets} className="money-text-action">Budgets <ArrowRight size={15} aria-hidden="true" /></button></div>
@@ -92,14 +95,14 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
       </li>)}</ul>}
     </section>
 
-    <section className="money-tools" aria-labelledby="money-tools-title">
-      <div className="money-section-heading"><div><p className="type-eyebrow">YOUR MONEY</p><h3 id="money-tools-title" className="type-section-title">Explore</h3></div></div>
+    <details className="money-tools">
+      <summary className="money-section-heading"><div><p className="type-eyebrow">YOUR MONEY</p><h3 className="type-section-title">More tools</h3></div><span className="money-tools-hint">Accounts, reports and planning</span></summary>
       <div className="money-tool-list">{moneyDestinations.filter(item => item.id !== 'transactions').map(item => {
         const Icon = item.icon;
         return <button type="button" key={item.id} onClick={destinationActions[item.id]} className="money-tool-row">
           <span className="money-tool-icon" aria-hidden="true"><Icon size={19} strokeWidth={1.8} /></span><span className="money-tool-copy"><strong>{item.label}</strong><small>{item.note}</small></span><ArrowRight size={17} aria-hidden="true" />
         </button>;
       })}</div>
-    </section>
+    </details>
   </div>;
 }

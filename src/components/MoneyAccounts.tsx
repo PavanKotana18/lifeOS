@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeftRight, Archive, Landmark, Plus, Wallet } from 'lucide-react';
 import type { AccountTransfer, FinancialAccount, FinancialAccountType, Transaction } from '../types';
 import { accountActivitySign, calculateAccountBalances } from '../services/financialAccounting';
@@ -21,6 +21,8 @@ type Props = {
   onUpdateTransfer: (id: string, input: Partial<TransferInput>) => Promise<void>;
   onReverseTransfer: (id: string, date: string) => Promise<void>;
   onDeleteTransfer: (id: string) => Promise<void>;
+  autoOpenTransfer?: boolean;
+  onTransferRequestHandled?: () => void;
 };
 
 const accountTypes: Array<[FinancialAccountType, string]> = [
@@ -44,7 +46,7 @@ export function buildTransferReversalConfirmation(
 }
 
 export default function MoneyAccounts(props: Props) {
-  const { accounts, transactions, transfers, currencyCode, locale, onCreateAccount, onUpdateAccount, onDeleteAccount, onCreateTransfer, onUpdateTransfer, onReverseTransfer, onDeleteTransfer } = props;
+  const { accounts, transactions, transfers, currencyCode, locale, onCreateAccount, onUpdateAccount, onDeleteAccount, onCreateTransfer, onUpdateTransfer, onReverseTransfer, onDeleteTransfer, autoOpenTransfer = false, onTransferRequestHandled } = props;
   const [accountDraft, setAccountDraft] = useState<{ id?: string; name: string; type: FinancialAccountType; currencyCode: string; opening: string; description: string; isActive: boolean } | null>(null);
   const [transferDraft, setTransferDraft] = useState<{ id?: string; from: string; to: string; fromAmount: string; toAmount: string; rate: string; date: string; notes: string } | null>(null);
   const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
@@ -72,6 +74,12 @@ export default function MoneyAccounts(props: Props) {
       toAmount: minorUnitsToDecimal(BigInt(transfer.toAmountMinor), transfer.toCurrencyCode), rate: transfer.exchangeRate || '', date: transfer.date, notes: transfer.notes || '' }
       : { from: active[0]?.id || '', to: active[1]?.id || '', fromAmount: '', toAmount: '', rate: '', date: today(), notes: '' });
   };
+  useEffect(() => {
+    if (!autoOpenTransfer) return;
+    if (active.length >= 2) beginTransfer();
+    else setError('Add at least two active accounts before making a transfer.');
+    onTransferRequestHandled?.();
+  }, [autoOpenTransfer]);
   const submitTransfer = async (event: React.FormEvent) => {
     event.preventDefault(); if (!transferDraft) return;
     try {
