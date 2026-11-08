@@ -498,7 +498,7 @@ const rawStorageService: IDataStorage = {
         await assertTransactionCategory(tx.category, tx.type);
         const id = createRecordId('tx');
         const createdAt = new Date().toISOString();
-        const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
+        const record: Transaction = { ...tx, id, createdAt };
         await db.transactions.add(record);
         return record;
       });
