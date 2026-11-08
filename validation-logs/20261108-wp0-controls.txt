@@ -1,0 +1,13 @@
+PASS: LOS-010 (5 checks)
+PASS: LOS-009 (20 checks)
+PASS: CONTROL-INTEGRATION (21 checks)
+PASS: LOS-002 (17 checks)
+PASS: LOS-003 (19 checks)
+PASS: LOS-007 (4 checks)
+PASS: LOS-008 (16 checks)
+PASS: SPRINT1-RESTORE (20 checks)
+PASS: SPRINT1-RECOVERY (21 checks)
+PASS: SPRINT1-IMPORT-RACE (6 checks)
+PASS: LOS-023 (23 checks)
+{"summary":{"PASS":11}}
+Known-defect observations are NOT passing release acceptance. See docs/testing/WP0.md.

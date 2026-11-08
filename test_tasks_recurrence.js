@@ -18,7 +18,7 @@ async function main() {
     static UTC(...args) { return RealDate.UTC(...args); }
   };
 
-  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
+  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to raw domain operations for this recurrence contract.\nexport { db, rawStorageService as legacyStorageService };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -103,7 +103,9 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const { db, StorageService, sessionManager, getNextRecurringTaskDate, getRecurrenceRootId } = loaded.exports;
+  // Recurrence rules are tested at the raw domain layer. Encrypted admission
+  // and session behavior are covered independently by security-focused tests.
+  const { db, legacyStorageService: StorageService, sessionManager, getNextRecurringTaskDate, getRecurrenceRootId } = loaded.exports;
   sessionManager.unlock();
   await db.open();
   let passed = 0;

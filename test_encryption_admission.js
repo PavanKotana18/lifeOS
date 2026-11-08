@@ -8,7 +8,8 @@ async function test(name, run) {
   finally { await f.dispose(); }
 }
 (async () => {
-  await test('Inactive facade rejects sensitive reads/writes even with an unlocked JS session', async f => {
+  await test('Inactive facade rejects private access without changing secure key state', async f => {
+    const nativeState = await f.native.getKeyState();
     for (const operation of [() => f.StorageService.transactions.getAll(),
       () => f.StorageService.transactions.add({description:'synthetic'}),
       () => f.StorageService.settings.set('displayName','synthetic'),
@@ -19,6 +20,9 @@ async function test(name, run) {
       assert.equal(f.sessionManager.isUnlocked(),false);
     }
     assert.equal(await f.lifeOSDatabase.transactions.count(),0);
+    const finalState = await f.native.getKeyState();
+    assert.deepEqual(finalState, nativeState);
+    assert.equal(f.native.calls.includes('setup'), false);
     await f.StorageService.settings.set('theme','light');
     assert.equal(await f.StorageService.settings.get('theme','system'),'light');
   });

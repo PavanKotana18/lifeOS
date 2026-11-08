@@ -9,11 +9,11 @@ Status meanings: PASS = executed successfully on the recorded candidate/stage; F
 |---|---|---|---|
 | Git ancestry and no duplicate integration | Exact PR SHAs, merge parents, stage ancestry | PASS baseline | #18/#19 join at #20; candidate integrated through #22 only; #23–#25 not integrated due stop condition |
 | Candidate isolation | New branch/worktree from pinned main; no prior worktree changed | PASS baseline | Clean candidate at pinned base |
-| Per-stage focused tests | Relevant npm contracts after each integrated stage | FAIL after #22 | Backup fixture correction passes 5/5; encryption-admission 6/6, encrypted facade 16, migration 45, coordinator 10, crypto-session 7, CryptoService 24, key-state 8, auth 10, backup validation 19, backup export 18 passed; `test_db_atomicity.js:108` then failed on stale session-only expectation while encryption is inactive | `npm test` exit 0 after each; simulated/native-source and disposable IndexedDB tests |
-| Per-stage TypeScript | `npx tsc --noEmit` after each stage | PASS through #21; NOT RUN after #22 failure | Stop rule prevents proceeding past failed mandatory test | Exit 0 after each |
-| Full npm suite | `npm test` on exact candidate head | FAIL before fixture correction; NOT RUN after correction | Original failure at backup fixture; second focused mandatory test now fails at `test_db_atomicity.js:108`; stopped per gate |
-| Sentinel | `npm run test:sentinel` on exact candidate head | NOT RUN | |
-| Production build | `npm run build` on exact candidate head | NOT RUN | |
+| Per-stage focused tests | Relevant npm contracts after each integrated stage | PASS for #22 baseline | Exact `Food` category fixture at `test_db_atomicity.js` now seeds through normal `categories.getAll()` and asserts ID `cat_food`; raw DB atomicity and encrypted facade tests are separate. Atomicity 38; admission 6/6; encrypted atomicity 8/8; recurrence 14/14 and edge cases 9/9. WP0 controls 11/11. Logs under `validation-logs/`. | `npm test` exit 0 after each; simulated/native-source and disposable IndexedDB tests |
+| Per-stage TypeScript | `npx tsc --noEmit` after each stage | PASS through #22 baseline | Exit 0 after fixture-only corrections | Exit 0 after each |
+| Full npm suite | `npm test` on exact candidate head | PASS before #23 | Explicit exit 0 in `validation-logs/20261108-npm-test-final-pre23.txt` |
+| Sentinel | `npm run test:sentinel` on exact candidate head | PASS | 6/6 suites; SAF runtime uses bridge simulation/source checks, physical document picker remains outstanding |
+| Production build | `npm run build` on exact candidate head | PASS | Vite transformed 2,232 modules and completed production output |
 | Dexie v1→v2 upgrade | Legacy records/indexes preserved in disposable database | NOT RUN | |
 | Encrypted migration safety | Existing ciphertext, plaintext legacy rows, retry/interruption/concurrency | NOT RUN | Physical/installed upgrade still required |
 | Backup compatibility | Legacy 11-table and current 15-table validation/round-trip/rollback | FAIL / PARTIAL | Legacy validator 19/19 and raw IndexedDB atomicity fixture 5/5 now pass independently; `test_db_atomicity.js` still fails at line 108 because inactive encrypted storage masks its session-only error expectation; current 15-table tests are downstream of #25 and not run |

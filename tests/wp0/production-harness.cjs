@@ -64,7 +64,11 @@ function loader(overrides) {
       }
       return require(id);
     };
-    loaded._compile(compile(fs.readFileSync(filename, 'utf8'), filename), filename);
+    const source = fs.readFileSync(filename, 'utf8');
+    const testSource = filename === path.join(ROOT, 'src/db.ts')
+      ? `${source}\n\n// Test-only raw domain handle for isolated fixture setup.\nexport { rawStorageService as legacyStorageService };\n`
+      : source;
+    loaded._compile(compile(testSource, filename), filename);
     return loaded.exports;
   }
   return load;
@@ -259,7 +263,7 @@ async function fixture() {
     deps.syncNotificationSchedules = bind(sync, deps);
     return deps;
   }
-  return { ...db, native, pending, load, appDeps, ...notificationModule,
+  return { ...db, legacyStorageService: db.legacyStorageService, native, pending, load, appDeps, ...notificationModule,
     async activate() { db.sessionManager.unlock(); await db.activateEncryptedStorage();
       check(db.isEncryptedStorageActivated(), 'Production encrypted activation must complete'); },
     async dispose() { db.sessionManager.lock(); await db.sessionManager.waitForIdle();

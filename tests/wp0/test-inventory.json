@@ -13,6 +13,11 @@
       "limitations": "Real facade and migration with disposable IndexedDB and synthetic native AES-GCM; no genuine Keystore or provisioning UI."
     },
     {
+      "path": "test_encrypted_atomicity.js",
+      "categories": ["Production integration", "Mocked native simulation"],
+      "limitations": "Production encrypted facade and Dexie with a synthetic authenticated native adapter; no genuine Android Keystore or biometric prompt."
+    },
+    {
       "path": "sentinel/database/database_integrity_tests.js",
       "categories": [
         "Production integration"

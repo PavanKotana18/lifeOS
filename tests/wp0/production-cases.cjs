@@ -7,7 +7,9 @@ async function usingFixture(fn) {
   try { return await fn(f); } finally { await f.dispose(); }
 }
 async function seed(f) {
-  f.sessionManager.unlock();
+  // Provision/activate the synthetic encrypted runtime explicitly; private
+  // production storage is never exercised by merely unlocking the JS session.
+  await f.activate();
   await f.StorageService.categories.getAll();
   await f.StorageService.backup.seedDemoData();
   await f.StorageService.settings.set('wp0Synthetic', true);
@@ -80,7 +82,7 @@ function parseCsv(csv) {
 const cases = [
   { id: 'SPRINT1-IMPORT-RACE', category: 'Actual App import handler and DB live replacement guard', known: false,
     async run() { await usingFixture(async f => {
-      f.sessionManager.unlock();
+      await f.activate();
       const importer = f.load('src/services/backupImportService.ts');
       const codec = f.load('src/services/backupCryptoService.ts');
       let before, replacement, rejected;
@@ -104,9 +106,11 @@ const cases = [
         decodeBackupForRestore: importer.decodeBackupForRestore,
         MAX_BACKUP_FILE_BYTES: codec.MAX_BACKUP_FILE_BYTES,
         requestBackupPassphrase: async () => { throw new Error('Legacy import must not request a passphrase'); },
+        confirmLegacy: () => true,
       })({ size: 300, text: async () => JSON.stringify({ tables: Object.fromEntries(h.TABLES.map(t => [t, []])) }) });
       h.equal(replacement, false, 'Empty observation never grants unconfirmed replacement consent');
-      h.check(/Confirm replacement/.test(rejected?.message || ''), 'Actual live guard refused replacement');
+      h.check(/Existing data|Confirm replacement/i.test(rejected?.message || ''),
+        'Actual live restore guard refused replacement');
       h.equal(await snapshot(f), before, 'Concurrent write survives actual UI import attempt');
     }); }
   },
@@ -133,7 +137,7 @@ const cases = [
   },
   { id: 'CONTROL-INTEGRATION', category: 'Production integration + mocked native simulation', known: false,
     async run() { await usingFixture(async f => {
-      await assert.rejects(f.StorageService.transactions.getAll(), /locked/i);
+      await assert.rejects(f.StorageService.transactions.getAll(), /locked|not ready/i);
       const original = await seed(f);
       await f.StorageService.backup.importData(original, { replaceExisting: true });
       h.equal(JSON.parse(await f.StorageService.backup.exportData()).tables, JSON.parse(original).tables,
@@ -273,21 +277,19 @@ const cases = [
   },
   { id: 'LOS-007', category: 'Production integration: raw/encrypted goal API parity; simulated native', known: false,
     async run() { await usingFixture(async f => {
-      f.sessionManager.unlock();
-      const expected = await goalOutcomes(f.StorageService);
+      const expected = await goalOutcomes(f.legacyStorageService);
       h.equal(expected, { targetReached: 'Completed', prematureCompletion: 'In Progress',
         lastMilestone: 'Completed', reopenedMilestone: 'In Progress', paused: 'Paused' }, 'Raw goal semantics independently checked');
-      await f.StorageService.backup.clearAll(); await f.activate();
+      await f.legacyStorageService.backup.clearAll(); await f.activate();
       const actual = await goalOutcomes(f.StorageService);
       h.contract(actual, expected);
     }); }
   },
   { id: 'LOS-008', category: 'Production integration: raw/encrypted recurrence parity; fixed local clock; simulated native', known: false,
     async run() { await usingFixture(async f => {
-      f.sessionManager.unlock();
-      const expected = await recurrenceOutcomes(f.StorageService);
+      const expected = await recurrenceOutcomes(f.legacyStorageService);
       h.check(Object.values(expected).every(date => date > '2026-11-06'), 'Raw next dates must be after fixed local today');
-      await f.StorageService.backup.clearAll(); await f.activate();
+      await f.legacyStorageService.backup.clearAll(); await f.activate();
       h.contract(await recurrenceOutcomes(f.StorageService), expected);
     }); }
   },
@@ -297,8 +299,11 @@ const cases = [
       const s = f.StorageService, ns = f.NotificationService;
       const habit = (await s.habits.getAll())[0];
       await s.habits.update(habit.id, { reminderTime: '09:00' });
-      const milestones = await s.goals.getAllMilestones();
-      await f.lifeOSDatabase.milestones.update(milestones[0].id, { targetDate: '2026-12-01', completed: false });
+      const reminderGoal = await s.goals.add({ title: 'WP0 reminder goal', category: 'Fitness',
+        targetValue: 10, currentValue: 0, unit: 'km', startDate: '2026-11-01',
+        targetDate: '2026-12-31', priority: 'Medium', status: 'In Progress' });
+      await s.goals.addMilestone({ goalId: reminderGoal.id, title: 'WP0 reminder milestone',
+        targetDate: '2026-12-01', completed: false });
       const enabled = Object.fromEntries(Object.keys(f.DEFAULT_NOTIFICATION_PREFERENCES).map(k => [k, true]));
       await ns.syncHabits(await s.habits.getAll(), enabled);
       await ns.syncMilestones(await s.goals.getAll(), await s.goals.getAllMilestones(), enabled);

@@ -7,7 +7,7 @@ const ts = require('typescript');
 const assert = require('assert');
 
 async function main() {
-  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
+  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db, rawStorageService as legacyStorageService };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -91,7 +91,12 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const { db, StorageService, sessionManager } = loaded.exports;
+  const {
+    db,
+    StorageService: ProtectedStorageService,
+    legacyStorageService: RawStorageService,
+    sessionManager
+  } = loaded.exports;
   await db.open();
 
   let passed = 0;
@@ -101,125 +106,44 @@ async function main() {
     console.log('PASS:', message);
   };
 
-
-  // Session guard tests: database is open, but session is still locked.
-  console.log('========== SESSION GUARD TESTS ==========');
+  // This loader deliberately has no native key and no encrypted runtime. These
+  // assertions verify that the production facade remains closed in that state.
+  console.log('========== ENCRYPTED ADMISSION GUARD TESTS ==========');
+  await assert.rejects(
+    ProtectedStorageService.categories.getAll(),
+    /Encrypted storage is not ready/
+  );
+  check(!sessionManager.isUnlocked(), 'Unprovisioned private read stays blocked and relocks the JS session');
 
   await assert.rejects(
-    StorageService.categories.getAll(),
-    error => error && error.code === 'LIFEOS_SESSION_LOCKED'
+    ProtectedStorageService.settings.set('currency', 'USD'),
+    /Encrypted storage is not ready/
   );
-  check(true, 'Locked session rejects private database reads');
+  assert.strictEqual(await db.settings.get('currency'), undefined);
+  check(!sessionManager.isUnlocked(), 'Unprovisioned private write is blocked without changing settings');
 
   await assert.rejects(
-    StorageService.settings.set('currency', 'USD'),
-    error => error && error.code === 'LIFEOS_SESSION_LOCKED'
+    ProtectedStorageService.backup.exportData(),
+    /Encrypted storage is not ready/
   );
-  check(true, 'Locked session rejects private settings writes');
+  check(!sessionManager.isUnlocked(), 'Unprovisioned backup export is blocked');
 
-  assert.strictEqual(
-    await db.settings.get('currency'),
-    undefined,
-    'Rejected private write must not modify IndexedDB'
-  );
-  check(true, 'Rejected private write leaves IndexedDB unchanged');
-
-  await assert.rejects(
-    StorageService.backup.exportData(),
-    error => error && error.code === 'LIFEOS_SESSION_LOCKED'
-  );
-  check(true, 'Locked session rejects plaintext backup exports');
-
-  await StorageService.settings.set('theme', 'system');
-  const bootstrapTheme = await StorageService.settings.get('theme', 'dark');
+  await ProtectedStorageService.settings.set('theme', 'system');
   check(
-    bootstrapTheme === 'system',
-    'Bootstrap theme setting remains readable and writable while locked'
+    await ProtectedStorageService.settings.get('theme', 'dark') === 'system',
+    'Allowlisted bootstrap theme remains available while private storage is closed'
   );
 
   sessionManager.unlock();
-  check(
-    sessionManager.isUnlocked(),
-    'Explicit session unlock restores authorized access'
+  await assert.rejects(
+    ProtectedStorageService.categories.getAll(),
+    /Encrypted storage is not ready/
   );
+  check(!sessionManager.isUnlocked(), 'JS session unlock alone cannot bypass missing secure provisioning');
 
-  // Seed a valid category for the session lock-and-drain transaction fixture.
-  await StorageService.categories.getAll();
-  const sessionTestCategory = await StorageService.categories.add({
-    name: 'Session Drain Test',
-    type: 'expense',
-    color: '#123456'
-  });
-
-  // Delay one admitted IndexedDB write to verify lock-and-drain behavior.
-  const originalTransactionAdd = db.transactions.add;
-  let releaseDelayedWrite;
-  const delayedWriteGate = new Promise(resolve => {
-    releaseDelayedWrite = resolve;
-  });
-
-  db.transactions.add = async function (...args) {
-    await delayedWriteGate;
-    return originalTransactionAdd.apply(this, args);
-  };
-
-  let admittedWrite;
-  let savedDuringDrain;
-  let drainCompleted = false;
-
-  try {
-    admittedWrite = StorageService.transactions.add({
-      type: 'expense',
-      amount: 123,
-      category: sessionTestCategory.name,
-      description: 'Session drain integration test',
-      date: '2026-11-01',
-      paymentMethod: 'Cash'
-    });
-
-    check(
-      sessionManager.getActiveOperationCount() === 1,
-      'Storage operation acquires a session lease before database work'
-    );
-
-    sessionManager.lock();
-
-    await assert.rejects(
-      StorageService.transactions.getAll(),
-      error => error && error.code === 'LIFEOS_SESSION_LOCKED'
-    );
-    check(true, 'Lock immediately rejects newly requested private operations');
-
-    const drain = sessionManager.waitForIdle().then(() => {
-      drainCompleted = true;
-    });
-
-    await Promise.resolve();
-    check(!drainCompleted, 'Lock drain waits for an admitted database write');
-
-    releaseDelayedWrite();
-    savedDuringDrain = await admittedWrite;
-    await drain;
-
-    check(
-      Boolean(savedDuringDrain && savedDuringDrain.id),
-      'An admitted write completes successfully after locking begins'
-    );
-
-    check(
-      drainCompleted && Boolean(await db.transactions.get(savedDuringDrain.id)),
-      'Lock drain completes only after the admitted write is committed'
-    );
-  } finally {
-    releaseDelayedWrite();
-    db.transactions.add = originalTransactionAdd;
-    if (admittedWrite) await admittedWrite.catch(() => {});
-    await sessionManager.waitForIdle();
-    if (!sessionManager.isUnlocked()) sessionManager.unlock();
-    await StorageService.transactions.delete(savedDuringDrain?.id).catch(() => {});
-    await StorageService.categories.delete(sessionTestCategory.id);
-  }
-
+  // The remaining assertions intentionally test raw Dexie domain transactions.
+  // Production-facade behavior under a valid synthetic encrypted session is
+  // covered separately by test_encrypted_atomicity.js.
   const stamp = '2026-11-01T10:00:00.000Z';
 
   try {
@@ -234,7 +158,7 @@ async function main() {
     db.savingsContributions.hook('creating').subscribe(contributionFailure);
 
     try {
-      await assert.rejects(StorageService.savings.addContribution({
+      await assert.rejects(RawStorageService.savings.addContribution({
         goalId: 'sg-atomic', amount: 500, date: '2026-11-01'
       }));
     } finally {
@@ -249,12 +173,12 @@ async function main() {
 
     // 2. Invalid amounts and missing goals must be rejected.
     await assert.rejects(
-      StorageService.savings.addContribution({
+      RawStorageService.savings.addContribution({
         goalId: 'sg-atomic', amount: 0, date: '2026-11-01'
       })
     );
     await assert.rejects(
-      StorageService.savings.addContribution({
+      RawStorageService.savings.addContribution({
         goalId: 'missing-goal', amount: 100, date: '2026-11-01'
       })
     );
@@ -273,7 +197,7 @@ async function main() {
       color: '#10b981'
     });
 
-    await StorageService.savings.addContribution(
+    await RawStorageService.savings.addContribution(
       { goalId: 'sg-atomic', amount: 250, date: '2026-11-01', notes: 'Atomic linked transfer test' },
       {
         type: 'expense',
@@ -303,7 +227,7 @@ async function main() {
     db.transactions.hook('creating').subscribe(linkedExpenseFailure);
 
     try {
-      await assert.rejects(StorageService.savings.addContribution(
+      await assert.rejects(RawStorageService.savings.addContribution(
         { goalId: 'sg-atomic', amount: 300, date: '2026-11-01' },
         {
           type: 'expense',
@@ -325,7 +249,7 @@ async function main() {
       'Linked expense failure rolls back the contribution and goal balance'
     );
 
-    await StorageService.transactions.delete(linkedTransaction.id);
+    await RawStorageService.transactions.delete(linkedTransaction.id);
     await db.categories.delete('cat-savings-transfer-test');
 
     // 4. Habit deletion must roll back if dependent-log deletion fails.
@@ -342,7 +266,7 @@ async function main() {
     db.habitLogs.hook('deleting').subscribe(habitDeleteFailure);
 
     try {
-      await assert.rejects(StorageService.habits.delete('habit-atomic'));
+      await assert.rejects(RawStorageService.habits.delete('habit-atomic'));
     } finally {
       db.habitLogs.hook('deleting').unsubscribe(habitDeleteFailure);
     }
@@ -369,7 +293,7 @@ async function main() {
     db.milestones.hook('deleting').subscribe(milestoneDeleteFailure);
 
     try {
-      await assert.rejects(StorageService.goals.delete('goal-atomic'));
+      await assert.rejects(RawStorageService.goals.delete('goal-atomic'));
     } finally {
       db.milestones.hook('deleting').unsubscribe(milestoneDeleteFailure);
     }
@@ -390,7 +314,7 @@ async function main() {
     db.savingsContributions.hook('deleting').subscribe(savingsDeleteFailure);
 
     try {
-      await assert.rejects(StorageService.savings.deleteGoal('sg-atomic'));
+      await assert.rejects(RawStorageService.savings.deleteGoal('sg-atomic'));
     } finally {
       db.savingsContributions.hook('deleting').unsubscribe(savingsDeleteFailure);
     }
@@ -402,8 +326,8 @@ async function main() {
     );
 
 
-    // Valid calendar dates must be accepted by the production write path.
-    await StorageService.habits.logCompletion('habit-atomic', '2026-11-02', true);
+    // Valid calendar dates must be accepted by the raw database service.
+    await RawStorageService.habits.logCompletion('habit-atomic', '2026-11-02', true);
     const validDateLog = await db.habitLogs
       .where('[habitId+date]')
       .equals(['habit-atomic', '2026-11-02'])
@@ -421,8 +345,8 @@ async function main() {
     });
 
     await Promise.all([
-      StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true),
-      StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true)
+      RawStorageService.habits.logCompletion('habit-log-race', '2026-11-02', true),
+      RawStorageService.habits.logCompletion('habit-log-race', '2026-11-02', true)
     ]);
 
     const raceLogs = await db.habitLogs
@@ -439,13 +363,13 @@ async function main() {
 
     // 7. Invalid dates and missing habits must not create records.
     await assert.rejects(
-      StorageService.habits.logCompletion('habit-log-race', '2026-02-30', true)
+      RawStorageService.habits.logCompletion('habit-log-race', '2026-02-30', true)
     );
     await assert.rejects(
-      StorageService.habits.logCompletion('missing-habit', '2026-11-02', true)
+      RawStorageService.habits.logCompletion('missing-habit', '2026-11-02', true)
     );
     await assert.rejects(
-      StorageService.habits.logCompletion('habit-log-race', '02-11-2026', true)
+      RawStorageService.habits.logCompletion('habit-log-race', '02-11-2026', true)
     );
 
     check(
@@ -464,7 +388,7 @@ async function main() {
 
     try {
       await assert.rejects(
-        StorageService.habits.logCompletion('habit-log-rollback', '2026-11-03', true)
+        RawStorageService.habits.logCompletion('habit-log-rollback', '2026-11-03', true)
       );
     } finally {
       db.habitLogs.hook('creating').unsubscribe(logInsertFailure);
@@ -476,8 +400,8 @@ async function main() {
     );
 
     // 9. Repeated completion toggles update the same record.
-    await StorageService.habits.logCompletion('habit-log-race', '2026-11-02', false);
-    await StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true);
+    await RawStorageService.habits.logCompletion('habit-log-race', '2026-11-02', false);
+    await RawStorageService.habits.logCompletion('habit-log-race', '2026-11-02', true);
 
     const toggledLogs = await db.habitLogs
       .where('[habitId+date]')
@@ -495,8 +419,8 @@ async function main() {
     Date.now = () => 1793530000000;
     try {
       const habits = await Promise.all([
-        StorageService.habits.add({ name: 'Rapid habit A', frequency: 'daily', color: '#123456' }),
-        StorageService.habits.add({ name: 'Rapid habit B', frequency: 'daily', color: '#654321' })
+        RawStorageService.habits.add({ name: 'Rapid habit A', frequency: 'daily', color: '#123456' }),
+        RawStorageService.habits.add({ name: 'Rapid habit B', frequency: 'daily', color: '#654321' })
       ]);
       check(
         habits[0].id !== habits[1].id &&
@@ -505,8 +429,8 @@ async function main() {
       );
 
       const savingsGoals = await Promise.all([
-        StorageService.savings.addGoal({ title: 'Rapid savings A', targetAmount: 1000, currentAmount: 0, targetDate: '2027-01-01' }),
-        StorageService.savings.addGoal({ title: 'Rapid savings B', targetAmount: 2000, currentAmount: 0, targetDate: '2027-02-01' })
+        RawStorageService.savings.addGoal({ title: 'Rapid savings A', targetAmount: 1000, currentAmount: 0, targetDate: '2027-01-01' }),
+        RawStorageService.savings.addGoal({ title: 'Rapid savings B', targetAmount: 2000, currentAmount: 0, targetDate: '2027-02-01' })
       ]);
       check(
         savingsGoals[0].id !== savingsGoals[1].id &&
@@ -515,98 +439,98 @@ async function main() {
       );
 
       const goals = await Promise.all([
-        StorageService.goals.add({ title: 'Rapid goal A', category: 'Education', targetValue: 10, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-01-01', priority: 'Medium', status: 'In Progress' }),
-        StorageService.goals.add({ title: 'Rapid goal B', category: 'Education', targetValue: 20, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-02-01', priority: 'Medium', status: 'In Progress' })
+        RawStorageService.goals.add({ title: 'Rapid goal A', category: 'Education', targetValue: 10, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-01-01', priority: 'Medium', status: 'In Progress' }),
+        RawStorageService.goals.add({ title: 'Rapid goal B', category: 'Education', targetValue: 20, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-02-01', priority: 'Medium', status: 'In Progress' })
       ]);
       check(goals[0].id !== goals[1].id, 'Rapid goal creation generates distinct IDs');
 
       const milestones = await Promise.all([
-        StorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone A', completed: false }),
-        StorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone B', completed: false })
+        RawStorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone A', completed: false }),
+        RawStorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone B', completed: false })
       ]);
       check(milestones[0].id !== milestones[1].id, 'Rapid milestone creation generates distinct IDs');
 
       // F12: Goal closure requires 100% numeric progress and all milestones.
-      const closureGoal = await StorageService.goals.add({
+      const closureGoal = await RawStorageService.goals.add({
         title: 'F12 all milestones', category: 'Education',
         targetValue: 10, currentValue: 10,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'In Progress'
       });
       const closureMilestones = await Promise.all([
-        StorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step A', completed: false }),
-        StorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step B', completed: false })
+        RawStorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step A', completed: false }),
+        RawStorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step B', completed: false })
       ]);
-      await StorageService.goals.toggleMilestone(closureMilestones[0].id, true);
+      await RawStorageService.goals.toggleMilestone(closureMilestones[0].id, true);
       check(
         (await db.goals.get(closureGoal.id)).status === 'In Progress',
         'F12: one incomplete milestone prevents goal closure'
       );
-      await StorageService.goals.toggleMilestone(closureMilestones[1].id, true);
+      await RawStorageService.goals.toggleMilestone(closureMilestones[1].id, true);
       check(
         (await db.goals.get(closureGoal.id)).status === 'Completed',
         'F12 RUNTIME: final milestone closes a fully funded goal'
       );
 
-      const numericGoal = await StorageService.goals.add({
+      const numericGoal = await RawStorageService.goals.add({
         title: 'F12 numeric threshold', category: 'Education',
         targetValue: 10, currentValue: 9,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'In Progress'
       });
-      const numericMilestone = await StorageService.goals.addMilestone({
+      const numericMilestone = await RawStorageService.goals.addMilestone({
         goalId: numericGoal.id, title: 'Complete step', completed: false
       });
-      await StorageService.goals.toggleMilestone(numericMilestone.id, true);
+      await RawStorageService.goals.toggleMilestone(numericMilestone.id, true);
       check(
         (await db.goals.get(numericGoal.id)).status === 'In Progress',
         'F12: completed milestones cannot compensate for numeric progress below 100%'
       );
-      await StorageService.goals.update(numericGoal.id, { currentValue: 10 });
+      await RawStorageService.goals.update(numericGoal.id, { currentValue: 10 });
       check(
         (await db.goals.get(numericGoal.id)).status === 'Completed',
         'F12: reaching the numeric target closes a goal with all milestones complete'
       );
 
-      const pausedGoal = await StorageService.goals.add({
+      const pausedGoal = await RawStorageService.goals.add({
         title: 'F12 paused goal', category: 'Education',
         targetValue: 10, currentValue: 10,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'Paused'
       });
-      const pausedMilestone = await StorageService.goals.addMilestone({
+      const pausedMilestone = await RawStorageService.goals.addMilestone({
         goalId: pausedGoal.id, title: 'Paused step', completed: false
       });
-      await StorageService.goals.toggleMilestone(pausedMilestone.id, true);
-      await StorageService.goals.update(pausedGoal.id, { currentValue: 10 });
+      await RawStorageService.goals.toggleMilestone(pausedMilestone.id, true);
+      await RawStorageService.goals.update(pausedGoal.id, { currentValue: 10 });
       check(
         (await db.goals.get(pausedGoal.id)).status === 'Paused',
         'F12: progress and milestone updates preserve Paused status'
       );
 
-      const reopenGoal = await StorageService.goals.add({
+      const reopenGoal = await RawStorageService.goals.add({
         title: 'F12 reopen goal', category: 'Education',
         targetValue: 10, currentValue: 10,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'In Progress'
       });
-      const reopenMilestone = await StorageService.goals.addMilestone({
+      const reopenMilestone = await RawStorageService.goals.addMilestone({
         goalId: reopenGoal.id, title: 'Reopen step', completed: true
       });
-      await StorageService.goals.update(reopenGoal.id, { currentValue: 10 });
-      await StorageService.goals.toggleMilestone(reopenMilestone.id, false);
+      await RawStorageService.goals.update(reopenGoal.id, { currentValue: 10 });
+      await RawStorageService.goals.toggleMilestone(reopenMilestone.id, false);
       check(
         (await db.goals.get(reopenGoal.id)).status === 'In Progress',
         'F12: reopening a milestone reopens a completed goal'
       );
 
-      const zeroTargetGoal = await StorageService.goals.add({
+      const zeroTargetGoal = await RawStorageService.goals.add({
         title: 'F12 zero target', category: 'Education',
         targetValue: 0, currentValue: 0,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'In Progress'
       });
-      await StorageService.goals.update(zeroTargetGoal.id, { currentValue: 0 });
+      await RawStorageService.goals.update(zeroTargetGoal.id, { currentValue: 0 });
       check(
         (await db.goals.get(zeroTargetGoal.id)).status === 'In Progress',
         'F12: zero target cannot qualify a goal for 100% closure'
@@ -614,8 +538,8 @@ async function main() {
 
 
       const budgets = await Promise.all([
-        StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 100 }),
-        StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 200 })
+        RawStorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 100 }),
+        RawStorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 200 })
       ]);
       const monthlyBudgets = await db.budgets.where('monthYear').equals('2026-11').toArray();
       check(
@@ -627,21 +551,31 @@ async function main() {
     }
 
     // 16. Transaction storage rejects invalid records and preserves identity fields.
-    await assert.rejects(StorageService.transactions.add({
+    // Seed categories through the normal first-run path before referencing Food.
+    // This test's category-table reset/seed concurrency check runs later below.
+    const transactionCategories = await RawStorageService.categories.getAll();
+    check(
+      transactionCategories.some(category =>
+        category.id === 'cat_food' && category.name === 'Food' && category.type === 'expense'
+      ),
+      'Transaction validation fixture initializes the normal Food category'
+    );
+
+    await assert.rejects(RawStorageService.transactions.add({
       amount: 0, date: '2026-11-01', category: 'Food',
       description: 'Invalid amount', paymentMethod: 'Cash', type: 'expense'
     }));
-    await assert.rejects(StorageService.transactions.add({
+    await assert.rejects(RawStorageService.transactions.add({
       amount: 100, date: '2026-02-30', category: 'Food',
       description: 'Invalid date', paymentMethod: 'Cash', type: 'expense'
     }));
-    const validTransaction = await StorageService.transactions.add({
+    const validTransaction = await RawStorageService.transactions.add({
       amount: 100, date: '2026-11-01', category: 'Food',
       description: 'Storage validation', paymentMethod: 'Cash', type: 'expense'
     });
-    await assert.rejects(StorageService.transactions.update(validTransaction.id, { amount: -1 }));
-    await assert.rejects(StorageService.transactions.update(validTransaction.id, { date: '2026-02-30' }));
-    await StorageService.transactions.update(validTransaction.id, {
+    await assert.rejects(RawStorageService.transactions.update(validTransaction.id, { amount: -1 }));
+    await assert.rejects(RawStorageService.transactions.update(validTransaction.id, { date: '2026-02-30' }));
+    await RawStorageService.transactions.update(validTransaction.id, {
       amount: 125,
       id: 'attempted-id-overwrite',
       createdAt: '1999-01-01T00:00:00.000Z'
@@ -662,7 +596,7 @@ async function main() {
       id: 'habit-identity', name: 'Original habit',
       frequency: 'daily', color: '#123456', createdAt: identityStamp
     });
-    await StorageService.habits.update('habit-identity', {
+    await RawStorageService.habits.update('habit-identity', {
       id: 'overwritten-habit', createdAt: 'tampered', name: 'Updated habit'
     });
     const updatedHabit = await db.habits.get('habit-identity');
@@ -681,7 +615,7 @@ async function main() {
       startDate: '2026-11-01', targetDate: '2027-01-01',
       priority: 'High', status: 'In Progress', createdAt: identityStamp
     });
-    await StorageService.goals.update('goal-identity', {
+    await RawStorageService.goals.update('goal-identity', {
       id: 'overwritten-goal', createdAt: 'tampered', title: 'Updated goal'
     });
     const updatedGoal = await db.goals.get('goal-identity');
@@ -698,7 +632,7 @@ async function main() {
       id: 'task-identity', title: 'Original task',
       createdAt: identityStamp, completed: false
     });
-    await StorageService.tasks.update('task-identity', {
+    await RawStorageService.tasks.update('task-identity', {
       id: 'overwritten-task', createdAt: 'tampered', title: 'Updated task'
     });
     const updatedTask = await db.tasks.get('task-identity');
@@ -714,10 +648,10 @@ async function main() {
     // 18. Concurrent first-run category initialization is atomic.
     await db.categories.clear();
     const categoryLoads = await Promise.all([
-      StorageService.categories.getAll(),
-      StorageService.categories.getAll(),
-      StorageService.categories.getAll(),
-      StorageService.categories.getAll()
+      RawStorageService.categories.getAll(),
+      RawStorageService.categories.getAll(),
+      RawStorageService.categories.getAll(),
+      RawStorageService.categories.getAll()
     ]);
     const persistedCategories = await db.categories.toArray();
     const categoryIds = persistedCategories.map(category => category.id);
@@ -730,19 +664,19 @@ async function main() {
     );
 
     // 18. Category deletion must preserve budget references and transaction history.
-    const protectedCategory = await StorageService.categories.add({
+    const protectedCategory = await RawStorageService.categories.add({
       name: 'Protected budget category',
       type: 'expense',
       color: '#123456'
     });
 
-    await StorageService.budgets.upsert({
+    await RawStorageService.budgets.upsert({
       monthYear: '2099-01',
       categoryId: protectedCategory.id,
       monthlyAmount: 500
     });
 
-    const historicalTransaction = await StorageService.transactions.add({
+    const historicalTransaction = await RawStorageService.transactions.add({
       amount: 75,
       date: '2026-11-01',
       category: protectedCategory.name,
@@ -752,7 +686,7 @@ async function main() {
     });
 
     await assert.rejects(
-      StorageService.categories.delete(protectedCategory.id),
+      RawStorageService.categories.delete(protectedCategory.id),
       /linked to one or more budgets/i
     );
 
@@ -765,7 +699,7 @@ async function main() {
     await db.budgets.where('categoryId').equals(protectedCategory.id).delete();
 
     await assert.rejects(
-      StorageService.categories.delete(protectedCategory.id),
+      RawStorageService.categories.delete(protectedCategory.id),
       /used by existing transactions/i
     );
 
@@ -775,8 +709,8 @@ async function main() {
       'Category deletion is blocked while a transaction references it'
     );
 
-    await StorageService.transactions.delete(historicalTransaction.id);
-    await StorageService.categories.delete(protectedCategory.id);
+    await RawStorageService.transactions.delete(historicalTransaction.id);
+    await RawStorageService.categories.delete(protectedCategory.id);
 
     check(
       !(await db.categories.get(protectedCategory.id)) &&
@@ -784,7 +718,7 @@ async function main() {
       'Category can be deleted after its budget and transaction references are removed'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/43 PASSED`);
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed} assertions PASSED (raw database fixture; encrypted facade covered separately)`);
   } finally {
     await db.delete();
   }
