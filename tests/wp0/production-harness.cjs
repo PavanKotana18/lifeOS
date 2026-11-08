@@ -272,7 +272,11 @@ async function fixture({ activate = true } = {}) {
           activateStorage: db.activateEncryptedStorage,
           isStorageActive: db.isEncryptedStorageActivated,
         }),
+      // App's in-app confirmation dialog replaces window.confirm. Production
+      // handler tests deliberately approve synthetic destructive actions so
+      // they can verify the underlying storage guard and rollback behavior.
       localStorage: global.localStorage, window: { confirm: () => true },
+      confirmAction: async () => true,
       todayLayoutRef: { current: load('src/services/todayLayout.ts').DEFAULT_TODAY_LAYOUT },
       systemDarkPreference: () => false, applyDomTheme() {},
       BiometricService: { async isAvailable() { return { isAvailable: true }; } },

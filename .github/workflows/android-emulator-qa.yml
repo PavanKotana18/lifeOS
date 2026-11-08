@@ -2,7 +2,7 @@ name: LifeOS Android emulator QA
 
 on:
   push:
-    branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos2-release-candidate-20261108, integration/lifeos-ui2-candidate-20261108]
+    branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos2-release-candidate-20261108, integration/lifeos-ui2-candidate-20261108, feature/lifeos-ui2-final-product-refinement-20261108]
   pull_request:
     branches: [main, qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107]
     types: [opened, synchronize, reopened, ready_for_review]

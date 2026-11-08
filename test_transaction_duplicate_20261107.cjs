@@ -29,5 +29,10 @@ assert.equal(legacyDraft.title, '', 'blank description remains blank');
 assert.match(app, /openDuplicateTransaction/);
 assert.match(app, /Duplicate transaction/);
 assert.match(app, /Delete transaction/);
-assert.match(app, /window\.confirm\(`Delete transaction/);
+assert.match(app, /if \(!\(await confirmAction\(\{ title: 'Delete this transaction\?'/,
+  'transaction deletion uses the shared accessible confirmation before mutating storage');
+assert.match(app, /StorageService\.transactions\.delete\(editingTransactionId\)/,
+  'the existing transaction delete action remains connected after confirmation');
+assert.doesNotMatch(app, /window\.confirm\(/,
+  'native browser confirmations are not used for app-level transaction actions');
 console.log('TRANSACTION DUPLICATE: 17 service and UI contracts passed with synthetic records.');

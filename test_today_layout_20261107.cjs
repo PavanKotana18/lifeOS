@@ -5,7 +5,7 @@ require('./scripts/register-ts-test-loader.cjs');
 const { DEFAULT_TODAY_LAYOUT, normalizeTodayLayout, setTodaySectionVisible, moveTodaySection } = require('./src/services/todayLayout.ts');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 
-assert.deepEqual(DEFAULT_TODAY_LAYOUT.order, ['focus', 'money', 'agenda', 'habits', 'upcoming', 'goals']);
+assert.deepEqual(DEFAULT_TODAY_LAYOUT.order, ['focus', 'agenda', 'habits', 'money', 'upcoming', 'goals']);
 assert.deepEqual(DEFAULT_TODAY_LAYOUT.hidden, ['goals'], 'empty goals panel is hidden by default');
 assert.deepEqual(normalizeTodayLayout({ order: ['money', 'money', 'unknown'], hidden: ['focus', 'goals', 'goals', 'bad'] }), {
   order: ['money', 'focus', 'agenda', 'habits', 'upcoming', 'goals'], hidden: ['goals'],
@@ -13,7 +13,7 @@ assert.deepEqual(normalizeTodayLayout({ order: ['money', 'money', 'unknown'], hi
 const visibleGoals = setTodaySectionVisible(DEFAULT_TODAY_LAYOUT, 'goals', true);
 assert.deepEqual(visibleGoals.hidden, []);
 assert.equal(setTodaySectionVisible(DEFAULT_TODAY_LAYOUT, 'focus', false), DEFAULT_TODAY_LAYOUT, 'required focus section cannot be hidden');
-assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'agenda', -1).order, ['focus', 'agenda', 'money', 'habits', 'upcoming', 'goals']);
+assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'agenda', -1).order, ['agenda', 'focus', 'habits', 'money', 'upcoming', 'goals']);
 assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'focus', -1), DEFAULT_TODAY_LAYOUT, 'move at first boundary is a no-op');
 assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'goals', 1), DEFAULT_TODAY_LAYOUT, 'move at last boundary is a no-op');
 const protectedOpen = app.indexOf('await encryptedSession.open()');

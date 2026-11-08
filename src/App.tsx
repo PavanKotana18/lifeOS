@@ -1,6 +1,6 @@
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import packageInfo from '../package.json';
-import { CalendarDays, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -32,6 +32,7 @@ import MoneyAccounts from './components/MoneyAccounts';
 import MoneyPlanning from './components/MoneyPlanning';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
+import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
 import { ProfileHome, ProfileSubpage, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
@@ -328,6 +329,9 @@ export default function App() {
   // UI Toast & Modal State
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'danger' } | null>(null);
   const [modalContent, setModalContent] = useState<React.ReactNode | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationOptions | null>(null);
+  const confirmationResolver = useRef<((confirmed: boolean) => void) | null>(null);
+  const [createFormDirty, setCreateFormDirty] = useState(false);
   const [createKind, setCreateKind] = useState<'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress' | null>(null);
   const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
   const [transactionDetailsOpen, setTransactionDetailsOpen] = useState(false);
@@ -707,6 +711,23 @@ export default function App() {
     setTimeout(() => setToast(null), 3200);
   };
 
+  const confirmAction = (options: ConfirmationOptions): Promise<boolean> => new Promise(resolve => {
+    confirmationResolver.current?.(false);
+    confirmationResolver.current = resolve;
+    setConfirmation(options);
+  });
+
+  const settleConfirmation = (confirmed: boolean) => {
+    const resolve = confirmationResolver.current;
+    confirmationResolver.current = null;
+    setConfirmation(null);
+    resolve?.(confirmed);
+  };
+
+  useEffect(() => {
+    if (isLocked && confirmation) settleConfirmation(false);
+  }, [isLocked, confirmation]);
+
   const persistTodayLayout = (next: TodayLayout) => {
     const normalized = normalizeTodayLayout(next);
     todayLayoutRef.current = normalized;
@@ -724,8 +745,11 @@ export default function App() {
 
   const requestCloseForm = () => {
     if (!backState.current.createKind) return;
-    if (!window.confirm('Close this form? Any unsaved changes will be lost.')) return;
-    setCreateKind(null); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null);
+    const close = () => {
+      setCreateKind(null); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null); setCreateFormDirty(false);
+    };
+    if (!createFormDirty) { close(); return; }
+    void confirmAction({ title: 'Discard unsaved changes?', message: 'Your edits have not been saved.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', destructive: true }).then(confirmed => { if (confirmed) close(); });
   };
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
@@ -1263,12 +1287,12 @@ export default function App() {
       if (file.size > MAX_BACKUP_FILE_BYTES) throw new Error('Backup file exceeds the supported size.');
       const text = await decodeBackupForRestore(await file.text(), {
         requestPassphrase: () => requestBackupPassphrase('import'),
-        confirmLegacy: () => window.confirm('Import this legacy unencrypted backup? It will be validated. New exports are encrypted.'),
+        confirmLegacy: () => confirmAction({ title: 'Import a legacy backup?', message: 'This older backup is not encrypted. LifeOS will validate it before restoring. New exports are encrypted.', confirmLabel: 'Validate and continue', cancelLabel: 'Cancel' }),
         validateTables: validateBackupTables,
       });
       if (text === null) return;
       const hasRecords = await StorageService.backup.hasData();
-      if (hasRecords && !window.confirm('This backup will replace the existing LifeOS data on this device. Export a backup first if you need a copy. Continue?')) return;
+      if (hasRecords && !(await confirmAction({ title: 'Replace existing LifeOS data?', message: 'Restoring this backup replaces the records currently on this device. Export a backup first if you may need a copy.', confirmLabel: 'Replace and restore', cancelLabel: 'Keep current data', destructive: true }))) return;
       await StorageService.backup.importData(text, { replaceExisting: hasRecords });
       restored = true;
       const records = await reloadAllData();
@@ -1416,6 +1440,7 @@ export default function App() {
   const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string) => {
     const now = new Date();
     const today = formatLocalDate(now);
+    setCreateFormDirty(false);
     setCreateDraft({
       title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
@@ -1433,6 +1458,7 @@ export default function App() {
   };
 
   const openEditTransaction = (transaction: Transaction) => {
+    setCreateFormDirty(false);
     setCreateDraft({
       title: transaction.description || '', amount: String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
@@ -1445,11 +1471,13 @@ export default function App() {
   };
 
   const openEditSavingsGoal = (goal: SavingsGoal) => {
+    setCreateFormDirty(false);
     setCreateDraft({ title: goal.title, target: String(goal.targetAmount), current: String(goal.currentAmount), category: goal.category || '', date: goal.targetDate });
     setEditingSavingsGoalId(goal.id); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setCreateKind('savings');
   };
 
   const openEditContribution = (contribution: SavingsContribution) => {
+    setCreateFormDirty(false);
     setCreateDraft({ goalId: contribution.goalId, amount: String(contribution.amount), date: contribution.date, notes: contribution.notes || '' });
     setEditingContributionId(contribution.id);
     setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null);
@@ -1462,6 +1490,7 @@ export default function App() {
   };
 
   const openEditGoal = (goal: Goal) => {
+    setCreateFormDirty(false);
     const oldUnit = goal.unit || '';
     const selectedUnit = ['km', 'mi', 'mile', 'miles'].includes(oldUnit) ? userPrefs.distance
       : ['L', 'l', 'mL', 'US gal', 'Imp gal'].includes(oldUnit) ? userPrefs.volume
@@ -1473,6 +1502,7 @@ export default function App() {
   };
 
   const openEditTask = (task: Task) => {
+    setCreateFormDirty(false);
     setCreateDraft({
       title: task.title, description: task.description || task.notes || '', date: task.dueDate,
       time: task.dueTime || '', reminderAt: task.reminderAt ? formatLocalDateTime(new Date(task.reminderAt)) : '',
@@ -1483,12 +1513,14 @@ export default function App() {
   };
 
   const openGoalProgressForm = (goal: Goal) => {
+    setCreateFormDirty(false);
     setCreateDraft({ goalId: goal.id, current: String(goal.currentValue) });
     setEditingTaskId(null);
     setCreateKind('goal-progress');
   };
 
   const openEditHabit = (habit: Habit) => {
+    setCreateFormDirty(false);
     setCreateDraft({ title: habit.name, description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
     setEditingHabitId(habit.id);
     setEditingTaskId(null);
@@ -1632,6 +1664,7 @@ export default function App() {
       // A resolved storage write is committed. Close before fallible refresh work.
       committed = true;
       setCreateKind(null);
+      setCreateFormDirty(false);
       setEditingTaskId(null); setEditingHabitId(null);
       setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null);
       const records = await reloadAllData();
@@ -1757,6 +1790,7 @@ export default function App() {
   }, [transactions, budgets, financeMonth, userPrefs.currency]);
 
   const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange, categories, userPrefs.currency), [transactions, budgets, financeMonth, financeAnalyticsRange, categories, userPrefs.currency]);
+  const hasFinanceChartData = financeAnalytics.periodRows.some(row => row.hasRecords) || financeAnalytics.categories.length > 0;
 
   // Habit Streak Calculation Helper
   const getHabitStreaks = (habitId: string, targetDate: string) => {
@@ -1902,8 +1936,8 @@ export default function App() {
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
-          <div className="today-sections">
-            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
+          <div className="today-sections" data-testid="today-dashboard">
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Your day</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
             {todayCustomizationOpen && <section id="today-customization" aria-labelledby="today-customization-title" className="lifeos-panel rounded-2xl border p-4" style={{ order: 1 }}>
               <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order.</p></div>
@@ -1941,7 +1975,7 @@ export default function App() {
                 <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all →</button>
               </div>
               {goals.filter(goal => goal.status === 'In Progress').length === 0 ? (
-                <div className="lifeos-raised rounded-xl px-3 py-4 text-center text-xs text-secondary"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
+                <div className="today-inline-empty"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
               ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => {
                 const progress = goalProgress(goal);
                 return <button key={goal.id} onClick={() => navigateTo('goals')} className="lifeos-raised block min-h-11 w-full rounded-xl p-3 text-left">
@@ -1953,9 +1987,9 @@ export default function App() {
             </section>
 
             {/* Financial Overview Card */}
-            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
+            <div className="today-money-summary lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold">Monthly Finance ({financeMonth})</h3>
+                <h3 className="text-sm font-semibold">Money this month</h3>
                 <button onClick={() => navigateTo('finance')} className="min-h-11 text-xs lifeos-accent-text font-semibold">Details &rarr;</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
@@ -1981,7 +2015,7 @@ export default function App() {
                 <button onClick={() => navigateTo('habits')} className="text-xs lifeos-accent-text font-semibold">Manage</button>
               </div>
               {habits.length === 0 ? (
-                <div className="lifeos-raised rounded-xl py-6 text-center text-xs text-secondary"><p>No habits configured yet.</p><button onClick={() => openCreateForm('habit')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Create a habit</button></div>
+                <div className="today-inline-empty"><p>No habits to check in yet. Add one when you’re ready.</p></div>
               ) : (
                 <div className="space-y-2">
                   {habits.slice(0, 4).map(h => {
@@ -2015,7 +2049,7 @@ export default function App() {
             {/* Future dated tasks are separate from today's agenda. */}
             <section className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
-              {dashboardUpcomingTasks.length === 0 ? <div className="lifeos-raised rounded-xl px-3 py-4 text-center text-xs text-secondary"><p>No upcoming tasks yet.</p><button type="button" onClick={() => openCreateForm('task')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Add a task</button></div> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
+              {dashboardUpcomingTasks.length === 0 ? <p className="today-inline-empty">No upcoming tasks. Add a date to a task to plan ahead.</p> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
             </section>
 
             {/* Pending Tasks */}
@@ -2025,7 +2059,7 @@ export default function App() {
                 <button onClick={() => navigateTo('planner')} className="text-xs lifeos-accent-text font-semibold">All Tasks</button>
               </div>
               {dashboardTasks.length === 0 ? (
-                <div className="lifeos-raised rounded-xl py-6 text-center text-xs text-secondary"><p>No tasks due today. You're all caught up!</p><button onClick={() => openCreateForm('task')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Add a task</button></div>
+                <div className="today-inline-empty"><p>No tasks due today. Your day is open.</p></div>
               ) : (
                 <div className="space-y-2">
                   {dashboardTasks.map(t => {
@@ -2109,9 +2143,9 @@ export default function App() {
             {financeSubtab !== 'overview' && <div className="money-page-toolbar">
               <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
               <label className="sr-only" htmlFor="money-destination">Money section</label>
-              <select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)} className="lifeos-input min-h-11 rounded-xl px-3 text-sm font-semibold">
+              <div className="money-destination-control"><label className="sr-only" htmlFor="money-destination">Money section</label><select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)}>
                 {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Financial planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
-              </select>
+              </select><ChevronDown size={16} aria-hidden="true" /></div>
             </div>}
 
             {/* Money home: recorded cash flow, never an inferred account balance. */}
@@ -2158,6 +2192,7 @@ export default function App() {
 
             {financeSubtab === 'accounts' && <MoneyAccounts accounts={financialAccounts} transactions={transactions} transfers={accountTransfers} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
               autoOpenTransfer={openMoneyTransferOnAccounts} onTransferRequestHandled={() => setOpenMoneyTransferOnAccounts(false)}
+              confirmAction={confirmAction}
               onCreateAccount={async input => { await StorageService.accounts.add(input); await reloadAllData(); }}
               onUpdateAccount={async (id, input) => { await StorageService.accounts.update(id, input); await reloadAllData(); }}
               onDeleteAccount={async id => { await StorageService.accounts.delete(id); await reloadAllData(); }}
@@ -2214,7 +2249,7 @@ export default function App() {
                         <div className="transaction-history-actions">
                           <button type="button" onClick={() => openDuplicateTransaction(t)} aria-label={`Duplicate transaction ${t.description || t.category}`}>Duplicate</button>
                           <button type="button" onClick={async () => {
-                            if (!window.confirm(`Delete transaction “${t.description || t.category}”?`)) return;
+                            if (!(await confirmAction({ title: 'Delete this transaction?', message: `“${t.description || t.category}” will be removed from your transaction history.`, confirmLabel: 'Delete transaction', destructive: true }))) return;
                             await StorageService.transactions.delete(t.id);
                             await reloadAllData();
                             showToast('Transaction deleted', 'info');
@@ -2242,7 +2277,7 @@ export default function App() {
                 const amountLabel = categoryMissing ? 'Unavailable' : formatMoney(spent);
                 const remainingLabel = categoryMissing ? 'Restore category to track this plan' : budgetStatus.isOver ? 'Above plan' : budgetStatus.percentUsed === null ? 'Set a limit to track remaining' : `${formatMoney(budgetStatus.remaining)} remaining in plan`;
                 return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{budgetName}</strong><span>{amountLabel} / {formatMoney(b.monthlyAmount)}</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetName} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetStatus.barPercent)} aria-valuetext={budgetStatus.isOver ? overAccessibleLabel : budgetLabel}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${budgetStatus.barPercent}%`, backgroundColor: budgetStatus.isOver ? 'var(--warning)' : undefined }} /></div><div className="mt-2 flex flex-wrap justify-between gap-1 text-xs text-secondary"><span>{budgetStatus.isOver ? overLabel : budgetLabel}</span><span>{remainingLabel}</span></div><button aria-label={`Delete ${budgetName}`} onClick={async () => {
-                  if (!window.confirm(`Delete ${budgetName}? Saved transactions will remain unchanged.`)) return;
+                  if (!(await confirmAction({ title: 'Delete this budget?', message: `${budgetName} will be removed. Saved transactions will remain unchanged.`, confirmLabel: 'Delete budget', destructive: true }))) return;
                   try { await StorageService.budgets.delete(b.id); }
                   catch { showToast('Budget deletion could not be confirmed. Refresh before retrying.', 'danger'); return; }
                   setBudgets(current => current.filter(item => item.id !== b.id));
@@ -2255,10 +2290,11 @@ export default function App() {
             {financeSubtab === 'savings' && <div className="space-y-3">
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
-                  if (!window.confirm(`Delete this ${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} contribution? The saved goal total will be adjusted.`)) return;
+                  if (!(await confirmAction({ title: 'Delete this contribution?', message: `${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} will be removed and the saved goal total will be adjusted.`, confirmLabel: 'Delete contribution', destructive: true }))) return;
                   try { await StorageService.savings.deleteContribution(contribution.id); await reloadAllData(); showToast('Contribution deleted and savings total updated', 'success'); }
                   catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); }
                 }} onContribute={() => {
+                  setCreateFormDirty(false);
                   setCreateDraft({
                     goalId: goal.id,
                     date: new Date().toISOString().slice(0, 10),
@@ -2267,7 +2303,7 @@ export default function App() {
                   });
                   setCreateKind('contribution');
                 }} onDelete={async () => {
-                  if (!window.confirm(`Delete savings goal “${goal.title}” and its contributions?`)) return;
+                  if (!(await confirmAction({ title: 'Delete this savings goal?', message: `“${goal.title}” and its recorded contributions will be removed.`, confirmLabel: 'Delete savings goal', destructive: true }))) return;
                   try { await StorageService.savings.deleteGoal(goal.id); }
                   catch { showToast('LifeOS could not confirm the deletion. Refresh Savings before retrying.', 'danger'); return; }
                   setSavingsGoals(current => current.filter(item => item.id !== goal.id));
@@ -2276,7 +2312,7 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5">{activeTab === 'finance' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}<MoneyPlanning commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories}
+            {financeSubtab === 'planning' && <div className="space-y-5">{activeTab === 'finance' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}<MoneyPlanning commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await StorageService.commitments.add(input); await reloadAllData(); }}
               onUpdateCommitment={async (id, input) => { await StorageService.commitments.update(id, input); await reloadAllData(); }}
               onDeleteCommitment={async id => { await StorageService.commitments.delete(id); await reloadAllData(); }}
@@ -2289,17 +2325,9 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2.5">
                 {[['Income', financeAnalytics.totalIncome, 'text-[var(--success)]'], ['Expenses', financeAnalytics.totalExpenses, 'text-[var(--danger)]'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-[var(--danger)]' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'lifeos-accent-text']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><p className="text-xs text-secondary">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
               </div>
-              {activeTab === 'finance' && <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
-                <FinanceCharts
-                  analytics={financeAnalytics}
-                  theme={theme}
-                  locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
-                  formatMoney={formatMoney}
-                  month={financeMonth}
-                  range={financeAnalyticsRange}
-                  onRangeChange={setFinanceAnalyticsRange}
-                />
-              </Suspense>}
+              {activeTab === 'finance' && (hasFinanceChartData ? <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
+                <FinanceCharts analytics={financeAnalytics} theme={theme} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatMoney={formatMoney} month={financeMonth} range={financeAnalyticsRange} onRangeChange={setFinanceAnalyticsRange} />
+              </Suspense> : <section className="finance-chart-empty lifeos-panel" aria-label="Financial chart empty state"><strong>No recorded patterns yet</strong><span>Charts appear after you save income or spending. No sample numbers are shown.</span></section>)}
               <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-secondary">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${row.category} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, pct)}><div className={`h-full rounded-full ${pct >= 100 ? 'bg-[var(--danger)]' : pct >= 80 ? 'bg-[var(--warning)]' : 'bg-[var(--accent)]'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-secondary"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-[var(--danger)]' : 'text-secondary'}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
               <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
             </div>}
@@ -2329,7 +2357,7 @@ export default function App() {
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
-                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${stats.completedToday ? 'border-[var(--success)] text-[var(--surface)]' : 'border-[var(--stroke)] text-secondary'}`} style={stats.completedToday ? { backgroundColor: 'var(--success)' } : undefined}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-secondary' : ''}`}>{h.name}</span><span className="block text-[10px] text-[var(--warning)]">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button type="button" onClick={event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; void handleHabitDeletion(h); }} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Delete</button></div>
+                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${stats.completedToday ? 'border-[var(--success)] text-[var(--surface)]' : 'border-[var(--stroke)] text-secondary'}`} style={stats.completedToday ? { backgroundColor: 'var(--success)' } : undefined}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-secondary' : ''}`}>{h.name}</span><span className="block text-[10px] text-[var(--warning)]">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button type="button" onClick={event => { event.stopPropagation(); void confirmAction({ title: 'Delete this habit?', message: `“${h.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(h); }); }} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Delete</button></div>
                       <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
                       {h.reminderTime && <p className="mt-2 text-[10px] text-secondary">Reminder · {h.reminderTime} local</p>}
                     </div>
@@ -2347,7 +2375,7 @@ export default function App() {
             <div className="grid grid-cols-3 gap-2">{(['active', 'paused', 'completed'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
             {goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
-              <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary">{goalsSubtab === 'completed' ? 'Completed goals will appear here.' : goalsSubtab === 'paused' ? 'No paused goals. You can pause an active goal whenever needed.' : <><p>No active goals yet.</p><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Create a goal</button></>}</div>
+              <div className="goal-empty-state"><div><p className="type-eyebrow">{goalsCategoryFilter === 'all' ? goalsSubtab.toUpperCase() : goalsCategoryFilter.toUpperCase()}</p><h3 className="type-section-title">{goalsSubtab === 'completed' ? 'No completed goals yet' : goalsSubtab === 'paused' ? 'No paused goals' : goalsCategoryFilter === 'all' ? 'A goal when you’re ready' : `No ${goalsCategoryFilter.toLowerCase()} goals yet`}</h3><p className="mt-1 text-sm text-secondary">{goalsSubtab === 'completed' ? 'Completed goals will stay here as a record of what you reached.' : goalsSubtab === 'paused' ? 'If plans change, you can pause an active goal and return to it later.' : 'Choose a longer-term outcome and add milestones when they help.'}</p></div>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-xs font-semibold">Create a goal</button>}</div>
             ) : (
               goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).map(g => {
                 const pct = goalProgress(g);
@@ -2356,7 +2384,7 @@ export default function App() {
                   <div className="flex items-start justify-between gap-3"><div><button onClick={() => openEditGoal(g)} className="min-h-11 text-left font-semibold text-sm lifeos-accent-text">{g.title}</button><p className="text-[10px] text-secondary">{g.category} · target {formatDate(g.targetDate)} · {getDaysRemainingText(g.targetDate)}</p></div><span className="text-sm font-bold lifeos-accent-text">{pct}%</span></div>
                   <div className="lifeos-progress-track h-2 w-full overflow-hidden rounded-full" role="progressbar" aria-label={`${g.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div>
                   <div className="flex justify-between text-xs text-secondary"><span>{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</span><span>{goalMilestones.filter(milestone => milestone.completed).length}/{goalMilestones.length} milestones</span></div>
-                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="lifeos-tint lifeos-accent-text min-h-11 rounded-xl px-3 text-xs font-semibold">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-xs font-semibold">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--warning)]">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--success)]">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!window.confirm(`Delete goal “${g.title}” and its milestones?`)) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="lifeos-raised lifeos-danger min-h-11 rounded-xl px-3 text-xs">Delete</button></div>
+                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="lifeos-tint lifeos-accent-text min-h-11 rounded-xl px-3 text-xs font-semibold">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-xs font-semibold">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--warning)]">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--success)]">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!(await confirmAction({ title: 'Delete this goal?', message: `“${g.title}” and its milestones will be removed.`, confirmLabel: 'Delete goal', destructive: true }))) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="lifeos-raised lifeos-danger min-h-11 rounded-xl px-3 text-xs">Delete</button></div>
                   {goalMilestones.length > 0 && <div className="space-y-2 border-t border-[var(--stroke)] pt-3">{goalMilestones.map(milestone => <label key={milestone.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5 shrink-0" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-xs ${milestone.completed ? 'text-secondary line-through' : ''}`}>{milestone.title}</span>{milestone.targetDate && <span className="block text-[10px] text-secondary">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</span>}</span></label>)}</div>}
                 </div>;
               })
@@ -2367,7 +2395,12 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <div className="space-y-4">
-            <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider lifeos-accent-text">Planner</p><h2 className="text-xl font-semibold tracking-tight">Your calendar</h2></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
+            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
+            <div className="planner-range-nav" role="group" aria-label="Choose task range" data-no-tab-swipe>
+              {(['today', 'tomorrow', 'upcoming'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
+            </div>
+            <details className="planner-calendar-disclosure" data-no-tab-swipe>
+              <summary><span>Calendar</span><span>{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span></summary>
             <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar" data-no-tab-swipe>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1"><button aria-label="Previous month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronLeft size={19} className="mx-auto" /></button><h3 className="min-w-32 text-center text-sm font-semibold">{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3><button aria-label="Next month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronRight size={19} className="mx-auto" /></button></div>
@@ -2390,8 +2423,9 @@ export default function App() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--stroke)] pt-2.5 text-[10px] text-secondary"><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />Tasks</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--danger)' }} />Overdue</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--success)' }} />Complete</span></div>
             </section>
+            </details>
             <section className="space-y-3" aria-label="Selected day agenda">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-panel min-h-11 rounded-lg border px-3 text-xs font-semibold lifeos-accent-text">Quick add</button></div>
+              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div></div>
               <details className="planner-filters">
                 <summary><Search size={15} aria-hidden="true" />Search and filters</summary>
                 <div className="planner-filter-fields"><input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" />
@@ -2428,7 +2462,7 @@ export default function App() {
                         <div className="mt-1 flex gap-1"><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.priority}</span><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px]" style={{ color: status === 'Overdue' ? 'var(--danger)' : status === 'Completed' ? 'var(--success)' : 'var(--accent)' }}>{status}</span>{t.recurring !== 'None' && <span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.recurring}</span>}</div>
                       </div>
                     </div>
-                    <div className="flex shrink-0 flex-col gap-2"><button onClick={async event => { event.stopPropagation(); if (!window.confirm(`Delete “${t.title}”?`)) return; await NotificationService.cancelTask(t); await StorageService.tasks.delete(t.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task removed', 'info'); }} className="lifeos-danger min-h-11 rounded-lg px-3 text-xs">Delete</button></div>
+                    <div className="flex shrink-0 flex-col gap-2"><button onClick={async event => { event.stopPropagation(); if (!(await confirmAction({ title: 'Delete this task?', message: `“${t.title}” will be removed from your plan.`, confirmLabel: 'Delete task', destructive: true }))) return; await NotificationService.cancelTask(t); await StorageService.tasks.delete(t.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task removed', 'info'); }} className="lifeos-danger min-h-11 rounded-lg px-3 text-xs">Delete</button></div>
                   </div>
                 })}
               </div>
@@ -2491,21 +2525,25 @@ export default function App() {
             </section></ProfileSubpage>}
 
             {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
-            {/* Demo Data Trigger */}
-            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Sample Demonstration Data</h3>
-              <p className="text-xs text-secondary">Load sample transactions, habits, goals, and tasks to evaluate all features.</p>
+            {/* Kept available, but disclosed because these records are added to the live local database. */}
+            <details className="profile-demo-disclosure">
+              <summary>Sample data for demonstrations</summary>
+              <div className="lifeos-panel rounded-xl border p-4 space-y-3">
+              <h3 className="text-sm font-semibold">Add demonstration records</h3>
+              <p className="text-xs text-secondary">This adds sample transactions, habits, goals, and tasks alongside your records. Export a backup first if you need to preserve the current state. LifeOS does not automatically remove these records later.</p>
               <button
                 onClick={async () => {
+                  if (!(await confirmAction({ title: 'Add sample records to this device?', message: 'Demonstration transactions, habits, goals, and tasks will be added alongside your existing records. They are not automatically removed.', confirmLabel: 'Add sample records', cancelLabel: 'Cancel' }))) return;
                   await StorageService.backup.seedDemoData();
                   await reloadAllData();
                   showToast('Sample demonstration data loaded', 'success');
                 }}
                 className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold transition"
               >
-                Load Sample Demo Data
+                Add sample records
               </button>
-            </div>
+              </div>
+            </details>
 
             {/* Backup & Restore */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
@@ -2580,7 +2618,7 @@ export default function App() {
               <p className="text-xs text-secondary">Permanently erase all personal database records.</p>
               <button
                 onClick={async () => {
-                  if (!window.confirm('Permanently erase all LifeOS data stored on this device? This cannot be undone.')) return;
+                  if (!(await confirmAction({ title: 'Erase all LifeOS data?', message: 'This permanently removes all personal records stored on this device. This cannot be undone.', confirmLabel: 'Erase all data', cancelLabel: 'Keep my data', destructive: true }))) return;
                   try {
                     await NotificationService.cancelAllRecordReminders();
                     await StorageService.backup.clearAll();
@@ -2599,7 +2637,7 @@ export default function App() {
             {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => navigateProfileSection('home')}>
             <section className="lifeos-panel rounded-xl border p-4 space-y-2">
               <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
-              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
+              <button onClick={async () => { if (!(await confirmAction({ title: 'Restart the welcome tour?', message: 'Your records will remain untouched. Choices made during onboarding may update your name, appearance, security, and notification preferences.', confirmLabel: 'Restart tour' }))) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
             </section>
             </ProfileSubpage>}
           </div>
@@ -2609,7 +2647,7 @@ export default function App() {
 
       {createKind && (
         <div className="ui-sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form onSubmit={saveNewRecord} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+          <form onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
@@ -2645,8 +2683,8 @@ export default function App() {
               </div>}
             </>}
             {createKind === 'habit' && <>
+              <label className="mb-3 block text-xs text-secondary">How often?<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
               <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Frequency<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
               <label className="mb-3 block text-xs text-secondary">Daily target (optional)<input type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
@@ -2677,17 +2715,19 @@ export default function App() {
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <>
-              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
               <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Due time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
-              <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
-              <label className="mb-3 block text-xs text-secondary">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
+              <details className="ui-optional-form-details" open={Boolean(editingTaskId && (createDraft.description || createDraft.category || createDraft.reminderAt || (createDraft.recurring && createDraft.recurring !== 'None')))}><summary>More task details</summary>
+                <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
+                <label className="mb-3 block text-xs text-secondary">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
+              </details>
             </>}
             {!['habit', 'budget', 'task', 'transaction', 'goal-progress'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">{createKind === 'goal' || createKind === 'savings' ? 'Target date' : createKind === 'milestone' ? 'Target date (optional)' : 'Date'}<input type="date" required={createKind !== 'milestone'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
-            {editingTransactionId && <button type="button" onClick={async () => { if (!window.confirm('Delete this transaction? This cannot be undone.')) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
-            {editingContributionId && <button type="button" onClick={async () => { if (!window.confirm('Delete this contribution and subtract it from the saved goal total?')) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
-            <button type="submit" className="w-full rounded-xl lifeos-accent-button px-4 py-3 text-sm font-semibold active:scale-[.99]">{editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button>
+            {editingTransactionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this transaction?', message: 'This transaction will be removed from your history. This cannot be undone.', confirmLabel: 'Delete transaction', destructive: true }))) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setCreateFormDirty(false); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
+            {editingContributionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this contribution?', message: 'The contribution will be removed and subtracted from the saved goal total.', confirmLabel: 'Delete contribution', destructive: true }))) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setCreateFormDirty(false); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
+            <div className="ui-form-actions"><button type="button" onClick={requestCloseForm} className="lifeos-raised min-h-12 flex-1 rounded-xl text-sm font-semibold">Cancel</button><button type="submit" className="lifeos-accent-button min-h-12 flex-1 rounded-xl px-3 text-sm font-semibold">{editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button></div>
           </form>
         </div>
       )}
@@ -2722,6 +2762,8 @@ export default function App() {
       </nav>
 
       {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave LifeOS?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
+
+      {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 
       {/* In-app Toast Notification */}
       {toast && (

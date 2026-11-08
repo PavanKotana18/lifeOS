@@ -10,7 +10,9 @@ assert.ok(!/\b(?:text|bg|border)-(?:slate|indigo|emerald|amber|rose|sky|violet)-
 assert.match(today, /role="progressbar" aria-label=\{`\$\{goal\.title\} progress`\}/);
 assert.match(today, /aria-pressed=\{stats\.completedToday\}/);
 assert.match(today, /aria-label=\{`Mark \$\{t\.title\}/);
-assert.match(today, /Create a habit/);
-assert.match(today, /Add a task/);
+assert.match(today, /openCreateForm\('habit'\)[^>]*>\+ Habit/, 'the focus quick action remains available to create a habit');
+assert.match(today, /No habits to check in yet/, 'the habit empty state stays compact and contextual');
+assert.match(today, /openCreateForm\('task'\)[^>]*>\+ Task/, 'the focus quick action remains available to create a task');
+assert.match(today, /No tasks due today\. Your day is open\./, 'the task empty state avoids a repeated oversized action card');
 assert.match(today, /Your day is open\. Choose what matters most\./);
 console.log('TODAY THEME: 8 source-level theme, progress, status and empty-state checks passed.');

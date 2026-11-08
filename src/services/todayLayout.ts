@@ -1,4 +1,4 @@
-export const TODAY_SECTION_ORDER = Object.freeze(['focus', 'money', 'agenda', 'habits', 'upcoming', 'goals'] as const);
+export const TODAY_SECTION_ORDER = Object.freeze(['focus', 'agenda', 'habits', 'money', 'upcoming', 'goals'] as const);
 export type TodaySectionId = typeof TODAY_SECTION_ORDER[number];
 export type TodayLayout = { order: TodaySectionId[]; hidden: TodaySectionId[] };
 

@@ -32,5 +32,5 @@ visit(sourceFile);
 assert.ok(controls.length >= 30, 'shared dialog retains its existing editable record fields');
 assert.ok(controls.every(className => className.includes('lifeos-input') && className.includes('min-h-11')), 'editable fields use semantic inputs and minimum touch sizing');
 assert.ok(/border border-\[var\(--danger\)\][^\"]*text-\[var\(--danger\)\]/.test(dialog), 'delete action remains visibly dangerous');
-assert.ok(/lifeos-accent-button px-4 py-3 text-sm font-semibold/.test(dialog), 'save action uses the semantic accent button');
+assert.ok(/className="lifeos-accent-button min-h-12 flex-1 rounded-xl px-3 text-sm font-semibold"/.test(dialog), 'sticky save action uses the semantic accent button and remains reachable');
 console.log(`RECORD FORM THEME: 11 source-level dialog checks passed; ${controls.length} editable JSX controls inspected.`);
