@@ -41,11 +41,11 @@ The new [coverage matrix](../qa/coverage-matrix.json) distinguishes test existen
 
 | Profile | API | Emulator hardware profile | RAM / heap | Purpose |
 |---|---:|---|---|---|
-| Compact / minimum supported | 24 | Nexus 5X | 2 GB / 256 MB | Small handset profile and minSdk boundary. |
+| Compact / minimum supported | 29 | Nexus 5X | 2 GB / 256 MB | Android 10 native recovery and unsupported-WebView guidance; React/persistence smoke requires Chromium 87+. |
 | Standard midrange | 34 | Pixel 6 | 3 GB / 512 MB | Current target SDK and Android runtime permissions. |
 | Large / high density | 35 | Pixel 7 Pro | 4 GB / 512 MB | Large display and a newer Android version. |
 
-All use x86_64, two vCPUs and Google APIs images; actual `wm size` and `wm density` are retained per run. Each emulator has a 300-second boot deadline, each instrumentation command an eight-minute timeout, each job a 20-minute ceiling and the matrix is sequential. The PR workflow requires the real Activity/WebView smoke case and a nonzero JUnit count before it proceeds to the matrix. The synthetic native crypto tests run through AndroidJUnitRunner. The biometric prompt test remains guarded because the hosted run cannot provide a human acceptance/cancellation action or prove strong biometric enrollment.
+All use x86_64, two vCPUs and Google APIs images; actual `wm size` and `wm density` are retained per run. Each emulator has a 300-second boot deadline, each instrumentation command an eight-minute timeout, each job a 20-minute ceiling and the matrix is sequential. API 29's current Google APIs image provides Chromium 74, so that profile verifies native recovery and the real native unsupported-WebView message; it does not claim React/persistence acceptance. API 34/35 must pass the real Activity/WebView and IndexedDB persistence case. The synthetic native crypto tests also run through AndroidJUnitRunner on minimum supported API 29. The biometric prompt test remains guarded because the hosted run cannot provide a human acceptance/cancellation action or prove strong biometric enrollment.
 
 The instrumentation runner stores raw runner output, a parsed JUnit XML report, API/screen metrics and (on failure) bounded ADB state, AndroidRuntime errors and screenshot evidence. Failure collection uses per-command timeouts so it cannot keep a failed job alive after emulator shutdown. APK build artifacts are retained one day; test evidence is retained seven days.
 

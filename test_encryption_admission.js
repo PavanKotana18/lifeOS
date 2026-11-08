@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const h = require('./tests/wp0/production-harness.cjs');
 let passed = 0;
 async function test(name, run) {
-  const f = await h.fixture();
+  const f = await h.fixture({ activate: false });
   try { await run(f); passed++; console.log('PASS: ' + name); }
   finally { await f.dispose(); }
 }
@@ -25,12 +25,17 @@ async function test(name, run) {
     assert.equal(f.native.calls.includes('setup'), false);
     await f.StorageService.settings.set('theme','light');
     assert.equal(await f.StorageService.settings.get('theme','system'),'light');
+    await f.StorageService.settings.set('visualTheme','soft-ivory-sage');
+    assert.equal(await f.StorageService.settings.get('visualTheme',''),'soft-ivory-sage');
   });
-  await test('Actual startup cannot admit private storage through optional biometric bypass',async f=>{
+  await test('Actual startup activates encrypted storage before private hydration',async f=>{
     const init=h.appFunction('initApp');
-    await assert.rejects(h.bind(init,{...f.appDeps(),...h.noopSetters(init)}), /Encrypted storage is not ready/);
-    assert.equal(f.isEncryptedStorageActivated(),false);
-    assert.equal(f.sessionManager.isUnlocked(),false);
+    await h.bind(init,{...f.appDeps(),...h.noopSetters(init)})();
+    assert.equal(f.isEncryptedStorageActivated(),true);
+    assert.equal(f.sessionManager.isUnlocked(),true);
+    await f.StorageService.settings.set('displayName','synthetic');
+    const row=await f.lifeOSDatabase.settings.get('displayName');
+    assert.equal(row.__lifeosEncrypted,1);assert.equal(row.value,undefined);
   });
   await test('Missing recovery protection blocks migration without changing legacy records',async f=>{
     const row={id:'synthetic-category',name:'Synthetic',type:'expense'};

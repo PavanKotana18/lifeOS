@@ -59,7 +59,7 @@ export interface MigrationResult {
  * This function never clears a table and never overwrites an encrypted row.
  */
 export async function migrateLifeOSRecords(
-  database: LifeOSRawDatabase,
+  database: LifeOSDatabaseWithTransactions,
   repositories: ReturnType<typeof createLifeOSEncryptedRepositories>
 ): Promise<MigrationResult> {
   return withEncryptedStorageWrite(async () => {
@@ -114,28 +114,16 @@ export async function migrateLifeOSRecords(
         throw new Error(`Migration stopped: encrypted ${tableName} copy did not verify.`);
       }
 
-      // Refuse to overwrite a row that changed after the snapshot was read.
-      const latest = await table.get(identity);
-      if (!latest) {
-        throw new Error(`Migration stopped: ${tableName}/${identity} disappeared.`);
-      }
-      if (
-        Object.prototype.hasOwnProperty.call(latest, '__lifeosEncrypted') ||
-        Object.prototype.hasOwnProperty.call(latest, 'encrypted')
-      ) {
-        if (latest.__lifeosEncrypted === 1 && latest.encrypted) {
-          skippedEncrypted[tableName] += 1;
-          continue;
+      // Compare and replace in one IndexedDB transaction. Native encryption
+      // and verification above must never run inside this transaction.
+      await database.transaction('rw', table, async () => {
+        const latest = await table.get(identity);
+        if (!latest) throw new Error(`Migration stopped: ${tableName}/${identity} disappeared.`);
+        if (JSON.stringify(latest) !== JSON.stringify(row)) {
+          throw new Error(`Migration stopped: ${tableName}/${identity} changed during migration; retry safely.`);
         }
-        throw new Error(`Migration stopped: ${tableName}/${identity} has malformed encryption metadata.`);
-      }
-      if (JSON.stringify(latest) !== JSON.stringify(row)) {
-        throw new Error(`Migration stopped: ${tableName}/${identity} changed during migration; retry safely.`);
-      }
-
-      // Dexie put is an atomic single-row replacement; the old row remains
-      // intact if encryption preparation fails.
-      await table.put(encryptedRow);
+        await table.put(encryptedRow);
+      });
       migrated[tableName] += 1;
     }
   }

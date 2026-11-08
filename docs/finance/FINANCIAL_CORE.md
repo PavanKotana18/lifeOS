@@ -1,0 +1,20 @@
+# Financial core and savings planner
+
+The Finance **Planning** tab runs fully offline and does not create or modify ledger records. Users compare two savings scenarios using the same starting amount, contribution schedule and inflation assumption.
+
+## Monetary model
+
+- Amounts are parsed into integer minor units using a versioned 162-code ISO 4217 snapshot (`lifeos-iso4217-snapshot-2026-11-v2`). The offline snapshot was generated from Node 24.17.0 / ICU 78.3 currency identifiers and fraction digits. Unknown codes are rejected; refreshing the snapshot is a deliberate data-version change. Existing transactions are not rewritten or assigned a new currency by this catalog.
+- Decimal ties round half away from zero. BigInt is used for sums and serialization is base-10 text; Finance analytics also aggregates transaction and budget amounts in integer minor units using the selected reporting currency.
+- The projection treats annual nominal return and inflation as simple APR inputs divided by 12. Interest is applied monthly and rounded half up to the currency minor unit; contributions are added at month end. Optional step-ups happen after the selected number of months.
+- Inflation-adjusted output deflates by the compounded monthly inflation assumption. The form names inputs and outputs and displays assumptions, exclusions, and a non-guarantee statement. Taxes, fees, rate changes, exchange conversion and investment recommendations are not modeled.
+
+## Compatibility boundary
+
+This is a planning calculator, not yet a currency-aware ledger. Existing transaction, budget and savings records keep their current schema and global reporting-currency display behavior. No record receives a guessed currency and no conversion is performed. The exact in-memory analytics calculations do not change the numeric storage format. Before currency identity is added to persisted records, a migration and user-confirmed classification flow is required for existing ambiguous amounts.
+
+Focused evidence: `test_finance_core_20261107.cjs` exercises catalog version and representative global currencies, decimal rounding, currencies with 0/2/3 fraction digits, large BigInt values, formatting (including fallback when older ICU lacks a newer currency symbol), step-ups, scenario comparison, long-horizon inflation and explicit-rate conversion/freshness boundaries (53 assertions). The UI is build-validated; no Android tap-through test currently targets this screen.
+
+## Explicit currency conversion
+
+The Planning tab also provides a manual conversion calculator. The user supplies a positive exchange rate (quote-currency major units per one base-currency major unit), the rate date and a source label. The app performs exact rational conversion to the target currency's minor units with half-up rounding, shows the rate age, and flags rates older than seven days. Future/invalid dates and malformed rates are rejected. No live rate is fetched or inferred, and the result does not mutate ledger records. The metadata catalog is an explicitly versioned offline snapshot and is not automatically refreshed from a live ISO feed.

@@ -16,10 +16,14 @@ const ts = require('typescript');
 function loadTsModule(path) {
   const loadedModule = { exports: {} };
   const source = fs.readFileSync(path, 'utf8');
-  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { module: loadedModule, exports: loadedModule.exports, Promise, Intl, Date, Math, Number, String, Object, Array, Error });
+  vm.runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText, { module: loadedModule, exports: loadedModule.exports, require: request => {
+    if (request === './financeCore') return loadTsModule('./src/services/financeCore.ts');
+    throw new Error(`Unexpected test module dependency: ${request}`);
+  }, Promise, Intl, Date, Math, Number, String, Object, Array, Error });
   return loadedModule.exports;
 }
 const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
+const { getTodayOverview } = loadTsModule('./src/services/domainUtils.ts');
 const userPreferenceUtils = loadTsModule('./src/services/userPreferences.ts');
 const { buildFinanceAnalytics } = loadTsModule('./src/services/financeAnalytics.ts');
 const { pushTabHistory, popTabHistory } = loadTsModule('./src/services/tabHistory.ts');
@@ -432,7 +436,9 @@ async function runTestSuite() {
   assert(userPreferenceUtils.resolveSystemDark(false, true) === false && userPreferenceUtils.resolveSystemDark(true, false) === true && userPreferenceUtils.resolveSystemDark(undefined, false) === false, 'Native Android appearance overrides stale WebView media state and browsers fall back to matchMedia');
   const restoredPreferences = userPreferenceUtils.mergeUserPreferences({ currency: 'EUR', distance: 'mi', timeFormat: '24h' }, 'INR');
   assert(restoredPreferences.currency === 'EUR' && restoredPreferences.distance === 'mi' && restoredPreferences.timeFormat === '24h' && restoredPreferences.volume === 'L', 'Stored preferences restore while new fields receive safe defaults');
+  assert(userPreferenceUtils.CURRENCY_CODES.length === 162 && userPreferenceUtils.mergeUserPreferences({ currency: 'AED' }, 'INR').currency === 'AED' && userPreferenceUtils.mergeUserPreferences({}, 'XCG').currency === 'XCG' && userPreferenceUtils.mergeUserPreferences({ currency: 'XYZ' }, 'XYZ').currency === 'INR', 'Reporting currency preferences accept the versioned catalog and reject unknown saved or legacy codes');
   assert(userPreferenceUtils.formatCurrency(1234.5, 'USD', 'en-US') === '$1,234.50' && userPreferenceUtils.formatCurrency(1234.5, 'EUR', 'de-DE').includes('1.234,50'), 'Currency uses locale separators and currency precision');
+  assert(userPreferenceUtils.formatCurrency(123.5, 'JPY', 'en-US').endsWith('124') && /1,234\.500$/.test(userPreferenceUtils.formatCurrency(1234.5, 'KWD', 'en-US')), 'Reporting currency formatting uses zero- and three-decimal metadata with decimal-safe rounding');
   assert(userPreferenceUtils.getNumberLocale('EUR', 'system') === undefined, 'System locale uses the device Intl locale instead of inferring locale from currency');
   assert(userPreferenceUtils.formatTimePreference(new Date(2026, 0, 2, 13, 5), '24h', 'en-GB').includes('13:05') && userPreferenceUtils.formatTimePreference(new Date(2026, 0, 2, 13, 5), '12h', 'en-US').includes('1:05'), 'Time format preference changes display without altering stored timestamps');
   assert(Math.abs(userPreferenceUtils.convertMeasurement(1, 'mi', 'km') - 1.609344) < 1e-12 && Math.abs(userPreferenceUtils.convertMeasurement(500, 'mL', 'L') - 0.5) < 1e-12, 'Distance and volume conversion preserve precise canonical values');
@@ -463,6 +469,9 @@ async function runTestSuite() {
   const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
   assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');
+  const overspendRate = buildFinanceAnalytics([{ date: '2026-10-01', amount: 100, type: 'income' }, { date: '2026-10-02', amount: 130, type: 'expense' }], [], '2026-10');
+  assert(overspendRate.savingsRate === -30 && overspendRate.netSavings === -30, 'Savings rate accurately shows a negative result when saved expenses exceed income');
+  assert(noBaseline.savingsRate === null, 'Savings rate is unavailable when there is no income baseline');
   let financeHistory = [];
   financeHistory = pushTabHistory(financeHistory, 'overview', 'transactions');
   financeHistory = pushTabHistory(financeHistory, 'transactions', 'budgets');
@@ -531,10 +540,15 @@ async function runTestSuite() {
   const updatedTasks = await db.toArray('tasks');
   assert(updatedTasks.filter(t => !t.completed).length === 1, 'Dashboard dynamically reflects new pending task');
 
-  // Productivity Score Calculation Test
-  // Productivity score = (Habits completed / total habits * 50) + (Tasks completed / total tasks due today * 50)
-  const prodScore = Math.round((1 / 1 * 50) + (1 / 2 * 50));
-  assert(prodScore === 75, `Verify dynamic productivity score calculation: ${prodScore}%`);
+  // Dashboard progress remains separated into concrete task/routine counts.
+  const overview = getTodayOverview(
+    [{ dueDate: '2026-10-31', completed: true }, { dueDate: '2026-10-31', completed: false }],
+    [{ id: 'daily', frequency: 'daily' }, { id: 'weekly', frequency: 'weekly' }],
+    [{ habitId: 'daily', date: '2026-10-31', completed: true }, { habitId: 'weekly', date: '2026-10-29', completed: true }],
+    '2026-10-31'
+  );
+  assert(overview.tasksCompleted === 1 && overview.tasksDue === 2, 'Dashboard reports actual completed and due task counts');
+  assert(overview.routinesCompleted === 1 && overview.routinesDue === 1, 'Dashboard counts only routines scheduled today');
 
   // --- 6. BACKUP & RESTORE TESTS ---
   console.log('\n--- 6. Testing Backup & Restore Module ---');

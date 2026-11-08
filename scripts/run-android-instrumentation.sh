@@ -8,8 +8,36 @@ SERIAL=${ANDROID_SERIAL:-emulator-5554}
 TEST_FILTER=${ANDROID_TEST_FILTER:-}
 REQUIRED_TEST=${ANDROID_REQUIRED_TEST:-${TEST_FILTER:-LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView}}
 mkdir -p "$OUT"
+SAFE_EMULATOR=false
 
-adb -s "$SERIAL" get-state
+capture_evidence() {
+  local result=$?
+  trap - EXIT
+  set +e
+  # A refusal must never collect screenshots/logs from an existing installation
+  # or a physical handset. Diagnostics below are limited to the fresh QA AVD.
+  if [[ "$SAFE_EMULATOR" != true ]]; then exit "$result"; fi
+  timeout 8s adb -s "$SERIAL" shell dumpsys webviewupdate > "$OUT/webview-provider.txt" 2>&1
+  timeout 8s adb -s "$SERIAL" logcat -d -v threadtime AndroidRuntime:E System.err:E chromium:E LifeOSAcceptance:I '*:S' > "$OUT/logcat-errors.txt" 2>&1
+  if [[ "$result" -ne 0 ]]; then
+    timeout 8s adb -s "$SERIAL" exec-out screencap -p > "$OUT/failure.png" 2> "$OUT/screenshot-error.txt"
+    timeout 5s adb devices -l > "$OUT/adb-devices.txt" 2>&1
+  fi
+  exit "$result"
+}
+trap capture_evidence EXIT
+
+timeout 10s adb -s "$SERIAL" get-state
+if [[ "$(timeout 8s adb -s "$SERIAL" shell getprop ro.kernel.qemu | tr -d '\r')" != '1' ]]; then
+  echo 'Refusing APK installation: this runner requires a disposable emulator.' >&2
+  exit 1
+fi
+existing_package=$(timeout 8s adb -s "$SERIAL" shell pm list packages com.lifeos.personal)
+if [[ -n "$existing_package" ]]; then
+  echo 'Refusing to overwrite an existing LifeOS installation; create a fresh AVD.' >&2
+  exit 1
+fi
+SAFE_EMULATOR=true
 {
   printf 'serial=%s\n' "$SERIAL"
   adb -s "$SERIAL" shell getprop ro.build.version.release
@@ -18,8 +46,8 @@ adb -s "$SERIAL" get-state
   adb -s "$SERIAL" shell wm density
 } > "$OUT/device-profile.txt"
 
-adb -s "$SERIAL" install -r "$APP_APK"
-adb -s "$SERIAL" install -r "$TEST_APK"
+timeout 120s adb -s "$SERIAL" install "$APP_APK"
+timeout 120s adb -s "$SERIAL" install "$TEST_APK"
 adb -s "$SERIAL" shell pm path com.lifeos.personal
 adb -s "$SERIAL" shell pm list instrumentation
 adb -s "$SERIAL" logcat -c

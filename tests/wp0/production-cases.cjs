@@ -2,8 +2,8 @@
 const assert = require('node:assert/strict');
 const h = require('./production-harness.cjs');
 
-async function usingFixture(fn) {
-  const f = await h.fixture();
+async function usingFixture(fn, options) {
+  const f = await h.fixture(options);
   try { return await fn(f); } finally { await f.dispose(); }
 }
 async function seed(f) {
@@ -103,6 +103,8 @@ const cases = [
       const expression = h.appFunction('importBackupFile');
       await h.bind(expression, { ...f.appDeps(), ...h.noopSetters(expression),
         StorageService: { backup }, backupOperation: { current: false },
+        setBackupOperationInProgress: () => {},
+        setSensitiveScreenshotState: async () => {},
         decodeBackupForRestore: importer.decodeBackupForRestore,
         MAX_BACKUP_FILE_BYTES: codec.MAX_BACKUP_FILE_BYTES,
         requestBackupPassphrase: async () => { throw new Error('Legacy import must not request a passphrase'); },
@@ -137,11 +139,12 @@ const cases = [
   },
   { id: 'CONTROL-INTEGRATION', category: 'Production integration + mocked native simulation', known: false,
     async run() { await usingFixture(async f => {
-      await assert.rejects(f.StorageService.transactions.getAll(), /locked|not ready/i);
+      f.sessionManager.lock();
+      await assert.rejects(f.StorageService.transactions.getAll(), /locked/i);
       const original = await seed(f);
       await f.StorageService.backup.importData(original, { replaceExisting: true });
       h.equal(JSON.parse(await f.StorageService.backup.exportData()).tables, JSON.parse(original).tables,
-        'Raw restore exercises actual validator and Dexie');
+        'Encrypted restore exercises actual validator and Dexie');
       await f.activate();
       const rows = await f.lifeOSDatabase.transactions.toArray();
       h.check(rows.every(r => r.__lifeosEncrypted === 1 && r.amount === undefined && r.description === undefined),
@@ -166,7 +169,7 @@ const cases = [
       h.check(f.native.calls.includes('encrypt') && f.native.calls.includes('decrypt'), 'Real TS wrapper uses simulated native API');
     }); }
   },
-  { id: 'LOS-001', category: 'Production integration / AST-extracted startup; simulated browser/native', known: true,
+  { id: 'LOS-001', category: 'Production integration / AST-extracted startup; simulated browser/native', known: false,
     async run() { await usingFixture(async f => {
       const init = h.appFunction('initApp');
       const deps = { ...f.appDeps(), ...h.noopSetters(init) };
@@ -179,7 +182,7 @@ const cases = [
       h.contract({ activated: f.isEncryptedStorageActivated(), encrypted: stored.__lifeosEncrypted === 1,
         plaintextFieldsAbsent: stored.description === undefined && stored.amount === undefined },
       { activated: true, encrypted: true, plaintextFieldsAbsent: true });
-    }); }
+    }, { activate: false }); }
   },
   { id: 'LOS-002', category: 'Production integration; real validator/facade/coordinator/Dexie; simulated native', known: false,
     async run() { await usingFixture(async f => {
@@ -202,6 +205,7 @@ const cases = [
       await seed(f); await f.activate();
       const deps = f.appDeps(), errors = [];
       const realReload = deps.reloadAllData; let reloads = 0;
+      deps.confirmScreenshotResume = async () => {};
       deps.reloadAllData = async () => { const result = await realReload(); reloads++; return result; };
       deps.console = { error: (...args) => errors.push(String(args[1]?.message || args[0])) };
       const expression = h.lifecycleCallback();
