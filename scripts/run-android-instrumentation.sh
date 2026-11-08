@@ -83,8 +83,18 @@ if [[ -n "$TEST_FILTER" ]]; then
 fi
 if [[ -n "$EXCLUDED_TESTS_FILE" ]]; then
   test -s "$EXCLUDED_TESTS_FILE"
-  REMOTE_EXCLUDED_TESTS_FILE=/sdcard/Download/lifeos-test-exclusions.txt
-  timeout 10s adb -s "$SERIAL" push "$EXCLUDED_TESTS_FILE" "$REMOTE_EXCLUDED_TESTS_FILE"
+  TEST_PACKAGE=com.lifeos.personal.test
+  HOST_EXCLUSIONS_FILE=/data/local/tmp/lifeos-test-exclusions.txt
+  timeout 10s adb -s "$SERIAL" push "$EXCLUDED_TESTS_FILE" "$HOST_EXCLUSIONS_FILE"
+  TEST_PACKAGE_DATA_DIR=$(timeout 10s adb -s "$SERIAL" shell run-as "$TEST_PACKAGE" pwd | tr -d '\r')
+  if [[ ! "$TEST_PACKAGE_DATA_DIR" =~ ^/data/(user/[0-9]+|data)/com\.lifeos\.personal\.test$ ]]; then
+    echo "Unexpected instrumentation package data directory: $TEST_PACKAGE_DATA_DIR" >&2
+    exit 1
+  fi
+  REMOTE_EXCLUDED_TESTS_FILE="$TEST_PACKAGE_DATA_DIR/files/lifeos-test-exclusions.txt"
+  timeout 10s adb -s "$SERIAL" shell run-as "$TEST_PACKAGE" mkdir -p "$TEST_PACKAGE_DATA_DIR/files"
+  timeout 10s adb -s "$SERIAL" shell run-as "$TEST_PACKAGE" cp "$HOST_EXCLUSIONS_FILE" "$REMOTE_EXCLUDED_TESTS_FILE"
+  timeout 10s adb -s "$SERIAL" shell run-as "$TEST_PACKAGE" test -r "$REMOTE_EXCLUDED_TESTS_FILE"
   instrument_args+=(-e notTestFile "$REMOTE_EXCLUDED_TESTS_FILE")
 fi
 timeout 480s adb -s "$SERIAL" shell am instrument "${instrument_args[@]}" \

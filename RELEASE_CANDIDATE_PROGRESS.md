@@ -165,3 +165,11 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 - Android test inventory check found exactly 19 declared test methods; all exclusion rows map to real tests; computed API29/API34/API35 counts are 12/17/17. `node scripts/test-android-runner.cjs` passed 4 simulated ADB scenarios; this is not Android execution.
 - Hardened candidate validation: the workflow now also triggers for a draft PR targeting `main`, prints runner-error counts, and fails explicitly on JUnit runner errors. A static contract now catches stale API exclusion entries or count drift.
 - The old run 42452318984 is still the only hosted candidate run; API34 crash root cause remains unconfirmed. No new APK or matrix result exists yet. Current decision: BLOCKED until the exact follow-up commit passes hosted API29/34/35 gates and its APK is verified.
+
+
+### Phase 3 hosted run 42455377267 — test harness path failure
+- Candidate SHA `316433057a3c9b20cf1b19458fd02930042661bc`: hosted npm, Sentinel, TypeScript, production build, APK compilation/signing, and API29 native-recovery preflight passed. API29 preflight ran 1/1 with no skips.
+- API34 isolated `backgroundedSyntheticTaskReminderIsActuallyPosted` passed 1/1. This is real hosted emulator execution, not physical-device acceptance.
+- API34 full suite did not start: AndroidJUnitRunner failed during setup with `EACCES (Permission denied)` reading `/sdcard/Download/lifeos-test-exclusions.txt`. Captured stack identifies `RunnerArgs.parseTestFile`; JUnit has 0 tests and 1 runner error. The full suite failure is a confirmed test-harness shared-storage permission bug. The original run 42452318984 had a separate incomplete runner event with no captured cause; its root cause remains unknown.
+- API29 full matrix and API35 matrix were skipped because API34 smoke is a required dependency. Evidence is saved under `validation-logs/ci-api34-followup-run.log` and `validation-logs/ci-api34-followup-smoke-evidence/`.
+- Small harness correction underway: copy the exclusion list from `/data/local/tmp` into the test APK’s private files directory with `run-as`, check readability, and give AndroidJUnitRunner that private path. No production code changed. Candidate remains BLOCKED pending a successful hosted rerun and complete API matrix.

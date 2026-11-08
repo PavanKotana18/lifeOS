@@ -43,6 +43,7 @@ require('node:fs').appendFileSync(process.env.QA_COMMAND_LOG, a+'\\n');
 if(a.includes('getprop ro.kernel.qemu')) console.log(mode==='physical'?'0':'1');
 else if(a.includes('getprop ro.build.version.sdk')) console.log('34');
 else if(a.includes('pm list packages')) { if(mode==='existing') console.log('package:com.lifeos.personal'); }
+else if(a.includes('shell run-as com.lifeos.personal.test pwd')) console.log('/data/user/0/com.lifeos.personal.test');
 else if(a.includes('dumpsys activity exit-info')) console.log('synthetic process exit information');
 else if(a.includes('logcat -b all -d')) console.log('synthetic crash log');
 else if(a.includes('shell am instrument')) {
@@ -65,7 +66,10 @@ else if(a.includes('shell am instrument')) {
     assert.equal(fs.existsSync(path.join(out, 'failure.png')), mode === 'crash', `${mode}: screenshot capture boundary`);
     if (admitted) {
       assert.match(fs.readFileSync(path.join(out, 'test-inventory.txt'), 'utf8'), /expected_tests=1/);
-      assert.match(fs.readFileSync(path.join(out, 'adb-commands.txt'), 'utf8'), /-e notTestFile \/sdcard\/Download\/lifeos-test-exclusions\.txt/);
+      const commands = fs.readFileSync(path.join(out, 'adb-commands.txt'), 'utf8');
+      assert.match(commands, /push .* \/data\/local\/tmp\/lifeos-test-exclusions\.txt/);
+      assert.match(commands, /run-as com\.lifeos\.personal\.test cp \/data\/local\/tmp\/lifeos-test-exclusions\.txt \/data\/user\/0\/com\.lifeos\.personal\.test\/files\/lifeos-test-exclusions\.txt/);
+      assert.match(commands, /-e notTestFile \/data\/user\/0\/com\.lifeos\.personal\.test\/files\/lifeos-test-exclusions\.txt/);
     }
     if (mode === 'crash') {
       assert.match(fs.readFileSync(path.join(out, 'junit.xml'), 'utf8'), /errors="[1-9]/);
