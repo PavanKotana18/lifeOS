@@ -50,3 +50,10 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 - Merged with source history; PR #20's join commit and both parallel heads are in candidate ancestry.
 - Tests: full `npm test` PASS; `npx tsc --noEmit` PASS.
 - Next: inspect #21 security gate changes and integrate them.
+
+### Stage #21 — security release gates
+- Source SHA: `1943b5daecc3d0ee7e3bb7d6452d42502c1d06fae`; verified #20 ancestry and inspected its persistence acceptance test, report parser, and emulator workflow change.
+- Found a CI policy gap in the inherited workflow: smoke and matrix assertions check nonzero cases/failures, but do not reject skipped tests or require a fixed expected suite count. The report parser detects incomplete runner completion but treats skips as report data.
+- Local checks: full `npm test` PASS; `npx tsc --noEmit` PASS.
+- Candidate integration: #21 is in the branch; emulator policy will be tightened after PR source integration.
+- Next: inspect/integrate #22 and test the fail-closed encrypted access path.
