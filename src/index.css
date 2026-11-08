@@ -23,6 +23,20 @@
   --type-label: 0.875rem;
   --type-caption: 0.75rem;
   --type-button: 0.9375rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --radius-control: 0.75rem;
+  --radius-card: 1.25rem;
+  --motion-control: 140ms;
+  --motion-tab: 200ms;
+  --motion-page: 220ms;
+  --motion-sheet: 260ms;
+  --motion-success: 160ms;
+  --motion-ease-standard: cubic-bezier(.2, .8, .2, 1);
   --leading-display: 1.08;
   --leading-title: 1.22;
   --leading-body: 1.5;
@@ -88,6 +102,16 @@ body {
 .type-caption { font-size: var(--type-caption); font-weight: 500; line-height: 1.4; }
 .type-button { font-size: var(--type-button); font-weight: 600; line-height: 1.25; }
 .type-eyebrow { color: var(--ink-secondary); font-size: 0.6875rem; font-weight: 600; line-height: 1.3; letter-spacing: 0.09em; }
+
+/* Shared UI 2.0 foundations. Adopt these as screens are refreshed. */
+.ui-page-header { display: grid; gap: var(--space-2); }
+.ui-card { min-width: 0; border: 1px solid var(--stroke); border-radius: var(--radius-card); background: var(--surface); color: var(--ink); }
+.ui-list-row { display: flex; min-width: 0; min-height: 3.5rem; align-items: center; gap: var(--space-3); border-bottom: 1px solid var(--stroke); padding-block: var(--space-3); }
+.ui-control-feedback { transition: color var(--motion-control) var(--motion-ease-standard), background-color var(--motion-control) var(--motion-ease-standard), border-color var(--motion-control) var(--motion-ease-standard), transform var(--motion-control) var(--motion-ease-standard); }
+.ui-control-feedback:active { transform: scale(.985); }
+.ui-success-feedback { animation: lifeos-success var(--motion-success) var(--motion-ease-standard) both; }
+.ui-loading-state { min-height: 5rem; display: grid; place-items: center; border: 1px solid var(--stroke); border-radius: var(--radius-card); background: var(--surface); color: var(--ink-secondary); }
+.ui-sheet-motion { animation: lifeos-sheet-in var(--motion-sheet) var(--motion-ease-standard) both; }
 
 .app-header { background: color-mix(in srgb, var(--surface) 94%, transparent); }
 .app-profile-button { min-height: 44px; min-width: 44px; background: var(--accent); color: var(--accent-foreground); }
@@ -282,7 +306,7 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
 .app-icon-button { border-color: #334155; }
 .header-greeting { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
 
-.tab-transition, .onboarding-step {
+.onboarding-step {
   animation: lifeos-enter 220ms cubic-bezier(.2,.75,.25,1) both;
 }
 
@@ -294,6 +318,9 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
   from { opacity: 0; transform: translate3d(0, 5px, 0); }
   to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
+
+@keyframes lifeos-success { from { opacity: .78; } to { opacity: 1; } }
+@keyframes lifeos-sheet-in { from { opacity: 0; transform: translate3d(0, 12px, 0); } to { opacity: 1; transform: translate3d(0, 0, 0); } }
 
 @keyframes lifeos-complete {
   0% { opacity: 0; transform: scale(.97); }
@@ -324,6 +351,7 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .ui-control-feedback:active { transform: none; }
 }
 
 html:not(.dark) {

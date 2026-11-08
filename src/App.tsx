@@ -34,9 +34,11 @@ import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import { ProfileHome, ProfileSubpage, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences from './components/ProfilePreferences';
+import RetainedScreen from './components/RetainedScreen';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { resolvePrimarySwipe } from './services/navigationGestures';
+import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
@@ -49,7 +51,7 @@ const PlanHub = React.lazy(() => import('./components/PlanHub'));
 const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
 
 function ScreenLoading({ label }: { label: string }) {
-  return <div className="lifeos-panel rounded-2xl border p-6 text-center text-sm text-secondary" role="status" aria-live="polite">{label}</div>;
+  return <div className="ui-loading-state p-6 text-center text-sm" role="status" aria-live="polite">{label}</div>;
 }
 
 const tabSubtitle: Record<MainTab, string> = { dashboard: "Here's your day at a glance.", finance: 'Your recorded cash flow and recent activity.', life: 'Routines, goals and personal progress.', plan: 'Tasks, schedules and what comes next.', insights: 'Progress from the records you have saved.', habits: 'Your habits, thoughtfully organized.', goals: 'Your goals, thoughtfully organized.', planner: 'Your planner, thoughtfully organized.', settings: 'Your profile and preferences.' };
@@ -101,6 +103,7 @@ export default function App() {
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
   const swipePointer = useRef<{ id: number; x: number; y: number; startedAt: number; interactive: boolean; systemEdge: boolean; horizontalControl: boolean } | null>(null);
   const scrollPositions = useRef<Record<string, number>>({});
+  const screenAnimation = useRef<Animation | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
   const [visualThemeId, setVisualThemeId] = useState<ThemeId>(() => {
@@ -300,7 +303,8 @@ export default function App() {
   const navigateTo = (tab: MainTab) => {
     const previous = activeTabRef.current;
     if (previous === tab) return;
-    if (tab === 'settings') setProfileSection('home');
+    scrollPositions.current[activeScreenKey] = window.scrollY;
+    if (tab === 'settings') navigateProfileSection('home');
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     activeTabRef.current = tab;
     setShowExitConfirmation(false);
@@ -360,18 +364,20 @@ export default function App() {
       }
       if (state.activeTab === 'habits') setHabitsSubtab('checklist');
       if (state.activeTab === 'goals') setGoalsSubtab('active');
-      if (state.activeTab === 'settings') setProfileSection('home');
+      if (state.activeTab === 'settings') navigateProfileSection('home');
       return;
     }
     const history = popTabHistory(navigationHistory.current, 'dashboard');
     navigationHistory.current = history.history;
     const previous = history.next;
     if (action === 'previous-tab' && previous) {
+      rememberActiveScroll();
       activeTabRef.current = previous;
       setActiveTab(previous);
       return;
     }
     if (action === 'home') {
+      rememberActiveScroll();
       activeTabRef.current = 'dashboard';
       setActiveTab('dashboard');
       return;
@@ -517,14 +523,47 @@ export default function App() {
     return () => window.clearTimeout(toRest);
   }, [appReady, isLocked, onboardingRequired, onboardingComplete]);
 
+  const activeScreenKey = screenScrollKey({
+    tab: activeTab,
+    financeSubtab,
+    profileSection,
+    goalsSubtab,
+    habitsSubtab,
+  });
+
+  const rememberActiveScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
+  const navigateProfileSection = (section: ProfileSection) => {
+    rememberActiveScroll();
+    setProfileSection(section);
+  };
+
+  useEffect(() => {
+    const rememberScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
+    window.addEventListener('scroll', rememberScroll, { passive: true });
+    return () => window.removeEventListener('scroll', rememberScroll);
+  }, [activeScreenKey]);
+
   useLayoutEffect(() => {
     const root = document.documentElement;
     const previous = root.style.scrollBehavior;
     root.style.scrollBehavior = 'auto';
-    window.scrollTo(0, scrollPositions.current[activeTab] || 0);
+    window.scrollTo(0, scrollPositions.current[activeScreenKey] || 0);
     root.style.scrollBehavior = previous;
-    return () => { scrollPositions.current[activeTab] = window.scrollY; };
-  }, [activeTab]);
+  }, [activeScreenKey]);
+
+  useLayoutEffect(() => {
+    screenAnimation.current?.cancel();
+    screenAnimation.current = null;
+    const view = document.getElementById(`screen-${activeTab}`);
+    if (!view || window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof view.animate !== 'function') return;
+    const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 200);
+    if (duration === 0) return;
+    screenAnimation.current = view.animate(
+      [{ opacity: 0.92, transform: 'translate3d(0, 4px, 0)' }, { opacity: 1, transform: 'translate3d(0, 0, 0)' }],
+      { duration, easing: 'cubic-bezier(.2, .8, .2, 1)' },
+    );
+    return () => { screenAnimation.current?.cancel(); screenAnimation.current = null; };
+  }, [activeScreenKey, activeTab]);
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
     setToast({ message, type });
@@ -554,6 +593,7 @@ export default function App() {
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
     if (next === financeSubtab) return;
+    rememberActiveScroll();
     financeSubtabHistory.current = pushTabHistory(financeSubtabHistory.current, financeSubtab, next);
     setFinanceSubtab(next);
   };
@@ -998,6 +1038,7 @@ export default function App() {
     if (!taskId || isLocked || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
     pendingNotificationTaskId.current = null;
     const task = (await StorageService.tasks.getAll()).find(item => item.id === taskId);
+    rememberActiveScroll();
     activeTabRef.current = 'planner';
     setActiveTab('planner');
     if (!task) {
@@ -1049,7 +1090,7 @@ export default function App() {
       window.setTimeout(() => handledNotificationIds.current.delete(id), 10_000);
       if (extra.kind === 'test') {
         navigateTo('settings');
-        setProfileSection('notifications');
+        navigateProfileSection('notifications');
         void NotificationService.acknowledgeInitialTapAction(id);
         return;
       }
@@ -1715,8 +1756,7 @@ export default function App() {
       {/* Main Container */}
       <main className="max-w-md mx-auto p-4 space-y-4" onPointerDown={handleContentPointerDown} onPointerUp={handleContentPointerUp} onPointerCancel={() => { swipePointer.current = null; }}>
         {/* VIEW 1: DASHBOARD */}
-        <div key={activeTab} id={`view-${activeTab}`} className="tab-transition">
-        {activeTab === 'dashboard' && (
+        <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" render={() => (
           <div className="today-sections">
             <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
@@ -1875,10 +1915,10 @@ export default function App() {
               )}
             </div>
           </div>
-        )}
+        )} />
 
         {/* VIEW 2: FINANCE */}
-        {activeTab === 'life' && <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+        <RetainedScreen active={activeTab === 'life'} id="screen-life" render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
           routinesDue={todayOverview.routinesDue}
           completedRoutines={todayOverview.routinesCompleted}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
@@ -1887,12 +1927,12 @@ export default function App() {
           onHabits={() => { setHabitsSubtab('checklist'); navigateTo('habits'); }}
           onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
           onInsights={() => navigateTo('insights')}
-        /></Suspense>}
+        /></Suspense>} />
 
-        {activeTab === 'plan' && <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
-          onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} /></Suspense>}
+        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
+          onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} /></Suspense>} />
 
-        {activeTab === 'insights' && <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
+        <RetainedScreen active={activeTab === 'insights'} id="screen-insights" render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
           month={financeMonth}
           income={financeMetrics.totalIncome}
           expenses={financeMetrics.totalExpenses}
@@ -1908,9 +1948,9 @@ export default function App() {
           onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
           onHabits={() => { setHabitsSubtab('weekly'); navigateTo('habits'); }}
           onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
-        /></Suspense>}
+        /></Suspense>} />
 
-        {activeTab === 'finance' && (
+        <RetainedScreen active={activeTab === 'finance'} id="screen-finance" render={() => (
           <div className="money-page space-y-5">
             {financeSubtab !== 'overview' && <div className="money-page-toolbar">
               <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
@@ -2108,10 +2148,10 @@ export default function App() {
               <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
             </div>}
           </div>
-        )}
+        )} />
 
         {/* VIEW 3: HABITS */}
-        {activeTab === 'habits' && (
+        <RetainedScreen active={activeTab === 'habits'} id="screen-habits" render={() => (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
@@ -2142,10 +2182,10 @@ export default function App() {
               )}
             </div>
           </div>
-        )}
+        )} />
 
         {/* VIEW 4: GOALS */}
-        {activeTab === 'goals' && (
+        <RetainedScreen active={activeTab === 'goals'} id="screen-goals" render={() => (
           <div className="space-y-4">
             <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
             <div className="grid grid-cols-3 gap-2">{(['active', 'paused', 'completed'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
@@ -2166,10 +2206,10 @@ export default function App() {
               })
             )}
           </div>
-        )}
+        )} />
 
         {/* VIEW 5: PLANNER */}
-        {activeTab === 'planner' && (
+        <RetainedScreen active={activeTab === 'planner'} id="screen-planner" render={() => (
           <div className="space-y-4">
             <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider lifeos-accent-text">Planner</p><h2 className="text-xl font-semibold tracking-tight">Your calendar</h2></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
             <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar">
@@ -2235,14 +2275,14 @@ export default function App() {
             )}
             </section>
           </div>
-        )}
+        )} />
 
         {/* VIEW 6: SETTINGS */}
-        {activeTab === 'settings' && (
+        <RetainedScreen active={activeTab === 'settings'} id="screen-settings" render={() => (
           <div className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { setProfileSection(section); if (section === 'notifications') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications') void refreshNotificationDiagnostics(); }} />}
 
-            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" description="Keep your personal records protected on this device." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" description="Keep your personal records protected on this device." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
               <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-secondary">Device-level authentication for the app.</p></div>
               <p className="text-xs text-secondary">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
@@ -2250,7 +2290,7 @@ export default function App() {
               {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
             </section></ProfileSubpage>}
 
-            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" description="Choose how LifeOS looks. Your theme is saved on this device." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" description="Choose how LifeOS looks. Your theme is saved on this device." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
               <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-secondary">Choose a theme or follow Android's system setting.</p>
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
@@ -2274,9 +2314,9 @@ export default function App() {
               </div>
             </section></ProfileSubpage>}
 
-            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => setProfileSection('home')}><ProfilePreferences preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
+            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
 
-            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" description="Choose which local reminders LifeOS may send." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-xl border p-4 space-y-3">
+            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" description="Choose which local reminders LifeOS may send." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-xl border p-4 space-y-3">
               <p className="text-xs text-secondary">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
               <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
               <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
@@ -2290,7 +2330,7 @@ export default function App() {
               <button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
             </section></ProfileSubpage>}
 
-            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => setProfileSection('home')}>
+            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
             {/* Demo Data Trigger */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Sample Demonstration Data</h3>
@@ -2396,20 +2436,19 @@ export default function App() {
               </button>
             </div>
             </ProfileSubpage>}
-            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => setProfileSection('home')}>
+            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => navigateProfileSection('home')}>
             <section className="lifeos-panel rounded-xl border p-4 space-y-2">
               <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
               <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
             </section>
             </ProfileSubpage>}
           </div>
-        )}
-        </div>
+        )} />
       </main>
 
       {createKind && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form onSubmit={saveNewRecord} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+          <form onSubmit={saveNewRecord} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="ui-sheet-motion lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
@@ -2512,7 +2551,7 @@ export default function App() {
             }}
             aria-label={label}
             aria-current={isSelected ? 'page' : undefined}
-            className={`nav-item flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium transition duration-200 active:scale-95 ${isSelected ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
+            className={`nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium ${isSelected ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
           >
             <Icon size={18} strokeWidth={isSelected ? 2.4 : 1.8} aria-hidden="true" />
             <span>{label}</span>
@@ -2525,7 +2564,7 @@ export default function App() {
 
       {/* In-app Toast Notification */}
       {toast && (
-        <div role="status" aria-live="polite" className="lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl">
+        <div role="status" aria-live="polite" className={`lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl ${toast.type === 'success' ? 'ui-success-feedback' : ''}`}>
           <span>{toast.message}</span>
         </div>
       )}
