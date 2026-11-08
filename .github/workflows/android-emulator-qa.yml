@@ -340,6 +340,7 @@ jobs:
             ram-size: 2048M
             heap-size: 256M
             expected-tests: 12
+            required-test: CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning
             exclusion-file: android/qa/instrumentation-exclusions-api29.txt
           - id: standard-api34
             api-level: 34
@@ -347,6 +348,7 @@ jobs:
             ram-size: 3072M
             heap-size: 512M
             expected-tests: 17
+            required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
           - id: large-api35
             api-level: 35
@@ -354,6 +356,7 @@ jobs:
             ram-size: 4096M
             heap-size: 512M
             expected-tests: 17
+            required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
     steps:
       - uses: actions/checkout@v4
@@ -380,7 +383,7 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            ANDROID_TEST_EXCLUSION_FILE='${{ matrix.exclusion-file }}' ANDROID_EXPECTED_TESTS='${{ matrix.expected-tests }}' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+            ANDROID_REQUIRED_TEST='${{ matrix.required-test }}' ANDROID_TEST_EXCLUSION_FILE='${{ matrix.exclusion-file }}' ANDROID_EXPECTED_TESTS='${{ matrix.expected-tests }}' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
       - name: Require every supported API matrix test with zero skips
         if: success()
         run: |

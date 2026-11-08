@@ -17,15 +17,17 @@ const declaredTests = fs.readdirSync(pathToAndroidTests)
       .map(match => `com.lifeos.personal.${file.slice(0, -5)}#${match[1]}`);
   });
 assert.equal(declaredTests.length, 19, 'Android test inventory changed; update the hosted expected counts deliberately');
-for (const [inventory, expectedCount] of [
-  ['instrumentation-exclusions-api29.txt', 12],
-  ['instrumentation-exclusions-api34-35.txt', 17],
+for (const [inventory, expectedCount, requiredTest] of [
+  ['instrumentation-exclusions-api29.txt', 12, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
+  ['instrumentation-exclusions-api34-35.txt', 17, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
 ]) {
   const exclusionPath = path.resolve(__dirname, `../android/qa/${inventory}`);
   const exclusions = fs.readFileSync(exclusionPath, 'utf8').trim().split(/\r?\n/).filter(Boolean);
   assert.equal(new Set(exclusions).size, exclusions.length, `${inventory} contains duplicates`);
   assert.ok(exclusions.every(test => declaredTests.includes(test)), `${inventory} contains an unknown test`);
   assert.equal(declaredTests.length - exclusions.length, expectedCount, `${inventory} does not match its expected unattended count`);
+  assert.ok(declaredTests.includes(requiredTest), `${inventory} required test is not declared`);
+  assert.ok(!exclusions.includes(requiredTest), `${inventory} excludes its own required test`);
 }
 const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/workstream-integration.yml'), 'utf8');
 assert.match(workflow, /test-filter:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
