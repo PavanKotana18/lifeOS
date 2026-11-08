@@ -1911,9 +1911,8 @@ export default function App() {
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">YOUR DAY</p>
                   <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s focus</h3>
-                  {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> tasks complete</p>
-                    : todayOverview.routinesDue > 0 ? <p className="mt-1 text-sm text-secondary">Your routines are ready when you are.</p>
-                      : <p className="mt-1 text-sm text-secondary">Your day is open. Choose what matters most.</p>}
+                  {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><span className="font-medium">Tasks due today</span> · <strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> complete</p>
+                    : <p className="mt-1 text-sm text-secondary">Tasks due today · None scheduled</p>}
                 </div>
                 <div className="today-quick-actions" aria-label="Quick add">
                   <button type="button" onClick={() => openCreateForm('task')} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">+ Task</button>
@@ -1921,6 +1920,8 @@ export default function App() {
                 </div>
               </div>
               {todayOverview.tasksDue > 0 && <div className="today-focus-progress mt-3" role="progressbar" aria-label="Today’s tasks complete" aria-valuemin={0} aria-valuemax={todayOverview.tasksDue} aria-valuenow={todayOverview.tasksCompleted}><span style={{ width: `${Math.min(100, (todayOverview.tasksCompleted / todayOverview.tasksDue) * 100)}%` }} /></div>}
+              {todayOverview.routinesDue > 0 && <p className="mt-2 text-xs text-secondary">Routines today · <span className="tabular-nums">{todayOverview.routinesCompleted} of {todayOverview.routinesDue}</span> checked</p>}
+              {todayOverview.tasksDue === 0 && todayOverview.routinesDue === 0 && todayOverview.weeklyRoutinesTotal === 0 && <p className="mt-2 text-xs text-secondary">Your day is open. Choose what matters most.</p>}
               {todayOverview.weeklyRoutinesTotal > 0 && <p className="mt-3 text-xs text-secondary">This week · {todayOverview.weeklyRoutinesCompleted} of {todayOverview.weeklyRoutinesTotal} routines checked</p>}
             </section>
 
