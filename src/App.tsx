@@ -1,4 +1,5 @@
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -36,9 +37,10 @@ import ConfirmationDialog, { type ConfirmationOptions } from './components/Confi
 import { ProfileHome, ProfileSubpage, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
+import ReminderStatusSummary from './components/ReminderStatusSummary';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
-import { classifyPointerAxis, resolvePrimarySwipe } from './services/navigationGestures';
+import { beginPrimaryGesture, recordGestureTrace, resolvePrimaryGestureEnd, updatePrimaryGesture, type PrimaryGestureSession } from './services/navigationGestures';
 import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
@@ -51,11 +53,12 @@ const LifeHub = React.lazy(() => import('./components/LifeHub'));
 const PlanHub = React.lazy(() => import('./components/PlanHub'));
 const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
 
+const RuntimeInfo = registerPlugin<{ getSystemGestureInsets: () => Promise<{ left: number; right: number }> }>('LifeOSRuntimeInfo');
+
 function ScreenLoading({ label }: { label: string }) {
   return <div className="ui-loading-state p-6 text-center text-sm" role="status" aria-live="polite">{label}</div>;
 }
 
-const tabSubtitle: Record<MainTab, string> = { dashboard: "Here's your day at a glance.", finance: 'Your recorded cash flow and recent activity.', life: 'Routines, goals and personal progress.', plan: 'Tasks, schedules and what comes next.', insights: 'Progress from the records you have saved.', habits: 'Your habits, thoughtfully organized.', goals: 'Your goals, thoughtfully organized.', planner: 'Your planner, thoughtfully organized.', settings: 'Your profile and preferences.' };
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
 const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -89,14 +92,13 @@ export default function App() {
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const activeTabRef = useRef<MainTab>('dashboard');
-  const [tabTransition, setTabTransition] = useState<{ id: number; from: MainTab; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right'; exitStart: { opacity: string; transform: string } } | null>(null);
+  const [tabTransition, setTabTransition] = useState<{ id: number; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right' } | null>(null);
   const tabTransitionSequence = useRef(0);
   const activeTransitionId = useRef<number | null>(null);
   const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
     activeTabRef.current = tab;
     if (previous === tab) { setActiveTab(tab); return; }
-    const settlingGesture = swipeSettleAnimation.current !== null;
     const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reducedMotion) {
       swipeSettleAnimation.current?.cancel();
@@ -106,26 +108,15 @@ export default function App() {
       setActiveTab(tab);
       return;
     }
-    const candidate = document.getElementById(`screen-${previous}`);
-    const isDragging = candidate?.hasAttribute('data-gesture-dragging') === true;
-    const outgoing = isDragging || settlingGesture || tabTransition?.to === previous ? candidate : null;
-    const outgoingStyle = outgoing ? getComputedStyle(outgoing) : null;
+    const outgoing = document.getElementById(`screen-${previous}`);
+    outgoing?.removeAttribute('data-gesture-dragging');
+    outgoing?.style.removeProperty('--gesture-x');
     swipeSettleAnimation.current?.cancel();
     swipeSettleAnimation.current = null;
-    if (isDragging) {
-      outgoing?.removeAttribute('data-gesture-dragging');
-      outgoing?.style.removeProperty('--gesture-x');
-    }
+    swipePointer.current = null;
     const id = ++tabTransitionSequence.current;
     activeTransitionId.current = id;
-    setTabTransition({
-      id,
-      from: previous,
-      to: tab,
-      phase: 'prepare',
-      direction,
-      exitStart: { opacity: outgoingStyle?.opacity || '1', transform: outgoingStyle?.transform || 'none' },
-    });
+    setTabTransition({ id, to: tab, phase: 'prepare', direction });
     setActiveTab(tab);
   };
   const navigationHistory = useRef<MainTab[]>([]);
@@ -141,7 +132,10 @@ export default function App() {
   const pendingNotificationActionId = useRef<number | null>(null);
   const handledNotificationIds = useRef(new Set<number>());
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
-  const swipePointer = useRef<{ id: number; x: number; y: number; startedAt: number; interactive: boolean; systemEdge: boolean; horizontalControl: boolean; axis: 'pending' | 'horizontal' | 'vertical'; latestOffsetX: number } | null>(null);
+  const swipePointer = useRef<PrimaryGestureSession | null>(null);
+  const activeTouchPointers = useRef(new Set<number>());
+  const swipeSuppressed = useRef(false);
+  const nativeGestureInsets = useRef<{ left: number; right: number } | null>(null);
   const swipeMoveFrame = useRef<number | null>(null);
   const swipeSettleAnimation = useRef<Animation | null>(null);
   const scrollPositions = useRef<Record<string, number>>({});
@@ -355,34 +349,6 @@ export default function App() {
     transitionToTab(tab, direction);
   };
 
-  const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
-    swipeSettleAnimation.current?.cancel();
-    swipeSettleAnimation.current = null;
-    swipePointer.current = null;
-    if (!userPrefs.swipeNavigationEnabled || event.pointerType === 'mouse' || activeTab === 'settings' || createKind || modalContent) return;
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target) return;
-    const interactive = Boolean(target.closest('button,a,input,textarea,select,form,[contenteditable="true"],[role="button"],[role="switch"],[role="dialog"],[data-no-tab-swipe]'));
-    const horizontalControl = Boolean(target.closest('[data-horizontal-scroll],.recharts-wrapper,svg,canvas,[role="slider"]'));
-    let ancestor: HTMLElement | null = target as HTMLElement;
-    let horizontallyScrollable = false;
-    while (ancestor && ancestor !== event.currentTarget) {
-      const overflowX = window.getComputedStyle(ancestor).overflowX;
-      if ((overflowX === 'auto' || overflowX === 'scroll') && ancestor.scrollWidth > ancestor.clientWidth + 2) {
-        horizontallyScrollable = true;
-        break;
-      }
-      ancestor = ancestor.parentElement;
-    }
-    const systemEdge = event.clientX <= 32 || event.clientX >= window.innerWidth - 32;
-    if (interactive || horizontalControl || horizontallyScrollable || systemEdge) return;
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is an enhancement; native scrolling remains available. */ }
-    swipePointer.current = {
-      id: event.pointerId, x: event.clientX, y: event.clientY, startedAt: Date.now(),
-      interactive, systemEdge, horizontalControl: horizontalControl || horizontallyScrollable, axis: 'pending', latestOffsetX: 0,
-    };
-  };
-
   const clearGestureDrag = (animateBack: boolean) => {
     const screen = document.getElementById(`screen-${activeTabRef.current}`);
     if (!screen?.hasAttribute('data-gesture-dragging')) return;
@@ -397,57 +363,161 @@ export default function App() {
     });
   };
 
-  const handleContentPointerMove = (event: React.PointerEvent<HTMLElement>) => {
-    const start = swipePointer.current;
-    if (!start || start.id !== event.pointerId) return;
-    const deltaX = event.clientX - start.x;
-    const deltaY = event.clientY - start.y;
-    if (start.axis === 'vertical') return;
-    const axis = classifyPointerAxis(deltaX, deltaY);
-    if (axis === 'vertical') {
-      start.axis = 'vertical';
-      clearGestureDrag(false);
+  const cancelPrimaryGesture = (reason: string, pointerId = swipePointer.current?.pointerId ?? -1) => {
+    const session = swipePointer.current;
+    if (session) recordGestureTrace({ event: 'interrupted', pointerId, deltaX: 0, deltaY: 0, state: session.axis, reason }, import.meta.env.DEV);
+    swipePointer.current = null;
+    if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
+    clearGestureDrag(false);
+  };
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let active = true;
+    void RuntimeInfo.getSystemGestureInsets().then(insets => {
+      if (active && Number.isFinite(insets.left) && Number.isFinite(insets.right) && insets.left >= 0 && insets.right >= 0) {
+        nativeGestureInsets.current = { left: insets.left, right: insets.right };
+      }
+    }).catch(() => { /* CSS safe-area values and a conservative fallback remain available. */ });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const cancelForEnvironmentChange = () => {
+      cancelPrimaryGesture('window-resized');
+      activeTouchPointers.current.clear();
+      swipeSuppressed.current = false;
+    };
+    const cancelForBackground = () => {
+      if (document.visibilityState !== 'visible') {
+        cancelPrimaryGesture('document-hidden');
+        activeTouchPointers.current.clear();
+        swipeSuppressed.current = false;
+      }
+    };
+    const cancelForBlur = () => {
+      cancelPrimaryGesture('window-blurred');
+      activeTouchPointers.current.clear();
+      swipeSuppressed.current = false;
+    };
+    window.addEventListener('resize', cancelForEnvironmentChange, { passive: true });
+    window.addEventListener('blur', cancelForBlur);
+    document.addEventListener('visibilitychange', cancelForBackground);
+    return () => {
+      window.removeEventListener('resize', cancelForEnvironmentChange);
+      window.removeEventListener('blur', cancelForBlur);
+      document.removeEventListener('visibilitychange', cancelForBackground);
+    };
+  }, []);
+
+  const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    activeTouchPointers.current.add(event.pointerId);
+    if (activeTouchPointers.current.size > 1) {
+      swipeSuppressed.current = true;
+      cancelPrimaryGesture('multiple-pointers', event.pointerId);
+      recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'suppressed', reason: 'multiple-pointers' }, import.meta.env.DEV);
       return;
     }
-    if (axis !== 'horizontal') return;
-    start.axis = 'horizontal';
-    if (swipeMoveFrame.current !== null) return;
+    if (swipeSuppressed.current) return;
+    swipeSettleAnimation.current?.cancel();
+    swipeSettleAnimation.current = null;
+    swipePointer.current = null;
+
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const interactive = Boolean(target.closest('button,a,input,textarea,select,form,label,summary,[contenteditable="true"],[role="button"],[role="switch"],[role="checkbox"],[role="dialog"],[role="tab"],[data-no-tab-swipe],[data-swipe-exclude]'));
+    const horizontalControl = Boolean(target.closest('[data-horizontal-scroll],.recharts-wrapper,svg,canvas,[role="slider"]'));
+    let ancestor: HTMLElement | null = target as HTMLElement;
+    let horizontallyScrollable = false;
+    while (ancestor && ancestor !== event.currentTarget) {
+      const overflowX = window.getComputedStyle(ancestor).overflowX;
+      if ((overflowX === 'auto' || overflowX === 'scroll') && ancestor.scrollWidth > ancestor.clientWidth + 2) {
+        horizontallyScrollable = true;
+        break;
+      }
+      ancestor = ancestor.parentElement;
+    }
+    const probe = event.currentTarget.ownerDocument.querySelector<HTMLElement>('.lifeos-safe-area-probe');
+    const cssInsets = probe ? getComputedStyle(probe) : null;
+    const leftSafeArea = Number.parseFloat(cssInsets?.paddingLeft || '0') || 0;
+    const rightSafeArea = Number.parseFloat(cssInsets?.paddingRight || '0') || 0;
+    const leftGutter = Math.max(24, leftSafeArea, nativeGestureInsets.current?.left || 0);
+    const rightGutter = Math.max(24, rightSafeArea, nativeGestureInsets.current?.right || 0);
+    const systemEdge = event.clientX <= leftGutter || event.clientX >= window.innerWidth - rightGutter;
+    let reason = '';
+    if (!userPrefs.swipeNavigationEnabled) reason = 'preference-disabled';
+    else if (event.pointerType === 'mouse') reason = 'mouse-pointer';
+    else if (activeTab === 'settings') reason = 'settings-screen';
+    else if (createKind || modalContent) reason = 'modal-open';
+    else if (interactive) reason = 'interactive-target';
+    else if (horizontalControl || horizontallyScrollable) reason = 'horizontal-control';
+    else if (systemEdge) reason = 'system-edge';
+    if (reason) {
+      recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'idle', reason }, import.meta.env.DEV);
+      return;
+    }
+    swipePointer.current = beginPrimaryGesture({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, at: performance.now(), viewportWidth: window.innerWidth });
+    recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'pending' }, import.meta.env.DEV);
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Browsers without capture still report events inside the content surface. */ }
+  };
+
+  const handleContentPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    const start = swipePointer.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    if (start.viewportWidth !== window.innerWidth) { cancelPrimaryGesture('viewport-changed', event.pointerId); return; }
+    const update = updatePrimaryGesture(start, event.pointerId, event.clientX, event.clientY);
+    swipePointer.current = update.session;
+    recordGestureTrace({ event: 'pointermove', pointerId: event.pointerId, deltaX: update.deltaX, deltaY: update.deltaY, state: update.session.axis }, import.meta.env.DEV);
+    if (update.session.axis === 'vertical') { clearGestureDrag(false); return; }
+    if (!update.accepted || swipeMoveFrame.current !== null) return;
     const screen = document.getElementById(`screen-${activeTabRef.current}`);
     if (!screen) return;
-    start.latestOffsetX = Math.max(-80, Math.min(80, deltaX * 0.48));
     swipeMoveFrame.current = window.requestAnimationFrame(() => {
       swipeMoveFrame.current = null;
-      if (swipePointer.current?.id !== start.id) return;
+      if (swipePointer.current?.pointerId !== start.pointerId || swipePointer.current.axis !== 'horizontal') return;
       screen.setAttribute('data-gesture-dragging', 'true');
-      screen.style.setProperty('--gesture-x', `${start.latestOffsetX}px`);
+      screen.style.setProperty('--gesture-x', `${swipePointer.current.latestOffsetX}px`);
     });
+  };
+
+  const endPointerTracking = (pointerId: number) => {
+    activeTouchPointers.current.delete(pointerId);
+    if (activeTouchPointers.current.size === 0) swipeSuppressed.current = false;
   };
 
   const handleContentPointerUp = (event: React.PointerEvent<HTMLElement>) => {
     const start = swipePointer.current;
-    swipePointer.current = null;
+    endPointerTracking(event.pointerId);
+    if (swipeSuppressed.current) return;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
-    if (!start || start.id !== event.pointerId) return;
-    const deltaX = event.clientX - start.x;
-    const deltaY = event.clientY - start.y;
-    const target = start.axis === 'horizontal' ? resolvePrimarySwipe(activeTab, {
-      deltaX, deltaY, durationMs: Date.now() - start.startedAt, startedOnInteractive: start.interactive,
-      startedAtSystemEdge: start.systemEdge, startedInHorizontalControl: start.horizontalControl,
-      enabled: userPrefs.swipeNavigationEnabled,
-    }) : null;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const target = resolvePrimaryGestureEnd(activeTab, start, event.pointerId, event.clientX, event.clientY, performance.now(), userPrefs.swipeNavigationEnabled);
+    const deltaX = event.clientX - start.startX;
+    const deltaY = event.clientY - start.startY;
+    recordGestureTrace({ event: 'pointerup', pointerId: event.pointerId, deltaX, deltaY, state: start.axis, decision: target || 'settle-back' }, import.meta.env.DEV);
+    swipePointer.current = null;
     if (target) {
-      const screen = document.getElementById(`screen-${activeTabRef.current}`);
-      screen?.setAttribute('data-gesture-dragging', 'true');
-      screen?.style.setProperty('--gesture-x', `${start.latestOffsetX}px`);
+      clearGestureDrag(false);
       navigateTo(target, deltaX < 0 ? 'left' : 'right');
-    }
-    else clearGestureDrag(true);
+    } else clearGestureDrag(true);
   };
 
-  const handleContentPointerCancel = () => {
-    swipePointer.current = null;
-    if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
-    clearGestureDrag(true);
+  const handleContentPointerCancel = (event: React.PointerEvent<HTMLElement>) => {
+    endPointerTracking(event.pointerId);
+    const start = swipePointer.current;
+    if (start?.pointerId === event.pointerId) {
+      recordGestureTrace({ event: 'pointercancel', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: start.axis, reason: 'browser-cancelled' }, import.meta.env.DEV);
+      cancelPrimaryGesture('browser-cancelled', event.pointerId);
+    }
+  };
+
+  const handleContentLostPointerCapture = (event: React.PointerEvent<HTMLElement>) => {
+    endPointerTracking(event.pointerId);
+    const start = swipePointer.current;
+    if (start?.pointerId === event.pointerId) {
+      recordGestureTrace({ event: 'lostpointercapture', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: start.axis, reason: 'capture-lost' }, import.meta.env.DEV);
+      cancelPrimaryGesture('capture-lost', event.pointerId);
+    }
   };
 
   const navigateBack = () => {
@@ -661,8 +731,7 @@ export default function App() {
     if (!tabTransition) return;
     const { id, phase } = tabTransition;
     if (phase === 'prepare') {
-      // Give WebView one rendered frame with both screens paintable before
-      // changing the CSS transition targets.
+      // Commit the new opaque screen once before starting its short entrance.
       const frame = window.requestAnimationFrame(() => {
         setTabTransition(current => current?.id === id ? { ...current, phase: 'running' } : current);
       });
@@ -691,18 +760,13 @@ export default function App() {
   }, [isLocked]);
 
   const transitionPropsFor = (screen: MainTab) => {
-    if (!tabTransition) return {};
-    const ownsTransition = tabTransition.from === screen || tabTransition.to === screen;
+    if (!tabTransition || tabTransition.to !== screen || activeTab !== screen) return {};
     return {
-      exiting: tabTransition.from === screen && tabTransition.from !== tabTransition.to,
-      transitionPhase: ownsTransition ? tabTransition.phase : null,
-      transitionDirection: ownsTransition ? tabTransition.direction : undefined,
-      exitStart: tabTransition.from === screen ? tabTransition.exitStart : undefined,
-      onExitTransitionEnd: tabTransition.from === screen
-        ? (event: React.TransitionEvent<HTMLDivElement>) => {
-            if (event.target === event.currentTarget && event.propertyName === 'opacity') finishTabTransition(tabTransition.id);
-          }
-        : undefined,
+      transitionPhase: tabTransition.phase,
+      transitionDirection: tabTransition.direction,
+      onTransitionEnd: (event: React.TransitionEvent<HTMLDivElement>) => {
+        if (event.target === event.currentTarget && event.propertyName === 'transform') finishTabTransition(tabTransition.id);
+      },
     };
   };
 
@@ -1677,7 +1741,7 @@ export default function App() {
       const wasEditingGoal = editingGoalId;
       const wasEditingContribution = editingContributionId;
       const reminderSyncFailed = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable && !schedulesUpdated;
-      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and run Diagnose reminder.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable || reminderSyncFailed ? 'danger' : 'success');
+      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable || reminderSyncFailed ? 'danger' : 'success');
     } catch (error) {
       showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
     } finally { createOperation.current = false; }
@@ -1906,17 +1970,15 @@ export default function App() {
   }
 
   return (
-    <div className="lifeos-page min-h-screen" style={{ paddingBottom: 'calc(6.25rem + env(safe-area-inset-bottom))' }}>
+    <div className="lifeos-page app-shell">
+      <span className="lifeos-safe-area-probe" aria-hidden="true" />
       {/* Top Mobile Header */}
-      <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
+      <header className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
             <BrandMark className="h-8 w-8" />
           </div>
-          <div className="min-w-0">
-            <h1 className="header-greeting text-[clamp(1.05rem,4.2vw,1.35rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
-            <p className="mt-0.5 truncate text-xs text-secondary">{tabSubtitle[activeTab]}</p>
-          </div>
+          <h1 className="app-brand-name">LifeOS</h1>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
@@ -1924,7 +1986,7 @@ export default function App() {
       </header>
 
       {!isOnline && (
-        <div role="status" aria-live="polite" className="mx-auto max-w-md px-4 pt-2">
+        <div role="status" aria-live="polite" className="app-content-width px-4 pt-2">
           <div className="lifeos-warning lifeos-panel rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'var(--warning)' }}>
             Offline — LifeOS records remain stored on this device. Internet-dependent services may be unavailable.
           </div>
@@ -1932,14 +1994,14 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className="max-w-md mx-auto p-4 space-y-4" onPointerDown={handleContentPointerDown} onPointerMove={handleContentPointerMove} onPointerUp={handleContentPointerUp} onPointerCancel={handleContentPointerCancel}>
+      <main className="app-main" onPointerDown={handleContentPointerDown} onPointerMove={handleContentPointerMove} onPointerUp={handleContentPointerUp} onPointerCancel={handleContentPointerCancel} onLostPointerCapture={handleContentLostPointerCapture}>
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
-        <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
+        <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
           <div className="today-sections" data-testid="today-dashboard">
-            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Your day</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
-            {todayCustomizationOpen && <section id="today-customization" aria-labelledby="today-customization-title" className="lifeos-panel rounded-2xl border p-4" style={{ order: 1 }}>
+            {todayCustomizationOpen && <section id="today-customization" aria-labelledby="today-customization-title" className="today-customization lifeos-panel rounded-2xl border p-4" style={{ order: 1 }}>
               <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order.</p></div>
               <ul className="today-customization-list">{todayLayout.order.map((id, index) => <li key={id}>
                 <label className="today-section-toggle"><input type="checkbox" checked={!todayLayout.hidden.includes(id)} disabled={id === 'focus'} onChange={event => persistTodayLayout(setTodaySectionVisible(todayLayoutRef.current, id, event.target.checked))} /><span>{TODAY_SECTION_LABELS[id]}</span></label>
@@ -1953,23 +2015,19 @@ export default function App() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">YOUR DAY</p>
-                  <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s focus</h3>
+                  <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s priorities</h3>
                   {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><span className="font-medium">Tasks due today</span> · <strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> complete</p>
-                    : <p className="mt-1 text-sm text-secondary">Tasks due today · None scheduled</p>}
+                    : <p className="mt-1 text-sm text-secondary">No tasks due today. Your day is open.</p>}
                 </div>
                 <div className="today-quick-actions" aria-label="Quick add">
                   <button type="button" onClick={() => openCreateForm('task')} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">+ Task</button>
-                  <button type="button" onClick={() => openCreateForm('habit')} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold">+ Habit</button>
                 </div>
               </div>
               {todayOverview.tasksDue > 0 && <div className="today-focus-progress mt-3" role="progressbar" aria-label="Today’s tasks complete" aria-valuemin={0} aria-valuemax={todayOverview.tasksDue} aria-valuenow={todayOverview.tasksCompleted}><span style={{ width: `${Math.min(100, (todayOverview.tasksCompleted / todayOverview.tasksDue) * 100)}%` }} /></div>}
-              {todayOverview.routinesDue > 0 && <p className="mt-2 text-xs text-secondary">Routines today · <span className="tabular-nums">{todayOverview.routinesCompleted} of {todayOverview.routinesDue}</span> checked</p>}
-              {todayOverview.tasksDue === 0 && todayOverview.routinesDue === 0 && todayOverview.weeklyRoutinesTotal === 0 && <p className="mt-2 text-xs text-secondary">Your day is open. Choose what matters most.</p>}
-              {todayOverview.weeklyRoutinesTotal > 0 && <p className="mt-3 text-xs text-secondary">This week · {todayOverview.weeklyRoutinesCompleted} of {todayOverview.weeklyRoutinesTotal} routines checked</p>}
             </section>
 
             {/* Active Goals Summary */}
-            <section className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('goals')}>
+            <section className="today-section-goals lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('goals')}>
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-[10px] font-bold uppercase tracking-wider lifeos-accent-text">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
                 <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all →</button>
@@ -1987,7 +2045,7 @@ export default function App() {
             </section>
 
             {/* Financial Overview Card */}
-            <div className="today-money-summary lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
+            <div className="today-money-summary today-section-money lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Money this month</h3>
                 <button onClick={() => navigateTo('finance')} className="min-h-11 text-xs lifeos-accent-text font-semibold">Details &rarr;</button>
@@ -2009,10 +2067,10 @@ export default function App() {
             </div>
 
             {/* Today's Habits Summary */}
-            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('habits')}>
+            <div className="today-habit-summary lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('habits')}>
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold">Habits Today</h3>
-                <button onClick={() => navigateTo('habits')} className="text-xs lifeos-accent-text font-semibold">Manage</button>
+                <div><p className="type-eyebrow">DAILY ROUTINES</p><h3 className="text-sm font-semibold">Habits today</h3><p className="type-caption text-secondary">{todayOverview.routinesDue ? `${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} checked` : 'A small routine, when you’re ready.'}</p></div>
+                <div className="today-habit-actions"><button type="button" onClick={() => openCreateForm('habit')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Add habit</button><button type="button" onClick={() => navigateTo('habits')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">All habits</button></div>
               </div>
               {habits.length === 0 ? (
                 <div className="today-inline-empty"><p>No habits to check in yet. Add one when you’re ready.</p></div>
@@ -2047,16 +2105,16 @@ export default function App() {
             </div>
 
             {/* Future dated tasks are separate from today's agenda. */}
-            <section className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
+            <section className="today-upcoming-section lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
               {dashboardUpcomingTasks.length === 0 ? <p className="today-inline-empty">No upcoming tasks. Add a date to a task to plan ahead.</p> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
             </section>
 
             {/* Pending Tasks */}
-            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('agenda')}>
+            <section className="today-agenda lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('agenda')} aria-labelledby="today-agenda-title">
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold">Today's Agenda</h3>
-                <button onClick={() => navigateTo('planner')} className="text-xs lifeos-accent-text font-semibold">All Tasks</button>
+                <div><p className="type-eyebrow">DUE TODAY</p><h3 id="today-agenda-title" className="text-sm font-semibold">Your tasks</h3></div>
+                <button onClick={() => navigateTo('planner')} className="min-h-11 rounded-lg px-2 text-xs lifeos-accent-text font-semibold">Open Plan</button>
               </div>
               {dashboardTasks.length === 0 ? (
                 <div className="today-inline-empty"><p>No tasks due today. Your day is open.</p></div>
@@ -2064,9 +2122,8 @@ export default function App() {
                 <div className="space-y-2">
                   {dashboardTasks.map(t => {
                     const status = getTaskStatus(t, clockNow);
-                    return <div key={t.id} className="lifeos-panel flex items-center justify-between rounded-xl border p-3" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : 'var(--stroke)' }}>
-                      <div className="flex items-center gap-3">
-                        <label className="flex min-h-11 min-w-11 items-center justify-center">
+                    return <div key={t.id} className={`today-task-row ui-interactive-row${status === 'Overdue' ? ' is-overdue' : ''}`}>
+                        <label className="today-task-check" aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}>
                           <input
                             type="checkbox"
                             aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}
@@ -2082,22 +2139,20 @@ export default function App() {
                             style={{ accentColor: 'var(--accent)' }}
                           />
                         </label>
-                        <div>
-                          <p className="text-sm font-medium">{t.title}</p>
-                          <p className="text-[10px] text-secondary">{formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ''}</p>
-                          <div className="mt-1 flex flex-wrap gap-1"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.priority === 'Urgent' ? 'lifeos-tint text-[var(--danger)]' : t.priority === 'High' ? 'lifeos-tint text-[var(--warning)]' : 'lifeos-raised text-secondary'}`}>{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${status === 'Overdue' ? 'lifeos-tint text-[var(--danger)]' : status === 'Completed' ? 'lifeos-tint text-[var(--success)]' : 'lifeos-raised text-secondary'}`}>{status}</span></div>
-                        </div>
-                      </div>
+                        <button type="button" onClick={() => { setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
+                          <span className={`today-task-title${t.completed ? ' is-complete' : ''}`}>{t.title}</span>
+                          <span className="today-task-meta">{t.dueTime ? formatClockTime(t.dueTime) : 'Due today'} · {status} · {t.priority} priority</span>
+                        </button>
                     </div>
                   })}
                 </div>
               )}
-            </div>
+            </section>
           </div>
         )} />
 
         {/* VIEW 2: FINANCE */}
-        <RetainedScreen active={activeTab === 'life'} retainInactive id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+        <RetainedScreen active={activeTab === 'life'} id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
           habits={lifeHubHabits}
           goals={lifeHubGoals}
           routinesDue={todayOverview.routinesDue}
@@ -2112,7 +2167,7 @@ export default function App() {
           onInsights={() => navigateTo('insights')}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'plan'} retainInactive id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} today={todayKey} now={clockNow}
+        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} today={todayKey} now={clockNow}
           onNavigatePlanner={() => navigateTo('planner')}
           onOpenTask={task => { setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
@@ -2217,12 +2272,13 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
 
                 {/* Filters */}
-                <div className="flex gap-1.5 overflow-x-auto text-xs pb-1">
+                <div role="group" aria-label="Filter transactions by type" className="flex flex-wrap gap-2 text-xs pb-1">
                   {(['all', 'income', 'expense'] as const).map(t => (
                     <button
                       key={t}
                       onClick={() => setFinanceTypeFilter(t)}
-                      className={`px-3 py-1.5 rounded-full capitalize whitespace-nowrap ${financeTypeFilter === t ? 'lifeos-accent-button font-semibold' : 'lifeos-panel text-secondary border border-[var(--stroke)]'}`}
+                      aria-pressed={financeTypeFilter === t}
+                      className={`min-h-11 rounded-full px-3 capitalize ${financeTypeFilter === t ? 'lifeos-accent-button font-semibold' : 'lifeos-panel text-secondary border border-[var(--stroke)]'}`}
                     >
                       {t}
                     </button>
@@ -2432,7 +2488,7 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
                 </div>
               </details>
-              {plannerDetailTask && <article className="lifeos-panel rounded-2xl border border-[var(--accent)] p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Back to agenda</button></div><p className="mt-2 text-sm text-secondary">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-[var(--danger)]' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-3 min-h-10 w-full rounded-lg border border-[var(--stroke)] px-3 text-xs text-secondary">Diagnose reminder</button>{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-xl lifeos-raised p-3 text-[11px]" aria-live="polite"><dt>Eligibility / secure session</dt><dd>{String(taskReminderDiagnostics.eligible)} / {String(taskReminderDiagnostics.sessionReady)}</dd><dt>Scheduled local time</dt><dd>{String(taskReminderDiagnostics.scheduledLocalTime || 'none')}</dd><dt>LifeOS category / Android permission</dt><dd>{String(taskReminderDiagnostics.categoryEnabled)} / {String(taskReminderDiagnostics.androidPermission)}</dd><dt>Scheduling / pending ID</dt><dd>{String(taskReminderDiagnostics.schedulingResult)} / {String(taskReminderDiagnostics.pendingNotificationId || 'none')}</dd><dt>Delivery evidence</dt><dd>{String(taskReminderDiagnostics.deliveryEvidence)}</dd><dt>Schedule mode / state</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.scheduleMode || 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.deliveryState || 'unknown')}</dd><dt>Native requested / accepted</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.scheduleRequestedAt || 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.nativeAcceptedAt || 'unknown')}</dd><dt>Pending / receiver / active observed</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.pendingObservedAt || 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.receiverEventAt || 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.deliveryObservedAt || 'unknown')}</dd><dt>Delivery unconfirmed / tapped</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.deliveryUnconfirmed ?? 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.tappedAt || 'unknown')}</dd><dt>Lifecycle cancellation</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.cancellationReason || taskReminderDiagnostics.cancellationReason || 'none')}</dd><dt>Pending scheduled time</dt><dd>{String(taskReminderDiagnostics.pendingScheduledLocalTime || 'none')} · {String(taskReminderDiagnostics.pendingScheduledUtcTime || 'none')}</dd><dt>Timing limits</dt><dd>{String(taskReminderDiagnostics.deliveryTiming)}</dd><dt>Pending time matches</dt><dd>{String(taskReminderDiagnostics.pendingTimestampMatches)}</dd><dt>Exact alarm capability</dt><dd>{String(taskReminderDiagnostics.exactAlarm)}</dd><dt>Resync failed / cancellation reason</dt><dd>{String(taskReminderDiagnostics.synchronizationFailed)} / {String(taskReminderDiagnostics.cancellationReason || 'none')}</dd></dl>}<div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-[var(--stroke)] text-sm font-semibold lifeos-accent-text">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl lifeos-accent-button text-sm font-semibold">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
+              {plannerDetailTask && <article className="lifeos-panel rounded-2xl border border-[var(--accent)] p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Back to agenda</button></div>{plannerDetailTask.description && <section className="mt-3"><h5 className="type-caption text-secondary">Notes</h5><p className="mt-1 whitespace-pre-wrap text-sm">{plannerDetailTask.description}</p></section>}<div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-[var(--danger)]' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div>{plannerDetailTask.recurring && plannerDetailTask.recurring !== 'None' && <div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Repeats</p><p className="mt-1 font-medium">{plannerDetailTask.recurring}</p></div>}{plannerDetailTask.category && <div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Category</p><p className="mt-1 font-medium">{plannerDetailTask.category}</p></div>}</div><details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No reminder is set. Edit this task to add one.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-[var(--stroke)] text-sm font-semibold lifeos-accent-text">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl lifeos-accent-button text-sm font-semibold">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
             {visiblePlannerTasks.length === 0 ? (
               <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
             ) : (
@@ -2733,7 +2789,7 @@ export default function App() {
       )}
 
       {/* Floating Bottom Nav */}
-      <nav aria-label="Main navigation" className="lifeos-nav fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-4 border-t px-2 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
+      <nav aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto grid grid-cols-4 border-t px-2 pt-2 backdrop-blur">
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, life: Leaf })[icon];
           const isSelected = primaryDestinationForTab(activeTab) === tab;

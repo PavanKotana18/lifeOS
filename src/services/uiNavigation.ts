@@ -12,12 +12,10 @@ export type RetainedScreenTransition = 'prepare' | 'running' | null;
 
 export function retainedScreenTransitionState(
   active: boolean,
-  exiting: boolean,
   phase: RetainedScreenTransition,
-): 'enter-prepare' | 'entering' | 'active' | 'exit-prepare' | 'exiting' | 'inactive' {
-  if (active) return phase === 'prepare' ? 'enter-prepare' : phase === 'running' ? 'entering' : 'active';
-  if (exiting) return phase === 'prepare' ? 'exit-prepare' : 'exiting';
-  return 'inactive';
+): 'enter-prepare' | 'entering' | 'active' | 'inactive' {
+  if (!active) return 'inactive';
+  return phase === 'prepare' ? 'enter-prepare' : phase === 'running' ? 'entering' : 'active';
 }
 
 /** Keep scroll memory distinct for nested destinations that share a primary tab. */

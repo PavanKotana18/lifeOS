@@ -50,7 +50,7 @@ assert.match(app, /const task = \(await StorageService\.tasks\.getAll\(\)\)\.fin
 assert.match(app, /That reminder no longer has an available task/, 'deleted destinations have a graceful fallback');
 assert.match(app, /processPendingTaskNotification\(\)/, 'pending task taps are retried after session restoration');
 assert.match(service, /diagnoseTaskReminder/);
-assert.match(app, /Diagnose reminder/);
+assert.match(app, /Check reminder status/);
 assert.match(app, /sessionReady: sessionManager\.isUnlocked\(\) && isEncryptedStorageActivated\(\)/, 'task diagnostic reports the encrypted-session prerequisite without record content');
 assert.match(app, /capability: 'initializing'/, 'initial diagnostics do not claim that the native plugin is absent before a probe');
 assert.match(app, /notificationDiagnostics\.capability === 'unavailable'/, 'unavailable state is only rendered after the asynchronous capability probe');

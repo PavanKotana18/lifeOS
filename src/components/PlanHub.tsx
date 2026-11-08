@@ -1,4 +1,4 @@
-import { CalendarDays, ChevronRight, CircleCheck, ListFilter, Search } from 'lucide-react';
+import { CalendarDays, ChevronRight, CircleCheck } from 'lucide-react';
 import type { Task } from '../types';
 import { getTaskStatus, sortTasksBySchedule } from '../services/domainUtils';
 
@@ -40,8 +40,8 @@ export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTa
             <button type="button" onClick={() => onOpenTask(task)} className="plan-hub-task-open">
               <span className="plan-hub-row-title">{task.title}</span>
               <span className="plan-hub-row-meta">{status === 'Overdue' ? 'Overdue · ' : ''}{task.dueDate ? task.dueDate === today ? 'Today' : task.dueDate : 'No date'}{task.dueTime ? ` · ${task.dueTime}` : task.dueDate && !task.dueTime ? ' · end of day' : ''}{task.recurring && task.recurring !== 'None' ? ` · ${task.recurring}` : ''}</span>
+              <ChevronRight size={17} aria-hidden="true" />
             </button>
-            <button type="button" onClick={() => onOpenTask(task)} aria-label={`Open ${task.title} details`} className="plan-hub-task-detail"><ChevronRight size={17} aria-hidden="true" /></button>
           </li>;
         })}
       </ul> : <div className="plan-hub-empty"><CircleCheck size={19} aria-hidden="true" /><div><strong>No open tasks</strong><span>Add a task whenever you want to make room for something.</span></div></div>}
@@ -50,6 +50,5 @@ export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTa
     </section>
 
     <button type="button" onClick={onOpenGoals} className="plan-hub-goals-link"><span><strong>Working toward a longer-term goal?</strong><small>Your goals and milestones are in Life.</small></span><ChevronRight size={17} aria-hidden="true" /></button>
-    <button type="button" onClick={() => onSelectRange('upcoming')} className="plan-hub-routines type-body"><span className="flex items-center gap-2"><ListFilter size={16} aria-hidden="true" />Review the next week</span><span aria-hidden="true">→</span></button>
   </section>;
 }

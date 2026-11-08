@@ -1,4 +1,4 @@
-import { ArrowRight, Check, ChevronRight, Lightbulb, Plus, Target } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, Lightbulb, Plus } from 'lucide-react';
 
 type HabitItem = { id: string; name: string; completedToday: boolean; currentStreak: number };
 type GoalItem = { id: string; title: string; progress: number; current: string; target: string; targetDate: string; completedMilestones: number; milestoneCount: number };
@@ -30,12 +30,11 @@ export default function LifeHub({ habits, goals, completedRoutines, routinesDue,
         <div><p className="type-eyebrow">SMALL, REPEATABLE STEPS</p><h3 id="life-routines-title" className="type-section-title">Habits</h3><p className="type-caption text-secondary">{routinesDue ? `${completedRoutines} of ${routinesDue} checked today` : 'Pick up a routine when it fits your day.'}{weeklyTotal > 0 ? ` · ${weeklyCompleted} of ${weeklyTotal} this week` : ''}</p></div>
         <button type="button" onClick={onCreateHabit} className="life-add-button" aria-label="Add a habit"><Plus size={17} aria-hidden="true" /><span>Add</span></button>
       </div>
-      {habits.length ? <ul className="life-habit-list">{habits.slice(0, 4).map(habit => <li key={habit.id} className="life-habit-row ui-interactive-row">
+      {habits.length ? <ul className="life-habit-list">{habits.slice(0, 4).map(habit => <li key={habit.id} className="life-habit-row">
         <button type="button" onClick={() => onCheckIn(habit)} aria-pressed={habit.completedToday} aria-label={`${habit.completedToday ? 'Mark' : 'Complete'} ${habit.name} ${habit.completedToday ? 'incomplete' : 'for today'}`} className={`life-habit-check${habit.completedToday ? ' is-complete' : ''}`}><Check size={17} aria-hidden="true" /></button>
         <span className="life-habit-copy"><strong className={habit.completedToday ? 'is-complete' : ''}>{habit.name}</strong><small>{habit.currentStreak ? `${habit.currentStreak} day streak` : 'Start with one check-in'}</small></span>
-        <ChevronRight size={16} aria-hidden="true" className="life-row-chevron" />
-      </li>)}</ul> : <div className="life-empty-state"><p>No routines yet. Create one that feels useful in your day.</p><button type="button" onClick={onCreateHabit} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">Create a habit</button></div>}
-      {habits.length > 4 && <button type="button" onClick={onHabits} className="life-section-more">All habits <ArrowRight size={15} aria-hidden="true" /></button>}
+      </li>)}</ul> : <div className="life-empty-state"><p>No routines yet.</p><span>Create one that feels useful in your day with Add habit above.</span></div>}
+      <button type="button" onClick={onHabits} className="life-section-more">View all habits <ArrowRight size={15} aria-hidden="true" /></button>
     </section>
 
     <section className="life-goal-section" aria-labelledby="life-goals-title">
@@ -50,7 +49,7 @@ export default function LifeHub({ habits, goals, completedRoutines, routinesDue,
           <span className="life-goal-meta">{goal.current} / {goal.target}<span>{goal.completedMilestones} of {goal.milestoneCount} milestones</span></span>
           <span className="life-goal-date">Target · {goal.targetDate}</span>
         </button>
-      </li>)}</ul> : <div className="life-empty-state"><p>Keep a longer-term outcome here when you’re ready.</p><button type="button" onClick={onCreateGoal} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">Create a goal</button></div>}
+      </li>)}</ul> : <div className="life-empty-state"><p>No goals yet.</p><span>Add a longer-term outcome whenever you’re ready.</span></div>}
       <button type="button" onClick={onGoals} className="life-section-more">All goals and milestones <ArrowRight size={15} aria-hidden="true" /></button>
     </section>
 

@@ -4,7 +4,9 @@ export type TodayLayout = { order: TodaySectionId[]; hidden: TodaySectionId[] };
 
 export const DEFAULT_TODAY_LAYOUT: TodayLayout = {
   order: [...TODAY_SECTION_ORDER],
-  hidden: ['goals'],
+  // Today opens on immediate work. Supporting financial and future summaries
+  // remain available through Customize without crowding a first-use screen.
+  hidden: ['money', 'upcoming', 'goals'],
 };
 
 export const TODAY_SECTION_LABELS: Record<TodaySectionId, string> = {

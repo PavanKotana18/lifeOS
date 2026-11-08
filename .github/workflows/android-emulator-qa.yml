@@ -4,7 +4,7 @@ on:
   push:
     branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos2-release-candidate-20261108, integration/lifeos-ui2-candidate-20261108, feature/lifeos-ui2-final-product-refinement-20261108]
   pull_request:
-    branches: [main, qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107]
+    branches: [main, qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107, feature/lifeos-ui2-final-product-refinement-20261108]
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -18,8 +18,12 @@ jobs:
   build-test-apks:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -118,7 +122,7 @@ jobs:
           echo "Verified candidate APK package=com.lifeos.personal version=$VERSION versionCode=$VERSION_CODE signer_sha256=$ACTUAL apk_sha256=$SHA256"
           {
             echo "### Signed candidate Debug APK"
-            echo "- Candidate commit: $GITHUB_SHA"
+            echo "- Candidate commit: $CANDIDATE_SHA"
             echo "- Package: com.lifeos.personal"
             echo "- Version: $VERSION"
             echo "- Version code: $VERSION_CODE"
@@ -128,7 +132,7 @@ jobs:
       - name: Upload signed candidate Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: LifeOS-signed-debug-apk-${{ github.sha }}
+          name: LifeOS-signed-debug-apk-${{ github.event.pull_request.head.sha || github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
@@ -136,7 +140,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: LifeOS-candidate-build-validation-${{ github.sha }}
+          name: LifeOS-candidate-build-validation-${{ github.event.pull_request.head.sha || github.sha }}
           path: candidate-ci-evidence/**
           if-no-files-found: warn
           retention-days: 30
@@ -158,6 +162,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -219,6 +225,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -242,7 +250,7 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            ANDROID_TEST_EXCLUSION_FILE=android/qa/instrumentation-exclusions-api34-35.txt ANDROID_EXPECTED_TESTS=17 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+            ANDROID_TEST_EXCLUSION_FILE=android/qa/instrumentation-exclusions-api34-35.txt ANDROID_EXPECTED_TESTS=19 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
       - name: Require all supported API 34 tests and zero skips
         if: success()
         run: |
@@ -254,7 +262,7 @@ jobs:
           skipped = int(report.attrib.get('skipped', '0'))
           errors = int(report.attrib.get('errors', '0'))
           print(f"JUnit tests={tests} failures={failures} skipped={skipped} runner_errors={errors}")
-          expected = 17
+          expected = 19
           print(f"Expected={expected} executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped} runner_errors={errors}")
           if tests != expected or failures or skipped or errors:
               sys.exit(1)
@@ -288,6 +296,8 @@ jobs:
         attempt: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -355,7 +365,7 @@ jobs:
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M
-            expected-tests: 12
+            expected-tests: 14
             required-test: CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning
             exclusion-file: android/qa/instrumentation-exclusions-api29.txt
           - id: standard-api34
@@ -363,7 +373,7 @@ jobs:
             profile: pixel_6
             ram-size: 3072M
             heap-size: 512M
-            expected-tests: 17
+            expected-tests: 19
             required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
           - id: large-api35
@@ -371,11 +381,13 @@ jobs:
             profile: pixel_7_pro
             ram-size: 4096M
             heap-size: 512M
-            expected-tests: 17
+            expected-tests: 19
             required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20

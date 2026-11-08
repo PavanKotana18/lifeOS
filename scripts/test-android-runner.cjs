@@ -16,10 +16,10 @@ const declaredTests = fs.readdirSync(pathToAndroidTests)
     return [...source.matchAll(/@Test\s+(?:public\s+)?void\s+(\w+)\s*\(/g)]
       .map(match => `com.lifeos.personal.${file.slice(0, -5)}#${match[1]}`);
   });
-assert.equal(declaredTests.length, 19, 'Android test inventory changed; update the hosted expected counts deliberately');
+assert.equal(declaredTests.length, 21, 'Android test inventory changed; update the hosted expected counts deliberately');
 for (const [inventory, expectedCount, requiredTest] of [
-  ['instrumentation-exclusions-api29.txt', 12, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
-  ['instrumentation-exclusions-api34-35.txt', 17, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
+  ['instrumentation-exclusions-api29.txt', 14, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
+  ['instrumentation-exclusions-api34-35.txt', 19, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
 ]) {
   const exclusionPath = path.resolve(__dirname, `../android/qa/${inventory}`);
   const exclusions = fs.readFileSync(exclusionPath, 'utf8').trim().split(/\r?\n/).filter(Boolean);

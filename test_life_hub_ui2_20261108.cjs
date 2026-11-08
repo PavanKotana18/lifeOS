@@ -33,11 +33,13 @@ assert.match(markup, /45%/);
 assert.match(markup, /role="progressbar" aria-label="Finish a course progress"/);
 assert.match(markup, /1 of 3 milestones/);
 assert.match(markup, /Life insights/);
+assert.match(markup, /View all habits/);
 assert.doesNotMatch(markup, /lazy|failure|behind|missed/i, 'Life copy stays considerate and nonjudgmental');
 
 const empty = renderToStaticMarkup(React.createElement(LifeHub, { ...props, habits: [], goals: [], routinesDue: 0, completedRoutines: 0, weeklyTotal: 0, weeklyCompleted: 0 }));
 assert.match(empty, /No routines yet/);
-assert.match(empty, /Create a goal/);
+assert.match(empty, /No goals yet/);
+assert.match(empty, /Add a goal/);
 assert.match(empty, /All goals and milestones/);
 
 const app = fs.readFileSync('src/App.tsx', 'utf8');
