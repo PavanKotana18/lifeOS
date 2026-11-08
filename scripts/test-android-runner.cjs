@@ -5,6 +5,28 @@ const os = require('node:os');
 const path = require('node:path');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const pathToAndroidTests = path.resolve(__dirname, '../android/app/src/androidTest/java/com/lifeos/personal');
+const instrumentationWorkflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/android-emulator-qa.yml'), 'utf8');
+assert.match(instrumentationWorkflow, /pull_request:\s*\n\s+branches:\s*\[[^\]]*\bmain\b/,
+  'candidate PRs targeting main must run Android QA');
+const declaredTests = fs.readdirSync(pathToAndroidTests)
+  .filter(file => file.endsWith('.java'))
+  .flatMap(file => {
+    const source = fs.readFileSync(path.join(pathToAndroidTests, file), 'utf8');
+    return [...source.matchAll(/@Test\s+(?:public\s+)?void\s+(\w+)\s*\(/g)]
+      .map(match => `com.lifeos.personal.${file.slice(0, -5)}#${match[1]}`);
+  });
+assert.equal(declaredTests.length, 19, 'Android test inventory changed; update the hosted expected counts deliberately');
+for (const [inventory, expectedCount] of [
+  ['instrumentation-exclusions-api29.txt', 12],
+  ['instrumentation-exclusions-api34-35.txt', 17],
+]) {
+  const exclusionPath = path.resolve(__dirname, `../android/qa/${inventory}`);
+  const exclusions = fs.readFileSync(exclusionPath, 'utf8').trim().split(/\r?\n/).filter(Boolean);
+  assert.equal(new Set(exclusions).size, exclusions.length, `${inventory} contains duplicates`);
+  assert.ok(exclusions.every(test => declaredTests.includes(test)), `${inventory} contains an unknown test`);
+  assert.equal(declaredTests.length - exclusions.length, expectedCount, `${inventory} does not match its expected unattended count`);
+}
 const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/workstream-integration.yml'), 'utf8');
 assert.match(workflow, /test-filter:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
   'API 29 filter must name the fully qualified instrumentation class');
@@ -13,10 +35,16 @@ assert.match(workflow, /required-test:\s*\"com\.lifeos\.personal\.WebViewCompati
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifeos-runner-contract-'));
 try {
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
+  const excluded = path.join(root, 'excluded-tests.txt');
+  fs.writeFileSync(excluded, 'com.lifeos.personal.BiometricDeviceAcceptanceTest#actualSetupCancelConcurrentResumeRecreateAndUnlock\n');
   fs.writeFileSync(path.join(bin, 'adb'), `#!/usr/bin/env node
 const a=process.argv.slice(2).join(' '),mode=process.env.QA_STUB_MODE;
+require('node:fs').appendFileSync(process.env.QA_COMMAND_LOG, a+'\\n');
 if(a.includes('getprop ro.kernel.qemu')) console.log(mode==='physical'?'0':'1');
+else if(a.includes('getprop ro.build.version.sdk')) console.log('34');
 else if(a.includes('pm list packages')) { if(mode==='existing') console.log('package:com.lifeos.personal'); }
+else if(a.includes('dumpsys activity exit-info')) console.log('synthetic process exit information');
+else if(a.includes('logcat -b all -d')) console.log('synthetic crash log');
 else if(a.includes('shell am instrument')) {
  console.log('INSTRUMENTATION_STATUS: numtests=1\\nINSTRUMENTATION_STATUS: class=com.lifeos.personal.LifeOSLaunchSmokeTest\\nINSTRUMENTATION_STATUS: test=activityCreatesLocalCapacitorWebView\\nINSTRUMENTATION_STATUS_CODE: 1');
  if(mode==='crash') console.log('INSTRUMENTATION_RESULT: shortMsg=Process crashed.\\nINSTRUMENTATION_CODE: 0');
@@ -27,7 +55,7 @@ else if(a.includes('shell am instrument')) {
     const out = path.join(root, mode);
     const result = spawnSync('bash', ['scripts/run-android-instrumentation.sh', 'synthetic-app.apk', 'synthetic-test.apk', out], {
       cwd: path.resolve(__dirname, '..'), timeout: 30000, encoding: 'utf8',
-      env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, QA_STUB_MODE: mode, ANDROID_SERIAL: 'emulator-5554', ANDROID_TEST_FILTER: '', ANDROID_REQUIRED_TEST: '' },
+      env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, QA_STUB_MODE: mode, QA_COMMAND_LOG: path.join(out, 'adb-commands.txt'), ANDROID_SERIAL: 'emulator-5554', ANDROID_TEST_FILTER: '', ANDROID_REQUIRED_TEST: '', ANDROID_TEST_EXCLUSION_FILE: excluded, ANDROID_EXPECTED_TESTS: '1' },
     });
     assert.ifError(result.error);
     assert.equal(result.status === 0, mode === 'pass', `${mode}: ${result.stderr}`);
@@ -35,7 +63,16 @@ else if(a.includes('shell am instrument')) {
     assert.equal(fs.existsSync(path.join(out, 'webview-provider.txt')), admitted, `${mode}: provider capture boundary`);
     assert.equal(fs.existsSync(path.join(out, 'logcat-errors.txt')), admitted, `${mode}: log capture boundary`);
     assert.equal(fs.existsSync(path.join(out, 'failure.png')), mode === 'crash', `${mode}: screenshot capture boundary`);
-    if (mode === 'crash') assert.match(fs.readFileSync(path.join(out, 'junit.xml'), 'utf8'), /errors="[1-9]/);
+    if (admitted) {
+      assert.match(fs.readFileSync(path.join(out, 'test-inventory.txt'), 'utf8'), /expected_tests=1/);
+      assert.match(fs.readFileSync(path.join(out, 'adb-commands.txt'), 'utf8'), /-e notTestFile \/sdcard\/Download\/lifeos-test-exclusions\.txt/);
+    }
+    if (mode === 'crash') {
+      assert.match(fs.readFileSync(path.join(out, 'junit.xml'), 'utf8'), /errors="[1-9]/);
+      assert.match(fs.readFileSync(path.join(out, 'logcat-errors.txt'), 'utf8'), /synthetic crash log/);
+      assert.match(fs.readFileSync(path.join(out, 'app-exit-info.txt'), 'utf8'), /synthetic process exit information/);
+      assert.match(fs.readFileSync(path.join(out, 'instrumentation-exit-info.txt'), 'utf8'), /synthetic process exit information/);
+    }
     console.log(`PASS: Android runner ${mode} contract (simulated ADB only)`);
   }
 } finally {

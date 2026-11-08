@@ -1,0 +1,2 @@
+com.lifeos.personal.BiometricDeviceAcceptanceTest#actualSetupCancelConcurrentResumeRecreateAndUnlock
+com.lifeos.personal.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage

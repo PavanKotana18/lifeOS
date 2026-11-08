@@ -7,6 +7,8 @@ OUT=${3:-qa-emulator-evidence}
 SERIAL=${ANDROID_SERIAL:-emulator-5554}
 TEST_FILTER=${ANDROID_TEST_FILTER:-}
 REQUIRED_TEST=${ANDROID_REQUIRED_TEST:-${TEST_FILTER:-LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView}}
+EXCLUDED_TESTS_FILE=${ANDROID_TEST_EXCLUSION_FILE:-}
+EXPECTED_TESTS=${ANDROID_EXPECTED_TESTS:-unconfigured}
 mkdir -p "$OUT"
 SAFE_EMULATOR=false
 
@@ -18,8 +20,20 @@ capture_evidence() {
   # or a physical handset. Diagnostics below are limited to the fresh QA AVD.
   if [[ "$SAFE_EMULATOR" != true ]]; then exit "$result"; fi
   timeout 8s adb -s "$SERIAL" shell dumpsys webviewupdate > "$OUT/webview-provider.txt" 2>&1
-  timeout 8s adb -s "$SERIAL" logcat -d -v threadtime AndroidRuntime:E System.err:E chromium:E LifeOSAcceptance:I '*:S' > "$OUT/logcat-errors.txt" 2>&1
+  timeout 10s adb -s "$SERIAL" logcat -b all -d -v threadtime AndroidRuntime:E System.err:E chromium:E ActivityManager:E ActivityTaskManager:E libc:E DEBUG:E LifeOSAcceptance:I '*:S' > "$OUT/logcat-errors.txt" 2>&1
   if [[ "$result" -ne 0 ]]; then
+    {
+      printf 'serial=%s\n' "$SERIAL"
+      printf 'sdk='; timeout 5s adb -s "$SERIAL" shell getprop ro.build.version.sdk
+      printf 'app_pid='; timeout 5s adb -s "$SERIAL" shell pidof com.lifeos.personal
+      printf 'instrumentation_pid='; timeout 5s adb -s "$SERIAL" shell pidof com.lifeos.personal.test
+      timeout 8s adb -s "$SERIAL" shell ps -A | grep -E 'com\.lifeos\.personal(:|$)|com\.lifeos\.personal\.test' || true
+    } > "$OUT/process-state.txt" 2>&1
+    sdk=$(timeout 5s adb -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')
+    if [[ "$sdk" =~ ^[0-9]+$ ]] && (( sdk >= 30 )); then
+      timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info com.lifeos.personal > "$OUT/app-exit-info.txt" 2>&1
+      timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info com.lifeos.personal.test > "$OUT/instrumentation-exit-info.txt" 2>&1
+    fi
     timeout 8s adb -s "$SERIAL" exec-out screencap -p > "$OUT/failure.png" 2> "$OUT/screenshot-error.txt"
     timeout 5s adb devices -l > "$OUT/adb-devices.txt" 2>&1
   fi
@@ -52,10 +66,26 @@ adb -s "$SERIAL" shell pm path com.lifeos.personal
 adb -s "$SERIAL" shell pm list instrumentation
 adb -s "$SERIAL" logcat -c
 
+{
+  printf 'expected_tests=%s\n' "$EXPECTED_TESTS"
+  printf 'include_filter=%s\n' "${TEST_FILTER:-all}"
+  printf 'excluded_tests_file=%s\n' "${EXCLUDED_TESTS_FILE:-none}"
+  if [[ -n "$EXCLUDED_TESTS_FILE" ]]; then
+    test -s "$EXCLUDED_TESTS_FILE"
+    cat "$EXCLUDED_TESTS_FILE"
+  fi
+} > "$OUT/test-inventory.txt"
+
 set +e
 instrument_args=(-w -r)
 if [[ -n "$TEST_FILTER" ]]; then
   instrument_args=(-e class "$TEST_FILTER" "${instrument_args[@]}")
+fi
+if [[ -n "$EXCLUDED_TESTS_FILE" ]]; then
+  test -s "$EXCLUDED_TESTS_FILE"
+  REMOTE_EXCLUDED_TESTS_FILE=/sdcard/Download/lifeos-test-exclusions.txt
+  timeout 10s adb -s "$SERIAL" push "$EXCLUDED_TESTS_FILE" "$REMOTE_EXCLUDED_TESTS_FILE"
+  instrument_args+=(-e notTestFile "$REMOTE_EXCLUDED_TESTS_FILE")
 fi
 timeout 480s adb -s "$SERIAL" shell am instrument "${instrument_args[@]}" \
   com.lifeos.personal.test/androidx.test.runner.AndroidJUnitRunner \

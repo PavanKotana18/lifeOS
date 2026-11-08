@@ -4,7 +4,7 @@ on:
   push:
     branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos2-release-candidate-20261108]
   pull_request:
-    branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107]
+    branches: [main, qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107]
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -208,7 +208,7 @@ jobs:
           retention-days: 7
 
   android-smoke:
-    needs: [build-test-apks, android-api29-recovery-preflight]
+    needs: [build-test-apks, android-api29-recovery-preflight, android-api34-notification-isolation]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -236,8 +236,8 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
-      - name: Require the complete Android smoke suite with zero skipped tests
+            ANDROID_TEST_EXCLUSION_FILE=android/qa/instrumentation-exclusions-api34-35.txt ANDROID_EXPECTED_TESTS=17 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+      - name: Require all supported API 34 tests and zero skips
         if: success()
         run: |
           python3 - <<'PY'
@@ -245,21 +245,22 @@ jobs:
           report = ET.parse('qa-emulator-evidence/junit.xml').getroot()
           tests = int(report.attrib.get('tests', '0'))
           failures = int(report.attrib.get('failures', '0'))
-          print(f"JUnit tests={tests} failures={failures} skipped={report.attrib.get('skipped', '0')}")
           skipped = int(report.attrib.get('skipped', '0'))
-          expected = 19
-          print(f"Expected={expected} executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped}")
-          if tests != expected or failures or skipped:
+          errors = int(report.attrib.get('errors', '0'))
+          print(f"JUnit tests={tests} failures={failures} skipped={skipped} runner_errors={errors}")
+          expected = 17
+          print(f"Expected={expected} executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped} runner_errors={errors}")
+          if tests != expected or failures or skipped or errors:
               sys.exit(1)
           PY
       - name: Capture sanitized emulator failure evidence
         if: failure()
         run: |
           mkdir -p qa-emulator-evidence
-          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-emulator-evidence/boot-state.txt 2>&1
-          { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
-          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-emulator-evidence/logcat-errors.txt 2>&1
-          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
+          [[ -s qa-emulator-evidence/boot-state.txt ]] || { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-emulator-evidence/boot-state.txt 2>&1
+          [[ -s qa-emulator-evidence/adb-devices.txt ]] || { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
+          [[ -s qa-emulator-evidence/logcat-errors.txt ]] || { timeout 8s adb -s emulator-5554 logcat -b all -d -v threadtime AndroidRuntime:E System.err:E chromium:E ActivityManager:E ActivityTaskManager:E libc:E DEBUG:E '*:S' || true; } > qa-emulator-evidence/logcat-post-action.txt 2>&1
+          [[ -s qa-emulator-evidence/failure.png ]] || { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
       - name: Upload JUnit and failure evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -269,6 +270,59 @@ jobs:
             qa-emulator-evidence/**
           if-no-files-found: warn
           retention-days: 7
+
+  android-api34-notification-isolation:
+    needs: [build-test-apks, android-api29-recovery-preflight]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - name: Enable KVM access for this ephemeral runner
+        run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: lifeos-api34-notification-isolation
+          cores: 2
+          ram-size: 3072M
+          heap-size: 512M
+          emulator-boot-timeout: 300
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            ANDROID_TEST_FILTER='com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#backgroundedSyntheticTaskReminderIsActuallyPosted' ANDROID_REQUIRED_TEST='LocalNotificationBridgeAcceptanceTest#backgroundedSyntheticTaskReminderIsActuallyPosted' ANDROID_EXPECTED_TESTS=1 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-notification-isolation
+      - name: Require the isolated background reminder test to complete
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          report = ET.parse('qa-notification-isolation/junit.xml').getroot()
+          tests = int(report.attrib.get('tests', '0'))
+          failures = int(report.attrib.get('failures', '0'))
+          skipped = int(report.attrib.get('skipped', '0'))
+          errors = int(report.attrib.get('errors', '0'))
+          print(f"API 34 isolated notification test: expected=1 executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped} runner_errors={errors}")
+          if tests != 1 or failures or skipped or errors:
+              sys.exit(1)
+          PY
+      - name: Upload isolated notification crash evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-api34-notification-isolation-evidence
+          path: qa-notification-isolation/**
+          if-no-files-found: warn
+          retention-days: 14
 
   android-device-matrix:
     if: needs.android-smoke.result == 'success'
@@ -285,16 +339,22 @@ jobs:
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M
+            expected-tests: 12
+            exclusion-file: android/qa/instrumentation-exclusions-api29.txt
           - id: standard-api34
             api-level: 34
             profile: pixel_6
             ram-size: 3072M
             heap-size: 512M
+            expected-tests: 17
+            exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
           - id: large-api35
             api-level: 35
             profile: pixel_7_pro
             ram-size: 4096M
             heap-size: 512M
+            expected-tests: 17
+            exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -320,8 +380,8 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
-      - name: Require the complete Android suite with zero skipped tests
+            ANDROID_TEST_EXCLUSION_FILE='${{ matrix.exclusion-file }}' ANDROID_EXPECTED_TESTS='${{ matrix.expected-tests }}' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+      - name: Require every supported API matrix test with zero skips
         if: success()
         run: |
           python3 - <<'PY'
@@ -329,21 +389,22 @@ jobs:
           report = ET.parse('qa-emulator-evidence/junit.xml').getroot()
           tests = int(report.attrib.get('tests', '0'))
           failures = int(report.attrib.get('failures', '0'))
-          print("${{ matrix.id }} JUnit tests={} failures={} skipped={}".format(tests, failures, report.attrib.get('skipped', '0')))
           skipped = int(report.attrib.get('skipped', '0'))
-          expected = 19
-          print("Expected={} executed={} passed={} failed={} skipped={}".format(expected, tests, tests-failures-skipped, failures, skipped))
-          if tests != expected or failures or skipped:
+          errors = int(report.attrib.get('errors', '0'))
+          print("${{ matrix.id }} JUnit tests={} failures={} skipped={} runner_errors={}".format(tests, failures, skipped, errors))
+          expected = int("${{ matrix.expected-tests }}")
+          print("Expected={} executed={} passed={} failed={} skipped={} runner_errors={}".format(expected, tests, tests-failures-skipped, failures, skipped, errors))
+          if tests != expected or failures or skipped or errors:
               sys.exit(1)
           PY
       - name: Capture sanitized emulator failure evidence
         if: failure()
         run: |
           mkdir -p qa-emulator-evidence
-          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-emulator-evidence/boot-state.txt 2>&1
-          { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
-          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-emulator-evidence/logcat-errors.txt 2>&1
-          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
+          [[ -s qa-emulator-evidence/boot-state.txt ]] || { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-emulator-evidence/boot-state.txt 2>&1
+          [[ -s qa-emulator-evidence/adb-devices.txt ]] || { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
+          [[ -s qa-emulator-evidence/logcat-errors.txt ]] || { timeout 8s adb -s emulator-5554 logcat -b all -d -v threadtime AndroidRuntime:E System.err:E chromium:E ActivityManager:E ActivityTaskManager:E libc:E DEBUG:E '*:S' || true; } > qa-emulator-evidence/logcat-post-action.txt 2>&1
+          [[ -s qa-emulator-evidence/failure.png ]] || { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
       - name: Upload JUnit and failure evidence
         if: always()
         uses: actions/upload-artifact@v4
