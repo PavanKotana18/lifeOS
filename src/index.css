@@ -281,19 +281,40 @@ body {
 .life-destination-copy span { overflow: hidden; color: var(--ink-secondary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
 .life-destination-row > svg:last-child { flex: 0 0 auto; color: var(--ink-muted); }
 
-.plan-hub { display: grid; gap: 1.6rem; }
+.plan-hub { display: grid; gap: 1rem; }
 .plan-hub-heading { display: grid; gap: 0.3rem; }
 .plan-hub-section { min-width: 0; }
 .plan-hub-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding-bottom: 0.65rem; }
 .plan-hub-section-heading > div { min-width: 0; }
-.plan-hub-link { min-height: 44px; flex: 0 0 auto; border-radius: 0.65rem; padding-inline: 0.5rem; color: var(--accent); font-size: 0.875rem; font-weight: 600; }
+.plan-hub-link { display: inline-flex; min-height: 44px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 0.25rem; border-radius: 0.75rem; padding-inline: 0.75rem; font-size: 0.8rem; font-weight: 600; }
 .plan-hub-list { border-top: 1px solid var(--stroke); }
-.plan-hub-row { display: flex; min-width: 0; flex-direction: column; gap: 0.18rem; border-bottom: 1px solid var(--stroke); padding: 0.75rem 0.1rem; }
-.plan-hub-row-title { overflow-wrap: anywhere; font-weight: 500; }
-.plan-hub-row-meta { color: var(--ink-secondary); font-variant-numeric: tabular-nums; }
-.plan-hub-create { width: 100%; margin-top: 0.75rem; border-radius: 0.9rem; }
+.plan-hub-task { display: flex; min-width: 0; min-height: 4.25rem; align-items: center; gap: 0.55rem; border-bottom: 1px solid var(--stroke); }
+.plan-hub-task.is-overdue .plan-hub-row-meta { color: var(--danger); }
+.plan-hub-task-check { display: grid; width: 2.75rem; min-height: 2.75rem; flex: 0 0 auto; place-items: center; }
+.plan-hub-task-check input { width: 1.2rem; height: 1.2rem; accent-color: var(--success); }
+.plan-hub-task-open { display: grid; min-width: 0; min-height: 3.75rem; flex: 1; align-content: center; gap: 0.15rem; text-align: left; }
+.plan-hub-task-detail { display: grid; width: 2.75rem; min-height: 2.75rem; flex: 0 0 auto; place-items: center; color: var(--ink-muted); }
+.plan-hub-row-title { display: block; overflow-wrap: anywhere; font-size: 0.9rem; font-weight: 550; line-height: 1.35; }
+.plan-hub-row-meta { display: block; color: var(--ink-secondary); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+.plan-date-nav { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 0.45rem; }
+.plan-date-nav button { display: inline-flex; min-height: 2.75rem; align-items: center; gap: 0.35rem; border: 1px solid var(--stroke); border-radius: 999px; background: var(--surface); padding-inline: 0.8rem; color: var(--ink-secondary); font-size: 0.75rem; font-weight: 600; }
+.plan-date-nav button:first-child { border-color: var(--accent); color: var(--accent); }
+.plan-hub-empty { display: flex; min-height: 5.25rem; align-items: center; gap: 0.75rem; border-block: 1px solid var(--stroke); color: var(--success); }
+.plan-hub-empty div { display: grid; gap: 0.15rem; color: var(--ink); }
+.plan-hub-empty span { color: var(--ink-secondary); font-size: 0.75rem; }
+.plan-hub-all { display: flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: 0.3rem; color: var(--accent); font-size: 0.8rem; font-weight: 600; }
+.plan-hub-goals-link { display: flex; min-height: 4.25rem; align-items: center; justify-content: space-between; gap: 0.75rem; border: 1px solid var(--stroke); border-radius: 1rem; background: var(--surface); padding: 0.75rem 1rem; text-align: left; }
+.plan-hub-goals-link span { display: grid; gap: 0.15rem; }
+.plan-hub-goals-link strong { font-size: 0.8rem; font-weight: 600; }
+.plan-hub-goals-link small { color: var(--ink-secondary); font-size: 0.75rem; }
+.plan-hub-goals-link > svg { flex: 0 0 auto; color: var(--ink-muted); }
 .plan-hub-routines { display: flex; min-height: 48px; align-items: center; justify-content: space-between; border-top: 1px solid var(--stroke); border-bottom: 1px solid var(--stroke); text-align: left; }
-.plan-hub-link:focus-visible, .plan-hub-routines:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+.plan-hub-link:focus-visible, .plan-hub-routines:focus-visible, .plan-date-nav button:focus-visible, .plan-hub-task button:focus-visible, .plan-hub-goals-link:focus-visible, .plan-hub-all:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+.planner-filters { border: 1px solid var(--stroke); border-radius: 0.9rem; background: var(--surface); }
+.planner-filters summary { display: flex; min-height: 2.9rem; align-items: center; gap: 0.45rem; padding-inline: 0.8rem; color: var(--ink-secondary); font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+.planner-filters[open] summary { border-bottom: 1px solid var(--stroke); color: var(--accent); }
+.planner-filter-fields { display: grid; gap: 0.55rem; padding: 0.65rem; }
+.planner-filters summary:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 
 @media (max-width: 360px) {
   .money-home-heading { align-items: start; }

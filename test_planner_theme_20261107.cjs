@@ -16,4 +16,7 @@ assert.match(planner, /min-h-11 min-w-11/);
 assert.match(planner, /text-\[var\(--danger\)\]/);
 assert.match(planner, /text-\[var\(--success\)\]/);
 assert.match(planner, /aria-label="Task details"/);
-console.log('PLANNER THEME: 11 source-level palette, date selection and status checks passed.');
+assert.match(planner, /<details className="planner-filters">[\s\S]*aria-label="Search planner tasks"[\s\S]*aria-label="Task date or status filter"[\s\S]*aria-label="Task priority filter/);
+assert.match(app, /plannerFilter === 'upcoming' \? task\.dueDate > todayKey[\s\S]{0,120}\+ 7/);
+assert.match(app, /onSelectRange=\{range => \{ setPlannerFilter\(range\);[\s\S]*navigateTo\('planner'\)/, 'Plan date shortcuts open their matching planner view');
+console.log('PLANNER THEME: 14 source-level palette, date selection, progressive-filter and status checks passed.');

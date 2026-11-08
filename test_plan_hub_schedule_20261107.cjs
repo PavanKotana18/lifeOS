@@ -33,16 +33,19 @@ assert.deepEqual(input.map(item => item.id), ['late', 'date-only', 'early', 'tom
 assert.deepEqual(sortTasksBySchedule([task('unknown', '', undefined), task('dated', '2026-11-08', '23:00')]).map(item => item.id), ['dated', 'unknown']);
 
 const markup = renderToStaticMarkup(React.createElement(PlanHub, {
-  tasks: input, goals: [], today: '2026-11-07', onNavigate: () => {}, onCreateTask: () => {},
+  tasks: input, today: '2026-11-07', now: new Date('2026-11-07T08:00:00'), onNavigatePlanner: () => {}, onOpenTask: () => {}, onToggleTask: () => {}, onCreateTask: () => {}, onSelectRange: () => {}, onOpenGoals: () => {},
 }));
 assert.ok(markup.indexOf('>early</span>') < markup.indexOf('>late</span>'), 'the Plan screen renders same-day timed tasks chronologically');
-assert.match(markup, /2026-11-07 · Today · 09:00/);
-assert.equal((markup.match(/<li /g) || []).length, 4, 'the Plan screen keeps its four-task summary limit');
-assert.match(markup, /class="plan-hub-row-title type-body"/, 'task content uses the shared readable body scale');
-assert.match(markup, /class="plan-hub-row-meta type-caption"/, 'task metadata uses the shared caption scale');
+assert.match(markup, /Today · 09:00/);
+assert.equal((markup.match(/class="plan-hub-task(?: is-overdue)?"/g) || []).length, 5, 'the Plan screen keeps a concise five-task action list');
+assert.match(markup, /aria-label="Mark early complete"/, 'each task has a directly accessible completion control');
+assert.match(markup, /Choose task dates/);
+assert.match(markup, /Next 7 days/);
+assert.match(markup, /Working toward a longer-term goal\?/);
+assert.doesNotMatch(markup, /Goals<\/h3>/, 'goal management stays in Life instead of being duplicated under Plan');
 assert.doesNotMatch(markup, /truncate/, 'long task and goal titles are not clipped by the Plan summary');
 const dateOnlyMarkup = renderToStaticMarkup(React.createElement(PlanHub, {
-  tasks: [task('date-only-display', '2026-11-07', undefined)], goals: [], today: '2026-11-07', onNavigate: () => {}, onCreateTask: () => {},
+  tasks: [task('date-only-display', '2026-11-07', undefined)], today: '2026-11-07', now: new Date('2026-11-07T08:00:00'), onNavigatePlanner: () => {}, onOpenTask: () => {}, onToggleTask: () => {}, onCreateTask: () => {}, onSelectRange: () => {}, onOpenGoals: () => {},
 }));
-assert.match(dateOnlyMarkup, /2026-11-07 · Today · end of day/);
-console.log('PLAN HUB SCHEDULE: 10 deterministic sorting, readable type hierarchy and production-render checks passed.');
+assert.match(dateOnlyMarkup, /Today · end of day/);
+console.log('PLAN HUB UI 2.0: chronological sorting, task completion, date navigation, goal placement, and accessible row rendering passed.');
