@@ -9,8 +9,8 @@ Status meanings: PASS = executed successfully on the recorded candidate/stage; F
 |---|---|---|---|
 | Git ancestry and no duplicate integration | Exact PR SHAs, merge parents, stage ancestry | PASS baseline | #18/#19 join at #20; all #13–#25 ancestry reaches #25 |
 | Candidate isolation | New branch/worktree from pinned main; no prior worktree changed | PASS baseline | Clean candidate at pinned base |
-| Per-stage focused tests | Relevant npm contracts after each integrated stage | PASS for #13, #14, #15 | `npm test` exit 0 after each; simulated/native-source and disposable IndexedDB tests |
-| Per-stage TypeScript | `npx tsc --noEmit` after each stage | PASS for #13, #14, #15 | Exit 0 after each |
+| Per-stage focused tests | Relevant npm contracts after each integrated stage | PASS for #13, #14, #15, #20 | `npm test` exit 0 after each; simulated/native-source and disposable IndexedDB tests |
+| Per-stage TypeScript | `npx tsc --noEmit` after each stage | PASS for #13, #14, #15, #20 | Exit 0 after each |
 | Full npm suite | `npm test` on exact candidate head | NOT RUN | |
 | Sentinel | `npm run test:sentinel` on exact candidate head | NOT RUN | |
 | Production build | `npm run build` on exact candidate head | NOT RUN | |
@@ -19,7 +19,7 @@ Status meanings: PASS = executed successfully on the recorded candidate/stage; F
 | Backup compatibility | Legacy 11-table and current 15-table validation/round-trip/rollback | NOT RUN | |
 | Android SAF backup/restore | Real Android document picker and restore | BLOCKED | Requires emulator/device execution |
 | Money 2.0 invariants | Exact balances, liability signs, transfer/reversal/undo, no income inflation | NOT RUN | Synthetic scenario required |
-| Android instrumentation API 29 | Full suite; exact expected/executed/pass/fail/skip count | NOT RUN | |
+| Android instrumentation API 29 | Full suite; exact expected/executed/pass/fail/skip count | NOT RUN | Historical #20 run passed; candidate suite not yet executed |
 | Android instrumentation API 34 | Full suite; exact expected/executed/pass/fail/skip count | NOT RUN | |
 | Android instrumentation API 35 | Full suite including screenshot/lifecycle acceptance | NOT RUN | Prior failure must be resolved and rerun |
 | Notification Android acceptance | Optional reminders, permission behavior, restore and tap route | NOT RUN | No architecture change planned |

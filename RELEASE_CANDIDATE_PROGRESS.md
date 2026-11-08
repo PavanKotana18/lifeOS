@@ -43,3 +43,10 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 - Merged with source history; merge commit is recorded in Git ancestry.
 - Tests: full `npm test` PASS; `npx tsc --noEmit` PASS. Android instrumentation has not run locally.
 - Next: verify #20 merge parents and unique integration changes, then integrate it.
+
+### Stage #20 — parallel QA and stabilization integration
+- Source SHA: `5d858ac23b7b6b12c0d473b681ec88769f3dddcc`. Its ancestry includes #15 and the merge commit that joins #18 and #19. No separate merge of #16–#19 was performed.
+- Reviewed the unique API 24 fixture, instrumentation parser/runner, emulator workflow, notification startup and compatibility changes. No conflict or unexpected deletion.
+- Merged with source history; PR #20's join commit and both parallel heads are in candidate ancestry.
+- Tests: full `npm test` PASS; `npx tsc --noEmit` PASS.
+- Next: inspect #21 security gate changes and integrate them.
