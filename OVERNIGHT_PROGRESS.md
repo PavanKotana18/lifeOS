@@ -501,3 +501,12 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Android:** No local SDK/wrapper/device is available. Prior hosted run `42414286404` passed for old head and retained a signed Debug APK; new exact-head CI/APK evidence is still pending. The instrumentation APK is compiled only, not executed.
 - **Physical-device results:** The user's five stated transfer checks remain recorded as passed; this session performed no physical-device test. Profile visuals, swipe gesture feel, Android IME, biometric and SAF picker remain to be accepted on device.
 - **Next:** Review clean diff, commit and push only this branch, verify the new GitHub Actions result and signed Debug APK, confirm PR #25 remains draft/open, and provide the acceptance checklist and explicit incomplete items.
+
+## Bulk completion audit continuation — hosted verification complete
+
+- **Commit:** `2a8bf8af9346e1332d98c68f5d2d0b55615f10de` (`fix(finance): clarify transfer reversals and hide record IDs`), pushed only to the PR #25 branch.
+- **Hosted run:** `42445435389` completed successfully for that exact SHA. Automated tests and Sentinel passed; the Android Debug build passed, persistent signer/package/version checks passed, and the instrumentation APK compiled. Release signing/upload was skipped for the feature branch.
+- **Artifacts:** Debug APK `13602918525`; instrumentation APK `13603003281` (compiled only, not executed). No physical device was used by this session.
+- **PR state:** #25 is OPEN and draft, target `feature/lifeos2-milestone-a-20261107`. No merge/release was performed.
+- **Remaining:** Device-only visual/accessibility, swipe/edge-back, IME, Android biometric, notification and SAF export/restore acceptance. Mixed-currency analytics remain separate by design; commitments remain plans and do not auto-post. API 36/Play policy compliance remains outside this PR's verified build target.
+- **Exact acceptance steps:** Recorded in the final section of `docs/remediation/bulk-development-20261107/AUDIT_AND_IMPLEMENTATION_MAP.md`.
