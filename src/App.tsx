@@ -11,6 +11,7 @@ import { decodeBackupForRestore } from './services/backupImportService';
 import BackupPassphraseDialog from './components/BackupPassphraseDialog';
 import RecoveryDialog from './components/RecoveryDialog';
 import { createRecoveryController } from './services/recoveryService';
+import { quoteCsvCell } from './services/csvExportService.ts';
 import { exportBackupFile } from './services/backupExportService';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
@@ -859,9 +860,13 @@ export default function App() {
     setCreateKind('habit');
   };
 
+  const createOperation = useRef(false);
+
   const saveNewRecord = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!createKind) return;
+    if (!createKind || createOperation.current) return;
+    createOperation.current = true;
+    let committed = false;
     const value = (key: string) => (createDraft[key] || '').trim();
     let reminderCouldNotEnable = false;
     try {
@@ -968,22 +973,23 @@ export default function App() {
         if (editingTaskId) await StorageService.tasks.update(editingTaskId, taskUpdates);
         else await StorageService.tasks.add({ ...taskUpdates, title: taskUpdates.title!, dueDate: taskUpdates.dueDate!, priority: taskUpdates.priority!, recurring: taskUpdates.recurring!, completed: false });
       }
+      // A resolved storage write is committed. Close before fallible refresh work.
+      committed = true;
+      setCreateKind(null);
+      setEditingTaskId(null); setEditingHabitId(null);
+      setEditingTransactionId(null); setEditingGoalId(null);
       const records = await reloadAllData();
       const reminderOptedIn = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable;
       const schedulePreferences = { ...notificationPreferences, taskReminders: reminderOptedIn || notificationPreferences.taskReminders };
       await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(schedulePreferences, notificationsEnabled || reminderOptedIn));
-      setCreateKind(null);
       const wasEditingTask = editingTaskId;
       const wasEditingHabit = editingHabitId;
       const wasEditingTransaction = editingTransactionId;
       const wasEditingGoal = editingGoalId;
-      setEditingTaskId(null);
-      setEditingHabitId(null);
-      setEditingTransactionId(null); setEditingGoalId(null);
       showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable ? 'danger' : 'success');
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not save this item', 'danger');
-    }
+      showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
+    } finally { createOperation.current = false; }
   };
 
   const formatMoney = (amount: number) => {
@@ -1789,7 +1795,7 @@ export default function App() {
               <button onClick={async () => {
                 try {
                   const rows = transactions.map(tx => [tx.id, tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);
-                  const quote = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+                  const quote = quoteCsvCell;
                   const csv = [['id', 'type', 'description', 'amount', 'category', 'date', 'entry_time', 'payment_method'], ...rows].map(row => row.map(quote).join(',')).join('\n');
 
                   const result = await exportBackupFile({

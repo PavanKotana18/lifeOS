@@ -1,8 +1,7 @@
-> Published WP0 baseline: `370a445f19c843abe42b7d6450d4d521bbb07824`.
-> The original WP0 reports below are historical pre-publication snapshots.
-> Sprint 1 promotes LOS-002/003/007/008 and adds restore/recovery/legacy-import
-> acceptance. Current mandatory cases: 9; known defects: LOS-001/009/010;
-> Android validation: still BLOCKED. See [current handoff](../remediation/sprint-1/NEXT_SPRINT_HANDOFF.md).
+> Current acceptance: 11 mandatory cases; known defect LOS-001; native validation BLOCKED.
+> Sprint 3 promotes CSV LOS-010; Sprint 2 promoted notification reset LOS-009.
+> Historical WP0/Sprint 1 snapshots below retain their original counts.
+> See [Sprint 3 handoff](../remediation/sprint-3/NEXT_HANDOFF.md).
 
 # WP0 production regression testing
 

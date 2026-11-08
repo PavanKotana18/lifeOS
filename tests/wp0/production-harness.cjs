@@ -239,6 +239,7 @@ async function fixture() {
   const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false } };
   function appDeps() {
     const deps = { ...domain, ...preferences, ...db, ...notificationModule, ...state,
+      ...load('src/services/csvExportService.ts'),
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
       encryptedSession: load('src/services/cryptoSessionCoordinator.ts').createProtectedSessionController(
         load('src/services/cryptoService.ts').CryptoService, db.sessionManager),
