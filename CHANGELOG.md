@@ -24,6 +24,7 @@ Notable LifeOS changes are documented here. Versions follow Semantic Versioning.
 ### Fixed
 
 - Fresh-install onboarding detection no longer persists a default theme before checking for legacy data.
+- Native startup no longer requests the optional AndroidX EmojiCompat downloadable-font provider; AndroidX Startup lifecycle initialization remains registered.
 
 ### Security
 
