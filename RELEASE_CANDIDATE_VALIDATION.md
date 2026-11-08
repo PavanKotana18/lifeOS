@@ -9,8 +9,8 @@ Status meanings: PASS = executed successfully on the recorded candidate/stage; F
 |---|---|---|---|
 | Git ancestry and no duplicate integration | Exact PR SHAs, merge parents, stage ancestry | PASS baseline | #18/#19 join at #20; all #13–#25 ancestry reaches #25 |
 | Candidate isolation | New branch/worktree from pinned main; no prior worktree changed | PASS baseline | Clean candidate at pinned base |
-| Per-stage focused tests | Relevant npm contracts after each integrated stage | PASS for #13 | `npm test` exit 0 after #13; simulated/native-source and disposable IndexedDB tests |
-| Per-stage TypeScript | `npx tsc --noEmit` after each stage | PASS for #13 | Exit 0 after #13 |
+| Per-stage focused tests | Relevant npm contracts after each integrated stage | PASS for #13, #14 | `npm test` exit 0 after each; simulated/native-source and disposable IndexedDB tests |
+| Per-stage TypeScript | `npx tsc --noEmit` after each stage | PASS for #13, #14 | Exit 0 after each |
 | Full npm suite | `npm test` on exact candidate head | NOT RUN | |
 | Sentinel | `npm run test:sentinel` on exact candidate head | NOT RUN | |
 | Production build | `npm run build` on exact candidate head | NOT RUN | |

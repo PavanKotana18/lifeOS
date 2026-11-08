@@ -29,3 +29,10 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 - Merged by preserving source history; candidate merge commit: `c47ae82`.
 - Tests: full `npm test` PASS (exit 0); `npx tsc --noEmit` PASS. The crypto/native Android behavior represented by Node tests remains simulated or source-checked.
 - Next: inspect and integrate #14.
+
+### Stage #14 — local notification and finance consolidation
+- Source SHA: `5848a0eb4c887d5c9479208ae282d8a72a228268`; confirmed #13 is an ancestor, so only #14-specific changes were newly introduced.
+- Reviewed the notification scheduling/manifest changes, finance totals, regression runner and added contracts. No duplicate integration and no merge conflict.
+- Merged with source history; candidate merge commit: `PENDING`.
+- Tests: full `npm test` PASS; `npx tsc --noEmit` PASS.
+- Next: inspect and integrate #15.
