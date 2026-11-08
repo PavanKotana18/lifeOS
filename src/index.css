@@ -32,7 +32,7 @@
   --radius-control: 0.75rem;
   --radius-card: 1.25rem;
   --motion-control: 140ms;
-  --motion-tab: 260ms;
+  --motion-tab: 180ms;
   --motion-page: 220ms;
   --motion-sheet: 260ms;
   --motion-success: 160ms;
@@ -123,7 +123,9 @@ body {
 .ui-tab-screen[data-transition-state="active"] { z-index: 2; }
 .ui-tab-screen[data-transition-state="exit-prepare"],
 .ui-tab-screen[data-transition-state="exiting"] { z-index: 1; }
-.ui-tab-screen[data-transition-state="enter-prepare"] { opacity: .88; transform: translate3d(0, 16px, 0); }
+.ui-tab-screen[data-transition-state="enter-prepare"] { opacity: .92; transform: translate3d(0, 14px, 0); }
+.ui-tab-screen[data-transition-direction="left"][data-transition-state="enter-prepare"] { transform: translate3d(16px, 0, 0); }
+.ui-tab-screen[data-transition-direction="right"][data-transition-state="enter-prepare"] { transform: translate3d(-16px, 0, 0); }
 .ui-tab-screen[data-transition-state="exit-prepare"] { opacity: 1; transform: translate3d(0, 0, 0); }
 .ui-tab-screen[data-transition-state="entering"],
 .ui-tab-screen[data-transition-state="exiting"] {
@@ -131,8 +133,11 @@ body {
   transition: opacity var(--motion-tab) var(--motion-ease-tab), transform var(--motion-tab) var(--motion-ease-tab);
 }
 .ui-tab-screen[data-transition-state="entering"] { opacity: 1; transform: translate3d(0, 0, 0); }
-.ui-tab-screen[data-transition-state="exiting"] { opacity: .88; transform: translate3d(0, -3px, 0); pointer-events: none; }
+.ui-tab-screen[data-transition-state="exiting"] { opacity: .92; transform: translate3d(0, -3px, 0); pointer-events: none; }
+.ui-tab-screen[data-transition-direction="left"][data-transition-state="exiting"] { transform: translate3d(-4px, 0, 0); }
+.ui-tab-screen[data-transition-direction="right"][data-transition-state="exiting"] { transform: translate3d(4px, 0, 0); }
 .ui-tab-screen[data-transition-state="active"] { opacity: 1; transform: none; }
+.ui-tab-screen[data-gesture-dragging="true"] { transition: none !important; transform: translate3d(var(--gesture-x, 0px), 0, 0) !important; will-change: transform; }
 
 .app-header { background: color-mix(in srgb, var(--surface) 94%, transparent); }
 .app-profile-button { min-height: 44px; min-width: 44px; background: var(--accent); color: var(--accent-foreground); }

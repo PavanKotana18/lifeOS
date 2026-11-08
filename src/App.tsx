@@ -37,7 +37,7 @@ import ProfilePreferences from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
-import { resolvePrimarySwipe } from './services/navigationGestures';
+import { classifyPointerAxis, resolvePrimarySwipe } from './services/navigationGestures';
 import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
@@ -88,22 +88,33 @@ export default function App() {
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const activeTabRef = useRef<MainTab>('dashboard');
-  const [tabTransition, setTabTransition] = useState<{ id: number; from: MainTab; to: MainTab; phase: 'prepare' | 'running'; exitStart: { opacity: string; transform: string } } | null>(null);
+  const [tabTransition, setTabTransition] = useState<{ id: number; from: MainTab; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right'; exitStart: { opacity: string; transform: string } } | null>(null);
   const tabTransitionSequence = useRef(0);
   const activeTransitionId = useRef<number | null>(null);
-  const transitionToTab = (tab: MainTab) => {
+  const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
     activeTabRef.current = tab;
     if (previous === tab) { setActiveTab(tab); return; }
+    const settlingGesture = swipeSettleAnimation.current !== null;
     const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reducedMotion) {
+      swipeSettleAnimation.current?.cancel();
+      swipeSettleAnimation.current = null;
       activeTransitionId.current = null;
       setTabTransition(null);
       setActiveTab(tab);
       return;
     }
-    const outgoing = tabTransition?.to === previous ? document.getElementById(`screen-${previous}`) : null;
+    const candidate = document.getElementById(`screen-${previous}`);
+    const isDragging = candidate?.hasAttribute('data-gesture-dragging') === true;
+    const outgoing = isDragging || settlingGesture || tabTransition?.to === previous ? candidate : null;
     const outgoingStyle = outgoing ? getComputedStyle(outgoing) : null;
+    swipeSettleAnimation.current?.cancel();
+    swipeSettleAnimation.current = null;
+    if (isDragging) {
+      outgoing?.removeAttribute('data-gesture-dragging');
+      outgoing?.style.removeProperty('--gesture-x');
+    }
     const id = ++tabTransitionSequence.current;
     activeTransitionId.current = id;
     setTabTransition({
@@ -111,6 +122,7 @@ export default function App() {
       from: previous,
       to: tab,
       phase: 'prepare',
+      direction,
       exitStart: { opacity: outgoingStyle?.opacity || '1', transform: outgoingStyle?.transform || 'none' },
     });
     setActiveTab(tab);
@@ -128,7 +140,9 @@ export default function App() {
   const pendingNotificationActionId = useRef<number | null>(null);
   const handledNotificationIds = useRef(new Set<number>());
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
-  const swipePointer = useRef<{ id: number; x: number; y: number; startedAt: number; interactive: boolean; systemEdge: boolean; horizontalControl: boolean } | null>(null);
+  const swipePointer = useRef<{ id: number; x: number; y: number; startedAt: number; interactive: boolean; systemEdge: boolean; horizontalControl: boolean; axis: 'pending' | 'horizontal' | 'vertical'; latestOffsetX: number } | null>(null);
+  const swipeMoveFrame = useRef<number | null>(null);
+  const swipeSettleAnimation = useRef<Animation | null>(null);
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
@@ -326,22 +340,24 @@ export default function App() {
   const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation });
   backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation };
 
-  const navigateTo = (tab: MainTab) => {
+  const navigateTo = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
     if (previous === tab) return;
     scrollPositions.current[activeScreenKey] = window.scrollY;
     if (tab === 'settings') navigateProfileSection('home');
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     setShowExitConfirmation(false);
-    transitionToTab(tab);
+    transitionToTab(tab, direction);
   };
 
   const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    swipeSettleAnimation.current?.cancel();
+    swipeSettleAnimation.current = null;
     swipePointer.current = null;
     if (!userPrefs.swipeNavigationEnabled || event.pointerType === 'mouse' || activeTab === 'settings' || createKind || modalContent) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    const interactive = Boolean(target.closest('button,a,input,textarea,select,[contenteditable="true"],[role="button"],[role="switch"],[role="dialog"],[data-no-tab-swipe]'));
+    const interactive = Boolean(target.closest('button,a,input,textarea,select,form,[contenteditable="true"],[role="button"],[role="switch"],[role="dialog"],[data-no-tab-swipe]'));
     const horizontalControl = Boolean(target.closest('[data-horizontal-scroll],.recharts-wrapper,svg,canvas,[role="slider"]'));
     let ancestor: HTMLElement | null = target as HTMLElement;
     let horizontallyScrollable = false;
@@ -353,24 +369,80 @@ export default function App() {
       }
       ancestor = ancestor.parentElement;
     }
+    const systemEdge = event.clientX <= 32 || event.clientX >= window.innerWidth - 32;
+    if (interactive || horizontalControl || horizontallyScrollable || systemEdge) return;
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is an enhancement; native scrolling remains available. */ }
     swipePointer.current = {
       id: event.pointerId, x: event.clientX, y: event.clientY, startedAt: Date.now(),
-      interactive, systemEdge: event.clientX <= 24 || event.clientX >= window.innerWidth - 24,
-      horizontalControl: horizontalControl || horizontallyScrollable,
+      interactive, systemEdge, horizontalControl: horizontalControl || horizontallyScrollable, axis: 'pending', latestOffsetX: 0,
     };
+  };
+
+  const clearGestureDrag = (animateBack: boolean) => {
+    const screen = document.getElementById(`screen-${activeTabRef.current}`);
+    if (!screen?.hasAttribute('data-gesture-dragging')) return;
+    const transform = getComputedStyle(screen).transform;
+    screen.removeAttribute('data-gesture-dragging');
+    screen.style.removeProperty('--gesture-x');
+    if (!animateBack || window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof screen.animate !== 'function') return;
+    const animation = screen.animate([{ transform }, { transform: 'none' }], { duration: 110, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    swipeSettleAnimation.current = animation;
+    void animation.finished.catch(() => undefined).finally(() => {
+      if (swipeSettleAnimation.current === animation) swipeSettleAnimation.current = null;
+    });
+  };
+
+  const handleContentPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    const start = swipePointer.current;
+    if (!start || start.id !== event.pointerId) return;
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    if (start.axis === 'vertical') return;
+    const axis = classifyPointerAxis(deltaX, deltaY);
+    if (axis === 'vertical') {
+      start.axis = 'vertical';
+      clearGestureDrag(false);
+      return;
+    }
+    if (axis !== 'horizontal') return;
+    start.axis = 'horizontal';
+    if (swipeMoveFrame.current !== null) return;
+    const screen = document.getElementById(`screen-${activeTabRef.current}`);
+    if (!screen) return;
+    start.latestOffsetX = Math.max(-80, Math.min(80, deltaX * 0.48));
+    swipeMoveFrame.current = window.requestAnimationFrame(() => {
+      swipeMoveFrame.current = null;
+      if (swipePointer.current?.id !== start.id) return;
+      screen.setAttribute('data-gesture-dragging', 'true');
+      screen.style.setProperty('--gesture-x', `${start.latestOffsetX}px`);
+    });
   };
 
   const handleContentPointerUp = (event: React.PointerEvent<HTMLElement>) => {
     const start = swipePointer.current;
     swipePointer.current = null;
+    if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
     if (!start || start.id !== event.pointerId) return;
-    const target = resolvePrimarySwipe(activeTab, {
-      deltaX: event.clientX - start.x, deltaY: event.clientY - start.y,
-      durationMs: Date.now() - start.startedAt, startedOnInteractive: start.interactive,
+    const deltaX = event.clientX - start.x;
+    const deltaY = event.clientY - start.y;
+    const target = start.axis === 'horizontal' ? resolvePrimarySwipe(activeTab, {
+      deltaX, deltaY, durationMs: Date.now() - start.startedAt, startedOnInteractive: start.interactive,
       startedAtSystemEdge: start.systemEdge, startedInHorizontalControl: start.horizontalControl,
       enabled: userPrefs.swipeNavigationEnabled,
-    });
-    if (target) navigateTo(target);
+    }) : null;
+    if (target) {
+      const screen = document.getElementById(`screen-${activeTabRef.current}`);
+      screen?.setAttribute('data-gesture-dragging', 'true');
+      screen?.style.setProperty('--gesture-x', `${start.latestOffsetX}px`);
+      navigateTo(target, deltaX < 0 ? 'left' : 'right');
+    }
+    else clearGestureDrag(true);
+  };
+
+  const handleContentPointerCancel = () => {
+    swipePointer.current = null;
+    if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
+    clearGestureDrag(true);
   };
 
   const navigateBack = () => {
@@ -619,6 +691,7 @@ export default function App() {
     return {
       exiting: tabTransition.from === screen && tabTransition.from !== tabTransition.to,
       transitionPhase: ownsTransition ? tabTransition.phase : null,
+      transitionDirection: ownsTransition ? tabTransition.direction : undefined,
       exitStart: tabTransition.from === screen ? tabTransition.exitStart : undefined,
       onExitTransitionEnd: tabTransition.from === screen
         ? (event: React.TransitionEvent<HTMLDivElement>) => {
@@ -1816,10 +1889,10 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className="max-w-md mx-auto p-4 space-y-4" onPointerDown={handleContentPointerDown} onPointerUp={handleContentPointerUp} onPointerCancel={() => { swipePointer.current = null; }}>
+      <main className="max-w-md mx-auto p-4 space-y-4" onPointerDown={handleContentPointerDown} onPointerMove={handleContentPointerMove} onPointerUp={handleContentPointerUp} onPointerCancel={handleContentPointerCancel}>
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
-        <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
+        <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
           <div className="today-sections">
             <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
@@ -1981,7 +2054,7 @@ export default function App() {
         )} />
 
         {/* VIEW 2: FINANCE */}
-        <RetainedScreen active={activeTab === 'life'} id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+        <RetainedScreen active={activeTab === 'life'} retainInactive id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
           routinesDue={todayOverview.routinesDue}
           completedRoutines={todayOverview.routinesCompleted}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
@@ -1992,7 +2065,7 @@ export default function App() {
           onInsights={() => navigateTo('insights')}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
+        <RetainedScreen active={activeTab === 'plan'} retainInactive id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
           onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} /></Suspense>} />
 
         <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
@@ -2013,7 +2086,7 @@ export default function App() {
           onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'finance'} id="screen-finance" {...transitionPropsFor('finance')} render={() => (
+        <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
           <div className="money-page space-y-5">
             {financeSubtab !== 'overview' && <div className="money-page-toolbar">
               <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
@@ -2183,7 +2256,7 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5"><Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense><MoneyPlanning commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories}
+            {financeSubtab === 'planning' && <div className="space-y-5">{activeTab === 'finance' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}<MoneyPlanning commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories}
               onAddCommitment={async input => { await StorageService.commitments.add(input); await reloadAllData(); }}
               onUpdateCommitment={async (id, input) => { await StorageService.commitments.update(id, input); await reloadAllData(); }}
               onDeleteCommitment={async id => { await StorageService.commitments.delete(id); await reloadAllData(); }}
@@ -2196,7 +2269,7 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2.5">
                 {[['Income', financeAnalytics.totalIncome, 'text-[var(--success)]'], ['Expenses', financeAnalytics.totalExpenses, 'text-[var(--danger)]'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-[var(--danger)]' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'lifeos-accent-text']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><p className="text-xs text-secondary">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
               </div>
-              <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
+              {activeTab === 'finance' && <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
                 <FinanceCharts
                   analytics={financeAnalytics}
                   theme={theme}
@@ -2206,7 +2279,7 @@ export default function App() {
                   range={financeAnalyticsRange}
                   onRangeChange={setFinanceAnalyticsRange}
                 />
-              </Suspense>
+              </Suspense>}
               <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-secondary">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${row.category} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, pct)}><div className={`h-full rounded-full ${pct >= 100 ? 'bg-[var(--danger)]' : pct >= 80 ? 'bg-[var(--warning)]' : 'bg-[var(--accent)]'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-secondary"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-[var(--danger)]' : 'text-secondary'}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
               <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
             </div>}
@@ -2275,7 +2348,7 @@ export default function App() {
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <div className="space-y-4">
             <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider lifeos-accent-text">Planner</p><h2 className="text-xl font-semibold tracking-tight">Your calendar</h2></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
-            <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar">
+            <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar" data-no-tab-swipe>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1"><button aria-label="Previous month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronLeft size={19} className="mx-auto" /></button><h3 className="min-w-32 text-center text-sm font-semibold">{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3><button aria-label="Next month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronRight size={19} className="mx-auto" /></button></div>
                 <button onClick={() => { setPlannerSelectedDate(todayKey); setPlannerDisplayedMonth(new Date(clockNow.getFullYear(), clockNow.getMonth(), 1)); setPlannerFilter('all'); }} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text transition active:scale-95">Today</button>

@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 require('./scripts/register-ts-test-loader.cjs');
-const { resolvePrimarySwipe } = require('./src/services/navigationGestures.ts');
+const { resolvePrimarySwipe, classifyPointerAxis } = require('./src/services/navigationGestures.ts');
 const sample = (overrides = {}) => ({ deltaX: 100, deltaY: 0, durationMs: 240, startedOnInteractive: false, startedAtSystemEdge: false, startedInHorizontalControl: false, enabled: true, ...overrides });
 assert.equal(resolvePrimarySwipe('dashboard', sample({ deltaX: -120 })), 'finance');
 assert.equal(resolvePrimarySwipe('finance', sample({ deltaX: 120 })), 'dashboard');
@@ -17,4 +17,8 @@ assert.equal(resolvePrimarySwipe('finance', sample({ startedOnInteractive: true 
 assert.equal(resolvePrimarySwipe('finance', sample({ startedAtSystemEdge: true })), null);
 assert.equal(resolvePrimarySwipe('finance', sample({ startedInHorizontalControl: true })), null);
 assert.equal(resolvePrimarySwipe('finance', sample({ enabled: false })), null);
-console.log('NAVIGATION GESTURES: 14 threshold, direction, route and exclusion checks passed.');
+assert.equal(classifyPointerAxis(4, 3), 'pending');
+assert.equal(classifyPointerAxis(16, 4), 'horizontal');
+assert.equal(classifyPointerAxis(4, 16), 'vertical');
+assert.equal(classifyPointerAxis(12, 10), 'pending', 'ambiguous diagonal motion is left to the browser');
+console.log('NAVIGATION GESTURES: 18 threshold, direction, axis and exclusion checks passed.');

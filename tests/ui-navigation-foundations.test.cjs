@@ -36,6 +36,8 @@ assert.match(appSource, /<RetainedScreen active=\{activeTab === 'finance'\}/);
 assert.match(appSource, /<RetainedScreen active=\{activeTab === 'plan'\}/);
 assert.match(appSource, /<RetainedScreen active=\{activeTab === 'life'\}/);
 assert.match(appSource, /prefers-reduced-motion/);
+assert.match(appSource, /active=\{activeTab === 'dashboard'\} retainInactive/);
+assert.match(appSource, /active=\{activeTab === 'finance'\} retainInactive/);
 assert.match(appSource, /navigateTo\('planner'\)/);
 assert.match(appSource, /resolveBackAction/);
 assert.match(appSource, /activeTransitionId\.current = id/, 'each route transition receives a cancellation token');
@@ -43,7 +45,12 @@ assert.match(appSource, /tabTransition\?\.to === previous[\s\S]*getComputedStyle
 assert.match(appSource, /window\.requestAnimationFrame\(\(\) =>/, 'enter and exit targets change after a paint opportunity');
 assert.match(appSource, /onExitTransitionEnd/, 'outgoing view stays until its opacity transition ends');
 assert.match(appSource, /duration \+ 120/, 'transition end has a bounded cleanup fallback');
-assert.match(appSource, /transitionToTab\(tab\)/, 'primary tab changes enter the shared transition lifecycle');
+assert.match(appSource, /transitionToTab\(tab, direction\)/, 'primary tab changes enter the shared transition lifecycle');
+assert.match(appSource, /setPointerCapture\(event\.pointerId\)/, 'eligible touch gestures keep their pointer-up event');
+assert.match(appSource, /onPointerMove=\{handleContentPointerMove\}/, 'eligible horizontal swipes follow the finger');
+assert.match(appSource, /event\.clientX <= 32[\s\S]*?systemEdge[\s\S]*?return;/, 'edge-back gestures are excluded');
+assert.match(appSource, /select,form,\[contenteditable/, 'form surfaces do not start tab swipes');
+assert.match(appSource, /aria-label="Monthly task calendar" data-no-tab-swipe/, 'calendar space does not start tab swipes');
 assert.match(appSource, /activeTransitionId\.current = null;\s*setTabTransition\(null\);\s*setActiveTab\(tab\)/, 'reduced motion settles navigation immediately');
 assert.match(appSource, /if \(!isLocked\) return;[\s\S]*setTabTransition\(null\)/, 'locking settles transitions before private screens unmount');
 assert.match(appSource, /screenScrollKey\(/, 'nested destinations receive separate scroll keys');
@@ -53,16 +60,17 @@ assert.ok(appSource.indexOf('if (isLocked) {') < appSource.indexOf('<main classN
 
 const retainedSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'RetainedScreen.tsx'), 'utf8');
 assert.match(retainedSource, /useState\(active\)/, 'screens are mounted only when first visited');
+assert.match(retainedSource, /if \(!active && !exiting && \(!retainInactive \|\| !visited\)\) return null/, 'inactive nested views can unmount to limit retained memory');
 assert.match(retainedSource, /hidden=\{!active && !exiting\}/, 'outgoing screen remains paintable until exit completes');
 assert.match(retainedSource, /aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/, 'inactive and exiting screens cannot be focused or activated');
 assert.match(retainedSource, /data-transition-state=\{transitionState\}/, 'incoming screens receive a distinct entry state');
 assert.match(retainedSource, /React\.memo\(RetainedScreen/, 'visited inactive routes skip unrelated parent renders');
 const styles = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.css'), 'utf8');
-assert.match(styles, /--motion-tab: 260ms/);
-assert.match(styles, /enter-prepare[^}]*opacity: \.88; transform: translate3d\(0, 16px, 0\)/);
-assert.match(styles, /data-transition-state="exiting"[^}]*opacity: \.88/);
+assert.match(styles, /--motion-tab: 180ms/);
+assert.match(styles, /enter-prepare[^}]*opacity: \.92; transform: translate3d\(0, 14px, 0\)/);
+assert.match(styles, /data-transition-state="exiting"[^}]*opacity: \.92/);
 assert.match(styles, /ui-tab-screen-stack > \[data-lifeos-screen\] \{ grid-area: 1 \/ 1;/);
 assert.match(styles, /data-transition-state="entering"\],\s*\.ui-tab-screen\[data-transition-state="active"\] \{ z-index: 2;/);
 assert.match(styles, /\.ui-tab-screen\[data-transition-state\].*transition: none !important/s);
 
-console.log('UI navigation foundation checks passed: 15 service assertions and 28 integration assertions.');
+console.log('UI navigation foundation checks passed: 15 service assertions and 36 integration assertions.');

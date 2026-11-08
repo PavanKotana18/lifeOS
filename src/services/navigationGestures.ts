@@ -10,6 +10,15 @@ export interface SwipeGestureSample {
   enabled: boolean;
 }
 
+export function classifyPointerAxis(deltaX: number, deltaY: number): 'pending' | 'horizontal' | 'vertical' {
+  const x = Math.abs(deltaX);
+  const y = Math.abs(deltaY);
+  if (Math.max(x, y) < 8) return 'pending';
+  if (x >= y * 1.25) return 'horizontal';
+  if (y >= x * 1.15) return 'vertical';
+  return 'pending';
+}
+
 /** Pure gesture gate. It never wraps and only targets the existing primary nav state. */
 export function resolvePrimarySwipe(currentTab: MainTab, sample: SwipeGestureSample): PrimaryTab | null {
   if (!sample.enabled || sample.startedOnInteractive || sample.startedAtSystemEdge || sample.startedInHorizontalControl) return null;
