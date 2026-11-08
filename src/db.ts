@@ -55,6 +55,25 @@ export class LifeOSDatabase extends Dexie {
 export const lifeOSDatabase = new LifeOSDatabase();
 const db = lifeOSDatabase;
 
+/** Bootstrap inspection returns ciphertext metadata only, never decrypted records. */
+export async function getRecoveryChallenge() {
+  for (const table of db.tables) {
+    const row = await table.filter((item: any) => item?.__lifeosEncrypted === 1 && item.encrypted).first();
+    if (row) return { table: table.name, recordId: table.name === 'settings' ? row.key : row.id,
+      schemaVersion: 1, encrypted: row.encrypted };
+  }
+  return null;
+}
+
+export async function hasEncryptedRecords(): Promise<boolean> {
+  for (const table of db.tables) {
+    if (await table.filter((item: any) => item &&
+      (Object.prototype.hasOwnProperty.call(item, '__lifeosEncrypted') ||
+       Object.prototype.hasOwnProperty.call(item, 'encrypted'))).first()) return true;
+  }
+  return false;
+}
+
 let recordIdSequence = 0;
 
 export function createRecordId(prefix: string): string {
@@ -847,7 +866,10 @@ const rawStorageService: IDataStorage = {
     async addMilestone(milestone) {
       const id = createRecordId('m');
       const record: Milestone = { ...milestone, id };
-      await db.milestones.add(record);
+      await db.transaction('rw', db.goals, db.milestones, async () => {
+        if (!(await db.goals.get(record.goalId))) throw new Error('Milestone goal does not exist.');
+        await db.milestones.add(record);
+      });
       return record;
     },
     async toggleMilestone(id, completed) {

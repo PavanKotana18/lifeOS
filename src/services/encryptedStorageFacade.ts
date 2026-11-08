@@ -39,6 +39,7 @@ export interface EncryptedStorageHelpers {
     record: Partial<Transaction>,
     requireComplete: boolean
   ): void;
+  /** Throws on invalid data; returns validated table names, never error messages. */
   validateBackupTables(tables: unknown): string[];
   getNextRecurringTaskDate(
     task: Task,
@@ -85,6 +86,15 @@ function sortByDate<T extends { date: string }>(rows: T[]): T[] {
 
 function identity(table: EncryptedTable, row: any): string {
   return table === 'settings' ? row.key : row.id;
+}
+
+function reconcileGoal(goal: Goal, milestones: Milestone[]): Goal {
+  if (goal.status === 'Paused') return goal;
+  const eligible = Number(goal.targetValue) > 0 &&
+    Number(goal.currentValue) >= Number(goal.targetValue) &&
+    milestones.every(item => item.completed);
+  return { ...goal, status: eligible ? 'Completed' :
+    (goal.status === 'Completed' ? 'In Progress' : goal.status) };
 }
 
 export function createEncryptedStorageFacade(
@@ -442,8 +452,13 @@ export function createEncryptedStorageFacade(
           createdAt: new Date().toISOString(),
         }),
 
-      update: (id: string, changes: Partial<Goal>) =>
-        update('goals', id, changes, true),
+      update: (id: string, changes: Partial<Goal>) => coordinator.run(async ctx => {
+        const existing = await ctx.get<Goal>('goals', id);
+        if (!existing) return;
+        const milestones = (await ctx.getAll<Milestone>('milestones')).filter(m => m.goalId === id);
+        ctx.put('goals', reconcileGoal({ ...existing, ...changes, id,
+          createdAt: existing.createdAt, updatedAt: new Date().toISOString() }, milestones));
+      }),
 
       delete: (id: string) => coordinator.run(async ctx => {
         ctx.delete('goals', id);
@@ -455,7 +470,12 @@ export function createEncryptedStorageFacade(
         (await readAll<Milestone>('milestones')).filter(row => row.goalId === goalId),
 
       addMilestone: async (input: Omit<Milestone, 'id'>) =>
-        add('milestones', { ...input, id: helpers.createRecordId('milestone') }),
+        coordinator.run(async ctx => {
+          if (!(await ctx.get<Goal>('goals', input.goalId))) throw new Error('Milestone goal does not exist.');
+          const record = { ...input, id: helpers.createRecordId('milestone') };
+          ctx.add('milestones', record);
+          return record;
+        }),
 
       toggleMilestone: (id: string, completed: boolean) =>
         coordinator.run(async ctx => {
@@ -466,6 +486,15 @@ export function createEncryptedStorageFacade(
             completed,
             completedAt: completed ? new Date().toISOString() : undefined,
           });
+          const goal = await ctx.get<Goal>('goals', existing.goalId);
+          if (goal) {
+            const milestones = (await ctx.getAll<Milestone>('milestones'))
+              .filter(m => m.goalId === goal.id);
+            const next = reconcileGoal(goal, milestones);
+            if (next.status !== goal.status) ctx.put('goals', {
+              ...next, updatedAt: new Date().toISOString(),
+            });
+          }
         }),
 
       deleteMilestone: (id: string) => remove('milestones', id),
@@ -490,10 +519,11 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           const task = await ctx.get<Task>('tasks', id);
           if (!task) throw new Error('Task not found.');
+          if (task.completed === completed) return;
 
           const now = new Date().toISOString();
 
-          if (!completed && task.completed && task.recurring !== 'None') {
+          if (!completed && task.completed) {
             if (task.spawnedTaskId) {
               const spawned = await ctx.get<Task>('tasks', task.spawnedTaskId);
               if (spawned && !spawned.updatedAt) ctx.delete('tasks', spawned.id);
@@ -508,8 +538,8 @@ export function createEncryptedStorageFacade(
             return;
           }
 
-          if (completed && !task.completed && task.recurring !== 'None') {
-            const nextDate = helpers.getNextRecurringTaskDate(task, task.dueDate);
+          if (completed && !task.completed && task.recurring && task.recurring !== 'None') {
+            const nextDate = helpers.getNextRecurringTaskDate(task);
             if (nextDate) {
               const rootId = helpers.getRecurrenceRootId(task);
               const nextId = `rec_${rootId}_${nextDate}`;
@@ -565,25 +595,28 @@ export function createEncryptedStorageFacade(
         return rows.some(tableRows => tableRows.length > 0);
       },
 
-      exportData: async () => {
+      // Share the write queue so compound writes cannot interleave table reads.
+      // Native decryption remains outside any IndexedDB transaction.
+      exportData: async () => coordinator.run(async ctx => {
         const entries = await Promise.all(
-          TABLES.map(async table => [table, await readAll<any>(table)] as const)
+          TABLES.map(async table => [table, await ctx.getAll<any>(table)] as const)
         );
         return JSON.stringify({
           version: 1,
           timestamp: new Date().toISOString(),
           tables: Object.fromEntries(entries),
         });
-      },
+      }),
 
       importData: async (
         jsonData: string,
         options?: { replaceExisting?: boolean }
       ) => {
-        const parsed = JSON.parse(jsonData);
+        let parsed: any;
+        try { parsed = JSON.parse(jsonData); }
+        catch { throw new Error('Invalid JSON format'); }
         const tables = parsed?.tables ?? parsed?.data;
-        const errors = helpers.validateBackupTables(tables);
-        if (errors.length) throw new Error(`Invalid backup: ${errors.join(', ')}`);
+        helpers.validateBackupTables(tables);
 
         const counts: Record<string, number> = {};
         await coordinator.run(async ctx => {
