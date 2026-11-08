@@ -37,7 +37,7 @@ const markup = renderToStaticMarkup(React.createElement(PlanHub, {
 }));
 assert.ok(markup.indexOf('>early</span>') < markup.indexOf('>late</span>'), 'the Plan screen renders same-day timed tasks chronologically');
 assert.match(markup, /Today · 09:00/);
-assert.equal((markup.match(/class="plan-hub-task(?: is-overdue)?"/g) || []).length, 5, 'the Plan screen keeps a concise five-task action list');
+assert.equal((markup.match(/class="plan-hub-task ui-interactive-row(?: is-overdue)?"/g) || []).length, 5, 'the Plan screen keeps a concise five-task action list');
 assert.match(markup, /aria-label="Mark early complete"/, 'each task has a directly accessible completion control');
 assert.match(markup, /Choose task dates/);
 assert.match(markup, /Next 7 days/);

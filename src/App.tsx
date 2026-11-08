@@ -2608,8 +2608,8 @@ export default function App() {
       </main>
 
       {createKind && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form onSubmit={saveNewRecord} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="ui-sheet-motion lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+        <div className="ui-sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
+          <form onSubmit={saveNewRecord} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
@@ -2725,7 +2725,7 @@ export default function App() {
 
       {/* In-app Toast Notification */}
       {toast && (
-        <div role="status" aria-live="polite" className={`lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl ${toast.type === 'success' ? 'ui-success-feedback' : ''}`}>
+        <div role="status" aria-live="polite" className={`ui-toast lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl ${toast.type === 'success' ? 'ui-success-feedback' : ''}`}>
           <span>{toast.message}</span>
         </div>
       )}

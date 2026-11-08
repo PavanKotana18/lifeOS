@@ -30,7 +30,7 @@ export default function LifeHub({ habits, goals, completedRoutines, routinesDue,
         <div><p className="type-eyebrow">SMALL, REPEATABLE STEPS</p><h3 id="life-routines-title" className="type-section-title">Habits</h3><p className="type-caption text-secondary">{routinesDue ? `${completedRoutines} of ${routinesDue} checked today` : 'Pick up a routine when it fits your day.'}{weeklyTotal > 0 ? ` · ${weeklyCompleted} of ${weeklyTotal} this week` : ''}</p></div>
         <button type="button" onClick={onCreateHabit} className="life-add-button" aria-label="Add a habit"><Plus size={17} aria-hidden="true" /><span>Add</span></button>
       </div>
-      {habits.length ? <ul className="life-habit-list">{habits.slice(0, 4).map(habit => <li key={habit.id} className="life-habit-row">
+      {habits.length ? <ul className="life-habit-list">{habits.slice(0, 4).map(habit => <li key={habit.id} className="life-habit-row ui-interactive-row">
         <button type="button" onClick={() => onCheckIn(habit)} aria-pressed={habit.completedToday} aria-label={`${habit.completedToday ? 'Mark' : 'Complete'} ${habit.name} ${habit.completedToday ? 'incomplete' : 'for today'}`} className={`life-habit-check${habit.completedToday ? ' is-complete' : ''}`}><Check size={17} aria-hidden="true" /></button>
         <span className="life-habit-copy"><strong className={habit.completedToday ? 'is-complete' : ''}>{habit.name}</strong><small>{habit.currentStreak ? `${habit.currentStreak} day streak` : 'Start with one check-in'}</small></span>
         <ChevronRight size={16} aria-hidden="true" className="life-row-chevron" />

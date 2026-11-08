@@ -35,7 +35,7 @@ export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTa
       {openTasks.length ? <ul className="plan-hub-list" aria-label="Open tasks">
         {openTasks.map(task => {
           const status = getTaskStatus(task, now);
-          return <li key={task.id} className={`plan-hub-task${status === 'Overdue' ? ' is-overdue' : ''}`}>
+          return <li key={task.id} className={`plan-hub-task ui-interactive-row${status === 'Overdue' ? ' is-overdue' : ''}`}>
             <label className="plan-hub-task-check"><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(task)} aria-label={`Mark ${task.title} complete`} /></label>
             <button type="button" onClick={() => onOpenTask(task)} className="plan-hub-task-open">
               <span className="plan-hub-row-title">{task.title}</span>

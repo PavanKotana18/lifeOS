@@ -113,6 +113,12 @@ body {
 .ui-success-feedback { animation: lifeos-success var(--motion-success) var(--motion-ease-standard) both; }
 .ui-loading-state { min-height: 5rem; display: grid; place-items: center; border: 1px solid var(--stroke); border-radius: var(--radius-card); background: var(--surface); color: var(--ink-secondary); }
 .ui-sheet-motion { animation: lifeos-sheet-in var(--motion-sheet) var(--motion-ease-standard) both; }
+.ui-sheet-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding-top: max(0.5rem, env(safe-area-inset-top)); background: rgb(0 0 0 / 56%); }
+.ui-bottom-sheet { width: min(100%, 28rem); max-height: calc(100dvh - max(0.5rem, env(safe-area-inset-top))); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; border-radius: 1.35rem 1.35rem 0 0; padding-bottom: calc(1.25rem + env(safe-area-inset-bottom)); scroll-padding-block: 1rem calc(1rem + env(safe-area-inset-bottom)); }
+.ui-bottom-sheet :is(input, select, textarea, button) { scroll-margin-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+.ui-interactive-row { transition: background-color var(--motion-control) var(--motion-ease-standard), border-color var(--motion-control) var(--motion-ease-standard); }
+.ui-interactive-row:active { background-color: var(--surface-raised); }
+.ui-toast { top: calc(env(safe-area-inset-top) + 0.75rem); }
 
 /* Keep the outgoing and incoming route in the same paint layer during a tab change. */
 .ui-tab-screen-stack { display: grid; min-width: 0; align-items: start; }
@@ -353,6 +359,11 @@ body {
   .money-period input { width: 8.2rem; }
   .money-action { padding: 0.6rem; }
   .money-action small { font-size: 0.75rem; }
+}
+
+@media (min-width: 640px) {
+  .ui-sheet-backdrop { align-items: center; padding: 1rem; }
+  .ui-bottom-sheet { max-height: 90dvh; border-radius: var(--radius-card); padding-bottom: 1.25rem; }
 }
 
 button, input, select, textarea {
