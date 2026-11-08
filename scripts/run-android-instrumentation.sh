@@ -20,7 +20,7 @@ capture_evidence() {
   # or a physical handset. Diagnostics below are limited to the fresh QA AVD.
   if [[ "$SAFE_EMULATOR" != true ]]; then exit "$result"; fi
   timeout 8s adb -s "$SERIAL" shell dumpsys webviewupdate > "$OUT/webview-provider.txt" 2>&1
-  timeout 10s adb -s "$SERIAL" logcat -b all -d -v threadtime AndroidRuntime:E System.err:E chromium:E ActivityManager:E ActivityTaskManager:E libc:E DEBUG:E LifeOSAcceptance:I '*:S' > "$OUT/logcat-errors.txt" 2>&1
+  timeout 15s adb -s "$SERIAL" logcat -b all -d -v threadtime '*:E' > "$OUT/logcat-errors.txt" 2>&1
   if [[ "$result" -ne 0 ]]; then
     {
       printf 'serial=%s\n' "$SERIAL"
@@ -33,7 +33,10 @@ capture_evidence() {
     if [[ "$sdk" =~ ^[0-9]+$ ]] && (( sdk >= 30 )); then
       timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info com.lifeos.personal > "$OUT/app-exit-info.txt" 2>&1
       timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info com.lifeos.personal.test > "$OUT/instrumentation-exit-info.txt" 2>&1
+      timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info com.google.android.gms > "$OUT/google-play-services-exit-info.txt" 2>&1
     fi
+    timeout 12s adb -s "$SERIAL" shell dumpsys meminfo > "$OUT/system-memory-info.txt" 2>&1
+    timeout 8s adb -s "$SERIAL" shell dumpsys meminfo com.lifeos.personal > "$OUT/app-memory-info.txt" 2>&1
     timeout 8s adb -s "$SERIAL" exec-out screencap -p > "$OUT/failure.png" 2> "$OUT/screenshot-error.txt"
     timeout 5s adb devices -l > "$OUT/adb-devices.txt" 2>&1
   fi

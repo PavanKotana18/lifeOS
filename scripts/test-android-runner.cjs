@@ -47,6 +47,7 @@ else if(a.includes('getprop ro.build.version.sdk')) console.log('34');
 else if(a.includes('pm list packages')) { if(mode==='existing') console.log('package:com.lifeos.personal'); }
 else if(a.includes('shell run-as com.lifeos.personal pwd')) console.log('/data/user/0/com.lifeos.personal');
 else if(a.includes('dumpsys activity exit-info')) console.log('synthetic process exit information');
+else if(a.includes('dumpsys meminfo')) console.log('synthetic process memory information');
 else if(a.includes('logcat -b all -d')) console.log('synthetic crash log');
 else if(a.includes('shell am instrument')) {
  console.log('INSTRUMENTATION_STATUS: numtests=1\\nINSTRUMENTATION_STATUS: class=com.lifeos.personal.LifeOSLaunchSmokeTest\\nINSTRUMENTATION_STATUS: test=activityCreatesLocalCapacitorWebView\\nINSTRUMENTATION_STATUS_CODE: 1');
@@ -78,6 +79,9 @@ else if(a.includes('shell am instrument')) {
       assert.match(fs.readFileSync(path.join(out, 'logcat-errors.txt'), 'utf8'), /synthetic crash log/);
       assert.match(fs.readFileSync(path.join(out, 'app-exit-info.txt'), 'utf8'), /synthetic process exit information/);
       assert.match(fs.readFileSync(path.join(out, 'instrumentation-exit-info.txt'), 'utf8'), /synthetic process exit information/);
+      assert.match(fs.readFileSync(path.join(out, 'google-play-services-exit-info.txt'), 'utf8'), /synthetic process exit information/);
+      assert.match(fs.readFileSync(path.join(out, 'system-memory-info.txt'), 'utf8'), /synthetic process memory information/);
+      assert.match(fs.readFileSync(path.join(out, 'app-memory-info.txt'), 'utf8'), /synthetic process memory information/);
     }
     console.log(`PASS: Android runner ${mode} contract (simulated ADB only)`);
   }

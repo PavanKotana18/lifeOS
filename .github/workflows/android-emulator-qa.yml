@@ -306,8 +306,8 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            ANDROID_TEST_FILTER='com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#backgroundedSyntheticTaskReminderIsActuallyPosted' ANDROID_REQUIRED_TEST='LocalNotificationBridgeAcceptanceTest#backgroundedSyntheticTaskReminderIsActuallyPosted' ANDROID_EXPECTED_TESTS=1 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-notification-isolation
-      - name: Require the isolated background reminder test to complete
+            ANDROID_TEST_FILTER='com.lifeos.personal.LocalNotificationBridgeAcceptanceTest' ANDROID_REQUIRED_TEST='LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder' ANDROID_EXPECTED_TESTS=2 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-notification-isolation
+      - name: Require both notification bridge tests to complete in sequence
         if: success()
         run: |
           python3 - <<'PY'
@@ -317,8 +317,13 @@ jobs:
           failures = int(report.attrib.get('failures', '0'))
           skipped = int(report.attrib.get('skipped', '0'))
           errors = int(report.attrib.get('errors', '0'))
-          print(f"API 34 isolated notification test: expected=1 executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped} runner_errors={errors}")
-          if tests != 1 or failures or skipped or errors:
+          names = {f"{case.attrib.get('classname', '')}#{case.attrib.get('name', '')}" for case in report.findall('.//testcase')}
+          expected_names = {
+              'com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder',
+              'com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#backgroundedSyntheticTaskReminderIsActuallyPosted',
+          }
+          print(f"API 34 isolated notification bridge sequence: expected=2 executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped} runner_errors={errors}")
+          if tests != 2 or failures or skipped or errors or names != expected_names:
               sys.exit(1)
           PY
       - name: Upload isolated notification crash evidence
