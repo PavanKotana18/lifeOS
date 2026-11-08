@@ -57,3 +57,11 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 - Local checks: full `npm test` PASS; `npx tsc --noEmit` PASS.
 - Candidate integration: #21 is in the branch; emulator policy will be tightened after PR source integration.
 - Next: inspect/integrate #22 and test the fail-closed encrypted access path.
+
+### Stage #22 — STOP: mandatory regression failure
+- Source SHA: `7650f5ead7d0aa4e0e108eec78faecac4bcd708e`; verified #21 is an ancestor. Candidate merge commit: `da91974`.
+- The stage adds the fail-closed inactive-storage guard and an admission regression. No merge conflict or source deletion occurred.
+- Mandatory `npm test` FAILS immediately in `test_backup_indexeddb.js`: `Encrypted storage is not ready. Complete secure provisioning and recovery setup before opening private data.` The fixture stubs native key provisioning as unavailable, then calls the guarded production `StorageService.backup.exportData()` as if raw access were active. No data-loss assertion ran to completion; no TypeScript check was run after the failed suite.
+- This matches the explicit #22 handoff: raw-backend assumptions in old tests must be separated from production encrypted-facade tests. Read-only comparison shows #23 changes this fixture to use `rawStorageService` under a documented legacy-internals-only label, while production admission/security behavior is tested separately. That is a plausible safe fix, but it has not been integrated or tested on this candidate.
+- STOP condition honored: no PR #23 or later stage was integrated. No security guard was weakened, no test was removed, and no failure was waived.
+- Next safe step after review: apply the documented fixture boundary correction without changing production admission behavior; run the complete suite and TypeScript; inspect any remaining WP0 raw-access assumptions. Resume later PR integration only after those gates pass.
