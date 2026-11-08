@@ -81,3 +81,7 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 - Read-only inspection of #23 shows its `test_db_atomicity.js` patch switches to raw storage and removes the first 124 lines containing session guard/bootstrap checks. Do not copy that removal without replacing the guard coverage. A safe follow-up must keep explicit fail-closed production-boundary tests, test session-lock behavior under an active synthetic encrypted runtime (or a narrow focused contract), and use raw-only access for legacy database atomicity cases.
 - Mandatory focused gate failed, so no full npm suite, Sentinel, TypeScript, build, PR #23 integration, Android workflow, or later stage was run after this failure.
 - Stop decision: BLOCKED at #22. Candidate code now contains only the passing legacy backup fixture correction; the separate `test_db_atomicity.js` issue remains unresolved. Do not integrate #23 until the full mandatory suite passes.
+
+### Latest recovery checkpoint
+- The test-only backup correction and this stop record were pushed at commit `576db04651641a0cf1aeb507b6607b10392d7787`.
+- `test_backup_indexeddb.js` independently passes 5/5. The next focused mandatory test still fails at `test_db_atomicity.js:108`; no more suites were run after it. Candidate remains blocked and PR #23–#25 remain unintegrated.
