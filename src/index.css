@@ -280,6 +280,38 @@ body {
 .life-destination-copy strong { font-size: 0.9rem; font-weight: 600; }
 .life-destination-copy span { overflow: hidden; color: var(--ink-secondary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
 .life-destination-row > svg:last-child { flex: 0 0 auto; color: var(--ink-muted); }
+.life-hub { gap: 1.15rem; }
+.life-routine-section, .life-goal-section { min-width: 0; }
+.life-section-heading { display: flex; min-height: 3.25rem; align-items: center; justify-content: space-between; gap: 0.75rem; padding-bottom: 0.55rem; }
+.life-section-heading > div { min-width: 0; }
+.life-section-heading h3 { margin-top: 0.1rem; }
+.life-add-button { display: inline-flex; min-height: 2.75rem; flex: 0 0 auto; align-items: center; gap: 0.25rem; border-radius: 0.75rem; padding-inline: 0.7rem; color: var(--accent); font-size: 0.8rem; font-weight: 600; }
+.life-habit-list, .life-goal-list { border-top: 1px solid var(--stroke); }
+.life-habit-row { display: flex; min-height: 4.25rem; align-items: center; gap: 0.65rem; border-bottom: 1px solid var(--stroke); }
+.life-habit-check { display: grid; width: 2.75rem; min-height: 2.75rem; flex: 0 0 auto; place-items: center; border: 2px solid var(--stroke); border-radius: 50%; color: transparent; transition: background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out; }
+.life-habit-check.is-complete { border-color: var(--success); background: var(--success); color: var(--page); }
+.life-habit-check:focus-visible, .life-goal-card:focus-visible, .life-section-more:focus-visible, .life-add-button:focus-visible, .life-insights-link:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 3px; }
+.life-habit-copy { display: grid; min-width: 0; flex: 1; gap: 0.12rem; }
+.life-habit-copy strong { overflow-wrap: anywhere; font-size: 0.875rem; font-weight: 550; }
+.life-habit-copy strong.is-complete { color: var(--ink-secondary); text-decoration: line-through; }
+.life-habit-copy small { color: var(--ink-secondary); font-size: 0.75rem; }
+.life-row-chevron { flex: 0 0 auto; color: var(--ink-muted); }
+.life-empty-state { display: grid; justify-items: center; gap: 0.35rem; border-block: 1px solid var(--stroke); padding: 1.25rem 0.75rem; color: var(--ink-secondary); text-align: center; font-size: 0.8rem; }
+.life-section-more { display: flex; min-height: 2.75rem; width: 100%; align-items: center; justify-content: center; gap: 0.3rem; color: var(--accent); font-size: 0.8rem; font-weight: 600; }
+.life-goal-list li + li { border-top: 1px solid var(--stroke); }
+.life-goal-card { display: grid; width: 100%; min-height: 6.25rem; gap: 0.45rem; padding: 0.8rem 0.1rem; text-align: left; }
+.life-goal-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+.life-goal-heading strong { min-width: 0; overflow-wrap: anywhere; font-size: 0.875rem; font-weight: 600; }
+.life-goal-heading > span { flex: 0 0 auto; color: var(--accent); font-size: 0.8rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.life-goal-track { display: block; height: 0.35rem; overflow: hidden; border-radius: 999px; background: var(--stroke); }
+.life-goal-track > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.life-goal-meta { display: flex; justify-content: space-between; gap: 0.5rem; color: var(--ink-secondary); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.life-goal-date { color: var(--ink-secondary); font-size: 0.7rem; }
+.life-insights-link { display: flex; min-height: 3.75rem; align-items: center; gap: 0.7rem; border: 1px solid var(--stroke); border-radius: 1rem; background: var(--surface); padding: 0.65rem 0.8rem; color: var(--accent); text-align: left; }
+.life-insights-link span { display: grid; min-width: 0; flex: 1; gap: 0.1rem; color: var(--ink); }
+.life-insights-link strong { font-size: 0.8rem; font-weight: 600; }
+.life-insights-link small { color: var(--ink-secondary); font-size: 0.7rem; }
+.life-insights-link > svg:last-child { flex: 0 0 auto; color: var(--ink-muted); }
 
 .plan-hub { display: grid; gap: 1rem; }
 .plan-hub-heading { display: grid; gap: 0.3rem; }

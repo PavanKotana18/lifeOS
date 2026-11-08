@@ -1769,6 +1769,14 @@ export default function App() {
     () => getTodayOverview(tasks, habits, habitLogs, todayKey),
     [tasks, habits, habitLogs, todayKey]
   );
+  const lifeHubHabits = useMemo(() => habits.map(habit => {
+    const stats = getHabitStreaks(habit.id, todayKey);
+    return { id: habit.id, name: habit.name, completedToday: stats.completedToday, currentStreak: stats.currentStreak };
+  }), [habits, habitLogs, todayKey]);
+  const lifeHubGoals = useMemo(() => goals.filter(goal => goal.status === 'In Progress').map(goal => {
+    const goalMilestones = milestones.filter(milestone => milestone.goalId === goal.id);
+    return { id: goal.id, title: goal.title, progress: getGoalProgress(goal.currentValue, goal.targetValue), current: displayGoalMeasure(goal.currentValue, goal.unit), target: displayGoalMeasure(goal.targetValue, goal.unit), targetDate: formatDate(goal.targetDate), completedMilestones: goalMilestones.filter(milestone => milestone.completed).length, milestoneCount: goalMilestones.length };
+  }), [goals, milestones, userPrefs.dateFormat, userPrefs.distance, userPrefs.volume, userPrefs.speed]);
   const tomorrowDate = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 1);
   const tomorrowKey = formatLocalDate(tomorrowDate);
   const calendarDays = useMemo(() => getMonthCalendarDays(plannerDisplayedMonth.getFullYear(), plannerDisplayedMonth.getMonth(), userPrefs.firstDayOfWeek === 'monday'), [plannerDisplayedMonth, userPrefs.firstDayOfWeek]);
@@ -2056,11 +2064,15 @@ export default function App() {
 
         {/* VIEW 2: FINANCE */}
         <RetainedScreen active={activeTab === 'life'} retainInactive id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+          habits={lifeHubHabits}
+          goals={lifeHubGoals}
           routinesDue={todayOverview.routinesDue}
           completedRoutines={todayOverview.routinesCompleted}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
           weeklyTotal={todayOverview.weeklyRoutinesTotal}
-          activeGoals={goals.filter(goal => goal.status === 'In Progress').length}
+          onCheckIn={habit => { const original = habits.find(item => item.id === habit.id); if (original) void handleHabitCompletion(original.id, original.name, todayKey, habit.completedToday); }}
+          onCreateHabit={() => openCreateForm('habit')}
+          onCreateGoal={() => openCreateForm('goal')}
           onHabits={() => { setHabitsSubtab('checklist'); navigateTo('habits'); }}
           onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
           onInsights={() => navigateTo('insights')}
