@@ -25,9 +25,9 @@
 | Foldable inner display | 673 × 841 | Layout rule only | Real window-size validation, hinge/folding posture checks. |
 | Tablet | 800 × 1280 | Layout rule only | Rendered capture and task-flow validation. |
 | Resized / split-screen | 520 × 720 | Layout rule only | Runtime resize during a sheet and scroll. |
-| Large text 130% / 200% | — | Not run | Android font scale, no clipping or lost actions. |
+| Large text 130% / 200% | — | Native font-scale mapping and launch checks passed on API 29/34/35; no page screenshot | Verify clipping, wrapped actions and field visibility on emulator/device. |
 | Theme variants | — | Existing theme/render tests pass; no screenshot | Light, dark and alternate theme visual review. |
 | Keyboard open/closed | — | Source contract only | Actual Android numeric/text keyboards and focused-field visibility. |
-| Gesture / three-button nav | — | Native inset instrumentation added, hosted run pending | Execute API 29/34/35; verify edge-back and tab swipe. |
+| Gesture / three-button nav | — | Native inset instrumentation passed on API 29/34/35; no touch recording | Verify edge-back and tab swipe on Android runtime and iQOO. |
 
-`adb devices -l` returned no connected device and no local browser/emulator tooling was available. This is not visual acceptance, device support certification or a claim of no overflow.
+Hosted Android instrumentation passed on implementation commit `ffe8666857907fdec4ed2754747fe781ee6d37b4`: API 29 14/14, API 34 19/19, API 35 19/19, zero failures/skips. It covers native WebView font-scale mapping and system-gesture insets, not visual layouts at the listed viewport sizes. `adb devices -l` returned no connected device and no browser screenshot tooling was available locally. This is not visual acceptance, device support certification or a claim of no overflow.

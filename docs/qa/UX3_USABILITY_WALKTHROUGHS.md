@@ -1,6 +1,6 @@
 # UX 3.0 usability walkthroughs
 
-Method: source-informed heuristic walkthrough plus synthetic component/database tests. No external participants, time-on-task measurements, emulator screen recording or physical-device observations were produced by this session. The results below are implementation and test evidence, not participant research or visual acceptance.
+Method: source-informed heuristic walkthrough plus synthetic component/database tests. No external participants, time-on-task measurements, emulator screen recording or physical-device observations were produced by this session. Hosted Android instrumentation ran the native smoke, persistence, notification, font-scale, screenshot-policy and gesture-inset cases, but did not exercise the product UI journeys. The results below are implementation and test evidence, not participant research or visual acceptance.
 
 | Journey | Intended shortest path | Corrective work and evidence | Result / limitation |
 |---|---|---|---|
@@ -11,7 +11,7 @@ Method: source-informed heuristic walkthrough plus synthetic component/database 
 | E — Goal | Life → Add goal → add milestone → review progress | Existing goal progress and milestone calculations remain untouched; Life render tests cover active goal and milestone summaries. | Test coverage pass; goal detail navigation remains part of device checklist. |
 | F — Customize Today | Today → Customize → reorder/hide → restart | Existing encrypted preference persistence test verifies saved order/visibility after database close, native relock and module restart. | Test passed with a simulated native authentication bridge; no physical restart. |
 | G — Dirty form | Open/edit → change → dismiss → keep editing/discard | Existing create-handler tests verify failed writes preserve input and explicit retry commits once; shared sheet, focus and dirty-close contracts pass. | Handler-level/mock evidence only; Android keyboard/sheet interaction pending. |
-| H — Reminder tap | Tap notification → protected session admission → correct task | Notification architecture unchanged. Full Node notification contracts pass; Android workflow tests notification bridge and tap routes. | Source/test pass; candidate-specific hosted run pending; physical delivery/deep-link remains pending. |
+| H — Reminder tap | Tap notification → protected session admission → correct task | Notification architecture unchanged. Full Node notification contracts pass; hosted API 34/35 instrumentation passed notification bridge delivery and cold-start tap routing. | Emulator contract pass; real delivery/deep-link on iQOO remains pending. |
 | I — Lock / resume | Private content → lock/background → resume/unlock | Existing encrypted-session, admission, screenshot-protection and lifecycle suites pass; inactive screens are hidden/inert and lock replaces the private tree. | Native bridges are simulated in most Node suites; Android screenshot and iQOO lock/Recent Apps test pending. |
 | J — Offline | Create local record → go offline/restart → verify record | Dexie, encrypted storage and offline resilience regression tests pass; no app network dependency in local storage path. | Automated service evidence; no offline phone restart performed. |
 

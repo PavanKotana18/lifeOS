@@ -30,3 +30,7 @@ One React surface owns `pointerdown`, `pointermove`, `pointerup`, `pointercancel
 `test_navigation_gestures_20261108.cjs` checks tab boundaries/direction, short/fast gestures, axis lock, wrong pointer, scroll ownership, disabled preference, viewport-relative drag limit and bounded/redacted trace behavior. `tests/ui-navigation-foundations.test.cjs` checks event wiring, exclusions, native edge use, lock behavior, screen visibility, transition lifecycle and scroll restoration. `SystemGestureInsetsAcceptanceTest` checks the native inset object from a real activity window and pixel-to-dp conversion on emulator.
 
 These tests do not emulate a human swipe on the iQOO. `adb devices -l` returned no connected device. The acceptance gate remains **REQUIRES PHYSICAL DEVICE** until the user confirms a left/right swipe on that exact device and checks that vertical scroll and Android edge-back remain independent.
+
+## Hosted native execution
+
+On implementation commit `ffe8666857907fdec4ed2754747fe781ee6d37b4`, the Android API 29, 34 and 35 instrumentation jobs passed. The two `SystemGestureInsetsAcceptanceTest` cases executed in each matrix with zero skipped cases. This verifies that the activity window exposes nonnegative system gesture insets and the native px-to-dp conversion works on those emulators. The tests do not send a touch gesture through WebView, so the reported iQOO swipe failure remains **REQUIRES PHYSICAL DEVICE**.

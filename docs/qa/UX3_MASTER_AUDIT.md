@@ -88,7 +88,8 @@ Most create/edit flows use the shared `createKind` form sheet in App; account an
 - `npx --no-install tsc --noEmit`: passed.
 - `npm run build`: passed; main bundle warning remains at 642.61 kB (182.84 kB gzip), with charts split to a 415.42 kB (112.67 kB gzip) chunk.
 - Focused navigation, gesture, task-detail privacy, responsive contract, finance, encryption, backup, notification and screenshot-policy tests passed.
-- Android instrumentation has not yet run on UX 3.0. The native activity-window instrumentation was added, but this environment has no connected device or local emulator.
+- Hosted Android emulator QA passed on implementation commit `ffe8666857907fdec4ed2754747fe781ee6d37b4`: API 29 14/14, API 34 19/19 and API 35 19/19, with zero failures, skips or runner errors. The API 29 recovery preflight passed 1/1; all three API 34 notification-isolation attempts passed 2/2; API 34 smoke passed 19/19. The added native inset/font-scale tests executed on the emulator matrix.
+- No successful-screen screenshots, emulator UI walkthrough video, or actual iQOO touch interaction were captured. Emulator instrumentation verifies native lifecycle/insets and smoke paths, not swipe recognition, page layout quality, keyboard appearance or visual smoothness.
 - No screenshot/video or actual iQOO interaction was captured. Swipe, keyboard, landscape, large text, real recent-apps privacy and visual composition still require runtime/device evidence.
 
 ## Audit disposition
