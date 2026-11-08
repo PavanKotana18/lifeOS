@@ -2,6 +2,8 @@
 
 Method: source-informed heuristic walkthrough plus synthetic component/database tests. No external participants, time-on-task measurements, emulator screen recording or physical-device observations were produced by this session. Hosted Android instrumentation ran the native smoke, persistence, notification, font-scale, screenshot-policy and gesture-inset cases, but did not exercise the product UI journeys. The results below are implementation and test evidence, not participant research or visual acceptance.
 
+The exact candidate head `e8bd5aabb6327d90ef5c56efe133c3ec81292388` passed `npm test`, Sentinel 6/6 suites, TypeScript, production build, and the hosted Android matrix in [run 42523767928](https://github.com/PavanKotana18/lifeOS/actions/runs/42523767928). The matrix was API 29 14/14, API 34 19/19 and API 35 19/19 with zero failures, skips or runner errors. This does not convert the heuristic walkthroughs into observed usability tests. If the PR head advances, the exact current-head run is linked from PR #34.
+
 | Journey | Intended shortest path | Corrective work and evidence | Result / limitation |
 |---|---|---|---|
 | A — Today task | Today → Add task → save → find task → complete | Today defaults to focus, today's tasks and habits; task rows open human-readable details and expose direct completion. Today dashboard/layout tests pass. | Flow is connected at source/test level; no rendered or physical walkthrough. |
