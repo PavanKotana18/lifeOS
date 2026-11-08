@@ -1,4 +1,6 @@
 
+// This fixture covers legacy raw-database restore atomicity only. Production
+// access admission is tested separately and must remain fail-closed.
 require('fake-indexeddb/auto');
 const fs = require('fs');
 const path = require('path');
@@ -7,7 +9,7 @@ const ts = require('typescript');
 const assert = require('assert');
 
 async function main() {
-  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
+  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to raw legacy storage internals.\nexport { db, rawStorageService as legacyStorageService };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -91,7 +93,7 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const { db, StorageService, sessionManager } = loaded.exports;
+  const { db, legacyStorageService: StorageService, sessionManager } = loaded.exports;
   sessionManager.unlock();
   await db.open();
 
