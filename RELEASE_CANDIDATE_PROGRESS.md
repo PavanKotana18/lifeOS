@@ -33,6 +33,13 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 ### Stage #14 — local notification and finance consolidation
 - Source SHA: `5848a0eb4c887d5c9479208ae282d8a72a228268`; confirmed #13 is an ancestor, so only #14-specific changes were newly introduced.
 - Reviewed the notification scheduling/manifest changes, finance totals, regression runner and added contracts. No duplicate integration and no merge conflict.
-- Merged with source history; candidate merge commit: `PENDING`.
+- Merged with source history; candidate merge commit: `92440d173fb79c21adebb2695a22561c3425ae5b`.
 - Tests: full `npm test` PASS; `npx tsc --noEmit` PASS.
 - Next: inspect and integrate #15.
+
+### Stage #15 — Android acceptance scaffold
+- Source SHA: `0ec1a07fb04572b5dbbcf3f317b742ade7431fce`; confirmed #14 is an ancestor, with no duplicate stage work.
+- Reviewed Android acceptance tests, build configuration, guarded runner, and CSV save changes. No conflict or unexpected deletion.
+- Merged with source history; merge commit is recorded in Git ancestry.
+- Tests: full `npm test` PASS; `npx tsc --noEmit` PASS. Android instrumentation has not run locally.
+- Next: verify #20 merge parents and unique integration changes, then integrate it.
