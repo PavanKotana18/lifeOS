@@ -17,7 +17,7 @@ The exact current branch SHA, workflow run IDs, test summaries, APK metadata, an
 
 | ID | Result | Cause and correction | Verification and remaining limit |
 |---|---|---|---|
-| F01 | PRESERVED · DEVICE CHECK | Launch/splash implementation was already present; no startup or branding code changed. | Launch-brand and startup tests; actual splash timing still needs Android device observation. |
+| F01 | FIX APPLIED · CI VIA PR · DEVICE CHECK | The merged Android manifest enabled AndroidX `EmojiCompatInitializer`, which queries a downloadable emoji-font provider such as Google Play services. API 34 exit reports showed LifeOS terminated with `DEPENDENCY DIED` when `com.google.android.gms/.fonts.provider.FontsProvider` died. Removed only that optional initializer while retaining AndroidX Startup; WebView still uses the bundled Inter font and platform glyphs. | Native launch acceptance asserts the Startup provider remains and the EmojiCompat initializer is absent. The current PR-head workflow checks are the acceptance evidence for this correction; physical splash and glyph appearance still need device observation. |
 | F02 | FIXED | Today used large vertical gaps and repeated padded empty cards. Reduced section spacing and made empty copy compact. | Today dashboard/layout tests; no rendered screenshot capture here. |
 | F03 | FIXED | Default Today order put supporting information ahead of day actions. Default now presents date, focus, agenda, habits, then supporting sections. Saved user ordering and visibility remain compatible. | Today layout persistence and dashboard tests. |
 | F04 | PRESERVED | The task progress cue already derives from today's due/completed counts and has an accessible progressbar label. | Today overview and dashboard tests; no fake progress introduced. |
@@ -63,17 +63,17 @@ The exact current branch SHA, workflow run IDs, test summaries, APK metadata, an
 - Shared confirmation dialogs replace browser confirms for app actions. Dirty forms guard dismissal; clean forms do not interrupt.
 - Focus outlines, 44 px controls, sticky sheet actions, safe-area padding, and reduced-motion rules use existing theme tokens.
 
-No screenshot/video was captured: this Termux environment had no attached Android device or local emulator. Do not infer visual frame rate or physical-device smoothness from a successful build.
+No product screenshot/video was captured: this Termux environment had no attached Android device or local emulator. The failed API 34 CI run captured only the emulator launcher after process death, not a LifeOS screen. Do not infer visual frame rate or physical-device smoothness from a successful build.
 
 ## Performance notes
 
 The existing production build reports the main JavaScript chunk at approximately 640.14 kB (181.84 kB gzip) and the separately loaded chart chunk at approximately 415.42 kB (112.67 kB gzip). Recharts is already isolated; this change avoids loading it for an empty financial history. Rollup source inspection found Dexie, App, React DOM, and protected storage/startup code among the largest main-chunk contributors. A broader split would touch startup/security loading and was not attempted in this presentation-only refinement.
 
-No FPS, input-latency, memory, or startup-duration measurement was available locally. Hosted emulator results validate behavior, not the iQOO's perceived motion.
+No FPS, input-latency, or startup-duration measurement was available locally. In two failed hosted API 34 attempts, Android recorded LifeOS PSS/RSS of 700/805 MB and 803/880 MB at dependency death; these are single emulator exit measurements, not representative iQOO profiling. The same-SHA API 34 smoke retry passed 17/17, but the full API 34 matrix then reproduced the provider death. The cause of the provider process death is not known. The optional font-provider startup dependency has now been removed; current PR-head CI is the evidence for this correction. Hosted emulator results validate behavior, not the iQOO's perceived motion.
 
 ## Automated evidence
 
-Local verification on the refinement source passed: `npm run test:all` (full `npm test` chain followed by Sentinel), TypeScript `--noEmit`, and the production Vite build. Sentinel reported 6/6 suites passed; it marks Android SAF execution as device-only. The Vite build retains the main-chunk warning documented below. Hosted API test counts, package/version/signing identity, APK hash, run URL, and artifact ID must be recorded from the exact current branch-head workflow summary and attached to the refinement PR. Do not copy evidence from base SHA `2160b2e` and describe it as a run on the refinement SHA.
+Local verification on the UI refinement commit passed: `npm run test:all` (full `npm test` chain followed by Sentinel), TypeScript `--noEmit`, and the production Vite build. Sentinel reported 6/6 suites passed; it marks Android SAF execution as device-only. The Vite build retains the main-chunk warning documented below. Historical CI on source SHA `eddc3c343f75525644d44d778b8192766a5906f0` showed build/APK validation, API 29 (12/12), API 35 (17/17), API 34 smoke retry (17/17), and three API 34 notification isolation attempts (2/2 each) passing. The first API 34 smoke attempt completed 10 tests before the app process died through the GMS FontsProvider dependency; the full API 34 matrix later completed 13/17 before the same dependency death. The cause of the provider process death is not known. The exact current branch-head test and artifact evidence is linked from the refinement PR; prior runs are historical only and must not be used as proof for a later head.
 
 Earlier integration evidence on the unchanged base `2160b2e52c1a2c2082cfb8a0e505c607c692d852` was API 29 12/12, API 34 17/17, API 35 17/17 (workflow `42493445284`). It is source-equivalent only to that base, not to this refinement.
 
