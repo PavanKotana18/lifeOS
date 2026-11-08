@@ -278,9 +278,14 @@ jobs:
           retention-days: 7
 
   android-api34-notification-isolation:
+    name: API 34 notification isolation (attempt ${{ matrix.attempt }})
     needs: [build-test-apks, android-api29-recovery-preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -298,7 +303,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          avd-name: lifeos-api34-notification-isolation
+          avd-name: lifeos-api34-notification-isolation-${{ matrix.attempt }}
           cores: 2
           ram-size: 3072M
           heap-size: 512M
@@ -306,13 +311,13 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            ANDROID_TEST_FILTER='com.lifeos.personal.LocalNotificationBridgeAcceptanceTest' ANDROID_REQUIRED_TEST='LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder' ANDROID_EXPECTED_TESTS=2 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-notification-isolation
+            ANDROID_TEST_FILTER='com.lifeos.personal.LocalNotificationBridgeAcceptanceTest' ANDROID_REQUIRED_TEST='LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder' ANDROID_EXPECTED_TESTS=2 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-notification-isolation-${{ matrix.attempt }}
       - name: Require both notification bridge tests to complete in sequence
         if: success()
         run: |
           python3 - <<'PY'
           import sys, xml.etree.ElementTree as ET
-          report = ET.parse('qa-notification-isolation/junit.xml').getroot()
+          report = ET.parse('qa-notification-isolation-${{ matrix.attempt }}/junit.xml').getroot()
           tests = int(report.attrib.get('tests', '0'))
           failures = int(report.attrib.get('failures', '0'))
           skipped = int(report.attrib.get('skipped', '0'))
@@ -330,8 +335,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lifeos-api34-notification-isolation-evidence
-          path: qa-notification-isolation/**
+          name: lifeos-api34-notification-isolation-attempt-${{ matrix.attempt }}
+          path: qa-notification-isolation-${{ matrix.attempt }}/**
           if-no-files-found: warn
           retention-days: 14
 
