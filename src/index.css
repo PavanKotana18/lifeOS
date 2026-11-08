@@ -144,6 +144,10 @@ body {
 .app-profile-button:focus-visible, .lifeos-nav .nav-item:focus-visible, .money-home button:focus-visible, .life-hub button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 3px; }
 .today-sections { display: flex; flex-direction: column; gap: 1.25rem; }
 .today-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.today-focus { background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 92%, var(--accent)), var(--surface)); }
+.today-quick-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; }
+.today-focus-progress { height: 0.3rem; overflow: hidden; border-radius: 999px; background: var(--stroke); }
+.today-focus-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 180ms ease-out; }
 .today-customization-list { border-top: 1px solid var(--stroke); }
 .today-customization-list li { display: flex; min-height: 3.25rem; align-items: center; justify-content: space-between; gap: 0.75rem; border-bottom: 1px solid var(--stroke); }
 .today-section-toggle { display: flex; min-width: 0; flex: 1; align-items: center; gap: 0.7rem; font-size: 0.8125rem; font-weight: 500; }
@@ -152,6 +156,10 @@ body {
 .today-order-actions button { min-height: 44px; min-width: 44px; border-radius: 0.65rem; color: var(--ink-secondary); font-size: 1rem; font-weight: 600; }
 .today-order-actions button:disabled { opacity: 0.4; }
 .today-sections button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
+@media (max-width: 380px) {
+  .today-quick-actions { gap: 0.35rem; }
+  .today-quick-actions button { padding-inline: 0.55rem; }
+}
 .transaction-optional-details { background: var(--surface-raised); }
 .transaction-optional-details button:focus-visible, .transaction-optional-details input:focus-visible, .transaction-optional-details textarea:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 .savings-goal-row { display: grid; grid-template-columns: 4.75rem minmax(0, 1fr); align-items: center; gap: 0.9rem; border-bottom: 1px solid var(--stroke); padding: 1rem 0; }

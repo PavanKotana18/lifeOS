@@ -12,5 +12,5 @@ assert.match(today, /aria-pressed=\{stats\.completedToday\}/);
 assert.match(today, /aria-label=\{`Mark \$\{t\.title\}/);
 assert.match(today, /Create a habit/);
 assert.match(today, /Add a task/);
-assert.match(today, /Nothing scheduled for today yet/);
+assert.match(today, /Your day is open\. Choose what matters most\./);
 console.log('TODAY THEME: 8 source-level theme, progress, status and empty-state checks passed.');

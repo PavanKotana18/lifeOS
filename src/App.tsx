@@ -1905,24 +1905,23 @@ export default function App() {
               <button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="mt-3 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button>
             </section>}
 
-            {/* Today at a glance: separate counts keep task and routine progress understandable. */}
-            <section className="lifeos-panel space-y-3 rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">At a glance</p>
-                <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s focus</h3>
+            {/* Keep the first panel focused: one useful progress cue and fast ways to act. */}
+            <section className="today-focus lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">YOUR DAY</p>
+                  <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s focus</h3>
+                  {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> tasks complete</p>
+                    : todayOverview.routinesDue > 0 ? <p className="mt-1 text-sm text-secondary">Your routines are ready when you are.</p>
+                      : <p className="mt-1 text-sm text-secondary">Your day is open. Choose what matters most.</p>}
+                </div>
+                <div className="today-quick-actions" aria-label="Quick add">
+                  <button type="button" onClick={() => openCreateForm('task')} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">+ Task</button>
+                  <button type="button" onClick={() => openCreateForm('habit')} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold">+ Habit</button>
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <button onClick={() => navigateTo('planner')} className="lifeos-raised min-h-16 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" aria-label={`Open Planner: ${todayOverview.tasksCompleted} of ${todayOverview.tasksDue} tasks due today complete`}>
-                  <span className="block text-xs text-secondary">Tasks due today</span>
-                  <span className="mt-1 block text-base font-semibold tabular-nums">{todayOverview.tasksCompleted} <span className="text-sm font-normal text-secondary">of {todayOverview.tasksDue} complete</span></span>
-                </button>
-                <button onClick={() => navigateTo('habits')} className="lifeos-raised min-h-16 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" aria-label={`Open Habits: ${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} routines complete today`}>
-                  <span className="block text-xs text-secondary">Routines today</span>
-                  <span className="mt-1 block text-base font-semibold tabular-nums">{todayOverview.routinesCompleted} <span className="text-sm font-normal text-secondary">of {todayOverview.routinesDue} checked</span></span>
-                </button>
-              </div>
-              {todayOverview.weeklyRoutinesTotal > 0 && <p className="text-xs text-secondary">Weekly routines · {todayOverview.weeklyRoutinesCompleted} of {todayOverview.weeklyRoutinesTotal} checked this week</p>}
-              {todayOverview.tasksDue === 0 && todayOverview.routinesDue === 0 && todayOverview.weeklyRoutinesTotal === 0 && <p className="text-sm text-secondary">Nothing scheduled for today yet. Add a task or routine when you’re ready.</p>}
+              {todayOverview.tasksDue > 0 && <div className="today-focus-progress mt-3" role="progressbar" aria-label="Today’s tasks complete" aria-valuemin={0} aria-valuemax={todayOverview.tasksDue} aria-valuenow={todayOverview.tasksCompleted}><span style={{ width: `${Math.min(100, (todayOverview.tasksCompleted / todayOverview.tasksDue) * 100)}%` }} /></div>}
+              {todayOverview.weeklyRoutinesTotal > 0 && <p className="mt-3 text-xs text-secondary">This week · {todayOverview.weeklyRoutinesCompleted} of {todayOverview.weeklyRoutinesTotal} routines checked</p>}
             </section>
 
             {/* Active Goals Summary */}
