@@ -1265,6 +1265,7 @@ export async function activateEncryptedStorage(): Promise<void> {
     const verifiedState = await CryptoService.getKeyState();
     if (
       !verifiedState.metadataConsistent ||
+      verifiedState.recoveryNeedsRebind ||
       !verifiedState.keyProvisioned ||
       !verifiedState.recoveryProvisioned ||
       !verifiedState.keystoreAliasPresent ||
@@ -1352,6 +1353,13 @@ function protectStorage<T extends object>(namespace = ''): T {
           (property === 'get' || property === 'set') &&
           typeof args[0] === 'string' &&
           BOOTSTRAP_SETTING_KEYS.has(args[0]);
+
+        // Session authorization alone never permits access to the legacy
+        // plaintext backend. This also covers callbacks retained by the UI.
+        if (!isBootstrapSetting && !encryptedStorageActivated) {
+          sessionManager.lock();
+          throw new Error('Encrypted storage is not ready. Complete secure provisioning and recovery setup before opening private data.');
+        }
 
         const token = isBootstrapSetting
           ? null

@@ -87,6 +87,7 @@ export async function migrateLifeOSRecords(
             typeof row.encrypted !== 'object') {
           throw new Error(`Migration stopped: malformed encrypted ${tableName} row.`);
         }
+        await repositories[tableName].open(row);
         skippedEncrypted[tableName] += 1;
         continue;
       }
@@ -108,6 +109,10 @@ export async function migrateLifeOSRecords(
       // Prepare ciphertext before the IndexedDB write. No native crypto call
       // is made inside a Dexie transaction.
       const encryptedRow = await repositories[tableName].prepare(row);
+      const verifiedCopy = await repositories[tableName].open(encryptedRow);
+      if (JSON.stringify(verifiedCopy) !== JSON.stringify(row)) {
+        throw new Error(`Migration stopped: encrypted ${tableName} copy did not verify.`);
+      }
 
       // Refuse to overwrite a row that changed after the snapshot was read.
       const latest = await table.get(identity);
