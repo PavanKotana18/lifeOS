@@ -18,16 +18,22 @@ type Props = {
 };
 
 export default function LifeHub({ habits, goals, completedRoutines, routinesDue, weeklyCompleted, weeklyTotal, onCheckIn, onCreateHabit, onCreateGoal, onHabits, onGoals, onInsights }: Props) {
+  const hasRoutineSummary = routinesDue > 0 || weeklyTotal > 0;
   return <section className="life-hub" aria-labelledby="life-hub-title" data-testid="life-hub">
     <header className="life-hub-heading">
       <p className="type-eyebrow">YOUR LIFE</p>
       <h2 id="life-hub-title" className="type-page-title">Life</h2>
-      <p className="type-body text-secondary">Daily routines and longer-term goals, together.</p>
+      <p className="type-body text-secondary">Habits are things you repeat. Goals are outcomes you build toward.</p>
     </header>
+
+    {hasRoutineSummary && <dl className="life-routine-summary grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label="Routine progress">
+      {routinesDue > 0 && <div className="lifeos-panel rounded-xl p-3"><dt className="type-caption text-secondary">Today</dt><dd className="mt-1 text-sm font-semibold tabular-nums">{completedRoutines} of {routinesDue} check-ins</dd></div>}
+      {weeklyTotal > 0 && <div className="lifeos-panel rounded-xl p-3"><dt className="type-caption text-secondary">This week</dt><dd className="mt-1 text-sm font-semibold tabular-nums">{weeklyCompleted} of {weeklyTotal} routines</dd></div>}
+    </dl>}
 
     <section className="life-routine-section" aria-labelledby="life-routines-title">
       <div className="life-section-heading">
-        <div><p className="type-eyebrow">SMALL, REPEATABLE STEPS</p><h3 id="life-routines-title" className="type-section-title">Habits</h3><p className="type-caption text-secondary">{routinesDue ? `${completedRoutines} of ${routinesDue} checked today` : 'Pick up a routine when it fits your day.'}{weeklyTotal > 0 ? ` · ${weeklyCompleted} of ${weeklyTotal} this week` : ''}</p></div>
+        <div><p className="type-eyebrow">DAILY ROUTINES</p><h3 id="life-routines-title" className="type-section-title">Habits</h3><p className="type-caption text-secondary">Small actions you can check in on each day.</p></div>
         <button type="button" onClick={onCreateHabit} className="life-add-button" aria-label="Add a habit"><Plus size={17} aria-hidden="true" /><span>Add</span></button>
       </div>
       {habits.length ? <ul className="life-habit-list">{habits.slice(0, 4).map(habit => <li key={habit.id} className="life-habit-row">
@@ -39,7 +45,7 @@ export default function LifeHub({ habits, goals, completedRoutines, routinesDue,
 
     <section className="life-goal-section" aria-labelledby="life-goals-title">
       <div className="life-section-heading">
-        <div><p className="type-eyebrow">LONGER-TERM OUTCOMES</p><h3 id="life-goals-title" className="type-section-title">Goals</h3><p className="type-caption text-secondary">{goals.length ? `${goals.length} active ${goals.length === 1 ? 'goal' : 'goals'}` : 'Move forward at a pace that works for you.'}</p></div>
+        <div><p className="type-eyebrow">LONGER-TERM OUTCOMES</p><h3 id="life-goals-title" className="type-section-title">Goals</h3><p className="type-caption text-secondary">A result you want to reach, one step at a time.</p></div>
         <button type="button" onClick={onCreateGoal} className="life-add-button" aria-label="Add a goal"><Plus size={17} aria-hidden="true" /><span>Add</span></button>
       </div>
       {goals.length ? <ul className="life-goal-list">{goals.slice(0, 3).map(goal => <li key={goal.id}>

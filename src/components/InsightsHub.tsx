@@ -21,15 +21,28 @@ type Props = {
 
 export default function InsightsHub(props: Props) {
   const { month, income, expenses, balance, transactionCount, completedRoutines, routinesDue, weeklyCompleted, weeklyTotal, goals, hasHistory, formatMoney, onFinance, onHabits, onGoals } = props;
+  const hasMoneyRecords = transactionCount > 0;
+  const hasRoutineRecords = routinesDue > 0 || weeklyTotal > 0;
+  const hasGoalRecords = goals.length > 0;
+  const hasInsightData = hasMoneyRecords || hasRoutineRecords || hasGoalRecords;
   return <section aria-labelledby="insights-title" className="insights-hub">
     <header className="insights-heading"><p className="type-eyebrow">FROM YOUR SAVED RECORDS</p><h2 id="insights-title" className="type-page-title">Insights</h2><p className="type-body text-secondary">A few clear patterns, without combining unrelated parts of your life into one score.</p></header>
-    {!hasHistory ? <section className="insights-empty lifeos-panel" aria-labelledby="insights-empty-title"><h3 id="insights-empty-title" className="type-section-title">Nothing to compare yet</h3><p className="mt-1 text-sm text-secondary">Save transactions, routines, or goals to see summaries here. LifeOS does not fill this space with sample numbers.</p><button onClick={onFinance} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-sm font-semibold">Open Money</button></section> : <>
-      {transactionCount > 0 && <section className="insights-section insight-money lifeos-panel" aria-labelledby="insights-money-title">
+    {!hasHistory || !hasInsightData ? <section className="insights-empty lifeos-panel" aria-labelledby="insights-empty-title">
+      <p className="type-eyebrow">REAL RECORDS ONLY</p>
+      <h3 id="insights-empty-title" className="type-section-title">{hasHistory ? 'No patterns to show yet' : 'Your insights start here'}</h3>
+      <p className="mt-1 text-sm text-secondary">{hasHistory ? 'Insights currently summarize transactions, routine check-ins, and goal progress. Your other records stay saved and available in their usual screens.' : 'Add a transaction, check in to a habit, or set a goal. Summaries appear here as you build a history.'}</p>
+      <div className="mt-4 flex flex-wrap gap-2" aria-label="Choose a record to add">
+        <button type="button" onClick={onFinance} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Money</button>
+        <button type="button" onClick={onHabits} className="lifeos-panel min-h-11 rounded-xl border px-4 text-sm font-semibold">Habits</button>
+        <button type="button" onClick={onGoals} className="lifeos-panel min-h-11 rounded-xl border px-4 text-sm font-semibold">Goals</button>
+      </div>
+    </section> : <>
+      {hasMoneyRecords && <section className="insights-section insight-money lifeos-panel" aria-labelledby="insights-money-title">
         <div className="flex items-center justify-between gap-2"><div><h3 id="insights-money-title" className="font-semibold">Money · {month}</h3><p className="text-xs text-secondary">From {transactionCount} saved transactions</p></div><button onClick={onFinance} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[var(--accent)]">Details</button></div>
         <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3"><div><dt className="text-xs text-secondary">Income</dt><dd className="mt-1 font-semibold tabular-nums">{formatMoney(income)}</dd></div><div><dt className="text-xs text-secondary">Expenses</dt><dd className="mt-1 font-semibold tabular-nums">{formatMoney(expenses)}</dd></div><div><dt className="text-xs text-secondary">Net for this month</dt><dd className="mt-1 font-semibold tabular-nums">{formatMoney(balance)}</dd></div></dl>
       </section>}
-      {routinesDue + weeklyTotal > 0 && <section className="insights-section insight-routines lifeos-panel" aria-labelledby="insights-routine-title"><div className="flex items-center justify-between gap-2"><div><h3 id="insights-routine-title" className="font-semibold">Routines</h3><p className="text-xs text-secondary">Today’s scheduled check-ins and this week’s weekly routines</p></div><button onClick={onHabits} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[var(--accent)]">Details</button></div><p className="mt-3 text-sm">Today · {completedRoutines} of {routinesDue} checked</p>{weeklyTotal > 0 && <p className="mt-1 text-sm">This week · {weeklyCompleted} of {weeklyTotal} weekly routines checked</p>}</section>}
-      {goals.length > 0 && <section className="insights-section insight-goals lifeos-panel" aria-labelledby="insights-goal-title">
+      {hasRoutineRecords && <section className="insights-section insight-routines lifeos-panel" aria-labelledby="insights-routine-title"><div className="flex items-center justify-between gap-2"><div><h3 id="insights-routine-title" className="font-semibold">Routines</h3><p className="text-xs text-secondary">Check-ins from your saved schedule</p></div><button type="button" onClick={onHabits} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[var(--accent)]">Details</button></div>{routinesDue > 0 && <p className="mt-3 text-sm">Today · {completedRoutines} of {routinesDue} checked</p>}{weeklyTotal > 0 && <p className="mt-1 text-sm">This week · {weeklyCompleted} of {weeklyTotal} weekly routines checked</p>}</section>}
+      {hasGoalRecords && <section className="insights-section insight-goals lifeos-panel" aria-labelledby="insights-goal-title">
         <div className="flex items-center justify-between gap-2"><div><h3 id="insights-goal-title" className="font-semibold">Goal progress</h3><p className="text-xs text-secondary">Based on your saved targets</p></div><button onClick={onGoals} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[var(--accent)]">All goals</button></div>
         <ul className="mt-3 space-y-4">{goals.slice(0, 3).map(goal => {
           const progress = getGoalProgress(goal.currentValue, goal.targetValue);
@@ -40,7 +53,6 @@ export default function InsightsHub(props: Props) {
           </li>;
         })}</ul>
       </section>}
-      <button onClick={onGoals} className="lifeos-panel min-h-12 w-full rounded-xl border px-4 text-left text-sm font-medium">Review goal progress <span className="float-right text-secondary">→</span></button>
     </>}
   </section>;
 }

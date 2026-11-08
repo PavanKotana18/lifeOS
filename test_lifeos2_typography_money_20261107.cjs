@@ -64,6 +64,9 @@ assert.doesNotMatch(markup, /Add to savings/, 'a second savings action is not ad
 assert.match(markup, /<strong>Savings<\/strong>/, 'savings remains available through the progressively disclosed tools');
 assert.match(markup, /Move between accounts/);
 assert.match(markup, /<details class="money-tools">/);
+assert.match(markup, /Reports/);
+assert.match(markup, /Planned bills/);
+assert.doesNotMatch(markup, /Track account balances \(optional\)/, 'optional account tracking does not compete with recording a transaction');
 const primaryActions = markup.match(/<section aria-label="Quick money actions"[\s\S]*?<\/section>/)?.[0] || '';
 assert.ok(primaryActions.indexOf('Add expense') < primaryActions.indexOf('Add income') && primaryActions.indexOf('Add income') < primaryActions.indexOf('Transfer'), 'expense, income, and transfer remain equally visible primary actions');
 assert.match(app, /onTransfer=\{\(\) => \{ setOpenMoneyTransferOnAccounts\(true\); navigateFinanceSubtab\('accounts'\); \}\}/, 'Money transfer quick action opens Accounts and requests the transfer form');
@@ -74,4 +77,16 @@ assert.match(markup, /Overall plan/);
 assert.match(markup, /22,200\.00 left/);
 assert.match(markup, /largest recorded expense category is <strong>Food<\/strong>/);
 assert.match(markup, /up 5\.0% from the previous month/);
+assert.match(markup, /Recorded cash flow: income/);
+const emptyMarkup = renderToStaticMarkup(React.createElement(MoneyHome, {
+  month: '2026-11', income: 0, expenses: 0, netCashFlow: 0, budgetRows: [],
+  largestCategory: null, expenseChange: null, hasPreviousMonthRecords: false, transactions: [],
+  formatMoney: amount => formatCurrency(amount, 'INR', 'en-IN'), formatDate: date => date,
+  formatTime: date => date.toISOString().slice(11, 16), onMonthChange() {}, onAddExpense() {},
+  onAddIncome() {}, onTransfer() {}, onMoveToSavings() {}, onTransactions() {}, onBudgets() {},
+  onSavings() {}, onAnalytics() {}, onPlanning() {}, onAccounts() {}, accountSummaries: [],
+  savingsGoals: [], legacyCurrency: 'INR', onEditTransaction() {},
+}));
+assert.match(emptyMarkup, /No activity for this period yet\. Choose Expense, Income or Transfer above\./, 'empty Money history directs users to the three available transaction actions');
+assert.equal((emptyMarkup.match(/money-account-nudge/g) || []).length, 0, 'empty Money does not present an optional account prompt as a required first step');
 console.log('LIFEOS 2 TYPOGRAPHY + MONEY: bundled Inter/OFL, five script fallbacks, zoom support, token scale, currency formatting and Money navigation checks passed.');

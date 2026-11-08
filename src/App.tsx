@@ -40,7 +40,7 @@ import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
-import { beginPrimaryGesture, recordGestureTrace, resolvePrimaryGestureEnd, updatePrimaryGesture, type PrimaryGestureSession } from './services/navigationGestures';
+import { beginPrimaryGesture, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
 import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
@@ -97,23 +97,22 @@ export default function App() {
   const activeTransitionId = useRef<number | null>(null);
   const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
-    activeTabRef.current = tab;
-    if (previous === tab) { setActiveTab(tab); return; }
-    const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reducedMotion) {
-      swipeSettleAnimation.current?.cancel();
-      swipeSettleAnimation.current = null;
-      activeTransitionId.current = null;
-      setTabTransition(null);
-      setActiveTab(tab);
-      return;
-    }
     const outgoing = document.getElementById(`screen-${previous}`);
     outgoing?.removeAttribute('data-gesture-dragging');
     outgoing?.style.removeProperty('--gesture-x');
     swipeSettleAnimation.current?.cancel();
     swipeSettleAnimation.current = null;
     swipePointer.current = null;
+    swipeOriginAction.current = null;
+    activeTabRef.current = tab;
+    if (previous === tab) { setActiveTab(tab); return; }
+    const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      activeTransitionId.current = null;
+      setTabTransition(null);
+      setActiveTab(tab);
+      return;
+    }
     const id = ++tabTransitionSequence.current;
     activeTransitionId.current = id;
     setTabTransition({ id, to: tab, phase: 'prepare', direction });
@@ -135,6 +134,15 @@ export default function App() {
   const swipePointer = useRef<PrimaryGestureSession | null>(null);
   const activeTouchPointers = useRef(new Set<number>());
   const swipeSuppressed = useRef(false);
+  const swipeOriginAction = useRef<HTMLElement | null>(null);
+  const swipeClickSuppression = useRef<{ pointerId: number; target: HTMLElement; expiresAt: number } | null>(null);
+  const appMainElement = useRef<HTMLElement | null>(null);
+  const gestureEventHandlers = useRef({
+    move: (_event: PointerEvent) => {},
+    up: (_event: PointerEvent) => {},
+    cancel: (_event: PointerEvent) => {},
+    lost: (_event: PointerEvent) => {},
+  });
   const nativeGestureInsets = useRef<{ left: number; right: number } | null>(null);
   const swipeMoveFrame = useRef<number | null>(null);
   const swipeSettleAnimation = useRef<Animation | null>(null);
@@ -355,7 +363,7 @@ export default function App() {
     const transform = getComputedStyle(screen).transform;
     screen.removeAttribute('data-gesture-dragging');
     screen.style.removeProperty('--gesture-x');
-    if (!animateBack || window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof screen.animate !== 'function') return;
+    if (!animateBack || !shouldAnimatePrimaryGestureSettlement(window.matchMedia('(prefers-reduced-motion: reduce)').matches) || typeof screen.animate !== 'function') return;
     const animation = screen.animate([{ transform }, { transform: 'none' }], { duration: 110, easing: 'cubic-bezier(.2, .8, .2, 1)' });
     swipeSettleAnimation.current = animation;
     void animation.finished.catch(() => undefined).finally(() => {
@@ -367,6 +375,7 @@ export default function App() {
     const session = swipePointer.current;
     if (session) recordGestureTrace({ event: 'interrupted', pointerId, deltaX: 0, deltaY: 0, state: session.axis, reason }, import.meta.env.DEV);
     swipePointer.current = null;
+    swipeOriginAction.current = null;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
     clearGestureDrag(false);
   };
@@ -425,8 +434,10 @@ export default function App() {
 
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    const interactive = Boolean(target.closest('button,a,input,textarea,select,form,label,summary,[contenteditable="true"],[role="button"],[role="switch"],[role="checkbox"],[role="dialog"],[role="tab"],[data-no-tab-swipe],[data-swipe-exclude]'));
-    const horizontalControl = Boolean(target.closest('[data-horizontal-scroll],.recharts-wrapper,svg,canvas,[role="slider"]'));
+    const hardExcluded = target.closest('[data-no-tab-swipe],[data-swipe-exclude],[data-gesture-owner="native"],[role="dialog"],[aria-modal="true"],.ui-bottom-sheet,[data-horizontal-scroll],.recharts-wrapper,[data-chart],canvas,[role="slider"],input[type="range"]');
+    const textEntry = target.closest('textarea,select,[contenteditable="true"],[role="textbox"],input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"])');
+    const nativePicker = target.closest('[data-native-picker],input[type="date"],input[type="time"],input[type="month"],input[type="file"],input[type="color"]');
+    const interactive = target.closest('button,a,label,summary,input[type="button"],input[type="submit"],input[type="reset"],input[type="checkbox"],input[type="radio"],[role="button"],[role="switch"],[role="checkbox"],[role="tab"]');
     let ancestor: HTMLElement | null = target as HTMLElement;
     let horizontallyScrollable = false;
     while (ancestor && ancestor !== event.currentTarget) {
@@ -441,27 +452,36 @@ export default function App() {
     const cssInsets = probe ? getComputedStyle(probe) : null;
     const leftSafeArea = Number.parseFloat(cssInsets?.paddingLeft || '0') || 0;
     const rightSafeArea = Number.parseFloat(cssInsets?.paddingRight || '0') || 0;
-    const leftGutter = Math.max(24, leftSafeArea, nativeGestureInsets.current?.left || 0);
-    const rightGutter = Math.max(24, rightSafeArea, nativeGestureInsets.current?.right || 0);
+    // Android supplies the actual system gesture insets; CSS safe areas cover
+    // browsers that expose them. The small fallback is a shared logical-pixel
+    // minimum, not a device-specific screen coordinate.
+    const leftGutter = Math.max(16, leftSafeArea, nativeGestureInsets.current?.left || 0);
+    const rightGutter = Math.max(16, rightSafeArea, nativeGestureInsets.current?.right || 0);
     const systemEdge = event.clientX <= leftGutter || event.clientX >= window.innerWidth - rightGutter;
-    let reason = '';
-    if (!userPrefs.swipeNavigationEnabled) reason = 'preference-disabled';
-    else if (event.pointerType === 'mouse') reason = 'mouse-pointer';
-    else if (activeTab === 'settings') reason = 'settings-screen';
-    else if (createKind || modalContent) reason = 'modal-open';
-    else if (interactive) reason = 'interactive-target';
-    else if (horizontalControl || horizontallyScrollable) reason = 'horizontal-control';
-    else if (systemEdge) reason = 'system-edge';
-    if (reason) {
-      recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'idle', reason }, import.meta.env.DEV);
+    const targetKind: PrimaryGestureTargetKind = textEntry ? 'text-entry'
+      : nativePicker ? 'native-picker'
+        : hardExcluded || horizontallyScrollable ? 'horizontal-control'
+          : interactive ? 'ordinary-interactive' : 'content';
+    const context = {
+      enabled: userPrefs.swipeNavigationEnabled,
+      pointerType: event.pointerType,
+      settingsScreen: activeTab === 'settings',
+      modalOpen: Boolean(createKind || modalContent),
+      multiplePointers: activeTouchPointers.current.size > 1,
+      systemEdge,
+      targetKind,
+    };
+    const blockReason = primaryGestureStartBlockReason(context);
+    if (blockReason) {
+      recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'idle', reason: blockReason }, import.meta.env.DEV);
       return;
     }
+    swipeOriginAction.current = interactive instanceof HTMLElement ? interactive : null;
     swipePointer.current = beginPrimaryGesture({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, at: performance.now(), viewportWidth: window.innerWidth });
     recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'pending' }, import.meta.env.DEV);
-    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Browsers without capture still report events inside the content surface. */ }
   };
 
-  const handleContentPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+  const handleContentPointerMove = (event: PointerEvent) => {
     const start = swipePointer.current;
     if (!start || start.pointerId !== event.pointerId) return;
     if (start.viewportWidth !== window.innerWidth) { cancelPrimaryGesture('viewport-changed', event.pointerId); return; }
@@ -469,6 +489,11 @@ export default function App() {
     swipePointer.current = update.session;
     recordGestureTrace({ event: 'pointermove', pointerId: event.pointerId, deltaX: update.deltaX, deltaY: update.deltaY, state: update.session.axis }, import.meta.env.DEV);
     if (update.session.axis === 'vertical') { clearGestureDrag(false); return; }
+    if (update.session.axis === 'horizontal' && start.axis !== 'horizontal') {
+      // Capture only after horizontal intent is clear. A normal button tap and
+      // browser-owned vertical scroll keep their native pointer/click lifecycle.
+      try { appMainElement.current?.setPointerCapture(event.pointerId); } catch { /* Window tracking remains active if capture is unavailable. */ }
+    }
     if (!update.accepted || swipeMoveFrame.current !== null) return;
     const screen = document.getElementById(`screen-${activeTabRef.current}`);
     if (!screen) return;
@@ -485,40 +510,103 @@ export default function App() {
     if (activeTouchPointers.current.size === 0) swipeSuppressed.current = false;
   };
 
-  const handleContentPointerUp = (event: React.PointerEvent<HTMLElement>) => {
+  const handleContentPointerUp = (event: PointerEvent) => {
     const start = swipePointer.current;
     endPointerTracking(event.pointerId);
     if (swipeSuppressed.current) return;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
     if (!start || start.pointerId !== event.pointerId) return;
-    const target = resolvePrimaryGestureEnd(activeTab, start, event.pointerId, event.clientX, event.clientY, performance.now(), userPrefs.swipeNavigationEnabled);
+    const target = resolvePrimaryGestureEnd(activeTabRef.current, start, event.pointerId, event.clientX, event.clientY, performance.now(), userPrefs.swipeNavigationEnabled);
     const deltaX = event.clientX - start.startX;
     const deltaY = event.clientY - start.startY;
     recordGestureTrace({ event: 'pointerup', pointerId: event.pointerId, deltaX, deltaY, state: start.axis, decision: target || 'settle-back' }, import.meta.env.DEV);
     swipePointer.current = null;
     if (target) {
-      clearGestureDrag(false);
+      const originAction = swipeOriginAction.current;
+      if (shouldSuppressPrimaryGestureClick(start) && originAction) {
+        swipeClickSuppression.current = { pointerId: event.pointerId, target: originAction, expiresAt: performance.now() + 500 };
+      }
+      swipeOriginAction.current = null;
       navigateTo(target, deltaX < 0 ? 'left' : 'right');
-    } else clearGestureDrag(true);
+    } else {
+      if (shouldSuppressPrimaryGestureClick(start) && swipeOriginAction.current) {
+        swipeClickSuppression.current = { pointerId: event.pointerId, target: swipeOriginAction.current, expiresAt: performance.now() + 500 };
+      }
+      swipeOriginAction.current = null;
+      clearGestureDrag(true);
+    }
   };
 
-  const handleContentPointerCancel = (event: React.PointerEvent<HTMLElement>) => {
+  const handleContentPointerCancel = (event: PointerEvent) => {
     endPointerTracking(event.pointerId);
     const start = swipePointer.current;
     if (start?.pointerId === event.pointerId) {
       recordGestureTrace({ event: 'pointercancel', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: start.axis, reason: 'browser-cancelled' }, import.meta.env.DEV);
+      swipeOriginAction.current = null;
       cancelPrimaryGesture('browser-cancelled', event.pointerId);
     }
   };
 
-  const handleContentLostPointerCapture = (event: React.PointerEvent<HTMLElement>) => {
+  const handleContentLostPointerCapture = (event: PointerEvent) => {
     endPointerTracking(event.pointerId);
     const start = swipePointer.current;
     if (start?.pointerId === event.pointerId) {
       recordGestureTrace({ event: 'lostpointercapture', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: start.axis, reason: 'capture-lost' }, import.meta.env.DEV);
+      swipeOriginAction.current = null;
       cancelPrimaryGesture('capture-lost', event.pointerId);
     }
   };
+
+  const handleContentClickCapture = (event: React.MouseEvent<HTMLElement>) => {
+    const suppression = swipeClickSuppression.current;
+    if (!suppression) return;
+    if (performance.now() > suppression.expiresAt) { swipeClickSuppression.current = null; return; }
+    const hasPointerId = 'pointerId' in event.nativeEvent;
+    const nativePointerId = hasPointerId ? Number((event.nativeEvent as PointerEvent).pointerId) : -1;
+    const clicked = event.target instanceof Element ? event.target : null;
+    const sameControl = Boolean(clicked && (suppression.target.contains(clicked) || clicked.contains(suppression.target)));
+    const isSuppressedPointerClick = hasPointerId ? nativePointerId === suppression.pointerId : sameControl;
+    if (isSuppressedPointerClick && event.detail > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      swipeClickSuppression.current = null;
+    }
+  };
+
+  gestureEventHandlers.current = {
+    move: handleContentPointerMove,
+    up: handleContentPointerUp,
+    cancel: handleContentPointerCancel,
+    lost: handleContentLostPointerCapture,
+  };
+
+  useEffect(() => {
+    const onAdditionalPointerDown = (event: PointerEvent) => {
+      const session = swipePointer.current;
+      const target = event.target;
+      if (!session || event.pointerId === session.pointerId || !target || appMainElement.current?.contains(target as Node)) return;
+      activeTouchPointers.current.add(event.pointerId);
+      swipeSuppressed.current = true;
+      cancelPrimaryGesture('multiple-pointers', event.pointerId);
+      recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'suppressed', reason: 'multiple-pointers' }, import.meta.env.DEV);
+    };
+    const onMove = (event: PointerEvent) => gestureEventHandlers.current.move(event);
+    const onUp = (event: PointerEvent) => gestureEventHandlers.current.up(event);
+    const onCancel = (event: PointerEvent) => gestureEventHandlers.current.cancel(event);
+    const onLost = (event: PointerEvent) => gestureEventHandlers.current.lost(event);
+    window.addEventListener('pointerdown', onAdditionalPointerDown, true);
+    window.addEventListener('pointermove', onMove, { capture: true, passive: true });
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
+    window.addEventListener('lostpointercapture', onLost, true);
+    return () => {
+      window.removeEventListener('pointerdown', onAdditionalPointerDown, true);
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      window.removeEventListener('lostpointercapture', onLost, true);
+    };
+  }, []);
 
   const navigateBack = () => {
     const state = backState.current;
@@ -755,6 +843,10 @@ export default function App() {
 
   useEffect(() => {
     if (!isLocked) return;
+    cancelPrimaryGesture('app-locked');
+    activeTouchPointers.current.clear();
+    swipeSuppressed.current = false;
+    swipeClickSuppression.current = null;
     activeTransitionId.current = null;
     setTabTransition(null);
   }, [isLocked]);
@@ -1994,7 +2086,7 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className="app-main" onPointerDown={handleContentPointerDown} onPointerMove={handleContentPointerMove} onPointerUp={handleContentPointerUp} onPointerCancel={handleContentPointerCancel} onLostPointerCapture={handleContentLostPointerCapture}>
+      <main ref={appMainElement} className="app-main" onPointerDown={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (

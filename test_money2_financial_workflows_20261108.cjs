@@ -35,7 +35,16 @@ assert.match(accountsMarkup, /Accounts/);
 assert.match(accountsMarkup, /Current balance/);
 assert.match(accountsMarkup, /Opening amounts are not income/);
 assert.match(accountsMarkup, /Move between accounts|Transfer/);
+assert.match(accountsMarkup, /Opening amount plus posted activity, including transfers\. Transfers are not income or spending\./, 'account balances explain that transfers affect balances without becoming cash flow');
 assert.ok(!accountsMarkup.includes('account_internal_') && !accountsMarkup.includes('transaction_internal_') && !accountsMarkup.includes('transfer_internal_'), 'Rendered account and transfer labels never expose internal IDs');
+const emptyAccountsMarkup = renderToStaticMarkup(React.createElement(MoneyAccounts, {
+  accounts: [], transactions: [], transfers: [], currencyCode: 'USD', confirmAction: async () => false,
+  onCreateAccount: noop, onUpdateAccount: noop, onDeleteAccount: noop, onCreateTransfer: noop,
+  onUpdateTransfer: noop, onReverseTransfer: noop, onDeleteTransfer: noop,
+}));
+assert.match(emptyAccountsMarkup, /Account tracking is optional[\s\S]*record income and spending without an account/, 'first-use copy explains that accounts are optional and what they enable');
+assert.equal((emptyAccountsMarkup.match(/>Add account<\/button>/g) || []).length, 1, 'the empty state has one account creation action instead of duplicating the header action');
+assert.match(emptyAccountsMarkup, /disabled="" aria-describedby="account-transfer-help"[\s\S]*Add two active accounts to move money between them/, 'a disabled transfer action explains how to enable it');
 const reversalCopy = buildTransferReversalConfirmation(transfers[0], 'Wallet', 'Card', 'en-US');
 assert.match(reversalCopy, /Reverse the transfer from Wallet to Card dated 2026-11-02/);
 assert.match(reversalCopy, /\$2\.00 from Card back to Wallet/);
@@ -54,4 +63,4 @@ assert.match(app, /financeSubtab === 'planning'.*<MoneyPlanning/s);
 assert.match(app, /StorageService\.accounts\.addTransfer/);
 assert.match(app, /StorageService\.exchangeRates\.add/);
 assert.match(app, /StorageService\.commitments\.add/);
-console.log('MONEY 2 WORKFLOWS: 21 accounting, rendered-screen, confirmation-copy and application-wiring assertions passed.');
+console.log('MONEY 2 WORKFLOWS: 27 accounting, rendered-screen, confirmation-copy and application-wiring assertions passed.');

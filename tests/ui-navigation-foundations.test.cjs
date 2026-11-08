@@ -49,20 +49,31 @@ assert.match(app, /onTransitionEnd: \(event[\s\S]*propertyName === 'transform'[\
 assert.match(app, /duration \+ 120/, 'a bounded fallback resolves missing transition events');
 assert.match(app, /activeTransitionId\.current !== id/, 'obsolete transition callbacks cannot settle a newer navigation');
 assert.match(app, /transitionToTab\(tab, direction\)/, 'tap and swipe destinations share one transition path');
-assert.match(app, /setPointerCapture\(event\.pointerId\)/, 'gesture keeps its pointer events on the content surface');
+const transitionHandler = app.match(/const transitionToTab = \(tab: MainTab[\s\S]*?\n  \};/);
+assert.ok(transitionHandler, 'tab transition has one owner');
+assert.ok(transitionHandler[0].indexOf("removeAttribute('data-gesture-dragging')") < transitionHandler[0].indexOf('if (reducedMotion)'),
+  'reduced-motion navigation clears the outgoing drag state before settling');
+assert.match(app, /axis === 'horizontal'.*setPointerCapture\(event\.pointerId\)/s,
+  'pointer capture starts only after horizontal intent so an ordinary tap keeps its native click');
 assert.match(app, /updatePrimaryGesture\(start, event\.pointerId/);
-assert.match(app, /resolvePrimaryGestureEnd\(activeTab, start, event\.pointerId/);
-assert.match(app, /onPointerCancel=\{handleContentPointerCancel\} onLostPointerCapture=\{handleContentLostPointerCapture\}/);
+assert.match(app, /resolvePrimaryGestureEnd\(activeTabRef\.current, start, event\.pointerId/);
+assert.match(app, /window\.addEventListener\('pointermove',[\s\S]*window\.addEventListener\('pointerup',[\s\S]*window\.addEventListener\('pointercancel',[\s\S]*window\.addEventListener\('lostpointercapture'/,
+  'the single global tracking layer completes gestures outside the content surface and handles interruption');
+assert.match(app, /onAdditionalPointerDown[\s\S]*cancelPrimaryGesture\('multiple-pointers'[\s\S]*reason: 'multiple-pointers'/,
+  'a second touch outside the content surface cancels an in-progress swipe too');
+assert.match(app, /onClickCapture=\{handleContentClickCapture\}/, 'a drag suppresses its own control click while taps remain native');
 assert.match(app, /const handleContentLostPointerCapture = \(event[\s\S]*?endPointerTracking\(event\.pointerId\)/,
   'lost capture removes its pointer so a stale ID cannot suppress later gestures');
 assert.match(app, /window-blurred[\s\S]*activeTouchPointers\.current\.clear\(\)/);
 assert.match(app, /event\.clientX <= leftGutter[\s\S]*event\.clientX >= window\.innerWidth - rightGutter/,
   'system edge areas are excluded using runtime and safe-area values');
-assert.match(app, /button,a,input,textarea,select,form,label,summary,\[contenteditable/);
-assert.match(app, /\[data-horizontal-scroll\],\.recharts-wrapper,svg,canvas,\[role="slider"\]/);
+assert.match(app, /button,a,label,summary,input\[type="button"\].*\[role="tab"\]/);
+assert.match(app, /\[data-horizontal-scroll\].*\.recharts-wrapper.*canvas.*\[role="slider"\]/);
+assert.match(app, /textarea,select,\[contenteditable="true"\].*input:not\(\[type="button"\]/,
+  'text entry, native pickers and sliders do not hand their interaction to tab navigation');
 assert.match(app, /if \(activeTouchPointers\.current\.size > 1\)/, 'multi-touch cancels the current gesture');
 assert.match(app, /if \(start\.viewportWidth !== window\.innerWidth\)/, 'a resized viewport cancels the active gesture');
-assert.match(app, /if \(!isLocked\) return;[\s\S]*setTabTransition\(null\)/, 'locking settles transitions before private screens are removed');
+assert.match(app, /if \(!isLocked\) return;[\s\S]*cancelPrimaryGesture\('app-locked'\)[\s\S]*setTabTransition\(null\)/, 'locking cancels active gestures and settles transitions before private screens are removed');
 assert.match(app, /screenScrollKey\(/);
 assert.match(app, /rememberActiveScroll\(\)/);
 assert.match(app, /pendingNotificationTaskId\.current/, 'notification task routing remains connected');
@@ -77,12 +88,12 @@ assert.match(retained, /data-transition-state=\{transitionState\}/);
 assert.doesNotMatch(retained, /exiting|exit-prepare|onExitTransitionEnd/);
 
 const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.css'), 'utf8');
-assert.match(css, /--motion-tab: 170ms/);
-assert.match(css, /\.app-main[^\n]*touch-action: pan-y/);
+assert.match(css, /--motion-tab: 190ms/);
+assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/);
 assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
-assert.match(css, /enter-prepare[^}]*opacity: \.94; transform: translate3d\(0, 4px, 0\)/);
-assert.match(css, /data-transition-direction="left"\]\[data-transition-state="enter-prepare"\][^}]*translate3d\(12px, 0, 0\)/);
+assert.match(css, /enter-prepare[^}]*opacity: \.92; transform: translate3d\(0, 4px, 0\)/);
+assert.match(css, /data-transition-direction="left"\]\[data-transition-state="enter-prepare"\][^}]*translate3d\(16px, 0, 0\)/);
 assert.match(css, /data-transition-state="entering"[^}]*transition: opacity var\(--motion-tab\)[^}]*transform var\(--motion-tab\)/);
 assert.match(css, /\.ui-tab-screen\[data-gesture-dragging="true"\][^}]*transition: none !important[^}]*translate3d\(var\(--gesture-x/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);

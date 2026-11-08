@@ -23,7 +23,10 @@ const props = {
   onCheckIn: noop, onCreateHabit: noop, onCreateGoal: noop, onHabits: noop, onGoals: noop, onInsights: noop,
 };
 const markup = renderToStaticMarkup(React.createElement(LifeHub, props));
-assert.match(markup, /Daily routines and longer-term goals/);
+assert.match(markup, /Habits are things you repeat\. Goals are outcomes you build toward\./);
+assert.match(markup, /aria-label="Routine progress"/);
+assert.match(markup, /1 of 2 check-ins/);
+assert.match(markup, /4 of 7 routines/);
 assert.match(markup, /Walk outside/);
 assert.match(markup, /aria-pressed="false" aria-label="Complete Walk outside for today"/);
 assert.match(markup, /aria-pressed="true" aria-label="Mark Read incomplete/);
@@ -41,6 +44,7 @@ assert.match(empty, /No routines yet/);
 assert.match(empty, /No goals yet/);
 assert.match(empty, /Add a goal/);
 assert.match(empty, /All goals and milestones/);
+assert.doesNotMatch(empty, /Routine progress/, 'empty profiles do not show fabricated zero-progress summaries');
 
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 assert.match(app, /onCheckIn=\{habit =>[\s\S]*handleHabitCompletion\(original\.id, original\.name, todayKey, habit\.completedToday\)/);
