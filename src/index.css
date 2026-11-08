@@ -32,11 +32,12 @@
   --radius-control: 0.75rem;
   --radius-card: 1.25rem;
   --motion-control: 140ms;
-  --motion-tab: 200ms;
+  --motion-tab: 260ms;
   --motion-page: 220ms;
   --motion-sheet: 260ms;
   --motion-success: 160ms;
   --motion-ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --motion-ease-tab: cubic-bezier(.22, .75, .25, 1);
   --leading-display: 1.08;
   --leading-title: 1.22;
   --leading-body: 1.5;
@@ -112,6 +113,26 @@ body {
 .ui-success-feedback { animation: lifeos-success var(--motion-success) var(--motion-ease-standard) both; }
 .ui-loading-state { min-height: 5rem; display: grid; place-items: center; border: 1px solid var(--stroke); border-radius: var(--radius-card); background: var(--surface); color: var(--ink-secondary); }
 .ui-sheet-motion { animation: lifeos-sheet-in var(--motion-sheet) var(--motion-ease-standard) both; }
+
+/* Keep the outgoing and incoming route in the same paint layer during a tab change. */
+.ui-tab-screen-stack { display: grid; min-width: 0; align-items: start; }
+.ui-tab-screen-stack > [data-lifeos-screen] { grid-area: 1 / 1; min-width: 0; }
+.ui-tab-screen[data-transition-state="inactive"] { pointer-events: none; }
+.ui-tab-screen[data-transition-state="enter-prepare"],
+.ui-tab-screen[data-transition-state="entering"],
+.ui-tab-screen[data-transition-state="active"] { z-index: 2; }
+.ui-tab-screen[data-transition-state="exit-prepare"],
+.ui-tab-screen[data-transition-state="exiting"] { z-index: 1; }
+.ui-tab-screen[data-transition-state="enter-prepare"] { opacity: .88; transform: translate3d(0, 16px, 0); }
+.ui-tab-screen[data-transition-state="exit-prepare"] { opacity: 1; transform: translate3d(0, 0, 0); }
+.ui-tab-screen[data-transition-state="entering"],
+.ui-tab-screen[data-transition-state="exiting"] {
+  will-change: opacity, transform;
+  transition: opacity var(--motion-tab) var(--motion-ease-tab), transform var(--motion-tab) var(--motion-ease-tab);
+}
+.ui-tab-screen[data-transition-state="entering"] { opacity: 1; transform: translate3d(0, 0, 0); }
+.ui-tab-screen[data-transition-state="exiting"] { opacity: .88; transform: translate3d(0, -3px, 0); pointer-events: none; }
+.ui-tab-screen[data-transition-state="active"] { opacity: 1; transform: none; }
 
 .app-header { background: color-mix(in srgb, var(--surface) 94%, transparent); }
 .app-profile-button { min-height: 44px; min-width: 44px; background: var(--accent); color: var(--accent-foreground); }
@@ -352,6 +373,7 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
     transition-duration: 0.01ms !important;
   }
   .ui-control-feedback:active { transform: none; }
+  .ui-tab-screen[data-transition-state] { transition: none !important; animation: none !important; opacity: 1 !important; transform: none !important; }
 }
 
 html:not(.dark) {

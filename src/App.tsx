@@ -88,6 +88,33 @@ export default function App() {
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const activeTabRef = useRef<MainTab>('dashboard');
+  const [tabTransition, setTabTransition] = useState<{ id: number; from: MainTab; to: MainTab; phase: 'prepare' | 'running'; exitStart: { opacity: string; transform: string } } | null>(null);
+  const tabTransitionSequence = useRef(0);
+  const activeTransitionId = useRef<number | null>(null);
+  const transitionToTab = (tab: MainTab) => {
+    const previous = activeTabRef.current;
+    activeTabRef.current = tab;
+    if (previous === tab) { setActiveTab(tab); return; }
+    const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      activeTransitionId.current = null;
+      setTabTransition(null);
+      setActiveTab(tab);
+      return;
+    }
+    const outgoing = tabTransition?.to === previous ? document.getElementById(`screen-${previous}`) : null;
+    const outgoingStyle = outgoing ? getComputedStyle(outgoing) : null;
+    const id = ++tabTransitionSequence.current;
+    activeTransitionId.current = id;
+    setTabTransition({
+      id,
+      from: previous,
+      to: tab,
+      phase: 'prepare',
+      exitStart: { opacity: outgoingStyle?.opacity || '1', transform: outgoingStyle?.transform || 'none' },
+    });
+    setActiveTab(tab);
+  };
   const navigationHistory = useRef<MainTab[]>([]);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [todayLayout, setTodayLayout] = useState<TodayLayout>(DEFAULT_TODAY_LAYOUT);
@@ -103,7 +130,6 @@ export default function App() {
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
   const swipePointer = useRef<{ id: number; x: number; y: number; startedAt: number; interactive: boolean; systemEdge: boolean; horizontalControl: boolean } | null>(null);
   const scrollPositions = useRef<Record<string, number>>({});
-  const screenAnimation = useRef<Animation | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
   const [visualThemeId, setVisualThemeId] = useState<ThemeId>(() => {
@@ -306,9 +332,8 @@ export default function App() {
     scrollPositions.current[activeScreenKey] = window.scrollY;
     if (tab === 'settings') navigateProfileSection('home');
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
-    activeTabRef.current = tab;
     setShowExitConfirmation(false);
-    setActiveTab(tab);
+    transitionToTab(tab);
   };
 
   const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
@@ -372,14 +397,12 @@ export default function App() {
     const previous = history.next;
     if (action === 'previous-tab' && previous) {
       rememberActiveScroll();
-      activeTabRef.current = previous;
-      setActiveTab(previous);
+      transitionToTab(previous);
       return;
     }
     if (action === 'home') {
       rememberActiveScroll();
-      activeTabRef.current = 'dashboard';
-      setActiveTab('dashboard');
+      transitionToTab('dashboard');
       return;
     }
     setShowExitConfirmation(true);
@@ -551,19 +574,59 @@ export default function App() {
     root.style.scrollBehavior = previous;
   }, [activeScreenKey]);
 
-  useLayoutEffect(() => {
-    screenAnimation.current?.cancel();
-    screenAnimation.current = null;
-    const view = document.getElementById(`screen-${activeTab}`);
-    if (!view || window.matchMedia('(prefers-reduced-motion: reduce)').matches || typeof view.animate !== 'function') return;
-    const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 200);
-    if (duration === 0) return;
-    screenAnimation.current = view.animate(
-      [{ opacity: 0.92, transform: 'translate3d(0, 4px, 0)' }, { opacity: 1, transform: 'translate3d(0, 0, 0)' }],
-      { duration, easing: 'cubic-bezier(.2, .8, .2, 1)' },
-    );
-    return () => { screenAnimation.current?.cancel(); screenAnimation.current = null; };
-  }, [activeScreenKey, activeTab]);
+  const finishTabTransition = (id: number) => {
+    if (activeTransitionId.current !== id) return;
+    activeTransitionId.current = null;
+    setTabTransition(current => current?.id === id ? null : current);
+  };
+
+  useEffect(() => {
+    if (!tabTransition) return;
+    const { id, phase } = tabTransition;
+    if (phase === 'prepare') {
+      // Give WebView one rendered frame with both screens paintable before
+      // changing the CSS transition targets.
+      const frame = window.requestAnimationFrame(() => {
+        setTabTransition(current => current?.id === id ? { ...current, phase: 'running' } : current);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 260);
+    const fallback = window.setTimeout(() => finishTabTransition(id), duration + 120);
+    return () => window.clearTimeout(fallback);
+  }, [tabTransition]);
+
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const settleImmediately = () => {
+      if (!preference.matches) return;
+      activeTransitionId.current = null;
+      setTabTransition(null);
+    };
+    preference.addEventListener?.('change', settleImmediately);
+    return () => preference.removeEventListener?.('change', settleImmediately);
+  }, []);
+
+  useEffect(() => {
+    if (!isLocked) return;
+    activeTransitionId.current = null;
+    setTabTransition(null);
+  }, [isLocked]);
+
+  const transitionPropsFor = (screen: MainTab) => {
+    if (!tabTransition) return {};
+    const ownsTransition = tabTransition.from === screen || tabTransition.to === screen;
+    return {
+      exiting: tabTransition.from === screen && tabTransition.from !== tabTransition.to,
+      transitionPhase: ownsTransition ? tabTransition.phase : null,
+      exitStart: tabTransition.from === screen ? tabTransition.exitStart : undefined,
+      onExitTransitionEnd: tabTransition.from === screen
+        ? (event: React.TransitionEvent<HTMLDivElement>) => {
+            if (event.target === event.currentTarget && event.propertyName === 'opacity') finishTabTransition(tabTransition.id);
+          }
+        : undefined,
+    };
+  };
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
     setToast({ message, type });
@@ -1008,7 +1071,7 @@ export default function App() {
     await StorageService.settings.set('onboardingStarted', false);
     await StorageService.settings.set('onboardingStep', 0);
     setOnboardingStep(0);
-    setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; activeTabRef.current = 'dashboard'; setActiveTab('dashboard');
+    setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; transitionToTab('dashboard');
     // Let React commit Today and ensure the Android Activity is foregrounded
     // before invoking the native permission API. Denial never blocks entry.
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1039,8 +1102,7 @@ export default function App() {
     pendingNotificationTaskId.current = null;
     const task = (await StorageService.tasks.getAll()).find(item => item.id === taskId);
     rememberActiveScroll();
-    activeTabRef.current = 'planner';
-    setActiveTab('planner');
+    transitionToTab('planner');
     if (!task) {
       setPlannerDetailTaskId(null);
       showToast('That reminder no longer has an available task.', 'info');
@@ -1755,8 +1817,9 @@ export default function App() {
 
       {/* Main Container */}
       <main className="max-w-md mx-auto p-4 space-y-4" onPointerDown={handleContentPointerDown} onPointerUp={handleContentPointerUp} onPointerCancel={() => { swipePointer.current = null; }}>
+        <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
-        <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" render={() => (
+        <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
           <div className="today-sections">
             <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
@@ -1918,7 +1981,7 @@ export default function App() {
         )} />
 
         {/* VIEW 2: FINANCE */}
-        <RetainedScreen active={activeTab === 'life'} id="screen-life" render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+        <RetainedScreen active={activeTab === 'life'} id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
           routinesDue={todayOverview.routinesDue}
           completedRoutines={todayOverview.routinesCompleted}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
@@ -1929,10 +1992,10 @@ export default function App() {
           onInsights={() => navigateTo('insights')}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
+        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
           onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'insights'} id="screen-insights" render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
+        <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
           month={financeMonth}
           income={financeMetrics.totalIncome}
           expenses={financeMetrics.totalExpenses}
@@ -1950,7 +2013,7 @@ export default function App() {
           onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'finance'} id="screen-finance" render={() => (
+        <RetainedScreen active={activeTab === 'finance'} id="screen-finance" {...transitionPropsFor('finance')} render={() => (
           <div className="money-page space-y-5">
             {financeSubtab !== 'overview' && <div className="money-page-toolbar">
               <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
@@ -2151,7 +2214,7 @@ export default function App() {
         )} />
 
         {/* VIEW 3: HABITS */}
-        <RetainedScreen active={activeTab === 'habits'} id="screen-habits" render={() => (
+        <RetainedScreen active={activeTab === 'habits'} id="screen-habits" {...transitionPropsFor('habits')} render={() => (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
@@ -2185,7 +2248,7 @@ export default function App() {
         )} />
 
         {/* VIEW 4: GOALS */}
-        <RetainedScreen active={activeTab === 'goals'} id="screen-goals" render={() => (
+        <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
           <div className="space-y-4">
             <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
             <div className="grid grid-cols-3 gap-2">{(['active', 'paused', 'completed'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
@@ -2209,7 +2272,7 @@ export default function App() {
         )} />
 
         {/* VIEW 5: PLANNER */}
-        <RetainedScreen active={activeTab === 'planner'} id="screen-planner" render={() => (
+        <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <div className="space-y-4">
             <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider lifeos-accent-text">Planner</p><h2 className="text-xl font-semibold tracking-tight">Your calendar</h2></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
             <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar">
@@ -2278,7 +2341,7 @@ export default function App() {
         )} />
 
         {/* VIEW 6: SETTINGS */}
-        <RetainedScreen active={activeTab === 'settings'} id="screen-settings" render={() => (
+        <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
           <div className="profile-page space-y-5">
             {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications') void refreshNotificationDiagnostics(); }} />}
 
@@ -2444,6 +2507,7 @@ export default function App() {
             </ProfileSubpage>}
           </div>
         )} />
+        </div>
       </main>
 
       {createKind && (

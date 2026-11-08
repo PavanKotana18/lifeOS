@@ -8,6 +8,18 @@ export type ScreenLocation = {
   habitsSubtab?: string;
 };
 
+export type RetainedScreenTransition = 'prepare' | 'running' | null;
+
+export function retainedScreenTransitionState(
+  active: boolean,
+  exiting: boolean,
+  phase: RetainedScreenTransition,
+): 'enter-prepare' | 'entering' | 'active' | 'exit-prepare' | 'exiting' | 'inactive' {
+  if (active) return phase === 'prepare' ? 'enter-prepare' : phase === 'running' ? 'entering' : 'active';
+  if (exiting) return phase === 'prepare' ? 'exit-prepare' : 'exiting';
+  return 'inactive';
+}
+
 /** Keep scroll memory distinct for nested destinations that share a primary tab. */
 export function screenScrollKey(location: ScreenLocation): string {
   if (location.tab === 'finance') return `finance:${location.financeSubtab || 'overview'}`;

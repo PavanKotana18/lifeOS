@@ -23,6 +23,12 @@ assert.equal(service.exports.screenScrollKey({ tab: 'habits', habitsSubtab: 'wee
 assert.equal(service.exports.readMotionDuration('200ms', 240), 200);
 assert.equal(service.exports.readMotionDuration('0ms', 240), 0);
 assert.equal(service.exports.readMotionDuration('invalid', 240), 240);
+assert.equal(service.exports.retainedScreenTransitionState(true, false, 'prepare'), 'enter-prepare');
+assert.equal(service.exports.retainedScreenTransitionState(true, false, 'running'), 'entering');
+assert.equal(service.exports.retainedScreenTransitionState(true, false, null), 'active');
+assert.equal(service.exports.retainedScreenTransitionState(false, true, 'prepare'), 'exit-prepare');
+assert.equal(service.exports.retainedScreenTransitionState(false, true, 'running'), 'exiting');
+assert.equal(service.exports.retainedScreenTransitionState(false, false, null), 'inactive');
 
 const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
 assert.match(appSource, /<RetainedScreen active=\{activeTab === 'dashboard'\}/);
@@ -32,7 +38,14 @@ assert.match(appSource, /<RetainedScreen active=\{activeTab === 'life'\}/);
 assert.match(appSource, /prefers-reduced-motion/);
 assert.match(appSource, /navigateTo\('planner'\)/);
 assert.match(appSource, /resolveBackAction/);
-assert.match(appSource, /screenAnimation\.current\?\.cancel\(\)/, 'a rapid route change cancels the previous animation');
+assert.match(appSource, /activeTransitionId\.current = id/, 'each route transition receives a cancellation token');
+assert.match(appSource, /tabTransition\?\.to === previous[\s\S]*getComputedStyle\(outgoing\)/, 'rapid retargeting starts the outgoing route from its current painted position');
+assert.match(appSource, /window\.requestAnimationFrame\(\(\) =>/, 'enter and exit targets change after a paint opportunity');
+assert.match(appSource, /onExitTransitionEnd/, 'outgoing view stays until its opacity transition ends');
+assert.match(appSource, /duration \+ 120/, 'transition end has a bounded cleanup fallback');
+assert.match(appSource, /transitionToTab\(tab\)/, 'primary tab changes enter the shared transition lifecycle');
+assert.match(appSource, /activeTransitionId\.current = null;\s*setTabTransition\(null\);\s*setActiveTab\(tab\)/, 'reduced motion settles navigation immediately');
+assert.match(appSource, /if \(!isLocked\) return;[\s\S]*setTabTransition\(null\)/, 'locking settles transitions before private screens unmount');
 assert.match(appSource, /screenScrollKey\(/, 'nested destinations receive separate scroll keys');
 assert.match(appSource, /rememberActiveScroll\(\)/, 'navigation records the outgoing route scroll position');
 assert.match(appSource, /pendingNotificationTaskId\.current/, 'notification task navigation remains connected');
@@ -40,7 +53,16 @@ assert.ok(appSource.indexOf('if (isLocked) {') < appSource.indexOf('<main classN
 
 const retainedSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'RetainedScreen.tsx'), 'utf8');
 assert.match(retainedSource, /useState\(active\)/, 'screens are mounted only when first visited');
-assert.match(retainedSource, /hidden=\{!active\} aria-hidden=\{!active\}/, 'inactive screens leave layout and accessibility navigation');
+assert.match(retainedSource, /hidden=\{!active && !exiting\}/, 'outgoing screen remains paintable until exit completes');
+assert.match(retainedSource, /aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/, 'inactive and exiting screens cannot be focused or activated');
+assert.match(retainedSource, /data-transition-state=\{transitionState\}/, 'incoming screens receive a distinct entry state');
 assert.match(retainedSource, /React\.memo\(RetainedScreen/, 'visited inactive routes skip unrelated parent renders');
+const styles = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.css'), 'utf8');
+assert.match(styles, /--motion-tab: 260ms/);
+assert.match(styles, /enter-prepare[^}]*opacity: \.88; transform: translate3d\(0, 16px, 0\)/);
+assert.match(styles, /data-transition-state="exiting"[^}]*opacity: \.88/);
+assert.match(styles, /ui-tab-screen-stack > \[data-lifeos-screen\] \{ grid-area: 1 \/ 1;/);
+assert.match(styles, /data-transition-state="entering"\],\s*\.ui-tab-screen\[data-transition-state="active"\] \{ z-index: 2;/);
+assert.match(styles, /\.ui-tab-screen\[data-transition-state\].*transition: none !important/s);
 
-console.log('UI navigation foundation checks passed: 9 service assertions and 15 integration assertions.');
+console.log('UI navigation foundation checks passed: 15 service assertions and 28 integration assertions.');
