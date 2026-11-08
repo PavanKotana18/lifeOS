@@ -65,3 +65,10 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 - This matches the explicit #22 handoff: raw-backend assumptions in old tests must be separated from production encrypted-facade tests. Read-only comparison shows #23 changes this fixture to use `rawStorageService` under a documented legacy-internals-only label, while production admission/security behavior is tested separately. That is a plausible safe fix, but it has not been integrated or tested on this candidate.
 - STOP condition honored: no PR #23 or later stage was integrated. No security guard was weakened, no test was removed, and no failure was waived.
 - Next safe step after review: apply the documented fixture boundary correction without changing production admission behavior; run the complete suite and TypeScript; inspect any remaining WP0 raw-access assumptions. Resume later PR integration only after those gates pass.
+
+### Stop-state preservation
+- Candidate branch was pushed without force to `origin/integration/lifeos2-release-candidate-20261108`; local and remote head match at `0118e6f4484c3e09b7ad0ce634253587dd0e647c`.
+- Pinned `origin/main` remains `d7882d29d68fa45ac026c1da490b80aa910cd0a0`. PR #25 remains OPEN/DRAFT with the same base/head SHAs.
+- `git diff --check` across the candidate range passes. No candidate Actions run was triggered; no emulator workflow targets this new branch yet.
+- No candidate PR was opened because this is an incomplete, failed-gate checkpoint, not a validated release candidate. No Debug APK exists for this exact candidate SHA.
+- Stop decision: BLOCKED at #22. Do not integrate #23–#25 until the legacy backup fixture is correctly separated from the guarded production facade and the full mandatory suite passes.

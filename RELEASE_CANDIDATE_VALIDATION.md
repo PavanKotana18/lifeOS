@@ -7,7 +7,7 @@ Status meanings: PASS = executed successfully on the recorded candidate/stage; F
 
 | Gate | Evidence required | Status | Evidence / blocker |
 |---|---|---|---|
-| Git ancestry and no duplicate integration | Exact PR SHAs, merge parents, stage ancestry | PASS baseline | #18/#19 join at #20; all #13–#25 ancestry reaches #25 |
+| Git ancestry and no duplicate integration | Exact PR SHAs, merge parents, stage ancestry | PASS baseline | #18/#19 join at #20; candidate integrated through #22 only; #23–#25 not integrated due stop condition |
 | Candidate isolation | New branch/worktree from pinned main; no prior worktree changed | PASS baseline | Clean candidate at pinned base |
 | Per-stage focused tests | Relevant npm contracts after each integrated stage | FAIL after #22 | #13/#14/#15/#20/#21 passed; after #22 `npm test` fails at `test_backup_indexeddb.js:122` because test fixture uses guarded production facade before provisioning | `npm test` exit 0 after each; simulated/native-source and disposable IndexedDB tests |
 | Per-stage TypeScript | `npx tsc --noEmit` after each stage | PASS through #21; NOT RUN after #22 failure | Stop rule prevents proceeding past failed mandatory test | Exit 0 after each |
@@ -24,6 +24,6 @@ Status meanings: PASS = executed successfully on the recorded candidate/stage; F
 | Android instrumentation API 35 | Full suite including screenshot/lifecycle acceptance | NOT RUN | Prior failure must be resolved and rerun |
 | Notification Android acceptance | Optional reminders, permission behavior, restore and tap route | NOT RUN | No architecture change planned |
 | Profile/navigation acceptance | Settings persistence, swipe guards, fonts, keyboard, accessibility | NOT RUN | Physical acceptance required |
-| Debug APK | Exact candidate SHA, package, version, signer fingerprint, artifact integrity | NOT RUN | Hosted CI required |
+| Debug APK | Exact candidate SHA, package, version, signer fingerprint, artifact integrity | BLOCKED | No CI run triggered and no APK for this candidate SHA |
 | Installed-data update test | Candidate install over disposable prior build; encrypted data retained | BLOCKED | Physical Android update install required |
-| Draft candidate PR | Correct base, draft state, exact candidate SHA | NOT RUN | Create after candidate branch push |
+| Draft candidate PR | Correct base, draft state, exact candidate SHA | BLOCKED | Not opened: candidate is incomplete and mandatory suite fails at #22 |
