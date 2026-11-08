@@ -22,3 +22,10 @@ Pinned `origin/main`: `d7882d29d68fa45ac026c1da490b80aa910cd0a0`
 - Created this isolated worktree from exact `origin/main` SHA `d7882d29d68fa45ac026c1da490b80aa910cd0a0`.
 - Tested: candidate starts clean; current bulk worktree remains on its prior branch and clean.
 - Next: integrate #13 and run its focused checks before proceeding.
+
+### Stage #13 — encrypted data foundation
+- Source SHA: `3e11619d612fc4207bf5972979a8583da069ea3e`; parent is the pinned main SHA. No ancestor was already integrated.
+- Reviewed the changed native crypto lifecycle, storage facade, recovery and backup services, and security tests. No duplicate stage and no merge conflict.
+- Merged by preserving source history; candidate merge commit: `c47ae82`.
+- Tests: full `npm test` PASS (exit 0); `npx tsc --noEmit` PASS. The crypto/native Android behavior represented by Node tests remains simulated or source-checked.
+- Next: inspect and integrate #14.
