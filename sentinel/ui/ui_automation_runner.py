@@ -138,9 +138,9 @@ def run_ui_automation():
 
 
 
-        # 1. Navigation Across All 6 Views
+        # 1. Four primary destinations and module reachability through Explore
 
-        for tab in ["dashboard", "finance", "habits", "goals", "planner", "settings"]:
+        for tab in ["dashboard", "explore", "plan", "insights"]:
 
             def nav_test(t=tab):
 
@@ -154,8 +154,26 @@ def run_ui_automation():
 
                 assert view.is_displayed(), f"View #{t} is not displayed after navigation"
 
-            test_step(f"Navigation: Switch to tab #{tab}", nav_test)
+            test_step(f"Primary navigation: Switch to #{tab}", nav_test)
 
+
+        for module in ["finance", "habits", "goals", "planner", "settings"]:
+
+            def module_test(target=module):
+
+                explore_btn = driver.find_element(By.CSS_SELECTOR, "button.nav-item[data-tab='explore']")
+
+                driver.execute_script("arguments[0].click();", explore_btn)
+
+                module_btn = driver.find_element(By.CSS_SELECTOR, f"button[data-module='{target}']")
+
+                driver.execute_script("arguments[0].click();", module_btn)
+
+                time.sleep(0.2)
+
+                assert driver.find_element(By.ID, f"view-{target}").is_displayed(), f"Module #{target} is not reachable from Explore"
+
+            test_step(f"Explore module: Open #{module}", module_test)
 
 
         # 2. Theme Toggle Control

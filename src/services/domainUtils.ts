@@ -1,4 +1,4 @@
-import type { NotificationPreferences, Task } from '../types';
+import type { Habit, HabitLog, NotificationPreferences, Task, Transaction } from '../types';
 export type AppearancePreference = 'dark' | 'light' | 'system';
 
 export const profileInitial = (name: string) => name.trim().charAt(0).toLocaleUpperCase() || '';
@@ -28,6 +28,38 @@ export function watchSystemTheme(media: ThemeMediaQuery, onTheme: (theme: 'dark'
   update();
   if (media.addEventListener) media.addEventListener('change', update); else media.addListener?.(update);
   return () => { if (media.removeEventListener) media.removeEventListener('change', update); else media.removeListener?.(update); };
+}
+type TransactionOrder = Pick<Transaction, 'id' | 'date' | 'occurredAt' | 'createdAt'>;
+function transactionInstant(value?: string) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+function compareTransactionOccurrence(a: TransactionOrder, b: TransactionOrder, direction: 'asc' | 'desc') {
+  const dateDelta = a.date.localeCompare(b.date);
+  if (dateDelta) return direction === 'asc' ? dateDelta : -dateDelta;
+
+  const aTime = transactionInstant(a.occurredAt);
+  const bTime = transactionInstant(b.occurredAt);
+  // A legacy date-only entry has unknown time. Keep it after known times on
+  // that day in either direction; never infer a time from its import/create time.
+  if (aTime === null && bTime !== null) return 1;
+  if (aTime !== null && bTime === null) return -1;
+  if (aTime !== null && bTime !== null && aTime !== bTime) {
+    return direction === 'asc' ? aTime - bTime : bTime - aTime;
+  }
+
+  const createdDelta = a.createdAt.localeCompare(b.createdAt);
+  return createdDelta || a.id.localeCompare(b.id);
+}
+export function sortTransactions<T extends TransactionOrder>(rows: T[], order: 'date-desc' | 'date-asc' | 'amount-desc' = 'date-desc'): T[] {
+  return [...rows].sort((a, b) => {
+    if (order === 'amount-desc' && 'amount' in a && 'amount' in b) {
+      const amountDelta = Number(b.amount) - Number(a.amount);
+      if (amountDelta) return amountDelta;
+    }
+    return compareTransactionOccurrence(a, b, order === 'date-asc' ? 'asc' : 'desc');
+  });
 }
 export const getTasksForDate = <T extends { dueDate?: string }>(tasks: T[], date: string) => tasks.filter(task => task.dueDate === date);
 export function getMonthCalendarDays(year: number, monthIndex: number, weekStartsOnMonday = true): string[] {
@@ -75,6 +107,21 @@ export function sortTasksByDeadline<T extends Pick<Task, 'dueDate' | 'dueTime' |
     return (getTaskDeadline(a)?.getTime() ?? Infinity) - (getTaskDeadline(b)?.getTime() ?? Infinity);
   });
 }
+
+/** Chronological ordering for upcoming-task summaries using the saved local schedule. */
+export function sortTasksBySchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'createdAt' | 'id'>>(tasks: T[]): T[] {
+  const scheduleKey = (task: T) => {
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || '') ? task.dueDate : '9999-12-31';
+    const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(task.dueTime || '') ? task.dueTime! : '23:59';
+    return `${date}T${time}`;
+  };
+  return [...tasks].sort((a, b) =>
+    scheduleKey(a).localeCompare(scheduleKey(b)) ||
+    a.createdAt.localeCompare(b.createdAt) ||
+    a.id.localeCompare(b.id)
+  );
+}
+
 export const getGoalProgress = (current: number, target: number) => target > 0 ? Math.max(0, Math.min(100, Math.round(current / target * 100))) : 0;
 export function isHabitScheduledOnDate(
   frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly',
@@ -137,6 +184,40 @@ export function calculateWeeklyHabitRate(
     completed,
     scheduled: eligibleDates.length,
     rate: eligibleDates.length ? Math.round(completed / eligibleDates.length * 100) : 0
+  };
+}
+
+export interface TodayOverview {
+  tasksCompleted: number;
+  tasksDue: number;
+  routinesCompleted: number;
+  routinesDue: number;
+  weeklyRoutinesCompleted: number;
+  weeklyRoutinesTotal: number;
+}
+
+/** Counts actual work by domain; it deliberately avoids an opaque combined score. */
+export function getTodayOverview(
+  tasks: Pick<Task, 'dueDate' | 'completed'>[],
+  habits: Pick<Habit, 'id' | 'frequency'>[],
+  logs: Pick<HabitLog, 'habitId' | 'date' | 'completed'>[],
+  date: string
+): TodayOverview {
+  const [year, month, day] = date.split('-').map(Number);
+  const today = new Date(year, month - 1, day, 12);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || today.getFullYear() !== year || today.getMonth() !== month - 1 || today.getDate() !== day) {
+    throw new TypeError('Today overview requires a valid local calendar date.');
+  }
+  const dueTasks = tasks.filter(task => task.dueDate === date);
+  const routines = habits.filter(habit => habit.frequency !== 'weekly' && isHabitScheduledOnDate(habit.frequency, date));
+  const weeklyRoutines = habits.filter(habit => habit.frequency === 'weekly');
+  return {
+    tasksCompleted: dueTasks.filter(task => task.completed).length,
+    tasksDue: dueTasks.length,
+    routinesCompleted: routines.filter(habit => logs.some(log => log.habitId === habit.id && log.date === date && log.completed)).length,
+    routinesDue: routines.length,
+    weeklyRoutinesCompleted: weeklyRoutines.filter(habit => calculateWeeklyHabitRate(logs, habit.id, today, habit.frequency).completed > 0).length,
+    weeklyRoutinesTotal: weeklyRoutines.length,
   };
 }
 

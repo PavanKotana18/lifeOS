@@ -55,13 +55,13 @@ const cryptoMock = {
 
 const tables = [
   'transactions', 'categories', 'budgets', 'savingsGoals',
-  'savingsContributions', 'habits', 'habitLogs', 'goals',
+  'savingsContributions', 'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'habits', 'habitLogs', 'goals',
   'milestones', 'tasks', 'settings'
 ];
 
 const bootstrapKeys = [
   'theme', 'biometricLockEnabled', 'onboardingCompleted',
-  'onboardingStarted', 'onboardingStep'
+  'onboardingStarted', 'onboardingStep', 'displayName'
 ];
 
 async function createFixture(options = {}) {
@@ -74,7 +74,7 @@ async function createFixture(options = {}) {
   db.version(1).stores(schema);
   await db.open();
 
-  const database = {};
+  const database = { transaction: db.transaction.bind(db) };
   for (const table of tables) database[table] = db.table(table);
 
   for (const table of tables) {

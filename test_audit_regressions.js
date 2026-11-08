@@ -29,10 +29,9 @@ check(
 
 // F-02: Form submission must persist the selected category.
 check(
-  app.includes(
-    "StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount, monthYear: value('month') })"
-  ),
-  'Budget submission persists the optional category ID'
+  app.includes("const money = createMoneyRecordAmount(value('amount'), userPrefs.currency)") &&
+  app.includes("StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month') })"),
+  'Budget submission persists category, exact minor units, and explicit currency'
 );
 
 // F-02: Empty category must retain overall-budget behaviour.
@@ -136,53 +135,39 @@ check(
   'Recurring task creation propagates reminderAt'
 );
 
-// F-09: Empty state guard must require both domains to be empty.
+// Dashboard presents transparent per-domain counts and does not publish an opaque composite score.
 check(
-  app.includes(
-    'if (habits.length === 0 && todayTasks.length === 0) return null;'
-  ),
-  'Productivity score returns null only when both domains are empty'
+  app.includes('getTodayOverview(tasks, habits, habitLogs, todayKey)') &&
+  app.includes('Tasks due today') && app.includes('Routines today') &&
+  !app.includes('productivityScore') && !app.includes('adherence today'),
+  'Dashboard exposes separate task and routine counts without a composite score'
 );
 
-// F-09: Empty state must not show a misleading percentage.
+// Savings contributions affect goal progress only. They do not represent spending.
 check(
-  app.includes('productivityScore === null') &&
-  app.includes('No tasks or habits scheduled today.'),
-  'Dashboard displays an explicit empty productivity state'
+  db.includes('async addContribution(contribution)') &&
+  !db.includes('linkedExpense') &&
+  app.includes('StorageService.savings.addContribution({') &&
+  app.includes('amountMinor: money.amountMinor') &&
+  !app.includes('paymentMethod: \'Savings transfer\''),
+  'New savings contributions update goal progress without creating expense records'
 );
 
-// F-09: Existing score calculation remains present.
-check(
-  app.includes('return Math.min(100, Math.round(habitWeight + taskWeight));') &&
-  app.includes('{productivityScore}% adherence today'),
-  'Existing productivity scoring remains active for non-empty days'
-);
-
-
-// F-08: Savings contributions can create a linked expense in the same storage operation.
-check(
-  db.includes('linkedExpense?: Omit<Transaction') &&
-  db.includes('async addContribution(contribution, linkedExpense)') &&
-  db.includes('db.transactions.add(transactionRecord)'),
-  'Savings contribution storage supports a linked cash-flow expense'
-);
-
-// F-08: Linked expense and savings records must share one Dexie transaction.
+// Savings balance and contribution records still share one atomic operation.
 check(
   db.includes('db.savingsGoals,') &&
   db.includes('db.savingsContributions,') &&
-  db.includes('db.transactions,') &&
-  db.includes('db.categories,') &&
-  db.includes('await assertTransactionCategory(linkedExpense.category, \'expense\');'),
-  'Linked savings expense is category-validated within the atomic savings transaction'
+  db.includes('await db.savingsGoals.update(goal.id, {') &&
+  db.includes('await db.savingsContributions.add({'),
+  'Savings goal balance and contribution remain atomically persisted'
 );
 
-// F-08: UI exposes the optional link and defaults it on for new contributions.
+// UI explains that goal progress is not an expense.
 check(
-  app.includes("linkTransfer: 'yes'") &&
-  app.includes("createDraft.linkTransfer !== 'no'") &&
-  app.includes('Record this contribution as an expense in monthly cash flow'),
-  'Savings contribution UI enables an optional linked cash-flow expense by default'
+  app.includes('A contribution updates this savings goal only') &&
+  app.includes('record that separately as a transfer') &&
+  !app.includes('Record this contribution as an expense in monthly cash flow'),
+  'Savings contribution UI distinguishes saving from spending'
 );
 
-console.log(`AUDIT REGRESSION SOURCE TESTS: ${passed}/23 PASSED`);
+console.log(`AUDIT REGRESSION SOURCE TESTS: ${passed}/21 PASSED`);

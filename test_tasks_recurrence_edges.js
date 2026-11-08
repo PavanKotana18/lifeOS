@@ -18,7 +18,7 @@ async function main() {
     static UTC(...args) { return RealDate.UTC(...args); }
   };
 
-  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
+  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to raw domain operations for this recurrence contract.\nexport { db, rawStorageService as legacyStorageService };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -30,6 +30,24 @@ async function main() {
   const loaded = new Module(path.join(__dirname, 'src/db.recurrence-edges.cjs'), module);
   loaded.filename = path.join(__dirname, 'src/db.recurrence-edges.cjs');
   loaded.paths = module.paths;
+  const financeSource = fs.readFileSync(path.join(__dirname, 'src/services/financeCore.ts'), 'utf8');
+  const financeCompiled = ts.transpileModule(financeSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.recurrence-edges.cjs'), module);
+  financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.recurrence-edges.cjs');
+  financeLoaded.paths = module.paths;
+  financeLoaded._compile(financeCompiled, financeLoaded.filename);
+  const accountingSource = fs.readFileSync(path.join(__dirname, 'src/services/financialAccounting.ts'), 'utf8');
+  const accountingCompiled = ts.transpileModule(accountingSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const accountingLoaded = new Module(path.join(__dirname, 'src/services/financialAccounting.recurrence-edges.cjs'), module);
+  accountingLoaded.filename = path.join(__dirname, 'src/services/financialAccounting.recurrence-edges.cjs');
+  accountingLoaded.paths = module.paths;
+  const accountingRequire = accountingLoaded.require.bind(accountingLoaded);
+  accountingLoaded.require = request => request === './financeCore' ? financeLoaded.exports : accountingRequire(request);
+  accountingLoaded._compile(accountingCompiled, accountingLoaded.filename);
   const sessionSource = fs.readFileSync(
     path.join(__dirname, 'src/services/sessionManager.ts'),
     'utf8'
@@ -53,6 +71,8 @@ async function main() {
 
   const originalModuleLoad = Module._load;
   Module._load = function (request, parent, isMain) {
+    if (request === './services/financeCore' && parent && parent.filename === loaded.filename) return financeLoaded.exports;
+    if (request === './services/financialAccounting' && parent && parent.filename === loaded.filename) return accountingLoaded.exports;
     if (
       request === './services/sessionManager' &&
       parent &&
@@ -65,6 +85,13 @@ async function main() {
     parent.filename &&
     parent.filename.endsWith('/src/db.recurrence-edges.cjs')
   ) {
+    if (request === './services/encryptedStorageIntegration') {
+      return { BOOTSTRAP_SETTING_KEYS: new Set([
+        'theme', 'visualTheme', 'biometricLockEnabled',
+        'onboardingCompleted', 'onboardingStarted', 'onboardingStep'
+      ]) };
+    }
+
     if (request === './services/encryptedStorageRuntime') {
       return {
         createLifeOSEncryptedRuntime: () => ({
@@ -103,7 +130,9 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const { db, StorageService, sessionManager } = loaded.exports;
+  // Recurrence rules are tested at the raw domain layer. Encrypted admission
+  // and session behavior are covered independently by security-focused tests.
+  const { db, legacyStorageService: StorageService, sessionManager } = loaded.exports;
   sessionManager.unlock();
   await db.open();
 

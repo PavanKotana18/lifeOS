@@ -1,0 +1,648 @@
+
+> lifeos-personal@1.0.0 test
+> node test_lifeos.js && node test_backup_validation.js && node test_backup_indexeddb.js && node test_db_atomicity.js && node test_encrypted_atomicity.js && node test_tasks_recurrence.js && node test_habit_analytics_wiring.js && node test_offline_resilience.js && node test_tasks_recurrence_edges.js && node test_goal_status_ui.js && node test_auth_lifecycle.js && node test_session_manager.js && node test_crypto_service.js && node test_encrypted_record_codec.js && node test_encrypted_dexie_store.js && node test_crypto_native_source.js && node test_crypto_key_state_api.js && node test_backup_export_service.js && node test_audit_regressions.js && npm run test:encrypted && npm run test:wp0 && node test_sprint1_security.js && node test_local_consolidation.js && node test_sprint3_acceptance.js && node test_lifeos_stabilization.js && node test_notification_delivery_pipeline.cjs && node test_android_debug_signing_20261107.cjs && node test_encryption_admission.js && node test_secure_startup.js && node test_android_startup.js && node test_product_labels_20261107.cjs && node test_finance_core_20261107.cjs && node test_finance_analytics_money_20261107.cjs && node test_theme_catalog_20261107.cjs && node test_dashboard_summary_20261107.cjs && node test_navigation_ia_20261107.cjs && node test_lifeos2_typography_money_20261107.cjs && node test_transaction_duplicate_20261107.cjs && node test_today_layout_20261107.cjs && node test_transaction_quick_entry_20261107.cjs && node test_savings_goal_visual_20261107.cjs && node test_budget_display_20261107.cjs && node test_insights_hub_20261107.cjs && node test_finance_savings_summary_20261107.cjs && node test_settings_ui_accessibility_20261107.cjs && node test_lazy_screen_loading_20261107.cjs && node test_onboarding_theme_20261107.cjs && node test_first_record_security_20261107.cjs && node test_finance_analytics_theme_20261107.cjs && node test_record_form_theme_20261107.cjs && node test_finance_views_theme_20261107.cjs && node test_finance_charts_theme_20261107.cjs && node test_dashboard_theme_20261107.cjs && node test_app_shell_theme_20261107.cjs && node test_planner_theme_20261107.cjs && node test_plan_hub_schedule_20261107.cjs && node test_screenshot_protection_policy_20261107.cjs && node test_launch_brand_20261107.cjs && node scripts/test-android-runner.cjs
+
+=== STARTING LIFEOS AUTOMATED VERIFICATION SUITE ===
+
+
+--- 1. Testing Finance Module ---
+✅ PASSED: Create income transaction (Salary: ₹1,20,000)
+✅ PASSED: Create expense transactions (Rent: ₹35,000, Food: ₹15,000)
+✅ PASSED: Verify monthly total income: expected 120000, got 120000
+✅ PASSED: Verify monthly total expenses: expected 50000, got 50000
+✅ PASSED: Verify remaining balance: expected 70000, got 70000
+✅ PASSED: Verify budget utilisation: expected 83.3%, got 83.3%
+✅ PASSED: Savings contribution does not inflate spending; remaining cash flow is 70000 (got 70000)
+✅ PASSED: Edit transaction amount updated to 18000
+✅ PASSED: Verify recalculation after edit: total expenses 53000
+✅ PASSED: Verify recalculation after delete: total expenses 18000
+✅ PASSED: Verify category analytics after delete
+
+--- 2. Testing Habit Tracker Module ---
+✅ PASSED: Create habit "Drink 3L Water"
+✅ PASSED: Verify habit marked completed today
+✅ PASSED: Verify current streak is 4 (got 4)
+✅ PASSED: Verify longest streak is 4 (got 4)
+✅ PASSED: Verify historical records preserved against actual dates
+✅ PASSED: Verify undo completion today
+✅ PASSED: Verify streak calculation after undo (got 3)
+
+--- 3. Testing Goals Module ---
+✅ PASSED: Create goal "Run Half Marathon"
+✅ PASSED: Add milestones to goal
+✅ PASSED: Verify progress calculation: expected 47.4%, got 47.4%
+✅ PASSED: Verify milestone completed status
+
+--- 4. Testing Daily Planner Module ---
+✅ PASSED: Create task with Urgent priority
+✅ PASSED: Edit priority to High and change due date to 2026-11-01
+✅ PASSED: Mark task completed and verify persistent state
+
+--- 4B. Testing local deadlines and scheduling logic ---
+✅ PASSED: Task without a time remains pending through the end of its local due day
+✅ PASSED: Task without a time becomes overdue after its local due day ends
+✅ PASSED: Task with a due time becomes overdue after that local time
+✅ PASSED: Completed tasks never become overdue
+✅ PASSED: Task sorting places overdue items first and completed items last
+✅ PASSED: Habit streak remains continuous across the daylight-saving transition
+✅ PASSED: Weekly completion rate uses local calendar days
+✅ PASSED: Weekday habit rate uses five scheduled weekdays, not seven calendar days
+✅ PASSED: Weekend habit rate uses scheduled weekend days
+✅ PASSED: Weekly habit needs one completion in the current Monday-Sunday week
+✅ PASSED: Previous Sunday does not count in the new Monday-Sunday week
+✅ PASSED: Next Monday does not count in the current calendar week
+✅ PASSED: Weekday streak continues across Saturday and Sunday
+✅ PASSED: Weekly streak counts consecutive calendar weeks
+✅ PASSED: Goal progress is bounded between zero and one hundred percent
+✅ PASSED: Finance date/time converts from device-local input to a stable instant
+✅ PASSED: Finance entry keeps the exact save timestamp
+✅ PASSED: Task notification planning includes custom reminder, upcoming deadline and overdue alert times
+✅ PASSED: Completed task notifications are not scheduled
+
+--- 4C. Testing onboarding, profile and notification diagnostics ---
+✅ PASSED: A fresh empty install enters onboarding while an existing profile/data set migrates past it
+✅ PASSED: An interrupted first-run flow resumes while a completed flow remains closed
+✅ PASSED: Skipping optional biometric setup does not prevent unfinished onboarding from resuming
+✅ PASSED: Profile avatar uses the uppercase first letter and handles an empty name
+✅ PASSED: Dark, light and system appearance preferences resolve correctly
+✅ PASSED: Native Android appearance overrides stale WebView media state and browsers fall back to matchMedia
+✅ PASSED: Stored preferences restore while new fields receive safe defaults
+✅ PASSED: Reporting currency preferences accept the versioned catalog and reject unknown saved or legacy codes
+✅ PASSED: Currency uses locale separators and currency precision
+✅ PASSED: Reporting currency formatting uses zero- and three-decimal metadata with decimal-safe rounding
+✅ PASSED: System locale uses the device Intl locale instead of inferring locale from currency
+✅ PASSED: Time format preference changes display without altering stored timestamps
+✅ PASSED: Distance and volume conversion preserve precise canonical values
+✅ PASSED: Speed conversions and zero edge cases are supported
+✅ PASSED: Incompatible units fail safely and date display preference formats consistently
+✅ PASSED: Transaction edit fields exclude identity and creation timestamp so updates preserve them
+✅ PASSED: Finance analytics totals, savings rate, and month comparison derive from stored records
+✅ PASSED: Category budget resolves category ID to its display name and calculates spending
+✅ PASSED: A second category budget resolves and calculates independently
+✅ PASSED: Missing category references fail safely without misattributing spending
+✅ PASSED: Overall budgets continue to use total expenses
+✅ PASSED: Analytics distinguish missing prior data from a recorded month with zero expenses
+✅ PASSED: Savings rate accurately shows a negative result when saved expenses exceed income
+✅ PASSED: Savings rate is unavailable when there is no income baseline
+✅ PASSED: Nested Finance navigation returns through visited subtabs without duplicate entries
+✅ PASSED: System follows current appearance after switching back from either explicit theme and persisted System survives restart
+✅ PASSED: System appearance updates while running and removes its listener on cleanup
+✅ PASSED: Cold launch authentication coalesces duplicate lifecycle requests into one prompt
+✅ PASSED: Cancelled/failed authentication leaves protected state locked
+✅ PASSED: Authentication failure supports a controlled retry and successful authentication unlocks
+✅ PASSED: Backgrounding relocks and a resumed session requires authentication again
+✅ PASSED: Authentication completing after backgrounding cannot unlock the app
+✅ PASSED: Monthly planner grid covers leap days and adjacent month boundaries
+✅ PASSED: Calendar grid starts on Monday and includes month edges
+✅ PASSED: Calendar selection filters the agenda to its local date
+✅ PASSED: Personal greeting uses local hour and handles a missing display name
+✅ PASSED: Notification permission states distinguish granted, denied and not-yet-requested
+✅ PASSED: Navigation transition respects reduced-motion preference
+✅ PASSED: Back closes dialogs and nested task details before changing pages
+✅ PASSED: Back closes notification preferences to Profile, then returns to the previous tab
+✅ PASSED: Back follows prior tabs and confirms exit only at the application root
+✅ PASSED: Hardware Back exits the locked app without bypassing its next-launch authentication
+✅ PASSED: Notification IDs remain stable per task and distinct across tasks
+✅ PASSED: An explicitly selected future task reminder is planned when its category is enabled
+✅ PASSED: Tasks without a selected reminder do not create task reminder notifications
+✅ PASSED: Past task reminders are skipped instead of scheduled
+
+--- 5. Testing Central Dashboard Integration ---
+✅ PASSED: Verify dashboard pending vs completed tasks count
+✅ PASSED: Dashboard dynamically reflects new pending task
+✅ PASSED: Dashboard reports actual completed and due task counts
+✅ PASSED: Dashboard counts only routines scheduled today
+
+--- 6. Testing Backup & Restore Module ---
+✅ PASSED: Export complete application data to valid JSON string
+✅ PASSED: Clear all data confirmed and verified empty
+✅ PASSED: Import JSON backup successfully
+✅ PASSED: Restored 2 transactions
+✅ PASSED: Restored 1 habits
+✅ PASSED: Restored 2 tasks
+✅ PASSED: Restored 1 goals
+
+========================================
+ALL TESTS PASSED! (101/101 assertions verified)
+========================================
+
+PASS: Accepts a valid backup containing all 11 tables
+PASS: Rejects missing table arrays
+PASS: Rejects duplicate record IDs
+PASS: Rejects invalid transaction amount
+PASS: Rejects impossible calendar dates
+PASS: Rejects invalid category type
+PASS: Rejects broken budget category reference
+PASS: Rejects broken savings contribution reference
+PASS: Rejects broken habit log reference
+PASS: Rejects duplicate habit/date combinations
+PASS: Rejects invalid habit frequency
+PASS: Rejects broken milestone goal reference
+PASS: Rejects invalid goal status
+PASS: Rejects invalid task recurrence
+PASS: Rejects invalid task time
+PASS: Accepts valid recurrence metadata in task backups
+PASS: Rejects non-string recurrence metadata in task backups
+PASS: Rejects duplicate settings keys
+PASS: Accepts demo-style Food budget with the seeded cat_food reference
+
+Backup validation tests: 19/19 passed
+PASS: Invalid backup leaves existing IndexedDB records unchanged
+PASS: Failed restore rolls back earlier table changes
+PASS: Existing transaction, category and task records preserved
+PASS: Backup export reads all tables inside a readonly transaction
+PASS: Failed clearAll rolls back earlier table clears
+
+REAL DEXIE / INDEXEDDB BACKUP TESTS: 5/5 PASSED
+========== ENCRYPTED ADMISSION GUARD TESTS ==========
+PASS: Unprovisioned private read stays blocked and relocks the JS session
+PASS: Unprovisioned private write is blocked without changing settings
+PASS: Unprovisioned backup export is blocked
+PASS: Allowlisted bootstrap theme remains available while private storage is closed
+PASS: JS session unlock alone cannot bypass missing secure provisioning
+PASS: Contribution failure rolls back the goal balance and contribution record
+PASS: Invalid amounts and missing goals create no financial records
+PASS: Savings history fixture uses a normally seeded expense category
+PASS: Savings contribution adds no expense and leaves historical savings expense unchanged
+PASS: Savings contributions stay independent of transaction writes and preserve history
+PASS: Habit deletion rolls back when dependent-log deletion fails
+PASS: Goal deletion rolls back when milestone deletion fails
+PASS: Savings-goal deletion rolls back when contribution deletion fails
+PASS: Valid YYYY-MM-DD date is accepted and persisted
+PASS: Concurrent habit completion creates exactly one completed log
+PASS: Invalid dates and missing habits create no additional logs
+PASS: Failed habit-log insertion leaves no partial record
+PASS: Repeated completion toggles update one existing log
+PASS: Rapid habit creation generates distinct IDs within one millisecond
+PASS: Rapid savings-goal creation preserves both records
+PASS: Rapid goal creation generates distinct IDs
+PASS: Rapid milestone creation generates distinct IDs
+PASS: F12: one incomplete milestone prevents goal closure
+PASS: F12 RUNTIME: final milestone closes a fully funded goal
+PASS: F12: completed milestones cannot compensate for numeric progress below 100%
+PASS: F12: reaching the numeric target closes a goal with all milestones complete
+PASS: F12: progress and milestone updates preserve Paused status
+PASS: F12: reopening a milestone reopens a completed goal
+PASS: F12: zero target cannot qualify a goal for 100% closure
+PASS: Concurrent monthly budget upserts serialize into one budget record
+PASS: Transaction validation fixture initializes the normal Food category
+PASS: Transaction storage enforces amount/date invariants and protects record identity
+PASS: Habit update preserves id and createdAt while applying mutable fields
+PASS: Goal update preserves id and createdAt while applying mutable fields
+PASS: Task update preserves id and createdAt while applying mutable fields
+PASS: Concurrent first-run category initialization seeds one complete, duplicate-free category set
+PASS: Category deletion is blocked while a budget references it
+PASS: Category deletion is blocked while a transaction references it
+PASS: Category can be deleted after its budget and transaction references are removed
+
+DATABASE ATOMICITY TESTS: 39 assertions PASSED (raw database fixture; encrypted facade covered separately)
+PASS: Provisioned private records are ciphertext-only in IndexedDB
+PASS: Private access is denied while the authenticated session and native key are locked
+PASS: Rejected locked access does not invoke crypto, provision a key, or change key metadata
+PASS: Private session reopens only after the native authentication path succeeds
+PASS: Authenticated session can read provisioned encrypted records
+PASS: Injected encrypted contribution failure rolls back the multi-table write without plaintext fallback or partial goal update
+PASS: Encrypted failed contribution leaves no contribution or spending transaction
+PASS: Concurrent encrypted contributions serialize without losing either update
+ENCRYPTED SESSION ATOMICITY: 8/8 passed; synthetic native adapter, production facade/Dexie exercised.
+PASS: Daily recurrence creates the next day occurrence
+PASS: Recurring occurrence preserves the original reminder timestamp
+PASS: Second recurrence keeps the stable root ID and reminder timestamp
+PASS: Concurrent completion creates exactly one occurrence
+PASS: Uncomplete and re-complete does not duplicate the occurrence
+PASS: Monthly recurrence clamps January 31 to February 28
+PASS: Weekly recurrence advances seven calendar days
+PASS: Failed occurrence creation rolls back original completion
+PASS: Non-recurring task completes without creating another task
+PASS: Overdue daily recurrence advances to the next future day
+PASS: Overdue weekly recurrence preserves its weekly schedule
+PASS: Overdue monthly recurrence advances to the next scheduled month date
+PASS: Legacy nested recurrence IDs resolve to their original root
+PASS: Undo removes an untouched generated child and clears its parent reference
+RECURRENCE TESTS: 14/14 PASSED
+PASS: Monday scheduled for weekdays
+PASS: Friday scheduled for weekdays
+PASS: Saturday excluded from weekdays
+PASS: Sunday excluded from weekdays
+PASS: Saturday scheduled for weekends
+PASS: Sunday scheduled for weekends
+PASS: Monday excluded from weekends
+PASS: Daily frequency remains scheduled independent of weekday
+PASS: Impossible date rejected
+PASS: Invalid date format rejected
+PASS: Weekday rate uses five scheduled days
+PASS: Weekend rate uses two scheduled days
+PASS: Weekday streak crosses Saturday and Sunday
+PASS: Weekend streak counts Saturday and Sunday
+PASS: Streak calculation ignores impossible logged calendar dates
+PASS: Streak calculation safely rejects an impossible today date
+PASS: Weekly frequency accepts one completion in the current calendar week
+PASS: Previous Sunday does not count in the new Monday-Sunday week
+PASS: Next Monday does not count in the current calendar week
+PASS: Weekly streak counts consecutive Monday-start weeks
+PASS: App passes frequency into streak calculation
+PASS: App passes frequency into weekly rate calculation
+PASS: Dashboard summary respects scheduled routines and separates weekly routines
+PASS: Habit UI displays scheduled-day denominator
+PASS: UI source: completion control exposes pressed state and a 44px touch target
+PASS: UI source: weekly completion indicator exposes a text alternative
+PASS: Habit completion writes are centralised in one UI handler
+PASS: Habit persistence failures are visible to the user
+PASS: Successful saves with failed UI refresh are reported accurately
+PASS: Notification refresh failures do not misreport the habit save as failed
+PASS: Dashboard and Habits tab use the shared completion handler
+PASS: Habit deletion is centralised in one UI handler
+PASS: Habit deletion failures are visible to the user
+PASS: Habits tab uses the shared deletion handler
+HABIT ANALYTICS AND UI WIRING: 34/34 checks PASSED
+PASS: Application database is Dexie-backed local IndexedDB
+PASS: Application bootstrap reads local settings before rendering
+PASS: Application initial data loading uses local StorageService and Dexie tables
+PASS: Connectivity state initializes from navigator.onLine
+PASS: Online and offline browser events update connectivity state
+PASS: Offline indicator explains local data availability
+PASS: Connectivity indicator does not gate local database operations
+PASS: Capacitor app is configured to use packaged local web assets
+PASS: No application-level fetch dependency exists in bootstrap or database layer
+PASS: Capacitor app-state listener removes itself if registration resolves after cleanup
+PASS: Capacitor back-button listener removes itself if registration resolves after cleanup
+PASS: Resume processing prevents overlapping recovery runs
+PASS: Resume and listener-registration failures are handled explicitly
+PASS: Disposed lifecycle callbacks do not continue updating app state
+OFFLINE RESILIENCE SOURCE CHECKS: 14/14 PASSED
+PASS: January 31 advances to February 29 in a leap year
+PASS: February 29 advances to March 29 without date overflow
+PASS: December 31 advances correctly across the year boundary
+PASS: A 30th-of-month recurrence remains on the 30th when possible
+PASS: May 31 clamps to June 30
+PASS: Editing a generated occurrence does not modify its source task
+PASS: Deleting a generated occurrence preserves its completed source task
+PASS: Repeated completion after database reopen does not duplicate the occurrence
+PASS: Undo preserves an edited generated child
+RECURRENCE EDGE TESTS: 9/9 PASSED
+GOAL STATUS UI REGRESSION TESTS: 15/15 passed (source-level presentation checks)
+F12: 100% closure requires numeric target and all milestones
+LifeOS resume recovery failed. Error: Authentication was cancelled or failed.
+    at /data/data/com.termux/files/home/lifeos2-release-candidate-20261108/src/services/cryptoSessionCoordinator.ts:70:39
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:472:9)
+AUTHENTICATION LIFECYCLE TESTS: 10/10 PASSED (actual App/Dexie; native SIMULATED)
+PASS: A new session starts locked
+PASS: Locked session rejects private access
+PASS: Explicit unlock opens the session
+PASS: New session generation is current
+PASS: Authenticated session can capture its generation
+PASS: Lock immediately closes the session
+PASS: Lock advances the session generation
+PASS: Lock invalidates the previous session token
+PASS: Re-authentication creates a fresh generation
+PASS: Fresh authentication token is accepted
+PASS: Stale authentication token is rejected
+PASS: Current authenticated token remains valid
+SESSION MANAGER CORE TESTS: 12/12 PASSED
+PASS: Lock immediately rejects new operation leases
+PASS: Lock drain waits while an admitted operation is active
+PASS: Drain resolves after the admitted operation finishes
+PASS: Duplicate lease release is rejected
+SESSION OPERATION DRAIN TESTS: 4/4 PASSED
+PASS: AAD is canonical and binds table, record and schema version
+PASS: Unknown tables are rejected
+PASS: Empty record identifiers are rejected
+PASS: Invalid schema versions are rejected
+PASS: Native plugin availability is exposed
+PASS: Recovery preparation returns a validated one-time code
+PASS: Recovery envelope version and KDF parameters are validated
+PASS: Recovery confirmation delegates to native persistence
+PASS: Malformed native recovery responses are rejected
+PASS: Recovery delegates the validated code and envelope to native
+PASS: Invalid recovery codes are rejected before native execution
+PASS: Local Keystore re-binding delegates to native biometric protection
+PASS: Setup delegates to the native plugin
+PASS: New device provisioning can persist recovery deferral with the Keystore key creation
+PASS: Unlock delegates to the native plugin
+PASS: Native unlocked state is queried
+PASS: Record encryption returns a versioned envelope
+PASS: Callers cannot supply arbitrary AAD to record encryption
+PASS: Record decryption returns plaintext
+PASS: Record decryption reconstructs the same canonical AAD
+PASS: Ciphertext cannot be decrypted under a different record identity
+PASS: AAD differs across record tables
+PASS: Lock delegates to native key clearing
+PASS: Unavailable native plugin is reported
+PASS: Web or unsupported platforms fail closed
+CRYPTO SERVICE TESTS: 25/25 PASSED
+PASS: Storage row retains the record lookup ID
+PASS: Storage row carries an explicit encrypted marker
+PASS: Sensitive fields are absent from the storage row
+PASS: Plaintext is not present in the encrypted row
+PASS: Encrypted record round-trips to the original payload
+PASS: Numeric fields survive encryption and decryption
+PASS: Settings retain Dexie key as their primary key
+PASS: Settings decrypt using their Dexie primary key
+PASS: Seal rejects a record whose identity differs from its storage key
+PASS: Seal rejects unknown tables
+PASS: Open rejects unknown tables
+PASS: Open rejects storage-key tampering
+PASS: Open rejects rows without the encrypted marker
+PASS: Open rejects unsupported encryption key versions
+PASS: Encryption binds table, record ID and schema version
+
+ENCRYPTED RECORD CODEC TESTS: 15/15 PASSED
+PASS: Prepare creates ciphertext without writing to IndexedDB
+PASS: Prepared ciphertext can be opened before a transaction
+PASS: New transaction rows carry encrypted marker
+PASS: Sensitive transaction fields are absent from IndexedDB row
+PASS: Ciphertext is persisted
+PASS: Encrypted transaction decrypts by primary key
+PASS: Mixed legacy and encrypted rows remain readable
+PASS: Legacy plaintext row is readable during transition
+PASS: Filtering runs against decrypted records
+PASS: Updated row remains ciphertext-only
+PASS: Read-modify-write preserves updated values
+PASS: Updates cannot change the primary-key identity
+PASS: Bulk writes encrypt every row before persistence
+PASS: Allowlisted bootstrap setting remains plaintext
+PASS: Non-bootstrap setting is encrypted
+PASS: Encrypted settings decrypt correctly
+PASS: New-user display name is restart-readable as a bootstrap profile preference
+PASS: An already encrypted profile name is never downgraded to plaintext
+PASS: Already encrypted profile name remains readable through the facade
+PASS: Malformed encrypted rows fail closed without plaintext fallback
+PASS: Encryption metadata without its marker fails closed
+PASS: Delete uses the stable primary key
+PASS: Clear removes rows through the repository
+PASS: Shared write boundary prevents a second multi-table mutation from interleaving
+PASS: Shared write boundary preserves complete mutation ordering
+
+Encrypted Dexie store: 25/25 passed
+PASS: Recovered key enters quarantine
+PASS: Normal crypto operations cannot access quarantined keys
+PASS: Quarantined recovery does not report unlocked
+PASS: Rebind releases quarantine only after persistence succeeds
+PASS: Async rebind clones and clears its key copy
+PASS: Key clearing resets quarantine
+PASS: Native source contains normal-state reset paths
+PASS: Keystore invalidation detection is specific
+PASS: Only permanently invalidated aliases are deleted
+PASS: Healthy local wrapper replacement is blocked
+PASS: Recovery metadata cleanup checks persistence
+
+NATIVE RECOVERY SOURCE TESTS: passed
+PASS: Native key-state inspection is read-only and lock-protected
+PASS: recovery deferral is explicit, one-time, key-bound and represented in native state
+PASS: Recovery metadata checks the supported KDF version
+CRYPTO KEY STATE API TESTS: 11/11 PASSED
+BACKUP EXPORT SERVICE TESTS: 18/18 PASSED
+PASS: Demo Food budget references the seeded Food category ID
+PASS: Budget form exposes and stores the selected category ID
+PASS: Budget submission persists the optional category ID
+PASS: Empty category selection continues to create an overall budget
+PASS: Category budget resolves its ID to the category display name
+PASS: Category budget spending uses the transaction category name
+PASS: Missing category reference safely produces zero category spending
+PASS: Overall budget continues to calculate against total expenses
+PASS: Transaction storage validates category existence and transaction type
+PASS: Transaction add and update validate category references within Dexie transactions
+PASS: Category rename and type changes are blocked while transactions reference the category
+PASS: Category deletion is blocked while budgets or transactions reference it
+PASS: New transactions default to the first available expense category
+PASS: Transaction category dropdown displays only categories matching its type
+PASS: Changing transaction type resets the category to a valid matching category
+PASS: Transaction edit form preserves unchanged legacy category values
+PASS: Recurring task creation propagates reminderAt
+PASS: Dashboard exposes separate task and routine counts without a composite score
+PASS: New savings contributions update goal progress without creating expense records
+PASS: Savings goal balance and contribution remain atomically persisted
+PASS: Savings contribution UI distinguishes saving from spending
+AUDIT REGRESSION SOURCE TESTS: 21/21 PASSED
+
+> lifeos-personal@1.0.0 test:encrypted
+> node scripts/run-encrypted-tests.cjs
+
+PASS: factory exposes all expected storage domains
+PASS: empty category store seeds exact default categories
+PASS: transaction rejects a category with the wrong type
+PASS: valid transaction is persisted and retrievable
+PASS: transaction update preserves ID and createdAt
+PASS: budget upsert updates instead of duplicating
+PASS: category deletion is blocked when referenced by a budget
+PASS: savings goal deletion removes its contributions
+PASS: invalid calendar date rejects without RangeError
+PASS: habit deletion removes associated logs
+PASS: goal deletion removes associated milestones
+PASS: missing milestone update rejects
+PASS: settings round-trip
+PASS: backup import refuses existing data without replaceExisting
+PASS: backup clearAll clears data and restores defaults
+PASS: failed demo seed rolls back all staged writes
+
+========================================
+ENCRYPTED STORAGE FACADE: 16 PASSED, 0 FAILED
+========================================
+PASS: transactions row migrated to ciphertext
+PASS: transactions plaintext fields absent
+PASS: transactions decrypts correctly
+PASS: categories row migrated to ciphertext
+PASS: categories plaintext fields absent
+PASS: categories decrypts correctly
+PASS: budgets row migrated to ciphertext
+PASS: budgets plaintext fields absent
+PASS: budgets decrypts correctly
+PASS: savingsGoals row migrated to ciphertext
+PASS: savingsGoals plaintext fields absent
+PASS: savingsGoals decrypts correctly
+PASS: savingsContributions row migrated to ciphertext
+PASS: savingsContributions plaintext fields absent
+PASS: savingsContributions decrypts correctly
+PASS: habits row migrated to ciphertext
+PASS: habits plaintext fields absent
+PASS: habits decrypts correctly
+PASS: habitLogs row migrated to ciphertext
+PASS: habitLogs plaintext fields absent
+PASS: habitLogs decrypts correctly
+PASS: goals row migrated to ciphertext
+PASS: goals plaintext fields absent
+PASS: goals decrypts correctly
+PASS: milestones row migrated to ciphertext
+PASS: milestones plaintext fields absent
+PASS: milestones decrypts correctly
+PASS: tasks row migrated to ciphertext
+PASS: tasks plaintext fields absent
+PASS: tasks decrypts correctly
+PASS: Non-bootstrap setting encrypted
+PASS: Non-bootstrap setting plaintext absent
+PASS: Bootstrap setting theme remains readable
+PASS: Bootstrap setting biometricLockEnabled remains readable
+PASS: Bootstrap setting onboardingCompleted remains readable
+PASS: Bootstrap setting onboardingStarted remains readable
+PASS: Bootstrap setting onboardingStep remains readable
+PASS: Bootstrap setting displayName remains readable
+PASS: All bootstrap settings skipped
+PASS: Transaction migration count correct
+PASS: Second migration does not re-encrypt rows
+PASS: Second migration skips encrypted rows
+PASS: Interrupted migration reports write failure
+PASS: Resume skips previously migrated transactions
+PASS: Resume migrates remaining categories
+PASS: Malformed encryption metadata fails closed
+
+MIGRATION BEHAVIOR TESTS: 46 PASSED
+PASS: Transaction persisted as ciphertext
+PASS: Category persisted as ciphertext
+PASS: Encrypted transaction decrypts correctly
+PASS: Duplicate second-table add rejects the batch
+PASS: First-table write rolled back after second-table failure
+PASS: Second-table record remains unchanged after rollback
+PASS: Staged write is visible to reads before commit
+PASS: Delete mutation committed
+PASS: Clear mutation committed
+PASS: Concurrent transactions serialize without lost updates
+
+ENCRYPTED TRANSACTION COORDINATOR: 10 PASSED
+PASS: existing key unlocks before session
+PASS: first setup is never automatic
+PASS: explicit setup verifies native key
+PASS: inconsistent metadata fails closed
+PASS: missing Keystore alias fails closed
+PASS: native unlock failure keeps session locked
+PASS: background locks session, drains, then locks key
+CRYPTO SESSION COORDINATOR TESTS: 7/7 PASSED
+
+> lifeos-personal@1.0.0 test:wp0
+> node tests/wp0/harness-selftest.cjs && node scripts/run-wp0-regressions.cjs --controls
+
+WP0 HARNESS SELFTEST: 151 checks passed (including missing-dependency fault injection)
+PASS: LOS-010 (5 checks)
+PASS: LOS-009 (20 checks)
+PASS: CONTROL-INTEGRATION (21 checks)
+PASS: LOS-002 (17 checks)
+PASS: LOS-003 (19 checks)
+PASS: LOS-007 (4 checks)
+PASS: LOS-008 (16 checks)
+PASS: SPRINT1-RESTORE (20 checks)
+PASS: SPRINT1-RECOVERY (21 checks)
+PASS: SPRINT1-IMPORT-RACE (6 checks)
+PASS: LOS-023 (23 checks)
+{"summary":{"PASS":11}}
+Known-defect observations are NOT passing release acceptance. See docs/testing/WP0.md.
+PASS: protected open is single-flight and waits for admitted operations
+PASS: background invalidates an outstanding native success, then retry can authenticate
+PASS: direct session invalidation and native cancellation fail closed
+PASS: failed native lock is retried before later authentication
+PASS: missing/inconsistent key state never calls setup or admits access
+PASS: recovery proof precedes biometric rebind and successful recovery stays locked
+PASS: wrong database proof cannot reach rebind
+PASS: cancelled and failed persistence rebind remain closed
+PASS: background during proof invalidates recovery before rebind
+PASS: concurrent recoveries rejected; invalid/no-record kits never mutate native state
+PASS: UTF-8 byte budgets include envelope expansion; numeric boundaries require no large fixture
+PASS: malformed encrypted envelope never downgrades to legacy
+PASS: STATIC ONLY: native proof, UI-thread and log policy guards are present
+SPRINT1 SECURITY SERVICES: 13 tests passed; native interfaces simulated, Java checks STATIC ONLY
+PASS: Cents-based category, month, savings and budget parity
+PASS: Selected task reminder, upcoming deadline, overdue alert and date-only policy stay distinct
+PASS: Exact-alarm denial schedules approximate reminders and is diagnosed
+PASS: Only user-selected task reminders use Android idle-aware alarm quota
+PASS: Android capability diagnostics distinguish an available bridge from delivery evidence
+PASS: A genuinely missing Android notification plugin is explicit and scheduling cannot silently succeed
+PASS: Task reminder diagnostic reports eligibility and pending ID without task content
+LifeOS task notification scheduling failed: Error:native-operation-failed
+PASS: Persisted task reminder is queued at its saved local-time instant and survives failed reschedule
+PASS: Reminder lifecycle evidence distinguishes native acceptance, queue observation, posting and taps without record content
+PASS: Revoked Android notification permission cancels native alarms but preserves task reminder definition
+PASS: Resume catches up a still-persisted past inexact reminder without claiming delivery
+PASS: Capacitor reboot-restored reminder is recognized and retained instead of cancelled
+PASS: Task sync removes completed or deleted task schedules without affecting unrelated reminders
+PASS: Permission UI permits approximate reminders without exact-alarm settings detour
+PASS: Empty reschedule removes stale kinds and preserves unrelated alarms
+PASS: Reset cancellation failure preserves database records and reports failure
+LOCAL CONSOLIDATION: 16/16 passed (native simulated)
+PASS: CSV cells protect formula and control prefixes while preserving literals
+PASS: Actual create handler rejects concurrent submissions and closes after commit before failed refresh
+PASS: Pre-commit validation failure retains form and releases submit ownership
+PASS: Actual write failure preserves form, and a later explicit retry commits once
+SPRINT3 ACCEPTANCE: 4/4 passed (no device execution)
+PASS: Finance Newest First uses date and transaction time with deterministic creation tie-break
+PASS: Finance create, edit, reload and delete preserve entered local date-time without inventing legacy time
+PASS: System theme cold-start resolves Android appearance before rendering and preserves explicit overrides
+PASS: Returning from Android permission settings restores protected users without replaying onboarding
+PASS: Missing exact-alarm access keeps contextual reminders enabled with approximate delivery
+LIFEOS STABILIZATION: 5/5 passed
+NOTIFICATION DELIVERY CONTRACT: Android permission, inexact fallback, queue verification, privacy and reboot manifest checks passed (source contract only; no delivery test).
+ANDROID SIGNING CONTRACT: package identity is stable; versionCode advances; persistent debug signing is secret-gated and no key file is committed.
+PASS: Inactive facade rejects private access without changing secure key state
+PASS: Actual startup activates encrypted storage before private hydration
+PASS: Missing recovery protection blocks migration without changing legacy records
+PASS: Legacy record verified and preserved through encrypted activation
+PASS: Corrupt encrypted copy never replaces legacy plaintext during migration
+PASS: Cancellation and missing alias never fall back to raw reads
+ENCRYPTION ADMISSION: 6/6 passed; native interface simulated, real production facade/Dexie/migration.
+PASS: A pristine first install reaches welcome without native authentication or private hydration
+PASS: Onboarding display name persists through the bootstrap profile setting before secure setup
+PASS: An interrupted native setup may retry only its marked orphan alias
+PASS: First-record gate defers optional recovery and encrypts private records before writing
+PASS: Cancelling contextual first-record security does not provision or write private data
+PASS: Legacy-data startup waits for explicit consent and complete-kit confirmation
+PASS: New user may explicitly defer recovery after native setup and activate encrypted storage
+PASS: First-record gate provisions once and later writes do not repeat the recovery-choice prompt
+PASS: A provisioned key from an interrupted attempt cannot be reclassified as recovery-deferred
+PASS: Fresh consent cancellation leaves key and private records unchanged
+PASS: Cancelled kit confirmation resumes existing provisioned key without replacement
+PASS: Ciphertext with missing native metadata never enters initial setup
+PASS: Ciphertext appearing while user confirms setup prevents replacement key
+PASS: Legacy records migrate only after recovery confirmation and decrypt-verify
+PASS: Interrupted migration preserves failed row and retry reuses native key
+PASS: Process restart reactivates durable encrypted rows with original native key
+PASS: Lock while recovery kit is pending expires attempt and keeps facade inactive
+PASS: Lock during migration cannot reopen admission from stale completion
+PASS: Actual encrypted facade owns a lease and drain waits for admitted commit
+PASS: Orphaned native alias never offers provisioning or creates a replacement key
+PASS: Alias appearing during explicit setup confirmation blocks native setup
+PASS: Migration compare-and-replace preserves a concurrent raw edit
+PASS: A lock during final native availability await rejects stale open success
+PASS: Revoked encrypted read cannot return delayed plaintext; bootstrap remains available
+SECURE STARTUP: 24 tests passed (production services/Dexie; native SIMULATED)
+Android startup appearance: 16 checks passed
+Android startup entrypoint: 3 scenarios passed (cache failure, rejected dependencies, stalled dependencies)
+✔ Finance charts and category budgets retain arbitrary imported category names (59.5375ms)
+✔ A category budget with no expenses reports zero even for inherited property names (3.067291ms)
+✔ Custom goal units never resolve inherited JavaScript properties as conversions (1.517708ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 77.564688
+FINANCE CORE: 53 assertions passed; calculations use integer minor units and synthetic inputs only.
+FINANCE ANALYTICS MONEY: 7 currency-precision and rounding assertions passed.
+THEME CATALOG: semantic tokens, contrast, saved-theme hydration and timeout recovery passed.
+TODAY OVERVIEW: 3 checks passed; tasks, daily routines and weekly routines remain separate.
+NAVIGATION IA: primary destinations, module routing and back history passed.
+LIFEOS 2 TYPOGRAPHY + MONEY: bundled Inter/OFL, five script fallbacks, zoom support, token scale, currency formatting and Money navigation checks passed.
+TRANSACTION DUPLICATE: 17 service and UI contracts passed with synthetic records.
+TODAY LAYOUT: 18 ordering, visibility, startup-boundary, encrypted restart persistence and UI contracts passed.
+TRANSACTION QUICK ENTRY: 9 source contracts passed; keyboard rendering remains Android-device validation.
+SAVINGS GOAL VISUAL: 19 rendered-state, data-state, deletion and accessibility contracts passed with synthetic amounts.
+BUDGET DISPLAY: 17 arithmetic, status, deletion and accessibility assertions passed with synthetic amounts.
+INSIGHTS HUB: 5 production-render checks passed with synthetic goals.
+FINANCE SAVINGS SUMMARY: 6 rendered-state checks passed with synthetic data.
+SETTINGS UI: 18 source-level theme, preference, switch and export accessibility checks passed.
+LAZY SCREEN LOADING: 12 source-level chunk and loading-state checks passed.
+ONBOARDING: fresh install renders a single name-entry step without biometric, recovery or notification setup; LifeOS identity retained.
+FIRST RECORD SECURITY: contextual choices explain native authentication, recovery risk and cancellation.
+FINANCE ANALYTICS THEME: 13 source-level theme and progress accessibility checks passed.
+RECORD FORM THEME: 11 source-level dialog checks passed; 39 editable JSX controls inspected.
+FINANCE VIEWS THEME: 13 source-level palette, navigation and accessibility checks passed.
+FINANCE CHARTS THEME: 9 source-level token, data-summary and empty-state checks passed.
+TODAY THEME: 8 source-level theme, progress, status and empty-state checks passed.
+APP SHELL THEME: 23 source and production-render security/accessibility checks passed with synthetic recovery data.
+PLANNER THEME: 11 source-level palette, date selection and status checks passed.
+PLAN HUB SCHEDULE: 10 deterministic sorting, readable type hierarchy and production-render checks passed.
+SCREENSHOT POLICY: ordinary app state is capturable; startup, onboarding, secrets, recovery, backup, lock and biometric states are protected.
+Launch brand: component rendering, native splash hold/release, watchdog, cold-only timing, readiness gate and reduced-motion checks passed (16 assertions).
+PASS: Android runner pass contract (simulated ADB only)
+PASS: Android runner crash contract (simulated ADB only)
+PASS: Android runner existing contract (simulated ADB only)
+PASS: Android runner physical contract (simulated ADB only)

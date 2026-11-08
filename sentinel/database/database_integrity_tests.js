@@ -1,7 +1,7 @@
 /**
  * LifeOS Sentinel — Real Dexie Database & Data-Integrity Verification Suite
  * Executes tests against the actual production Dexie database module (src/db.ts).
- * Tests all 11 entities, table indexes, schema constraints, transaction rollback,
+ * Tests all 15 entities, table indexes, schema constraints, transaction rollback,
  * atomicity, hooks, and backup export/restore round-trips.
  *
  * Uses disposable test databases only. Never touches or modifies a real user database.
@@ -124,16 +124,16 @@ async function runDatabaseIntegrityTests() {
 
   try {
     // 1. Real Schema & Table Structure
-    await check('Real Dexie Schema: verifies all 11 tables and primary indexes in production LifeOSDatabase', async () => {
+    await check('Real Dexie Schema: verifies all 15 tables and primary indexes in production LifeOSDatabase', async () => {
       const expectedTables = [
         'transactions', 'categories', 'budgets', 'savingsGoals',
-        'savingsContributions', 'habits', 'habitLogs', 'goals',
+        'savingsContributions', 'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'habits', 'habitLogs', 'goals',
         'milestones', 'tasks', 'settings'
       ];
       for (const tableName of expectedTables) {
         assert(testDb[tableName], `Table ${tableName} must exist on LifeOSDatabase instance`);
       }
-      assert.strictEqual(testDb.verno, 1, 'Production LifeOSDatabase schema version must be 1');
+      assert.strictEqual(testDb.verno, 2, 'Production LifeOSDatabase schema version must be 2');
     });
 
     // 2. Referential Integrity Validation
@@ -153,7 +153,7 @@ async function runDatabaseIntegrityTests() {
       };
 
       const tableNames = validateBackupTables(validPayload);
-      assert.strictEqual(tableNames.length, 11);
+      assert.strictEqual(tableNames.length, 15);
 
       // Corrupt category reference in budget
       const invalidBudget = JSON.parse(JSON.stringify(validPayload));
@@ -238,11 +238,16 @@ async function runDatabaseIntegrityTests() {
     });
 
     // 6. Schema Migration Compatibility
-    await check('Schema Compatibility: stores definition matches declared Dexie version 1 tables', async () => {
+    await check('Schema Compatibility: stores definition matches declared Dexie version 2 tables', async () => {
       const schemaStores = testDb.tables.map(t => t.name);
       assert(schemaStores.includes('transactions'));
       assert(schemaStores.includes('habitLogs'));
       assert(schemaStores.includes('settings'));
+      assert(schemaStores.includes('financialAccounts'));
+      assert(schemaStores.includes('accountTransfers'));
+      assert(schemaStores.includes('manualExchangeRates'));
+      assert(schemaStores.includes('plannedCommitments'));
+      assert.strictEqual(testDb.verno, 2);
     });
 
     // 7. Disposable Cleanup

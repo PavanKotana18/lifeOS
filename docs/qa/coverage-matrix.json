@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "branch": "qa/lifeos-android-workflow-coverage-20261106",
+    "commit": "3d05b3720863f9d029c3fa6dbeb4387ea62e5496",
+    "inventoryDate": "2026-11-07"
+  },
+  "coverage": [
+    {
+      "module": "Finance",
+      "testIds": ["CORE-FINANCE", "FIN-ANALYTICS"],
+      "risk": "HIGH",
+      "testType": ["Node functional assertions", "Production analytics tests"],
+      "environment": "Termux Node; synthetic in-memory fixtures",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "npm run test:all; test_lifeos.js 96/96; audit regression tests",
+      "gaps": ["No mounted Finance UI workflow", "Transaction date-time sort has no dedicated regression on this baseline", "No locale/timezone device matrix"]
+    },
+    {
+      "module": "Planner",
+      "testIds": ["TASK-RECURRENCE", "TASK-RECURRENCE-EDGE", "LOS-008"],
+      "risk": "HIGH",
+      "testType": ["Production service integration", "Fake IndexedDB", "Domain unit"],
+      "environment": "Termux Node; disposable Dexie fixtures",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "test_tasks_recurrence.js 14/14, edge tests 9/9, WP0 16 checks",
+      "gaps": ["No Android notification delivery test", "No mounted planner UI automation"]
+    },
+    {
+      "module": "Habits",
+      "testIds": ["HABIT-STREAK", "HABIT-ANALYTICS"],
+      "risk": "MEDIUM",
+      "testType": ["Domain unit", "Production integration"],
+      "environment": "Termux Node; synthetic records",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "npm run test:all; Sentinel domain and IndexedDB suites",
+      "gaps": ["No reminder delivery or mounted habit workflow test"]
+    },
+    {
+      "module": "Goals",
+      "testIds": ["GOAL-STATUS", "LOS-007"],
+      "risk": "HIGH",
+      "testType": ["Production function and storage integration", "Fake IndexedDB"],
+      "environment": "Termux Node",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "Goal status UI regression tests 9/9; WP0 4 checks",
+      "gaps": ["No mounted goal/milestone UI test"]
+    },
+    {
+      "module": "Onboarding and profile",
+      "testIds": ["ONBOARDING", "PROFILE"],
+      "risk": "HIGH",
+      "testType": ["Source/handler assertions", "Domain logic"],
+      "environment": "Termux Node; no React mount",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "npm run test:all; onboarding/profile and lifecycle assertions",
+      "gaps": ["First-run UI, settings return and persistence are not exercised through WebView UI"]
+    },
+    {
+      "module": "Settings and themes",
+      "testIds": ["THEME-RESOLVE", "THEME-COLD-START"],
+      "risk": "MEDIUM",
+      "testType": ["Unit/source inspection"],
+      "environment": "Termux Node; native appearance bridge not executed",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "npm run test:all domain/theme assertions",
+      "gaps": ["Cold Android launch, system setting transition and density rendering remain unexecuted"]
+    },
+    {
+      "module": "Biometrics",
+      "testIds": ["LOS-003", "BIO-ANDROID-OPTIN"],
+      "risk": "CRITICAL",
+      "testType": ["Node lifecycle simulation", "AndroidJUnitRunner synthetic plugin tests", "Opt-in interactive test"],
+      "environment": "Node passed; Android instrumentation not run",
+      "lastObservedStatus": "BLOCKED",
+      "lastObserved": "2026-11-07",
+      "evidence": "Node auth/session tests pass; PR #17 emulator run 42262630240 was cancelled before build/test phase",
+      "gaps": ["Real prompt accept/cancel, strong-biometric enrollment and Keystore alias lifecycle require interactive disposable AVD or device"]
+    },
+    {
+      "module": "Android notifications",
+      "testIds": ["LOS-009", "NOTIFY-PLAN", "NOTIFY-ANDROID"],
+      "risk": "HIGH",
+      "testType": ["Production schedule planning", "Mocked native/permission simulation"],
+      "environment": "Termux Node; synthetic native interface",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "WP0 19 checks; Local Consolidation tests; package-wide suite",
+      "gaps": ["No actual permission screen return, exact-alarm setting, reboot or notification delivery executed"]
+    },
+    {
+      "module": "Backup and restore",
+      "testIds": ["LOS-002", "LOS-023", "BACKUP-RESTORE"],
+      "risk": "CRITICAL",
+      "testType": ["Production validator/facade/coordinator/Dexie", "Synthetic crypto regression"],
+      "environment": "Termux Node; disposable database fixtures",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "WP0 16 and 22 checks; Sentinel crypto/backup 13/13",
+      "gaps": ["No Android SAF picker or real native encryption restore execution"]
+    },
+    {
+      "module": "Database and migrations",
+      "testIds": ["DB-INTEGRITY", "DB-ATOMICITY", "DB-MIGRATION"],
+      "risk": "CRITICAL",
+      "testType": ["Production Dexie/fake IndexedDB integration"],
+      "environment": "Termux Node; disposable test DB",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "DB atomicity 43/43; Sentinel Dexie 7/7; migration behavior tests passed",
+      "gaps": ["No low-storage Android WebView quota or OS process-kill recovery run"]
+    },
+    {
+      "module": "Encryption and recovery",
+      "testIds": ["CRYPTO-REGRESSION", "RECOVERY-STATE"],
+      "risk": "CRITICAL",
+      "testType": ["Production JS crypto wrapper with simulated native bridge", "Native source checks"],
+      "environment": "Termux Node; synthetic key material only",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-07",
+      "evidence": "test:all, Sentinel crypto 13/13, sprint security tests",
+      "gaps": ["No real Android Keystore operation, key invalidation or biometric rebind executed"]
+    },
+    {
+      "module": "Application lifecycle",
+      "testIds": ["AUTH-LIFECYCLE", "APP-RESUME", "ACTIVITY-RECREATE"],
+      "risk": "CRITICAL",
+      "testType": ["App callback extraction and session simulation", "Android ActivityScenario instrumentation"],
+      "environment": "Node simulation passed; Android instrumentation pending",
+      "lastObservedStatus": "BLOCKED",
+      "lastObserved": "2026-11-07",
+      "evidence": "Authentication lifecycle tests 10/10; previous emulator canceled before instrumentation",
+      "gaps": ["No actual Activity resume/process death/device reboot acceptance"]
+    },
+    {
+      "module": "Release packaging",
+      "testIds": ["ANDROID-DEBUG-APK", "ANDROID-TEST-APK"],
+      "risk": "HIGH",
+      "testType": ["Gradle debug and instrumentation APK build"],
+      "environment": "Prior GitHub PR #16 build; new branch build pending",
+      "lastObservedStatus": "PASS",
+      "lastObserved": "2026-11-06",
+      "evidence": "Prior PR #16 run 42249311868; new workflow compiles both APKs before emulator startup",
+      "gaps": ["Current PR #17 head was cancelled before APK compile; new infrastructure PR result pending"]
+    },
+    {
+      "module": "Accessibility",
+      "testIds": ["A11Y-WEBVIEW", "TALKBACK"],
+      "risk": "MEDIUM",
+      "testType": ["None configured"],
+      "environment": "Not executed",
+      "lastObservedStatus": "NOT EXECUTED",
+      "lastObserved": "2026-11-07",
+      "evidence": "No scanner, accessibility runner or TalkBack assertions configured",
+      "gaps": ["Add deterministic WebView accessibility assertions and perform TalkBack acceptance"]
+    },
+    {
+      "module": "Screen profiles and API matrix",
+      "testIds": ["ANDROID-API29", "ANDROID-API34", "ANDROID-API35"],
+      "risk": "HIGH",
+      "testType": ["Android instrumentation matrix configured"],
+      "environment": "GitHub-hosted emulator; not yet run",
+      "lastObservedStatus": "NOT EXECUTED",
+      "lastObserved": "2026-11-07",
+      "evidence": "Prior API 24 app acceptance failed with Chromium 69 below LifeOS Chromium 87 requirement. Android 10/API 29 is now minSdk; API 29/34/35 acceptance is pending CI.",
+      "gaps": ["No matrix artifacts or physical device manufacturer evidence yet"]
+    }
+  ]
+}

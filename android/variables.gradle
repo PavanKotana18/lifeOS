@@ -1,5 +1,7 @@
 ext {
-    minSdkVersion = 24
+    // Android 10 (API 29) is LifeOS's supported OS floor. The installed
+    // System WebView is checked independently at runtime.
+    minSdkVersion = 29
     compileSdkVersion = 34
     targetSdkVersion = 34
     androidxActivityVersion = '1.8.0'

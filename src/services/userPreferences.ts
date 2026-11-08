@@ -1,4 +1,7 @@
-export type CurrencyCode = 'INR' | 'USD' | 'EUR' | 'GBP';
+import { CURRENCY_CATALOG, createMoneyRecordAmount, decimalToMinorUnits, formatMinorUnits } from './financeCore';
+
+export type CurrencyCode = string;
+export const CURRENCY_CODES: readonly CurrencyCode[] = Object.freeze(Object.keys(CURRENCY_CATALOG).sort());
 export type DistanceUnit = 'km' | 'mi';
 export type SpeedUnit = 'km/h' | 'm/s' | 'mph';
 export type VolumeUnit = 'L' | 'mL' | 'US gal' | 'Imp gal';
@@ -12,27 +15,33 @@ export interface UserPreferences {
   firstDayOfWeek: 'monday' | 'sunday';
   timeFormat: '12h' | '24h';
   locale: 'system' | 'en-IN' | 'en-US' | 'en-GB' | 'de-DE';
+  swipeNavigationEnabled: boolean;
 }
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   currency: 'INR', distance: 'km', speed: 'km/h', volume: 'L',
   dateFormat: 'DMY', firstDayOfWeek: 'monday', timeFormat: '12h', locale: 'system',
+  swipeNavigationEnabled: true,
 };
 
 export const resolveSystemDark = (nativeValue: boolean | undefined, mediaValue: boolean) => typeof nativeValue === 'boolean' ? nativeValue : mediaValue;
 
 export function mergeUserPreferences(saved: Partial<UserPreferences>, legacyCurrency: string): UserPreferences {
   const safe = { ...DEFAULT_USER_PREFERENCES };
-  const options: Record<keyof UserPreferences, string[]> = {
-    currency: ['INR', 'USD', 'EUR', 'GBP'], distance: ['km', 'mi'], speed: ['km/h', 'm/s', 'mph'],
+  const options: Partial<Record<keyof UserPreferences, string[]>> = {
+    currency: [...CURRENCY_CODES], distance: ['km', 'mi'], speed: ['km/h', 'm/s', 'mph'],
     volume: ['L', 'mL', 'US gal', 'Imp gal'], dateFormat: ['DMY', 'MDY', 'YMD'],
     firstDayOfWeek: ['monday', 'sunday'], timeFormat: ['12h', '24h'], locale: ['system', 'en-IN', 'en-US', 'en-GB', 'de-DE'],
   };
-  for (const key of Object.keys(options) as Array<keyof UserPreferences>) {
+  for (const key of [...Object.keys(options), 'swipeNavigationEnabled'] as Array<keyof UserPreferences>) {
     const value = saved[key];
-    if (typeof value === 'string' && options[key].includes(value)) (safe as any)[key] = value;
+    if (key === 'swipeNavigationEnabled') {
+      if (typeof value === 'boolean') safe.swipeNavigationEnabled = value;
+      continue;
+    }
+    if (typeof value === 'string' && options[key]?.includes(value)) (safe as any)[key] = value;
   }
-  if (!saved.currency && options.currency.includes(legacyCurrency)) safe.currency = legacyCurrency as CurrencyCode;
+  if (!saved.currency && options.currency.includes(legacyCurrency)) safe.currency = legacyCurrency;
   return safe;
 }
 
@@ -41,7 +50,8 @@ export function getNumberLocale(_currency: CurrencyCode, locale: UserPreferences
 }
 
 export function formatCurrency(value: number, currency: CurrencyCode, locale: UserPreferences['locale'] = 'system') {
-  return new Intl.NumberFormat(getNumberLocale(currency, locale), { style: 'currency', currency }).format(Number.isFinite(value) ? value : 0);
+  const amount = Number.isFinite(value) ? value : 0;
+  return formatMinorUnits(decimalToMinorUnits(amount, currency), currency, getNumberLocale(currency, locale));
 }
 
 const unitToCanonical: Record<string, { dimension: 'distance' | 'speed' | 'volume'; factor: number; canonical: string }> = {
@@ -59,12 +69,15 @@ const unitToCanonical: Record<string, { dimension: 'distance' | 'speed' | 'volum
   'Imp gal': { dimension: 'volume', factor: 4.54609, canonical: 'L' },
 };
 
-export const canonicalUnit = (unit: string) => unitToCanonical[unit]?.canonical || unit;
+const getUnitDefinition = (unit: string) => Object.prototype.hasOwnProperty.call(unitToCanonical, unit)
+  ? unitToCanonical[unit] : undefined;
+
+export const canonicalUnit = (unit: string) => getUnitDefinition(unit)?.canonical || unit;
 
 export function convertMeasurement(value: number, from: string, to: string) {
   if (!Number.isFinite(value)) throw new Error('Measurement must be a finite number.');
-  const source = unitToCanonical[from];
-  const target = unitToCanonical[to];
+  const source = getUnitDefinition(from);
+  const target = getUnitDefinition(to);
   if (!source || !target || source.dimension !== target.dimension) {
     if (from === to) return value;
     throw new Error(`Cannot convert ${from} to ${to}.`);
@@ -85,15 +98,22 @@ export function formatTimePreference(date: Date, preference: UserPreferences['ti
   }).format(date);
 }
 
-export function buildTransactionUpdate(fields: { type: 'income' | 'expense'; amount: number; category: string; description: string; dateTime: string; paymentMethod: string; notes?: string; isRecurring?: boolean }) {
-  const amount = Number(fields.amount);
+export function buildTransactionUpdate(fields: { type: 'income' | 'expense'; amount: number | string; currencyCode?: CurrencyCode; category: string; description: string; dateTime: string; date?: string; preserveUnknownTime?: boolean; paymentMethod: string; notes?: string; isRecurring?: boolean }) {
+  const inputAmount = String(fields.amount).trim();
+  const amount = Number(inputAmount);
   if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
-  const date = new Date(fields.dateTime);
-  if (Number.isNaN(date.getTime())) throw new Error('Choose a valid transaction date and time.');
+  let exactAmount: ReturnType<typeof createMoneyRecordAmount> | undefined;
+  if (fields.currencyCode) {
+    exactAmount = createMoneyRecordAmount(inputAmount, fields.currencyCode);
+    if (!exactAmount.amount) throw new Error('The amount is below the smallest unit of this currency.');
+  }
+  const date = fields.dateTime ? new Date(fields.dateTime) : null;
+  if (date && Number.isNaN(date.getTime())) throw new Error('Choose a valid transaction date and time.');
+  if (!date && (!fields.preserveUnknownTime || !fields.date)) throw new Error('Choose a valid transaction date and time.');
   return {
-    type: fields.type, amount, category: fields.category.trim(), description: fields.description.trim(),
-    date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-    occurredAt: date.toISOString(), paymentMethod: fields.paymentMethod.trim() || 'Other',
+    type: fields.type, amount: exactAmount?.amount ?? amount, ...(exactAmount ? { amountMinor: exactAmount.amountMinor, currencyCode: exactAmount.currencyCode } : {}), category: fields.category.trim(), description: fields.description.trim(),
+    date: date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : fields.date!,
+    ...(date ? { occurredAt: date.toISOString() } : {}), paymentMethod: fields.paymentMethod.trim() || 'Other',
     notes: fields.notes?.trim() || undefined, isRecurring: Boolean(fields.isRecurring),
   };
 }

@@ -30,6 +30,8 @@ export interface PreparedRecovery {
 export interface CryptoKeyState {
   keyProvisioned: boolean;
   recoveryProvisioned: boolean;
+  recoveryDeferred?: boolean;
+  initialSetupPending?: boolean;
   recoveryNeedsRebind: boolean;
   metadataConsistent: boolean;
   keystoreAliasPresent: boolean;
@@ -37,18 +39,20 @@ export interface CryptoKeyState {
 }
 
 interface NativeCryptoPlugin {
+  verifyRecoveryRecord(options: { iv: string; ciphertext: string; aad: string }): Promise<{ verified: boolean }>;
   prepareRecovery(): Promise<{
     success: boolean;
     recoveryCode: string;
     envelope: RecoveryEnvelope;
   }>;
   confirmRecovery(): Promise<{ success: boolean }>;
+  deferRecovery(): Promise<{ success: boolean }>;
   recoverWithSecret(options: {
     recoveryCode: string;
     envelope: RecoveryEnvelope;
   }): Promise<CryptoOperationResult>;
   rebindLocalKey(): Promise<CryptoOperationResult>;
-  setup(): Promise<CryptoOperationResult>;
+  setup(options?: { deferRecovery?: boolean }): Promise<CryptoOperationResult>;
   unlock(): Promise<CryptoOperationResult>;
   lock(): Promise<{ success: boolean }>;
   getKeyState(): Promise<CryptoKeyState>;
@@ -72,6 +76,10 @@ const RECORD_TABLES = new Set([
   'budgets',
   'savingsGoals',
   'savingsContributions',
+  'financialAccounts',
+  'accountTransfers',
+  'manualExchangeRates',
+  'plannedCommitments',
   'habits',
   'habitLogs',
   'goals',
@@ -169,6 +177,14 @@ export const CryptoService = Object.freeze({
     }
   },
 
+  async deferRecovery(): Promise<void> {
+    assertNativeCryptoAvailable();
+    const result = await nativeCrypto.deferRecovery();
+    if (!result || result.success !== true) {
+      throw new Error('Native recovery deferral could not be confirmed.');
+    }
+  },
+
   async recoverWithSecret(
     recoveryCode: string,
     envelope: RecoveryEnvelope
@@ -202,9 +218,19 @@ export const CryptoService = Object.freeze({
     return nativeCrypto.rebindLocalKey();
   },
 
-  async setup(): Promise<CryptoOperationResult> {
+  async verifyRecoveryRecord(table: string, recordId: string, schemaVersion: number, encrypted: EncryptedRecord): Promise<void> {
     assertNativeCryptoAvailable();
-    return nativeCrypto.setup();
+    if (!encrypted || encrypted.keyVersion !== 1 || typeof encrypted.iv !== 'string' || typeof encrypted.ciphertext !== 'string') {
+      throw new Error('Invalid recovery verification record.');
+    }
+    const result = await nativeCrypto.verifyRecoveryRecord({ iv: encrypted.iv, ciphertext: encrypted.ciphertext,
+      aad: buildRecordAad(table, recordId, schemaVersion) });
+    if (result?.verified !== true) throw new Error('Recovery kit does not match the existing encrypted database.');
+  },
+
+  async setup(options?: { deferRecovery?: boolean }): Promise<CryptoOperationResult> {
+    assertNativeCryptoAvailable();
+    return nativeCrypto.setup(options);
   },
 
   async unlock(): Promise<CryptoOperationResult> {
@@ -235,7 +261,11 @@ export const CryptoService = Object.freeze({
       throw new Error('Native encryption returned an invalid key state.');
     }
 
-    return state;
+    return {
+      ...state,
+      recoveryDeferred: state.recoveryDeferred === true,
+      initialSetupPending: state.initialSetupPending === true
+    };
   },
 
   async isUnlocked(): Promise<boolean> {

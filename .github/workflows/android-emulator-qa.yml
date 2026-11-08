@@ -1,0 +1,434 @@
+name: LifeOS Android emulator QA
+
+on:
+  push:
+    branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos2-release-candidate-20261108]
+  pull_request:
+    branches: [main, qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lifeos-android-qa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-apks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: npm ci
+      - run: mkdir -p candidate-ci-evidence
+      - name: Run complete npm suite
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee candidate-ci-evidence/npm-test.log
+      - name: Run Sentinel security suite
+        run: |
+          set -o pipefail
+          npm run test:sentinel 2>&1 | tee candidate-ci-evidence/sentinel.log
+      - name: Check TypeScript
+        run: |
+          set -o pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee candidate-ci-evidence/typescript.log
+      - name: Build production web application
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee candidate-ci-evidence/production-build.log
+      - run: npx cap sync android
+      - name: Install pinned Android SDK components
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -x "$SDKMANAGER"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.2.1"
+      - name: Require and configure persistent debug signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LIFEOS_DEBUG_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LIFEOS_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$KEYSTORE_BASE64" ]] || missing+=(LIFEOS_DEBUG_KEYSTORE_BASE64)
+          [[ -n "$STORE_PASSWORD" ]] || missing+=(LIFEOS_DEBUG_KEYSTORE_PASSWORD)
+          [[ -n "$KEY_ALIAS" ]] || missing+=(LIFEOS_DEBUG_KEY_ALIAS)
+          [[ -n "$KEY_PASSWORD" ]] || missing+=(LIFEOS_DEBUG_KEY_PASSWORD)
+          if (( ${#missing[@]} )); then
+            echo "::error::Debug APK signing is mandatory. Configure missing GitHub Actions secrets: ${missing[*]}"
+            exit 1
+          fi
+          KEYSTORE_PATH="$RUNNER_TEMP/lifeos-debug.keystore"
+          PASSWORD_PATH="$RUNNER_TEMP/lifeos-debug-store-password"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          printf '%s' "$STORE_PASSWORD" > "$PASSWORD_PATH"
+          chmod 600 "$KEYSTORE_PATH" "$PASSWORD_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storetype PKCS12 -alias "$KEY_ALIAS" -storepass:file "$PASSWORD_PATH" >/dev/null
+          {
+            echo "LIFEOS_DEBUG_KEYSTORE_PATH=$KEYSTORE_PATH"
+            echo "LIFEOS_DEBUG_KEYSTORE_PASSWORD=$STORE_PASSWORD"
+            echo "LIFEOS_DEBUG_KEY_ALIAS=$KEY_ALIAS"
+            echo "LIFEOS_DEBUG_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Persistent debug signing keystore validated; secret values are not logged."
+      - name: Test instrumentation report parser
+        run: node scripts/android-instrumentation-to-junit.cjs --self-test
+      - name: Verify pinned Gradle and compile app and instrumentation APKs
+        run: |
+          gradle --version
+          gradle -p android --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+      - name: Verify candidate package, version, and stable Debug certificate
+        env:
+          EXPECTED_CERT_SHA256: "735210B06A6088389F5EFADFA630DE42847D5949091C4A146183B579ED7D56A2"
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          [[ "$ACTUAL" == "$EXPECTED_CERT_SHA256" ]] || { echo "::error::Debug APK certificate differs from the recorded stable identity."; exit 1; }
+          BADGING="$("$AAPT" dump badging "$APK")"
+          grep -q "package: name='com.lifeos.personal'" <<< "$BADGING"
+          VERSION="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
+          [[ -n "$VERSION" ]] || { echo "::error::Debug APK version metadata is missing."; exit 1; }
+          VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
+          [[ "$VERSION" == "$(node -p "require('./package.json').version")" ]] || { echo "::error::APK versionName does not match package.json."; exit 1; }
+          IFS=. read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "$VERSION"
+          EXPECTED_VERSION_CODE=$((10#$VERSION_MAJOR * 1000000 + 10#$VERSION_MINOR * 1000 + 10#$VERSION_PATCH + GITHUB_RUN_NUMBER))
+          [[ "$VERSION_CODE" == "$EXPECTED_VERSION_CODE" ]] || { echo "::error::APK versionCode differs from the expected run-specific value."; exit 1; }
+          SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          echo "Verified candidate APK package=com.lifeos.personal version=$VERSION versionCode=$VERSION_CODE signer_sha256=$ACTUAL apk_sha256=$SHA256"
+          {
+            echo "### Signed candidate Debug APK"
+            echo "- Candidate commit: $GITHUB_SHA"
+            echo "- Package: com.lifeos.personal"
+            echo "- Version: $VERSION"
+            echo "- Version code: $VERSION_CODE"
+            echo "- Debug certificate SHA-256: $ACTUAL"
+            echo "- APK SHA-256: $SHA256"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload signed candidate Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeOS-signed-debug-apk-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload candidate build and test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeOS-candidate-build-validation-${{ github.sha }}
+          path: candidate-ci-evidence/**
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Stage APK artifacts for emulator jobs
+        run: |
+          mkdir -p android-apks
+          cp android/app/build/outputs/apk/debug/app-debug.apk android-apks/app-debug.apk
+          cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk android-apks/app-debug-androidTest.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks/*.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  android-api29-recovery-preflight:
+    needs: build-test-apks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - name: Enable KVM access for this ephemeral runner
+        run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: google_apis
+          arch: x86_64
+          profile: "Nexus 5X"
+          avd-name: lifeos-api29-recovery-preflight
+          cores: 2
+          ram-size: 2048M
+          heap-size: 256M
+          emulator-boot-timeout: 300
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            ANDROID_TEST_FILTER='com.lifeos.personal.CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' ANDROID_REQUIRED_TEST='CryptoAcceptanceTest#realRecoveryKdfRejectsWrongCodeThenProofKeepsKeyQuarantined' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+      - name: Require exactly the recovery regression test
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse('qa-emulator-evidence/junit.xml').getroot()
+          tests = root.findall('.//testcase')
+          print(f"API 29 recovery preflight: tests={len(tests)} failures={root.attrib.get('failures', '0')} skipped={root.attrib.get('skipped', '0')}")
+          if len(tests) != 1 or root.attrib.get('failures', '0') != '0' or root.attrib.get('skipped', '0') != '0':
+              sys.exit(1)
+          PY
+      - name: Capture sanitized emulator failure evidence
+        if: failure()
+        run: |
+          mkdir -p qa-api29-recovery-evidence
+          { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-api29-recovery-evidence/boot-state.txt 2>&1
+          { timeout 5s adb devices -l || true; } > qa-api29-recovery-evidence/adb-devices.txt 2>&1
+          { timeout 8s adb -s emulator-5554 logcat -d -v brief AndroidRuntime:E System.err:E '*:S' || true; } > qa-api29-recovery-evidence/logcat-errors.txt 2>&1
+          { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-api29-recovery-evidence/failure.png 2>qa-api29-recovery-evidence/screenshot-error.txt
+          cp -R qa-emulator-evidence/. qa-api29-recovery-evidence/ 2>/dev/null || true
+      - name: Upload API 29 recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-api29-recovery-preflight-evidence
+          path: |
+            qa-emulator-evidence/**
+            qa-api29-recovery-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
+
+  android-smoke:
+    needs: [build-test-apks, android-api29-recovery-preflight, android-api34-notification-isolation]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - name: Enable KVM access for this ephemeral runner
+        run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: lifeos-qa-smoke-api34
+          cores: 2
+          ram-size: 3072M
+          heap-size: 512M
+          emulator-boot-timeout: 300
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            ANDROID_TEST_EXCLUSION_FILE=android/qa/instrumentation-exclusions-api34-35.txt ANDROID_EXPECTED_TESTS=17 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+      - name: Require all supported API 34 tests and zero skips
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          report = ET.parse('qa-emulator-evidence/junit.xml').getroot()
+          tests = int(report.attrib.get('tests', '0'))
+          failures = int(report.attrib.get('failures', '0'))
+          skipped = int(report.attrib.get('skipped', '0'))
+          errors = int(report.attrib.get('errors', '0'))
+          print(f"JUnit tests={tests} failures={failures} skipped={skipped} runner_errors={errors}")
+          expected = 17
+          print(f"Expected={expected} executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped} runner_errors={errors}")
+          if tests != expected or failures or skipped or errors:
+              sys.exit(1)
+          PY
+      - name: Capture sanitized emulator failure evidence
+        if: failure()
+        run: |
+          mkdir -p qa-emulator-evidence
+          [[ -s qa-emulator-evidence/boot-state.txt ]] || { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-emulator-evidence/boot-state.txt 2>&1
+          [[ -s qa-emulator-evidence/adb-devices.txt ]] || { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
+          [[ -s qa-emulator-evidence/logcat-errors.txt ]] || { timeout 8s adb -s emulator-5554 logcat -b all -d -v threadtime AndroidRuntime:E System.err:E chromium:E ActivityManager:E ActivityTaskManager:E libc:E DEBUG:E '*:S' || true; } > qa-emulator-evidence/logcat-post-action.txt 2>&1
+          [[ -s qa-emulator-evidence/failure.png ]] || { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
+      - name: Upload JUnit and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-android-qa-smoke-evidence
+          path: |
+            qa-emulator-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
+
+  android-api34-notification-isolation:
+    name: API 34 notification isolation (attempt ${{ matrix.attempt }})
+    needs: [build-test-apks, android-api29-recovery-preflight]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        attempt: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - name: Enable KVM access for this ephemeral runner
+        run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: lifeos-api34-notification-isolation-${{ matrix.attempt }}
+          cores: 2
+          ram-size: 3072M
+          heap-size: 512M
+          emulator-boot-timeout: 300
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            ANDROID_TEST_FILTER='com.lifeos.personal.LocalNotificationBridgeAcceptanceTest' ANDROID_REQUIRED_TEST='LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder' ANDROID_EXPECTED_TESTS=2 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-notification-isolation-${{ matrix.attempt }}
+      - name: Require both notification bridge tests to complete in sequence
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          report = ET.parse('qa-notification-isolation-${{ matrix.attempt }}/junit.xml').getroot()
+          tests = int(report.attrib.get('tests', '0'))
+          failures = int(report.attrib.get('failures', '0'))
+          skipped = int(report.attrib.get('skipped', '0'))
+          errors = int(report.attrib.get('errors', '0'))
+          names = {f"{case.attrib.get('classname', '')}#{case.attrib.get('name', '')}" for case in report.findall('.//testcase')}
+          expected_names = {
+              'com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder',
+              'com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#backgroundedSyntheticTaskReminderIsActuallyPosted',
+          }
+          print(f"API 34 isolated notification bridge sequence: expected=2 executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped} runner_errors={errors}")
+          if tests != 2 or failures or skipped or errors or names != expected_names:
+              sys.exit(1)
+          PY
+      - name: Upload isolated notification crash evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-api34-notification-isolation-attempt-${{ matrix.attempt }}
+          path: qa-notification-isolation-${{ matrix.attempt }}/**
+          if-no-files-found: warn
+          retention-days: 14
+
+  android-device-matrix:
+    if: needs.android-smoke.result == 'success'
+    needs: [build-test-apks, android-smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - id: compact-api29
+            api-level: 29
+            profile: "Nexus 5X"
+            ram-size: 2048M
+            heap-size: 256M
+            expected-tests: 12
+            required-test: CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning
+            exclusion-file: android/qa/instrumentation-exclusions-api29.txt
+          - id: standard-api34
+            api-level: 34
+            profile: pixel_6
+            ram-size: 3072M
+            heap-size: 512M
+            expected-tests: 17
+            required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
+            exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
+          - id: large-api35
+            api-level: 35
+            profile: pixel_7_pro
+            ram-size: 4096M
+            heap-size: 512M
+            expected-tests: 17
+            required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
+            exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - name: Enable KVM access for this ephemeral runner
+        run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          avd-name: lifeos-${{ matrix.id }}
+          cores: 2
+          ram-size: ${{ matrix.ram-size }}
+          heap-size: ${{ matrix.heap-size }}
+          emulator-boot-timeout: 300
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            ANDROID_REQUIRED_TEST='${{ matrix.required-test }}' ANDROID_TEST_EXCLUSION_FILE='${{ matrix.exclusion-file }}' ANDROID_EXPECTED_TESTS='${{ matrix.expected-tests }}' bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+      - name: Require every supported API matrix test with zero skips
+        if: success()
+        run: |
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          report = ET.parse('qa-emulator-evidence/junit.xml').getroot()
+          tests = int(report.attrib.get('tests', '0'))
+          failures = int(report.attrib.get('failures', '0'))
+          skipped = int(report.attrib.get('skipped', '0'))
+          errors = int(report.attrib.get('errors', '0'))
+          print("${{ matrix.id }} JUnit tests={} failures={} skipped={} runner_errors={}".format(tests, failures, skipped, errors))
+          expected = int("${{ matrix.expected-tests }}")
+          print("Expected={} executed={} passed={} failed={} skipped={} runner_errors={}".format(expected, tests, tests-failures-skipped, failures, skipped, errors))
+          if tests != expected or failures or skipped or errors:
+              sys.exit(1)
+          PY
+      - name: Capture sanitized emulator failure evidence
+        if: failure()
+        run: |
+          mkdir -p qa-emulator-evidence
+          [[ -s qa-emulator-evidence/boot-state.txt ]] || { timeout 5s adb -s emulator-5554 shell getprop sys.boot_completed || true; } > qa-emulator-evidence/boot-state.txt 2>&1
+          [[ -s qa-emulator-evidence/adb-devices.txt ]] || { timeout 5s adb devices -l || true; } > qa-emulator-evidence/adb-devices.txt 2>&1
+          [[ -s qa-emulator-evidence/logcat-errors.txt ]] || { timeout 8s adb -s emulator-5554 logcat -b all -d -v threadtime AndroidRuntime:E System.err:E chromium:E ActivityManager:E ActivityTaskManager:E libc:E DEBUG:E '*:S' || true; } > qa-emulator-evidence/logcat-post-action.txt 2>&1
+          [[ -s qa-emulator-evidence/failure.png ]] || { timeout 8s adb -s emulator-5554 exec-out screencap -p || true; } > qa-emulator-evidence/failure.png 2>qa-emulator-evidence/screenshot-error.txt
+      - name: Upload JUnit and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifeos-android-qa-${{ matrix.id }}
+          path: qa-emulator-evidence/**
+          if-no-files-found: warn
+          retention-days: 7

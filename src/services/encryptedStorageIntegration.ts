@@ -17,10 +17,19 @@ import {
 
 export const BOOTSTRAP_SETTING_KEYS = new Set([
   'theme',
+  'visualTheme',
   'biometricLockEnabled',
   'onboardingCompleted',
   'onboardingStarted',
-  'onboardingStep'
+  'onboardingStep',
+  // Display name is a profile preference needed before private storage setup;
+  // it is not a user record and remains the single source for the greeting.
+  'displayName',
+  // Notification controls are non-content preferences needed before first unlock.
+  'notificationPreferences',
+  'notificationsEnabled',
+  'notificationPermissionRequested',
+  'notificationDefaultsPending'
 ]);
 
 export type LifeOSRawDatabase = Record<EncryptedTable, DexieTableLike>;
@@ -59,7 +68,7 @@ export interface MigrationResult {
  * This function never clears a table and never overwrites an encrypted row.
  */
 export async function migrateLifeOSRecords(
-  database: LifeOSRawDatabase,
+  database: LifeOSDatabaseWithTransactions,
   repositories: ReturnType<typeof createLifeOSEncryptedRepositories>
 ): Promise<MigrationResult> {
   return withEncryptedStorageWrite(async () => {
@@ -87,6 +96,7 @@ export async function migrateLifeOSRecords(
             typeof row.encrypted !== 'object') {
           throw new Error(`Migration stopped: malformed encrypted ${tableName} row.`);
         }
+        await repositories[tableName].open(row);
         skippedEncrypted[tableName] += 1;
         continue;
       }
@@ -108,29 +118,21 @@ export async function migrateLifeOSRecords(
       // Prepare ciphertext before the IndexedDB write. No native crypto call
       // is made inside a Dexie transaction.
       const encryptedRow = await repositories[tableName].prepare(row);
-
-      // Refuse to overwrite a row that changed after the snapshot was read.
-      const latest = await table.get(identity);
-      if (!latest) {
-        throw new Error(`Migration stopped: ${tableName}/${identity} disappeared.`);
+      const verifiedCopy = await repositories[tableName].open(encryptedRow);
+      if (JSON.stringify(verifiedCopy) !== JSON.stringify(row)) {
+        throw new Error(`Migration stopped: encrypted ${tableName} copy did not verify.`);
       }
-      if (
-        Object.prototype.hasOwnProperty.call(latest, '__lifeosEncrypted') ||
-        Object.prototype.hasOwnProperty.call(latest, 'encrypted')
-      ) {
-        if (latest.__lifeosEncrypted === 1 && latest.encrypted) {
-          skippedEncrypted[tableName] += 1;
-          continue;
+
+      // Compare and replace in one IndexedDB transaction. Native encryption
+      // and verification above must never run inside this transaction.
+      await database.transaction('rw', table, async () => {
+        const latest = await table.get(identity);
+        if (!latest) throw new Error(`Migration stopped: ${tableName}/${identity} disappeared.`);
+        if (JSON.stringify(latest) !== JSON.stringify(row)) {
+          throw new Error(`Migration stopped: ${tableName}/${identity} changed during migration; retry safely.`);
         }
-        throw new Error(`Migration stopped: ${tableName}/${identity} has malformed encryption metadata.`);
-      }
-      if (JSON.stringify(latest) !== JSON.stringify(row)) {
-        throw new Error(`Migration stopped: ${tableName}/${identity} changed during migration; retry safely.`);
-      }
-
-      // Dexie put is an atomic single-row replacement; the old row remains
-      // intact if encryption preparation fails.
-      await table.put(encryptedRow);
+        await table.put(encryptedRow);
+      });
       migrated[tableName] += 1;
     }
   }

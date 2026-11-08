@@ -10,6 +10,9 @@ import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleEventObserver;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -48,11 +51,15 @@ public class LifeOSCryptoPlugin extends Plugin {
     private static final int MAX_CIPHERTEXT_BYTES = MAX_PLAINTEXT_BYTES + TAG_BYTES;
 
     private final Object keyLock = new Object();
+    private final AtomicBoolean authenticationInProgress = new AtomicBoolean(false);
     private final ReentrantReadWriteLock cryptoLock = new ReentrantReadWriteLock();
     private byte[] dataKey;
     // A recovered key stays quarantined until device Keystore re-binding succeeds.
     private boolean recoveryNeedsRebind;
+    private boolean recoveryKeyVerified;
+    private String recoveredSalt, recoveredIv, recoveredWrapped;
     private boolean setupInProgress;
+    private volatile boolean recoveryDeferralAllowed;
     private String pendingRecoverySalt;
     private String pendingRecoveryIv;
     private String pendingRecoveryWrapped;
@@ -210,88 +217,103 @@ public class LifeOSCryptoPlugin extends Plugin {
     }
 
     private void authenticate(
-        PluginCall call,
-        Cipher cipher,
-        Consumer<Cipher> onSuccess,
-        Runnable onFailure
+        PluginCall call, Cipher cipher, Consumer<Cipher> onSuccess, Runnable onFailure
     ) {
+        if (!authenticationInProgress.compareAndSet(false, true)) {
+            runFailure(onFailure);
+            call.reject("Another cryptographic authentication is in progress");
+            return;
+        }
+        AtomicBoolean terminal = new AtomicBoolean(false);
         try {
             FragmentActivity activity = (FragmentActivity) getActivity();
-            if (activity == null) {
+            if (activity == null) throw new IllegalStateException("Activity unavailable");
+            // The entire prompt and lifecycle operation runs on the main thread,
+            // including observer construction, registration and removal.
+            ContextCompat.getMainExecutor(activity).execute(() -> {
+                final BiometricPrompt[] prompt = new BiometricPrompt[1];
+                final LifecycleEventObserver[] observer = new LifecycleEventObserver[1];
+                Consumer<Runnable> finish = action -> {
+                    if (!terminal.compareAndSet(false, true)) return;
+                    try {
+                        if (observer[0] != null) activity.getLifecycle().removeObserver(observer[0]);
+                        action.run();
+                    } catch (Exception error) {
+                        runFailure(onFailure);
+                        call.reject("Cryptographic authentication could not complete");
+                    } finally { authenticationInProgress.set(false); }
+                };
+                Runnable reject = () -> finish.accept(() -> {
+                    runFailure(onFailure);
+                    call.reject("Biometric cryptographic authentication was cancelled or unavailable");
+                });
+                try {
+                    if (activity.getLifecycle().getCurrentState() == Lifecycle.State.DESTROYED ||
+                        BiometricManager.from(activity).canAuthenticate(
+                            BiometricManager.Authenticators.BIOMETRIC_STRONG
+                        ) != BiometricManager.BIOMETRIC_SUCCESS) {
+                        reject.run();
+                        return;
+                    }
+                    prompt[0] = new BiometricPrompt(activity, ContextCompat.getMainExecutor(activity),
+                        new BiometricPrompt.AuthenticationCallback() {
+                            @Override
+                            public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                                finish.accept(() -> {
+                                    try {
+                                        BiometricPrompt.CryptoObject object = result.getCryptoObject();
+                                        if (object == null || object.getCipher() == null) {
+                                            throw new IllegalStateException("Missing authenticated cipher");
+                                        }
+                                        onSuccess.accept(object.getCipher());
+                                    } catch (Exception error) {
+                                        runFailure(onFailure);
+                                        call.reject("Cryptographic authentication failed");
+                                    }
+                                });
+                            }
+                            @Override
+                            public void onAuthenticationError(int code, @NonNull CharSequence message) {
+                                finish.accept(() -> {
+                                    runFailure(onFailure);
+                                    JSObject response = new JSObject();
+                                    response.put("success", false);
+                                    response.put("errorCode", code);
+                                    response.put("message", "Authentication cancelled or failed. Retry in the foreground.");
+                                    call.resolve(response);
+                                });
+                            }
+                        });
+                    BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+                        .setTitle("Unlock LifeOS")
+                        .setSubtitle("Authenticate to protect your personal data")
+                        .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                        .setNegativeButtonText("Cancel").build();
+                    AtomicBoolean launched = new AtomicBoolean(false);
+                    Runnable launch = () -> {
+                        if (terminal.get() || !launched.compareAndSet(false, true)) return;
+                        try { prompt[0].authenticate(info, new BiometricPrompt.CryptoObject(cipher)); }
+                        catch (Exception error) { reject.run(); }
+                    };
+                    observer[0] = (owner, event) -> {
+                        if (event == Lifecycle.Event.ON_RESUME) launch.run();
+                        else if (event == Lifecycle.Event.ON_STOP || event == Lifecycle.Event.ON_DESTROY) {
+                            reject.run();
+                            prompt[0].cancelAuthentication();
+                        }
+                    };
+                    activity.getLifecycle().addObserver(observer[0]);
+                    if (activity.getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED)) launch.run();
+                } catch (Exception error) { reject.run(); }
+            });
+        } catch (Exception error) {
+            if (terminal.compareAndSet(false, true)) {
+                authenticationInProgress.set(false);
                 runFailure(onFailure);
                 call.reject("Authentication activity unavailable");
-                return;
             }
-
-            int availability = BiometricManager.from(activity).canAuthenticate(
-                BiometricManager.Authenticators.BIOMETRIC_STRONG
-            );
-
-            if (availability != BiometricManager.BIOMETRIC_SUCCESS) {
-                runFailure(onFailure);
-                call.reject("Strong biometric authentication unavailable: " + availability);
-                return;
-            }
-
-            Executor executor = ContextCompat.getMainExecutor(activity);
-
-            BiometricPrompt prompt = new BiometricPrompt(
-                activity,
-                executor,
-                new BiometricPrompt.AuthenticationCallback() {
-                    @Override
-                    public void onAuthenticationSucceeded(
-                        @NonNull BiometricPrompt.AuthenticationResult result
-                    ) {
-                        super.onAuthenticationSucceeded(result);
-                        try {
-                            BiometricPrompt.CryptoObject object = result.getCryptoObject();
-                            if (object == null || object.getCipher() == null) {
-                                  runFailure(onFailure);
-                                call.reject("Authenticated cryptographic operation unavailable");
-                                return;
-                            }
-                            onSuccess.accept(object.getCipher());
-                          } catch (Exception e) {
-                              runFailure(onFailure);
-                            call.reject("Cryptographic operation failed");
-                        }
-                    }
-
-                    @Override
-                    public void onAuthenticationError(
-                        int errorCode,
-                        @NonNull CharSequence message
-                    ) {
-                        super.onAuthenticationError(errorCode, message);
-                        runFailure(onFailure);
-                        JSObject response = new JSObject();
-                        response.put("success", false);
-                        response.put("errorCode", errorCode);
-                        response.put("message", message.toString());
-                        call.resolve(response);
-                    }
-                }
-            );
-
-            BiometricPrompt.PromptInfo info =
-                new BiometricPrompt.PromptInfo.Builder()
-                    .setTitle("Unlock LifeOS")
-                    .setSubtitle("Authenticate to protect your personal data")
-                    .setAllowedAuthenticators(
-                        BiometricManager.Authenticators.BIOMETRIC_STRONG
-                    )
-                    .setNegativeButtonText("Cancel")
-                    .build();
-
-            prompt.authenticate(info, new BiometricPrompt.CryptoObject(cipher));
-
-        } catch (Exception e) {
-            runFailure(onFailure);
-            call.reject("Biometric cryptographic authentication failed");
         }
     }
-
 
     private static final int RECOVERY_KDF_ITERATIONS = 600000;
     private static final int RECOVERY_KEY_BITS = 256;
@@ -474,6 +496,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                     .putString("recovery_wrapped", pendingRecoveryWrapped)
                     .putInt("recovery_version", 1)
                     .putInt("recovery_kdf_iterations", RECOVERY_KDF_ITERATIONS)
+                    .remove("recovery_deferred")
                     .commit();
 
                 if (!persisted) {
@@ -483,6 +506,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                 }
 
                 clearPendingRecoveryFields();
+                recoveryDeferralAllowed = false;
             }
 
             JSObject response = new JSObject();
@@ -494,6 +518,40 @@ public class LifeOSCryptoPlugin extends Plugin {
             call.reject("Unable to confirm recovery envelope");
         } finally {
             cryptoLock.readLock().unlock();
+        }
+    }
+
+    @PluginMethod
+    public void deferRecovery(PluginCall call) {
+        cryptoLock.writeLock().lock();
+        try {
+            if (!recoveryDeferralAllowed || dataKey == null || recoveryNeedsRebind) {
+                call.reject("Recovery can only be deferred immediately after explicit first-time setup");
+                return;
+            }
+            android.content.SharedPreferences prefs = getContext().getSharedPreferences(PREFS, 0);
+            String wrapped = prefs.getString("wrapped_key", null);
+            String iv = prefs.getString("wrapped_iv", null);
+            boolean recoveryAbsent = !prefs.contains("recovery_wrapped") && !prefs.contains("recovery_salt") &&
+                !prefs.contains("recovery_iv") && !prefs.contains("recovery_version") &&
+                !prefs.contains("recovery_kdf_iterations");
+            if (wrapped == null || iv == null || prefs.getInt("key_version", -1) != 1 || !recoveryAbsent ||
+                !keyStore().containsAlias(KEY_ALIAS)) {
+                call.reject("Current encryption state does not permit recovery deferral");
+                return;
+            }
+            if (!prefs.edit().putBoolean("recovery_deferred", true).commit()) {
+                call.reject("Unable to persist recovery preference");
+                return;
+            }
+            recoveryDeferralAllowed = false;
+            JSObject result = new JSObject();
+            result.put("success", true);
+            call.resolve(result);
+        } catch (Exception error) {
+            call.reject("Unable to persist recovery preference");
+        } finally {
+            cryptoLock.writeLock().unlock();
         }
     }
 
@@ -580,6 +638,8 @@ public class LifeOSCryptoPlugin extends Plugin {
 
                 dataKey = recovered.clone();
                 recoveryNeedsRebind = true;
+                recoveryKeyVerified = false;
+                recoveredSalt = saltText; recoveredIv = ivText; recoveredWrapped = wrappedText;
             } finally {
                 cryptoLock.writeLock().unlock();
             }
@@ -600,6 +660,55 @@ public class LifeOSCryptoPlugin extends Plugin {
         }
     }
 
+    /** Proof only: never returns plaintext or releases a quarantined key. */
+    @PluginMethod
+    public void verifyRecoveryRecord(PluginCall call) {
+        byte[] key = null, iv = null, ciphertext = null, plaintext = null, aadBytes = null;
+        long generation;
+        cryptoLock.writeLock().lock();
+        try {
+            if (dataKey == null || !recoveryNeedsRebind) {
+                call.reject("No quarantined recovery key is available");
+                return;
+            }
+            recoveryKeyVerified = false;
+            generation = lockGeneration;
+            key = dataKey.clone();
+        } finally { cryptoLock.writeLock().unlock(); }
+        try {
+            String ivText = call.getString("iv"), text = call.getString("ciphertext"), aad = call.getString("aad");
+            if (ivText == null || ivText.length() != 16 || text == null || text.length() > 1398124 ||
+                aad == null || aad.trim().isEmpty()) throw new IllegalArgumentException("Invalid proof");
+            aadBytes = aad.getBytes(StandardCharsets.UTF_8);
+            if (aadBytes.length > MAX_AAD_BYTES) throw new IllegalArgumentException("Invalid proof size");
+            iv = Base64.decode(ivText, Base64.NO_WRAP);
+            ciphertext = Base64.decode(text, Base64.NO_WRAP);
+            if (iv.length != IV_SIZE || ciphertext.length < TAG_BYTES || ciphertext.length > MAX_CIPHERTEXT_BYTES) {
+                throw new IllegalArgumentException("Invalid proof size");
+            }
+            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key, "AES"), new GCMParameterSpec(TAG_SIZE, iv));
+            cipher.updateAAD(aadBytes);
+            plaintext = cipher.doFinal(ciphertext);
+            cryptoLock.writeLock().lock();
+            try {
+                if (generation != lockGeneration || dataKey == null || !recoveryNeedsRebind) {
+                    throw new IllegalStateException("Recovery expired after app lock");
+                }
+                recoveryKeyVerified = true;
+                JSObject result = new JSObject(); result.put("verified", true); call.resolve(result);
+            } finally { cryptoLock.writeLock().unlock(); }
+        } catch (Exception error) {
+            call.reject("The recovery kit could not be verified against this database");
+        } finally {
+            if (key != null) Arrays.fill(key, (byte) 0);
+            if (iv != null) Arrays.fill(iv, (byte) 0);
+            if (ciphertext != null) Arrays.fill(ciphertext, (byte) 0);
+            if (plaintext != null) Arrays.fill(plaintext, (byte) 0);
+            if (aadBytes != null) Arrays.fill(aadBytes, (byte) 0);
+        }
+    }
+
     @PluginMethod
     public void rebindLocalKey(PluginCall call) {
         long authGeneration = getLockGeneration();
@@ -607,8 +716,8 @@ public class LifeOSCryptoPlugin extends Plugin {
 
         cryptoLock.readLock().lock();
         try {
-            if (dataKey == null) {
-                call.reject("Recover the database key before local re-binding");
+            if (dataKey == null || !recoveryNeedsRebind || !recoveryKeyVerified || recoveredSalt == null || recoveredIv == null || recoveredWrapped == null) {
+                call.reject("Recover and verify the database key before local re-binding");
                 return;
             }
             key = dataKey.clone();
@@ -629,7 +738,7 @@ public class LifeOSCryptoPlugin extends Plugin {
 
                 cryptoLock.writeLock().lock();
                 try {
-                    if (lockGeneration != authGeneration || dataKey == null) {
+                    if (lockGeneration != authGeneration || dataKey == null || !recoveryNeedsRebind || !recoveryKeyVerified || recoveredSalt == null || recoveredIv == null || recoveredWrapped == null) {
                         throw new IllegalStateException(
                             "Device re-binding expired after app lock"
                         );
@@ -650,6 +759,11 @@ public class LifeOSCryptoPlugin extends Plugin {
                             Base64.encodeToString(iv, Base64.NO_WRAP)
                         )
                         .putInt("key_version", 1)
+                        .putString("recovery_salt", recoveredSalt)
+                        .putString("recovery_iv", recoveredIv)
+                        .putString("recovery_wrapped", recoveredWrapped)
+                        .putInt("recovery_version", 1)
+                        .putInt("recovery_kdf_iterations", RECOVERY_KDF_ITERATIONS)
                         .commit();
 
                     if (!persisted) {
@@ -659,6 +773,8 @@ public class LifeOSCryptoPlugin extends Plugin {
                     }
 
                     recoveryNeedsRebind = false;
+                    recoveryKeyVerified = false;
+                    recoveredSalt = null; recoveredIv = null; recoveredWrapped = null;
 
                     JSObject response = new JSObject();
                     response.put("success", true);
@@ -684,6 +800,7 @@ public class LifeOSCryptoPlugin extends Plugin {
 
     @PluginMethod
     public void setup(PluginCall call) {
+        boolean deferRecovery = call.getBoolean("deferRecovery", false);
         long authGeneration = getLockGeneration();
         synchronized (keyLock) {
             if (setupInProgress) {
@@ -699,12 +816,28 @@ public class LifeOSCryptoPlugin extends Plugin {
 
             String existingWrapped = existingPrefs.getString("wrapped_key", null);
             String existingIv = existingPrefs.getString("wrapped_iv", null);
+            boolean setupPending = existingPrefs.getBoolean("initial_setup_pending", false);
+            boolean recoveryMetadataPresent = existingPrefs.contains("recovery_wrapped") ||
+                existingPrefs.contains("recovery_salt") || existingPrefs.contains("recovery_iv") ||
+                existingPrefs.contains("recovery_version") || existingPrefs.contains("recovery_kdf_iterations") ||
+                existingPrefs.getBoolean("recovery_deferred", false);
+            boolean aliasPresent = keyStore().containsAlias(KEY_ALIAS);
 
-            if (existingWrapped != null || existingIv != null) {
+            if (existingWrapped != null || existingIv != null || existingPrefs.contains("key_version") ||
+                recoveryMetadataPresent || (aliasPresent && !setupPending)) {
                 releaseSetupGuard();
                 call.reject(
-                    "Encryption is already initialized or partially initialized. Refusing to replace the existing key."
+                    "Encryption is already initialized, partially initialized, or has an unrecognized Keystore key. Refusing to replace it."
                 );
+                return;
+            }
+
+            // Persist intent before creating/using a Keystore alias. If Android
+            // cancels authentication or the Activity dies, only this explicitly
+            // interrupted first-time setup may safely reuse the alias on retry.
+            if (!setupPending && !existingPrefs.edit().putBoolean("initial_setup_pending", true).commit()) {
+                releaseSetupGuard();
+                call.reject("Unable to persist secure setup state");
                 return;
             }
 
@@ -727,13 +860,14 @@ public class LifeOSCryptoPlugin extends Plugin {
                     wrapped = authorizedCipher.doFinal(generatedKey);
                     iv = authorizedCipher.getIV();
 
-                    boolean persisted = getContext()
-                        .getSharedPreferences(PREFS, 0)
-                        .edit()
+                    android.content.SharedPreferences.Editor setupEditor = getContext()
+                        .getSharedPreferences(PREFS, 0).edit()
                         .putString("wrapped_key", Base64.encodeToString(wrapped, Base64.NO_WRAP))
                         .putString("wrapped_iv", Base64.encodeToString(iv, Base64.NO_WRAP))
                         .putInt("key_version", 1)
-                        .commit();
+                        .remove("initial_setup_pending");
+                    if (deferRecovery) setupEditor.putBoolean("recovery_deferred", true);
+                    boolean persisted = setupEditor.commit();
 
                     if (!persisted) {
                         throw new IllegalStateException("Unable to persist wrapped database key");
@@ -744,9 +878,11 @@ public class LifeOSCryptoPlugin extends Plugin {
                         clearDataKey();
                         dataKey = generatedKey.clone();
                         recoveryNeedsRebind = false;
+                    recoveryKeyVerified = false;
                     } finally {
                         cryptoLock.writeLock().unlock();
                     }
+                    recoveryDeferralAllowed = !deferRecovery;
 
                     JSObject response = new JSObject();
                     response.put("success", true);
@@ -839,6 +975,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                     clearDataKey();
                     dataKey = recovered.clone();
                     recoveryNeedsRebind = false;
+                    recoveryKeyVerified = false;
 
                     JSObject response = new JSObject();
                     response.put("success", true);
@@ -1005,6 +1142,7 @@ public class LifeOSCryptoPlugin extends Plugin {
         try {
             lockGeneration++;
             clearDataKey();
+            recoveryDeferralAllowed = false;
             clearPendingRecovery();
         } finally {
             cryptoLock.writeLock().unlock();
@@ -1072,15 +1210,22 @@ public class LifeOSCryptoPlugin extends Plugin {
                 recoveryIv != null &&
                 recoveryIv.matches("[A-Za-z0-9+/]{16}");
 
+            boolean recoveryDeferred = prefs.getBoolean("recovery_deferred", false);
+            boolean initialSetupPending = prefs.getBoolean("initial_setup_pending", false);
+
             boolean aliasPresent = keyStore().containsAlias(KEY_ALIAS);
 
             boolean metadataConsistent =
                 (localAbsent || localComplete) &&
-                (recoveryAbsent || recoveryComplete);
+                (recoveryAbsent || recoveryComplete) &&
+                (!recoveryDeferred || (localComplete && recoveryAbsent)) &&
+                (!initialSetupPending || (localAbsent && recoveryAbsent && !recoveryDeferred));
 
             JSObject result = new JSObject();
             result.put("keyProvisioned", localComplete && aliasPresent);
             result.put("recoveryProvisioned", recoveryComplete);
+            result.put("recoveryDeferred", recoveryDeferred);
+            result.put("initialSetupPending", initialSetupPending);
             result.put("recoveryNeedsRebind", recoveryNeedsRebind);
             result.put("metadataConsistent", metadataConsistent);
             result.put("keystoreAliasPresent", aliasPresent);
@@ -1133,6 +1278,8 @@ public class LifeOSCryptoPlugin extends Plugin {
             dataKey = null;
         }
         recoveryNeedsRebind = false;
+        recoveryKeyVerified = false;
+        recoveredSalt = null; recoveredIv = null; recoveredWrapped = null;
     }
 
     private void releaseSetupGuard() {

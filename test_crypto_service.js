@@ -51,8 +51,8 @@ const native = {
     calls.push(['rebindLocalKey']);
     return { success: true, keyVersion: 1 };
   },
-  async setup() {
-    calls.push(['setup']);
+  async setup(options) {
+    calls.push(['setup', options]);
     return { success: true, keyVersion: 1 };
   },
   async unlock() {
@@ -121,6 +121,10 @@ async function run() {
     'lifeos-record', 1, 'transactions', 'txn-123', 1
   ]);
   check(true, 'AAD is canonical and binds table, record and schema version');
+  for (const table of ['financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments']) {
+    assert.ok(buildRecordAad(table, `fixture-${table}`, 1));
+  }
+  check(true, 'New account, transfer, exchange-rate and commitment tables are accepted for authenticated encryption');
 
   assert.throws(
     () => buildRecordAad('unknown-table', 'id-1', 1),
@@ -193,8 +197,9 @@ async function run() {
     'Local Keystore re-binding delegates to native biometric protection'
   );
 
-  const setup = await CryptoService.setup();
+  const setup = await CryptoService.setup({ deferRecovery: true });
   check(setup.success, 'Setup delegates to the native plugin');
+  check(calls.some(call => call[0] === 'setup' && call[1]?.deferRecovery === true), 'New device provisioning can persist recovery deferral with the Keystore key creation');
 
   const unlock = await CryptoService.unlock();
   check(unlock.success, 'Unlock delegates to the native plugin');
@@ -245,7 +250,7 @@ async function run() {
   await assert.rejects(CryptoService.unlock(), /unavailable/);
   check(true, 'Web or unsupported platforms fail closed');
 
-  console.log(`CRYPTO SERVICE TESTS: ${passed}/24 PASSED`);
+  console.log(`CRYPTO SERVICE TESTS: ${passed}/26 PASSED`);
 }
 
 run().catch(error => {

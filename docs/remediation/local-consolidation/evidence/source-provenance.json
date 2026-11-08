@@ -1,0 +1,500 @@
+[
+  {
+    "repository": "lifeOS",
+    "path": "src/App.tsx",
+    "sha256": "a5e7da7c0fbefb7696c7accdd196f61b51582483543ef3bdb821bccd80c447fa",
+    "classification": "Conflicting candidate; Sprint 1 guards supersede; activation excluded"
+  },
+  {
+    "repository": "lifeOS",
+    "path": "test_auth_lifecycle.js",
+    "sha256": "fbdc45c6dd19573b6b5fdb4cfd329d87d082a34d0eed2c6f805001edbe34872f",
+    "classification": "Conflicting candidate; Sprint 1 guards supersede; activation excluded"
+  },
+  {
+    "repository": "lifeOS",
+    "path": "test_sec01_orphan_keystore.js",
+    "sha256": "e23f5e4fea2f32fd3a655b4865405b1ede1ff6a5783e970e321c4fa057653d07",
+    "classification": "Conflicting candidate; Sprint 1 guards supersede; activation excluded"
+  },
+  {
+    "repository": "lifeOS-data-integrity-integration",
+    "path": "src/db.ts",
+    "sha256": "510e6bbe359bfb4cc50ad8d56159a62f388d73cf1fc1fdcddd3ec2cac043b465",
+    "classification": "Conflicting unresolved index; production intent superseded"
+  },
+  {
+    "repository": "lifeOS-data-integrity-integration",
+    "path": "test_db_atomicity.js",
+    "sha256": "3411c56c6229365a622d61c284c527cfc9a0a6b77e9383a9d09d076b80f2db9b",
+    "classification": "Conflicting unresolved index; production intent superseded"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-device-recovery-20261101-232128",
+    "sha256": "fe682074614c0dd50fea65d621464fb3cbee8a45466f74468863bec279ea389d",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-key-state-20261101-235304",
+    "sha256": "9411158715ffbacd2b9b883c2fdf0f220a6ffc8f46297e33af09e1acb2fb1c22",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-keystore-recovery-20261101-232911",
+    "sha256": "ef50dffeb59a980b0da0aab01b7fa3801545e113a3ec21e0703de215d97acfc2",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-native-source-test-20261101-232558",
+    "sha256": "ef50dffeb59a980b0da0aab01b7fa3801545e113a3ec21e0703de215d97acfc2",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-rebind-lifetime-fix-20261101-232230",
+    "sha256": "2c933f0bcfed9e5721687cb649b73164f0cd8c506d3c1c86a0254718e4b92239",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-recovery-envelope-20261101-231236",
+    "sha256": "7cc1cef97df0d7c4090f0eb11525bde30446f755fdcd411d6ac1559d163dba55",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-recovery-hardening-20261101-231417",
+    "sha256": "ca80e2d2da0ed97bcce01adcb8ac1899801b75502442d23f088760a2fe8befa2",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-recovery-quarantine-20261101-232451",
+    "sha256": "be5bcc80ad1a60b406e129c9c1a44237bef5a4fa458de02be99feb4a5b7bce51",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java.pre-two-phase-recovery-20261101-231657",
+    "sha256": "ba2663ef8da970ad9f41f00def399bdbcadc2ac18ad5ce9ae8ee87ba578b1bcc",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/App.tsx.pre-operation-drain",
+    "sha256": "2f4cca7098de7f28001401b7c8e28d83e2975dc62d75345cd8ecf78a400d8d90",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/App.tsx.pre-operation-drain-v2",
+    "sha256": "2f4cca7098de7f28001401b7c8e28d83e2975dc62d75345cd8ecf78a400d8d90",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/App.tsx.pre-session-guard",
+    "sha256": "7a695f5a37a47de0393c649b3f085a2204263d6e2636ff741455d3eabd6bb163",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/db.ts.pre-db-export-hardening-20261101-230234",
+    "sha256": "64cb1a544e8a20cbe3b27badee52a02144de73fb361101352ce7ab3e8e09c1c1",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/db.ts.pre-operation-drain",
+    "sha256": "0fe3e7b73415b3b4ad31d1c6b5b7fbcabfb50ac208de1a0df727ac82e8ca2bae",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/db.ts.pre-operation-drain-v2",
+    "sha256": "0fe3e7b73415b3b4ad31d1c6b5b7fbcabfb50ac208de1a0df727ac82e8ca2bae",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/db.ts.pre-session-guard",
+    "sha256": "16534358a755419a1c8197a1cf547a877660014a5820865583f2a53b5c052786",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/cryptoService.ts.pre-device-recovery-20261101-232128",
+    "sha256": "66a1e81604b416a3294eacaff9eeb68a3a9861dd8b44a4f05e89508454631c67",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/cryptoService.ts.pre-key-state-20261101-235304",
+    "sha256": "860d5cd2af015043687a49f8286a106a4fd421db908c8b1110ac877284fa9f0e",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/cryptoService.ts.pre-recovery-bridge-20261101-231909",
+    "sha256": "cfb0fc047a26b3015224826edc7cb39132a47ee4fedea301cdae6efbf267f2ec",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/encryptedDexieStore.ts.pre-concurrency-20261101-234834",
+    "sha256": "3e91f34616610abf0e38134bbfa79a010a78858bf7007beee3d1bd4056b9fd11",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/encryptedDexieStore.ts.pre-transaction-primitives-20261101-234927",
+    "sha256": "c6101136d3f23d4ef21877eec1992c705ac3a08afe295996527bd490f97876f6",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/encryptedRecordCodec.ts.pre-dexie-store-20261101-234702",
+    "sha256": "5ca86fdc690b217113c173dcfe20eb6fd9788890566e0e29ba2d5d3579e0aed6",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/encryptedRecordCodec.ts.pre-settings-key-20261101-234320",
+    "sha256": "981af8b63734eda1a90ed11372d9aa511ee48be319e2936f130732af529fd817",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/sessionManager.ts.pre-operation-drain",
+    "sha256": "da143f9eb4c6a2447743a5c2e1f701c95e8c4aca4bd2bdb96b25e232d3c3c525",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "src/services/sessionManager.ts.pre-operation-drain-v2",
+    "sha256": "da143f9eb4c6a2447743a5c2e1f701c95e8c4aca4bd2bdb96b25e232d3c3c525",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_auth_lifecycle.js.pre-operation-drain",
+    "sha256": "dce56c164dfc15a87adc7d071f5ab00e5b3061875d28f68135defc70e7ee0e8d",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_auth_lifecycle.js.pre-operation-drain-v2",
+    "sha256": "dce56c164dfc15a87adc7d071f5ab00e5b3061875d28f68135defc70e7ee0e8d",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_auth_lifecycle.js.pre-session-guard",
+    "sha256": "84dbc9de1351a37e8a8ade17cf5eeefb99cf371827d4ce513139436f1d7e685d",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_backup_indexeddb.js.pre-db-export-hardening-20261101-230234",
+    "sha256": "38439e0f7110b35b11ac1dcd48c4824e205f95281205d5639d42ffc431ef5850",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_backup_indexeddb.js.pre-session-guard",
+    "sha256": "b1e1deb23a62a92309e631a05074bb14a80b2276f21ed41f5f3e8f673c260542",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_backup_validation.js.pre-session-loader",
+    "sha256": "95bd8ca28e481f2f5bef118bd0d5b1ea5f61f84f02d3bd62b8b5e15057ef7258",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_crypto_native_source.js.pre-key-state-20261101-235304",
+    "sha256": "914effeab3b11e42456cfee172712aa46de9295592bdbeb0426c12d9fa7ab8a3",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_crypto_native_source.js.pre-keystore-recovery-20261101-232911",
+    "sha256": "37d9c8e178e40fdb7f469e34d99f1fa8064a7fa5080e781afa850c965ccefc55",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_crypto_service.js.pre-device-recovery-20261101-232128",
+    "sha256": "f2f91a6285617b66a713ac7c738a8e964b4ff1eefd08f6878a09ecfa5ddd0a5b",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_crypto_service.js.pre-recovery-bridge-20261101-231909",
+    "sha256": "741562dc7f383baba0a8e8ed3216d05d64e9103591f78282ef9ccde8e83a4cf0",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_db_atomicity.js.pre-counter-fix",
+    "sha256": "25dbeb6b33ce27f6d5a30d9b04f5027ae7ea9d50df3d12532a249f0cfd2201df",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_db_atomicity.js.pre-db-export-hardening-20261101-230234",
+    "sha256": "af514962ba61166af7500c725d8bde42470aae80be85662d81a4fc27ccc316d3",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_db_atomicity.js.pre-guard-tests",
+    "sha256": "9f851500e2e330b27b2095cac06bb916eb8294d85246995385d28bd7a0e7397f",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_db_atomicity.js.pre-operation-drain",
+    "sha256": "e0cdd0f4e6a85b501dc4ad23de302d6174d393c11f80d21eb50e28179c009c6b",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_db_atomicity.js.pre-operation-drain-v2",
+    "sha256": "e0cdd0f4e6a85b501dc4ad23de302d6174d393c11f80d21eb50e28179c009c6b",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_db_atomicity.js.pre-session-guard",
+    "sha256": "0cb65d75609a9bc531940dce969443d0ee3c151f3544c91d3bea05f4ba9cc18f",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_encrypted_dexie_store.js.pre-concurrency-20261101-234834",
+    "sha256": "3c47ef9bc4194ba201733995724db69c7c1bbe7c56e7183eff4e40db09f959c5",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_encrypted_dexie_store.js.pre-transaction-primitives-20261101-234927",
+    "sha256": "b784b58831e0a833fe9b239d3b8445a5c91a77cbfba3212d14029d283296d0a5",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_encrypted_record_codec.js.pre-settings-key-20261101-234320",
+    "sha256": "80021778fea5623e93753fbe3f83628edc05d2042b30d6b8bb413792f6b01dd2",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_session_manager.js.pre-operation-drain",
+    "sha256": "ea9ebf9a9d6f6c79206d2eb96c4bb5414e3f6fd92838044d9cb4e48c1230e66e",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_session_manager.js.pre-operation-drain-v2",
+    "sha256": "ea9ebf9a9d6f6c79206d2eb96c4bb5414e3f6fd92838044d9cb4e48c1230e66e",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_tasks_recurrence.js.pre-db-export-hardening-20261101-230359",
+    "sha256": "701e62418facf0a3cd652fb827fa074594d4c9efedfb9044f550625fb2ecb78f",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_tasks_recurrence.js.pre-session-loader",
+    "sha256": "a2bc5d2c58e5360f34a72351056913897d4109917822f1ca6da330094969a890",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_tasks_recurrence_edges.js.pre-db-export-hardening-20261101-230359",
+    "sha256": "ecbd57a09629246654b82db3c78a8a4bb5e16a58e9f8d1874ce7622048257ee8",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeOS-next",
+    "path": "test_tasks_recurrence_edges.js.pre-session-loader",
+    "sha256": "1622b8333570e458f08f414079d7cb94bc7f8c5443e6d71434db4dd498034c29",
+    "classification": "Unsafe/insufficiently validated archival rollback snapshot; retained privately"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "android/app/src/main/java/com/lifeos/personal/MainActivity.java",
+    "sha256": "2688feb7ca8b94f0c25838eab572a856dea5ad6717f9cb49a3558f9ce8d331c0",
+    "classification": "Experimental/incompatible prototype; excluded"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "android/app/src/main/java/com/lifeos/personal/StorageAccessPlugin.java",
+    "sha256": "1c3e76587a5a9c60d2242d82dccf50dcc8453608060ff7aa48340e8a38879187",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/config.json",
+    "sha256": "06f7b3898f504bc27869a146dd5392b4530ac9e20dd5a3567cac8560ba4ec9f8",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/database/database_integrity_tests.js",
+    "sha256": "cefd6e395e28548ad5ff31ede70ad018b79f6773a36e80a8f7c988e05ab517da",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/inventory/controls.json",
+    "sha256": "f373c23b0c202d9061ef14753084b984241abc5a632368f110a004fcb7bdc8a4",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/inventory/database_schema.json",
+    "sha256": "0a5bd41a19bf97d11000c466ddeec763947a29caa2cf997eb7085667a4c01515",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/inventory/routes.json",
+    "sha256": "bdb1cf7c8f40ff366915eabf1017d72f2695c96c0166313975e0fe29970cd9eb",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/resilience/android_resilience_tests.js",
+    "sha256": "ae9be19e6c34c082c0957a8ce0f257dd595d97160423561a5832249b36d32f36",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/runner.js",
+    "sha256": "a93cf6b81f7a6c3d58a05db2478cebb88ed0cd6d4167adc22b86bfa525e2c1f2",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/security/crypto_regression_tests.js",
+    "sha256": "7c9167664f58323d567fda3777e41bd4df52d49cf46c0f4d7b4d9b0335bac88e",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/security/saf_regression_tests.js",
+    "sha256": "a135e421e125d24ac5957d3c5f77da0c8830dcd6a39adae88c859c2921b1ca34",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/security/security_tests.js",
+    "sha256": "9234f8c49c2e0ca33209330f064f28336ed6deac943d29386d8270d62f2143c8",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/ui/e2e_journeys.py",
+    "sha256": "ca1678aa51c0fc29d3eb7d47d55622713a878a17b71ecfa059a34b1e4266f394",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/ui/ui_automation_runner.py",
+    "sha256": "b08beec251c7a5ca1420ee0f7529bdfa27aa3cb58c6e9238bd7408b2456ae22d",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/unit_integration/domain_tests.js",
+    "sha256": "dc36539b3065328cfbc4a4da68e551f2d3ea40ced79d6699fd0e44b4ea393900",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/visual/approve_baselines.py",
+    "sha256": "4af81d5b4d6949385c0875fb36ad09807b3396f6d5df7d4728b2177dfbfe961a",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/visual/approved_baselines.json",
+    "sha256": "79cfd6791067f350a13dbd8bb2f3519772e50bc849403c412b3013440aa565ed",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "sentinel/visual/visual_regression.py",
+    "sha256": "b853be3590d9657ef6a75b8eb86194af70420a24241ebc4fa302fabd7d2b40ff",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/App.tsx",
+    "sha256": "d78c8c4fc4dc0740fb0dc83cce6455b3aef26cb0452b91e018fae9fa61d50d1c",
+    "classification": "Experimental/incompatible prototype; excluded"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/db.ts",
+    "sha256": "9bb40c3c545dac934d568ffbc0fc70bb539edd66e40f34869fd4b76e09e31ae5",
+    "classification": "Experimental/incompatible prototype; excluded"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/services/backupPersistenceService.js",
+    "sha256": "09742d2046c30fdbf6387d1c295e0f9a968134c641775538e886c02c0f01260b",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/services/backupPersistenceService.ts",
+    "sha256": "4b783b7ccb9f3f895290b392886a2cdb2441758bc7e6f52fd354d8e43020df22",
+    "classification": "Experimental/incompatible prototype; excluded"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/services/cryptoService.js",
+    "sha256": "b9db3063a09aa51c94d12bb057118833513785f5660194b100bbc724ef52ef95",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/services/cryptoService.ts",
+    "sha256": "821af85218d903d684232c7cc0aae25f9eb6ec9300c205c13ae9998e0f4b29a7",
+    "classification": "Experimental/incompatible prototype; excluded"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/services/csvExportService.js",
+    "sha256": "fde058b3849317d29ae1aaf595fc43bc6c322cafa35efeaf87cccec849f250b7",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/services/csvExportService.ts",
+    "sha256": "880ba5775ff0c233c26e829ebd36c0c4afc2f4be3507f1e833da701a98b5b81e",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/services/storageAccessService.js",
+    "sha256": "f8a21c16e96d00550c68c00a1d237386584ceac9a2f9dcc3420f4000840e3ba8",
+    "classification": "Already integrated (exact bytes)"
+  },
+  {
+    "repository": "lifeos-sentinel-review",
+    "path": "src/services/storageAccessService.ts",
+    "sha256": "87d9fb5b224ca1f2621787a839e9d6069ba4190ab236ecfe8250b87f1a0081d1",
+    "classification": "Already integrated (exact bytes)"
+  }
+]

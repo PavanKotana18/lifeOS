@@ -1,0 +1,79 @@
+
+> lifeos-personal@1.0.0 test:sentinel
+> node -r ./scripts/register-ts-test-loader.cjs sentinel/runner.js
+
+===============================================================
+  LIFEOS SENTINEL — AUTONOMOUS VERIFICATION & QA RUNNER
+===============================================================
+
+--- Running Sentinel Real Dexie Database & Data-Integrity Tests ---
+  ✅ PASS: Real Dexie Schema: verifies all 15 tables and primary indexes in production LifeOSDatabase
+  ✅ PASS: Referential Integrity: validateBackupTables rejects broken category, goal, and habit references
+  ✅ PASS: Real Dexie CRUD: adds and queries records on disposable IndexedDB tables
+  ✅ PASS: Dexie Transaction Atomicity: aborted transaction rolls back all pending writes
+  ✅ PASS: Dexie Hooks: subscriber failure rolls back associated record insertion
+  ✅ PASS: Schema Compatibility: stores definition matches declared Dexie version 2 tables
+    (Deleted disposable test database sentinel_disposable_test_1794116103090_75dz1kmkwa4)
+  ✅ PASS: Disposable Database Cleanup: cleans up test tables without touching user data
+Real Dexie Database Integrity Tests Completed: 7/7 passed.
+
+--- Running Sentinel Android Resilience Tests ---
+Lifecycle Simulation Tests Completed: 6/6 passed.
+
+--- Running Sentinel Application Security Tests ---
+[SECURITY ALERT] Key quarantined: Integrity verification failed: HMAC signature mismatch. Payload was tampered or corrupted.
+Application Security Tests Completed: 7/7 passed. Findings: 0.
+--- Running Sentinel Unit & Domain Tests ---
+Unit & Domain Tests Completed: 10/10 passed.
+--- Running Sentinel Production Crypto & Backup Hardening Regression Tests ---
+  ✅ PASS: 1. Correct Passphrase: encrypts payload and decrypts successfully with matching passphrase
+  ✅ PASS: 2. Incorrect Passphrase: fails authentication and rejects decryption
+[SECURITY ALERT] Key quarantined: Integrity verification failed: HMAC signature mismatch. Payload was tampered or corrupted.
+  ✅ PASS: 3. Corrupt Ciphertext: detected before decryption, rejecting tamper and quarantining key
+  ✅ PASS: 4. Metadata Integrity: rejects containers with missing or truncated salt, IV, or HMAC
+  ✅ PASS: 5. Interrupted Persistence: simulated disk write failure leaves existing durable backup intact on filesystem
+  ✅ PASS: 6. Rotation Rollback: invalid credentials abort rotation without modifying disk file
+  ✅ PASS: 7. Full Backup Encryption Round-Trip: encrypts multi-table application backup and restores exact data
+  ✅ PASS: 8. Durable Rotation: rotates persisted disk backup to new passphrase and verifies decryption under new passphrase
+  ✅ PASS: 9. Backward Compatibility: unencrypted legacy LifeOS backup JSON passes inspection without encryption errors
+  ✅ PASS: 10. Fresh-Instance Acceptance: simulates app restart and restores rotated backup in a fresh service instance from disk
+  ✅ PASS: 11. LocalStorage Adapter: unavailable storage and read/write/remove failures are explicit
+  ✅ PASS: 12. LocalStorage Persistence: successful backup write is verified by read-back
+  ✅ PASS: 13. Persistence Verification: rejects malformed and mismatched read-back data
+Production Crypto & Backup Hardening Tests Completed: 13/13 passed.
+
+--- Running Sentinel Storage Access Framework (SAF) Production Regression Tests ---
+  ✅ PASS: 1. Runtime SAF Export: executes StorageAccessService.exportFile against native bridge and verifies success
+  ✅ PASS: 2. Runtime SAF Cancellation: user cancelled picker returns success: false with cancelled: true
+  ✅ PASS: 3. Runtime SAF Failure: native stream failure returns explicit error without false success
+  ✅ PASS: 4. Runtime SAF Import: executes StorageAccessService.importFile against native bridge and receives payload
+  ✅ PASS: 5. Runtime SAF Import Cancellation: user cancelled file picker returns cancelled: true
+  ✅ PASS: 6. Runtime 50MB Boundary: rejects export if UTF-8 byte count exceeds 52,428,800 bytes
+  ✅ PASS: 7. UTF-8 Precision: accurately measures multibyte UTF-8 bytes vs UTF-16 JavaScript length
+  ✅ PASS: 8. Native Path Traversal Defense: StorageAccessPlugin.java enforces sanitization on input names
+  ✅ PASS: 9. Native Stream Completion: verifies write and close completion before call.resolve
+  ℹ️  [DEVICE STATUS] Physical Android SAF runtime execution: BLOCKED in Linux CLI sandbox.
+      Native Android OS document picker requires Android API 26+ device or emulator.
+      Manual Android verification steps:
+        1. Launch LifeOS on Android device.
+        2. Navigate to Profile / Settings -> Backup & Restore.
+        3. Tap "Export JSON" -> system Storage Access Framework document picker launches.
+        4. Pick storage folder and save -> verify success toast appears.
+        5. Repeat and tap Back/Cancel -> verify no toast appears and no error is raised.
+
+SAF Production Regression Tests Completed: 9/9 passed.
+
+===============================================================
+  SENTINEL EXECUTION SUMMARY
+===============================================================
+  ✅ PASS     : Real Dexie Database Integrity Suite
+  ✅ PASS     : Lifecycle Simulation Suite (mock bridge; not device validation)
+  ✅ PASS     : Application Security & Manifest Audit Suite
+  ✅ PASS     : Domain Models & CSV Injection Defense Suite
+  ✅ PASS     : Production Crypto & Backup Hardening Suite
+  ✅ PASS     : Storage Access Framework Production Suite
+---------------------------------------------------------------
+  Total Suites: 6 | Passed: 6 | Failed: 0 | Blocked: 0
+===============================================================
+
+CI GATE STATUS: PASSED — All mandatory Sentinel suites verified successfully.

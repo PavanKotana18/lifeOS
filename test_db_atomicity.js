@@ -5,9 +5,10 @@ const path = require('path');
 const Module = require('module');
 const ts = require('typescript');
 const assert = require('assert');
+const Dexie = require('dexie');
 
 async function main() {
-  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db };\n';
+  const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db, rawStorageService as legacyStorageService };\n';
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -19,6 +20,24 @@ async function main() {
   const loaded = new Module(path.join(__dirname, 'src/db.atomicity.cjs'), module);
   loaded.filename = path.join(__dirname, 'src/db.atomicity.cjs');
   loaded.paths = module.paths;
+  const financeSource = fs.readFileSync(path.join(__dirname, 'src/services/financeCore.ts'), 'utf8');
+  const financeCompiled = ts.transpileModule(financeSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.atomicity.cjs'), module);
+  financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.atomicity.cjs');
+  financeLoaded.paths = module.paths;
+  financeLoaded._compile(financeCompiled, financeLoaded.filename);
+  const accountingSource = fs.readFileSync(path.join(__dirname, 'src/services/financialAccounting.ts'), 'utf8');
+  const accountingCompiled = ts.transpileModule(accountingSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const accountingLoaded = new Module(path.join(__dirname, 'src/services/financialAccounting.atomicity.cjs'), module);
+  accountingLoaded.filename = path.join(__dirname, 'src/services/financialAccounting.atomicity.cjs');
+  accountingLoaded.paths = module.paths;
+  const accountingRequire = accountingLoaded.require.bind(accountingLoaded);
+  accountingLoaded.require = request => request === './financeCore' ? financeLoaded.exports : accountingRequire(request);
+  accountingLoaded._compile(accountingCompiled, accountingLoaded.filename);
   const sessionSource = fs.readFileSync(
     path.join(__dirname, 'src/services/sessionManager.ts'),
     'utf8'
@@ -53,6 +72,15 @@ async function main() {
     parent.filename &&
     parent.filename.endsWith('/src/db.atomicity.cjs')
   ) {
+    if (request === './services/financeCore') return financeLoaded.exports;
+    if (request === './services/financialAccounting') return accountingLoaded.exports;
+    if (request === './services/encryptedStorageIntegration') {
+      return { BOOTSTRAP_SETTING_KEYS: new Set([
+        'theme', 'visualTheme', 'biometricLockEnabled',
+        'onboardingCompleted', 'onboardingStarted', 'onboardingStep'
+      ]) };
+    }
+
     if (request === './services/encryptedStorageRuntime') {
       return {
         createLifeOSEncryptedRuntime: () => ({
@@ -91,7 +119,8 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const { db, StorageService, sessionManager } = loaded.exports;
+  const { db, LifeOSDatabase, legacyStorageService: StorageService, sessionManager } = loaded.exports;
+  const { calculateAccountBalances } = accountingLoaded.exports;
   await db.open();
 
   let passed = 0;
@@ -102,124 +131,14 @@ async function main() {
   };
 
 
-  // Session guard tests: database is open, but session is still locked.
-  console.log('========== SESSION GUARD TESTS ==========');
-
-  await assert.rejects(
-    StorageService.categories.getAll(),
-    error => error && error.code === 'LIFEOS_SESSION_LOCKED'
-  );
-  check(true, 'Locked session rejects private database reads');
-
-  await assert.rejects(
-    StorageService.settings.set('currency', 'USD'),
-    error => error && error.code === 'LIFEOS_SESSION_LOCKED'
-  );
-  check(true, 'Locked session rejects private settings writes');
-
-  assert.strictEqual(
-    await db.settings.get('currency'),
-    undefined,
-    'Rejected private write must not modify IndexedDB'
-  );
-  check(true, 'Rejected private write leaves IndexedDB unchanged');
-
-  await assert.rejects(
-    StorageService.backup.exportData(),
-    error => error && error.code === 'LIFEOS_SESSION_LOCKED'
-  );
-  check(true, 'Locked session rejects plaintext backup exports');
-
-  await StorageService.settings.set('theme', 'system');
-  const bootstrapTheme = await StorageService.settings.get('theme', 'dark');
-  check(
-    bootstrapTheme === 'system',
-    'Bootstrap theme setting remains readable and writable while locked'
-  );
-
+  // This fixture intentionally tests raw migration-era algorithm atomicity.
+  // Actual protected admission/lease behavior is tested against the encrypted
+  // facade in test_secure_startup.js and test_encryption_admission.js.
   sessionManager.unlock();
-  check(
-    sessionManager.isUnlocked(),
-    'Explicit session unlock restores authorized access'
-  );
-
-  // Seed a valid category for the session lock-and-drain transaction fixture.
-  await StorageService.categories.getAll();
-  const sessionTestCategory = await StorageService.categories.add({
-    name: 'Session Drain Test',
-    type: 'expense',
-    color: '#123456'
-  });
-
-  // Delay one admitted IndexedDB write to verify lock-and-drain behavior.
-  const originalTransactionAdd = db.transactions.add;
-  let releaseDelayedWrite;
-  const delayedWriteGate = new Promise(resolve => {
-    releaseDelayedWrite = resolve;
-  });
-
-  db.transactions.add = async function (...args) {
-    await delayedWriteGate;
-    return originalTransactionAdd.apply(this, args);
-  };
-
-  let admittedWrite;
-  let savedDuringDrain;
-  let drainCompleted = false;
-
-  try {
-    admittedWrite = StorageService.transactions.add({
-      type: 'expense',
-      amount: 123,
-      category: sessionTestCategory.name,
-      description: 'Session drain integration test',
-      date: '2026-11-01',
-      paymentMethod: 'Cash'
-    });
-
-    check(
-      sessionManager.getActiveOperationCount() === 1,
-      'Storage operation acquires a session lease before database work'
-    );
-
-    sessionManager.lock();
-
-    await assert.rejects(
-      StorageService.transactions.getAll(),
-      error => error && error.code === 'LIFEOS_SESSION_LOCKED'
-    );
-    check(true, 'Lock immediately rejects newly requested private operations');
-
-    const drain = sessionManager.waitForIdle().then(() => {
-      drainCompleted = true;
-    });
-
-    await Promise.resolve();
-    check(!drainCompleted, 'Lock drain waits for an admitted database write');
-
-    releaseDelayedWrite();
-    savedDuringDrain = await admittedWrite;
-    await drain;
-
-    check(
-      Boolean(savedDuringDrain && savedDuringDrain.id),
-      'An admitted write completes successfully after locking begins'
-    );
-
-    check(
-      drainCompleted && Boolean(await db.transactions.get(savedDuringDrain.id)),
-      'Lock drain completes only after the admitted write is committed'
-    );
-  } finally {
-    releaseDelayedWrite();
-    db.transactions.add = originalTransactionAdd;
-    if (admittedWrite) await admittedWrite.catch(() => {});
-    await sessionManager.waitForIdle();
-    if (!sessionManager.isUnlocked()) sessionManager.unlock();
-    await StorageService.transactions.delete(savedDuringDrain?.id).catch(() => {});
-    await StorageService.categories.delete(sessionTestCategory.id);
-  }
-
+  const fixtureCategories = await StorageService.categories.getAll();
+  check(fixtureCategories.some(category =>
+    category.id === 'cat_food' && category.name === 'Food' && category.type === 'expense'
+  ), 'Normal category setup provides the Food fixture before transaction inserts');
   const stamp = '2026-11-01T10:00:00.000Z';
 
   try {
@@ -265,68 +184,45 @@ async function main() {
       'Invalid amounts and missing goals create no financial records'
     );
 
-    // 3. A linked savings transfer must create a cash-flow expense atomically.
-    await db.categories.add({
-      id: 'cat-savings-transfer-test',
-      name: 'Savings Transfer Test',
-      type: 'expense',
-      color: '#10b981'
+    // 3. Savings progress must not create or mutate a spending transaction.
+    const historicalSavingsExpense = {
+      id: 'legacy-savings-expense', type: 'expense', amount: 250,
+      category: 'Investments', description: 'Savings contribution: Older fund',
+      date: '2026-10-01', paymentMethod: 'Savings transfer',
+      createdAt: '2026-10-01T10:00:00.000Z'
+    };
+    await db.transactions.add(historicalSavingsExpense);
+    const transactionsBeforeContribution = await db.transactions.count();
+    await StorageService.savings.addContribution({
+      goalId: 'sg-atomic', amount: 250, date: '2026-11-01', notes: 'Goal progress only'
     });
-
-    await StorageService.savings.addContribution(
-      { goalId: 'sg-atomic', amount: 250, date: '2026-11-01', notes: 'Atomic linked transfer test' },
-      {
-        type: 'expense',
-        amount: 250,
-        category: 'Savings Transfer Test',
-        description: 'Savings contribution: Emergency fund',
-        date: '2026-11-01',
-        paymentMethod: 'Savings transfer',
-        notes: 'Atomic linked transfer test'
-      }
-    );
-
-    const linkedTransaction = (await db.transactions.toArray())
-      .find(tx => tx.description === 'Savings contribution: Emergency fund');
-
     check(
       (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
       await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
-      Boolean(linkedTransaction) &&
-      linkedTransaction.type === 'expense' &&
-      linkedTransaction.amount === 250,
-      'Linked savings contribution updates the goal and creates a matching expense'
+      await db.transactions.count() === transactionsBeforeContribution &&
+      JSON.stringify(await db.transactions.get(historicalSavingsExpense.id)) === JSON.stringify(historicalSavingsExpense),
+      'Savings contribution adds no expense and leaves historical savings expense unchanged'
     );
 
-    // A linked expense failure must roll back both savings records.
-    const linkedExpenseFailure = () => { throw new Error('Injected linked transaction failure'); };
-    db.transactions.hook('creating').subscribe(linkedExpenseFailure);
+    // A transaction-table failure cannot turn goal progress into spending.
+    const unrelatedTransactionFailure = () => { throw new Error('Injected unrelated transaction failure'); };
+    db.transactions.hook('creating').subscribe(unrelatedTransactionFailure);
 
     try {
-      await assert.rejects(StorageService.savings.addContribution(
-        { goalId: 'sg-atomic', amount: 300, date: '2026-11-01' },
-        {
-          type: 'expense',
-          amount: 300,
-          category: 'Savings Transfer Test',
-          description: 'Savings contribution: Emergency fund rollback',
-          date: '2026-11-01',
-          paymentMethod: 'Savings transfer'
-        }
-      ));
+      await StorageService.savings.addContribution({
+        goalId: 'sg-atomic', amount: 50, date: '2026-11-01'
+      });
     } finally {
-      db.transactions.hook('creating').unsubscribe(linkedExpenseFailure);
+      db.transactions.hook('creating').unsubscribe(unrelatedTransactionFailure);
     }
 
     check(
-      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
-      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
-      !(await db.transactions.toArray()).some(tx => tx.description === 'Savings contribution: Emergency fund rollback'),
-      'Linked expense failure rolls back the contribution and goal balance'
+      (await db.savingsGoals.get('sg-atomic')).currentAmount === 1300 &&
+      await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 2 &&
+      await db.transactions.count() === transactionsBeforeContribution &&
+      JSON.stringify(await db.transactions.get(historicalSavingsExpense.id)) === JSON.stringify(historicalSavingsExpense),
+      'Contribution commit is independent of transaction creation and preserves historical rows'
     );
-
-    await StorageService.transactions.delete(linkedTransaction.id);
-    await db.categories.delete('cat-savings-transfer-test');
 
     // 4. Habit deletion must roll back if dependent-log deletion fails.
     await db.habits.add({
@@ -784,7 +680,197 @@ async function main() {
       'Category can be deleted after its budget and transaction references are removed'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed}/43 PASSED`);
+    await db.savingsGoals.add({
+      id: 'sg-exact', title: 'Exact savings', targetAmount: 10, targetAmountMinor: '1000',
+      currentAmount: 0.1, currentAmountMinor: '10', currencyCode: 'USD',
+      targetDate: '2027-01-01', createdAt: stamp,
+    });
+    await StorageService.savings.addContribution({
+      goalId: 'sg-exact', amount: 0.2, amountMinor: '20', currencyCode: 'USD', date: '2026-11-01',
+    });
+    await assert.rejects(StorageService.savings.addContribution({
+      goalId: 'sg-exact', amount: 0.01, amountMinor: '1', currencyCode: 'EUR', date: '2026-11-01',
+    }), /currency/i);
+    check(
+      (await db.savingsGoals.get('sg-exact')).currentAmountMinor === '30' &&
+      await db.savingsContributions.where('goalId').equals('sg-exact').count() === 1,
+      'Exact savings contributions reconcile minor units and reject mixed currencies atomically'
+    );
+    const exactContribution = await db.savingsContributions.where('goalId').equals('sg-exact').first();
+    await StorageService.savings.updateContribution(exactContribution.id, { amount: 0.3, amountMinor: '30', currencyCode: 'USD' });
+    check((await db.savingsGoals.get('sg-exact')).currentAmountMinor === '40',
+      'Editing a contribution atomically applies the exact minor-unit difference to its goal');
+    await StorageService.savings.deleteContribution(exactContribution.id);
+    check((await db.savingsGoals.get('sg-exact')).currentAmountMinor === '10' && await db.savingsContributions.where('goalId').equals('sg-exact').count() === 0,
+      'Deleting a contribution atomically reconciles goal progress without changing transactions');
+
+    const cash = await StorageService.accounts.add({ name: 'Everyday cash', type: 'cash', currencyCode: 'USD', openingBalanceMinor: '10000', isActive: true });
+    const bank = await StorageService.accounts.add({ name: 'Main bank', type: 'bank', currencyCode: 'USD', openingBalanceMinor: '5000', isActive: true });
+    const card = await StorageService.accounts.add({ name: 'Credit card', type: 'credit-card', currencyCode: 'USD', openingBalanceMinor: '20000', isActive: true });
+    const rupees = await StorageService.accounts.add({ name: 'Rupee wallet', type: 'wallet', currencyCode: 'INR', openingBalanceMinor: '0', isActive: true });
+    const unusedNonzero = await StorageService.accounts.add({ name: 'Unused funded wallet', type: 'wallet', currencyCode: 'USD', openingBalanceMinor: '500', isActive: true });
+    await assert.rejects(StorageService.accounts.delete(unusedNonzero.id), /non-zero opening balance/i);
+    check(Boolean(await db.financialAccounts.get(unusedNonzero.id)), 'Deleting an unused funded account cannot erase its opening amount');
+    await StorageService.accounts.archive(unusedNonzero.id);
+    const unusedEmpty = await StorageService.accounts.add({ name: 'Empty wallet', type: 'wallet', currencyCode: 'USD', openingBalanceMinor: '0', isActive: true });
+    await StorageService.accounts.delete(unusedEmpty.id);
+    check(!(await db.financialAccounts.get(unusedEmpty.id)), 'An unused zero-balance account can be deleted safely');
+    const transactionCountBeforeAccounts = await db.transactions.count();
+    const openingBalances = calculateAccountBalances([cash, bank, card, rupees], [], []);
+    check(openingBalances.get(cash.id) === 10000n && openingBalances.get(card.id) === 20000n && await db.transactions.count() === transactionCountBeforeAccounts,
+      'Opening balances affect account balances only and never create income records');
+
+    const transactionCountBeforePosting = await db.transactions.count();
+    await StorageService.transactions.add({ type: 'expense', amount: 12.34, amountMinor: '1234', currencyCode: 'USD', accountId: cash.id,
+      category: 'Food', description: 'Account-linked purchase', date: '2026-11-08', paymentMethod: 'Cash' });
+    await StorageService.transactions.add({ type: 'income', amount: 3, amountMinor: '300', currencyCode: 'USD', accountId: cash.id,
+      category: 'Salary', description: 'Account-linked income', date: '2026-11-08', paymentMethod: 'Bank' });
+    await StorageService.transactions.add({ type: 'expense', amount: 10, amountMinor: '1000', currencyCode: 'USD', accountId: card.id,
+      category: 'Food', description: 'Card purchase', date: '2026-11-08', paymentMethod: 'Credit card' });
+    const transferId = 'transfer-idempotency-test';
+    const transfer = await StorageService.accounts.addTransfer({ id: transferId, fromAccountId: cash.id, toAccountId: bank.id,
+      fromAmountMinor: '500', toAmountMinor: '500', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08' });
+    await assert.rejects(StorageService.accounts.addTransfer({ id: transferId, fromAccountId: cash.id, toAccountId: bank.id,
+      fromAmountMinor: '500', toAmountMinor: '500', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08' }));
+    await StorageService.accounts.addTransfer({ fromAccountId: bank.id, toAccountId: card.id, fromAmountMinor: '1000', toAmountMinor: '1000',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08', notes: 'Card payment' });
+    await assert.rejects(StorageService.accounts.update(cash.id, { openingBalanceMinor: '1' }), /opening balance cannot change/i);
+    check((await db.financialAccounts.get(cash.id)).openingBalanceMinor === '10000',
+      'Account opening balance cannot be rewritten after transactions or transfers exist');
+    await StorageService.accounts.addTransfer({ fromAccountId: cash.id, toAccountId: rupees.id, fromAmountMinor: '100', toAmountMinor: '8300',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'INR', exchangeRate: '83', date: '2026-11-08' });
+    const balances = calculateAccountBalances([cash, bank, card, rupees], await db.transactions.toArray(), await db.accountTransfers.toArray());
+    check(balances.get(cash.id) === 8466n && balances.get(bank.id) === 4500n && balances.get(card.id) === 20000n && balances.get(rupees.id) === 8300n,
+      'Account balances reconcile opening amounts, income, expenses, liabilities, same-currency and explicit FX transfers');
+    check(await db.transactions.count() === transactionCountBeforePosting + 3 && await db.accountTransfers.count() === 3,
+      'Transfers remain separately linked ledger entries and do not inflate income or expense transactions');
+    await assert.rejects(StorageService.accounts.addTransfer({ fromAccountId: cash.id, toAccountId: rupees.id, fromAmountMinor: '100', toAmountMinor: '1',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'INR', exchangeRate: '83', date: '2026-11-08' }), /rate/i);
+    check(await db.accountTransfers.count() === 3, 'An invalid cross-currency transfer leaves no partial record');
+    const originalFxTransfer = (await db.accountTransfers.toArray()).find(row => row.fromAccountId === cash.id && row.toAccountId === rupees.id);
+    const reversal = await StorageService.accounts.reverseTransfer(originalFxTransfer.id, '2026-11-09');
+    check(reversal.reversalOfId === originalFxTransfer.id && reversal.fromAmountMinor === originalFxTransfer.toAmountMinor && reversal.toAmountMinor === originalFxTransfer.fromAmountMinor && reversal.exchangeRate === undefined,
+      'Cross-currency reversal preserves the exact original minor-unit amounts as a linked counter-entry');
+    await assert.rejects(StorageService.accounts.reverseTransfer(originalFxTransfer.id, '2026-11-09'), /already been reversed/i);
+    await assert.rejects(StorageService.accounts.updateTransfer(originalFxTransfer.id, { notes: 'change' }), /reversed/i);
+    await assert.rejects(StorageService.accounts.deleteTransfer(originalFxTransfer.id), /Remove the reversal/i);
+    const reversedBalances = calculateAccountBalances([cash, bank, card, rupees], await db.transactions.toArray(), await db.accountTransfers.toArray());
+    check(reversedBalances.get(cash.id) === 8566n && reversedBalances.get(rupees.id) === 0n, 'Exact reversal returns each cross-currency account to its pre-transfer balance');
+    await StorageService.accounts.deleteTransfer(reversal.id);
+    await StorageService.accounts.updateTransfer(transfer.id, { fromAmountMinor: '600', toAmountMinor: '600' });
+    check((await db.accountTransfers.get(transfer.id)).fromAmountMinor === '600', 'Transfer edits replace one linked transfer record without duplicate postings');
+    await StorageService.accounts.deleteTransfer(transfer.id);
+    check(!(await db.accountTransfers.get(transfer.id)), 'Transfer deletion removes the linked entry and derived balances recalculate');
+    await assert.rejects(StorageService.accounts.update(cash.id, { currencyCode: 'EUR' }), /cannot change/i);
+    await assert.rejects(StorageService.accounts.delete(bank.id), /archive/i);
+    await StorageService.accounts.archive(bank.id);
+    check((await StorageService.accounts.getAll()).find(account => account.id === bank.id)?.isActive === false,
+      'Archived accounts remain persisted and available for historical reports');
+
+    // Reproduce the physically accepted Amazon/HDFC credit-card reversal case
+    // with isolated synthetic INR accounts and exact paise arithmetic.
+    const amazonCard = await StorageService.accounts.add({ name: 'Amazon credit card', type: 'credit-card',
+      currencyCode: 'INR', openingBalanceMinor: '1000000', isActive: true });
+    const hdfcBank = await StorageService.accounts.add({ name: 'HDFC bank', type: 'bank',
+      currencyCode: 'INR', openingBalanceMinor: '2000000', isActive: true });
+    const syntheticAccounts = await StorageService.accounts.getAll();
+    const knownScenarioBalances = async () => calculateAccountBalances(syntheticAccounts,
+      await db.transactions.toArray(), await db.accountTransfers.toArray());
+    const starting = await knownScenarioBalances();
+    check(starting.get(amazonCard.id) === 1000000n && starting.get(hdfcBank.id) === 2000000n,
+      'Synthetic Amazon/HDFC opening liabilities and bank funds start at ₹10,000 and ₹20,000');
+
+    const knownScenarioTransactionCount = await db.transactions.count();
+    await StorageService.transactions.add({ type: 'expense', amount: 500, amountMinor: '50000', currencyCode: 'INR',
+      accountId: amazonCard.id, category: 'Food', description: 'Synthetic card purchase', date: '2026-11-08',
+      paymentMethod: 'Credit card' });
+    const afterExpense = await knownScenarioBalances();
+    check(afterExpense.get(amazonCard.id) === 1050000n && afterExpense.get(hdfcBank.id) === 2000000n,
+      '₹500 card purchase raises card liability without changing the bank balance');
+
+    const unrelatedFiveThousand = await StorageService.accounts.addTransfer({ fromAccountId: amazonCard.id,
+      toAccountId: hdfcBank.id, fromAmountMinor: '500000', toAmountMinor: '500000',
+      fromCurrencyCode: 'INR', toCurrencyCode: 'INR', date: '2026-11-08' });
+    const reversibleThreeThousand = await StorageService.accounts.addTransfer({ fromAccountId: hdfcBank.id,
+      toAccountId: amazonCard.id, fromAmountMinor: '300000', toAmountMinor: '300000',
+      fromCurrencyCode: 'INR', toCurrencyCode: 'INR', date: '2026-11-08' });
+    let knownBalances = await knownScenarioBalances();
+    check(knownBalances.get(amazonCard.id) === 1250000n && knownBalances.get(hdfcBank.id) === 2200000n,
+      '₹5,000 and ₹3,000 transfers update the card liability and HDFC balance with exact paise');
+    const cashFlowBeforeReversal = (await db.transactions.toArray()).map(row => ({
+      id: row.id, type: row.type, amount: row.amount, amountMinor: row.amountMinor
+    }));
+
+    const knownReversal = await StorageService.accounts.reverseTransfer(reversibleThreeThousand.id, '2026-11-09');
+    knownBalances = await knownScenarioBalances();
+    check(knownBalances.get(amazonCard.id) === 1550000n && knownBalances.get(hdfcBank.id) === 2500000n &&
+      knownReversal.reversalOfId === reversibleThreeThousand.id,
+      'Reversing the ₹3,000 transfer restores both balances and links its audit record');
+    check(JSON.stringify(await db.accountTransfers.get(unrelatedFiveThousand.id)) === JSON.stringify(unrelatedFiveThousand),
+      'Reversing ₹3,000 leaves the unrelated ₹5,000 transfer untouched');
+
+    await StorageService.accounts.deleteTransfer(knownReversal.id);
+    knownBalances = await knownScenarioBalances();
+    check(knownBalances.get(amazonCard.id) === 1250000n && knownBalances.get(hdfcBank.id) === 2200000n &&
+      Boolean(await db.accountTransfers.get(reversibleThreeThousand.id)) &&
+      !(await db.accountTransfers.get(knownReversal.id)),
+      'Undoing reversal reactivates the original ₹3,000 transfer without recreating it');
+    check(JSON.stringify(await db.accountTransfers.get(unrelatedFiveThousand.id)) === JSON.stringify(unrelatedFiveThousand) &&
+      JSON.stringify((await db.transactions.toArray()).map(row => ({
+        id: row.id, type: row.type, amount: row.amount, amountMinor: row.amountMinor
+      }))) === JSON.stringify(cashFlowBeforeReversal) &&
+      await db.transactions.count() === knownScenarioTransactionCount + 1,
+      'Transfer reversal and undo change neither the ₹5,000 transfer nor income/expense history');
+
+    const rate = await StorageService.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '83.125', effectiveDate: '2026-11-08', sourceLabel: 'Manual statement' });
+    await assert.rejects(StorageService.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '84', effectiveDate: '2026-11-08' }), /already exists/i);
+    await StorageService.exchangeRates.update(rate.id, { rate: '83.25' });
+    check((await StorageService.exchangeRates.getAll())[0].rate === '83.25', 'Manual offline exchange rates support history and safe edits');
+    await StorageService.exchangeRates.delete(rate.id);
+
+    const beforeCommitmentTransactions = await db.transactions.count();
+    const commitment = await StorageService.commitments.add({ title: 'Monthly rent', amount: 1200, amountMinor: '120000', currencyCode: 'USD',
+      frequency: 'monthly', nextDueDate: '2026-12-01', categoryId: 'cat_rent', accountId: cash.id, status: 'active' });
+    check(await db.transactions.count() === beforeCommitmentTransactions && (await StorageService.commitments.getAll())[0].id === commitment.id,
+      'A planned bill is stored separately and never posts an actual expense');
+    await StorageService.commitments.update(commitment.id, { status: 'paused' });
+    check((await StorageService.commitments.getAll())[0].status === 'paused', 'Commitments can be paused without posting a transaction');
+    await assert.rejects(StorageService.accounts.delete(cash.id), /archive/i);
+    await StorageService.commitments.delete(commitment.id);
+
+    const migrationName = `lifeos-v1-upgrade-${Date.now()}`;
+    const legacyDb = new Dexie(migrationName);
+    legacyDb.version(1).stores({ transactions: 'id, date, category, type, createdAt', categories: 'id, type, name', budgets: 'id, monthYear, categoryId',
+      savingsGoals: 'id, targetDate', savingsContributions: 'id, goalId, date', habits: 'id, frequency, createdAt', habitLogs: 'id, habitId, date, [habitId+date]',
+      goals: 'id, category, priority, status, targetDate', milestones: 'id, goalId', tasks: 'id, dueDate, priority, completed', settings: 'key' });
+    await legacyDb.open();
+    const legacyRecord = { id: 'legacy-tx', type: 'expense', amount: 1.23, category: 'Food', description: 'legacy row', date: '2026-11-01', paymentMethod: 'Cash', createdAt: stamp };
+    const legacyCategory = { id: 'legacy-cat', name: 'Food', type: 'expense', color: '#123456' };
+    const legacyBudget = { id: 'legacy-budget', monthYear: '2026-11', monthlyAmount: 100, categoryId: 'legacy-cat' };
+    const legacyTask = { id: 'legacy-task', title: 'Preserved task', dueDate: '2026-11-09', priority: 'Medium', recurring: 'None', completed: false };
+    await legacyDb.table('transactions').put(legacyRecord);
+    await legacyDb.table('categories').put(legacyCategory);
+    await legacyDb.table('budgets').put(legacyBudget);
+    await legacyDb.table('tasks').put(legacyTask);
+    await legacyDb.table('settings').put({ key: 'displayName', value: 'Existing profile' });
+    legacyDb.close();
+    const upgradedDb = new LifeOSDatabase(migrationName);
+    await upgradedDb.open();
+    check(upgradedDb.verno === 2 && JSON.stringify(await upgradedDb.transactions.get('legacy-tx')) === JSON.stringify(legacyRecord),
+      'Version 1 upgrade adds finance stores without rewriting existing transactions');
+    check(['transactions', 'categories', 'budgets', 'savingsGoals', 'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings'].every(name => upgradedDb.tables.some(table => table.name === name)),
+      'Version 2 schema retains every pre-existing Dexie table and relationship store');
+    check(JSON.stringify(await upgradedDb.categories.get('legacy-cat')) === JSON.stringify(legacyCategory) &&
+      JSON.stringify(await upgradedDb.budgets.get('legacy-budget')) === JSON.stringify(legacyBudget) &&
+      JSON.stringify(await upgradedDb.tasks.get('legacy-task')) === JSON.stringify(legacyTask) &&
+      (await upgradedDb.settings.get('displayName')).value === 'Existing profile',
+      'Version 1 upgrade preserves records from every existing store, including task and profile data');
+    check(await upgradedDb.financialAccounts.count() === 0 && await upgradedDb.accountTransfers.count() === 0 &&
+      await upgradedDb.manualExchangeRates.count() === 0 && await upgradedDb.plannedCommitments.count() === 0,
+      'Version 1 upgrade starts new financial stores empty without guessing history');
+    await upgradedDb.delete();
+
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed} legacy-internal assertions PASSED`);
   } finally {
     await db.delete();
   }

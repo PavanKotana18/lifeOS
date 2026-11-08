@@ -1,0 +1,30 @@
+package com.lifeos.personal;
+
+import androidx.test.core.app.ActivityScenario;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
+import org.junit.Test;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.runner.RunWith;
+import static org.junit.Assert.*;
+
+/** Launches the real Activity on a fresh emulator; no auth result is injected. */
+@RunWith(AndroidJUnit4.class)
+public class LifeOSLaunchSmokeTest {
+ @Test public void activityCreatesLocalCapacitorWebView() throws Exception {
+  try(ActivityScenario<MainActivity> scenario=ActivityScenario.launch(MainActivity.class)) {
+   WebViewTestSupport.checkpoint("launch: waiting for real React root");
+   WebViewTestSupport.awaitReactRoot(scenario);
+   AtomicReference<String> url = new AtomicReference<>();
+   AtomicBoolean updateMessage = new AtomicBoolean();
+   scenario.onActivity(activity -> {
+    url.set(activity.getBridge().getWebView().getUrl());
+    updateMessage.set(activity.getWindow().getDecorView().findViewWithTag(WebViewCompatibility.UPDATE_REQUIRED_TAG) != null);
+   });
+   assertNotNull("WebView must have a local app URL", url.get());
+   assertTrue("WebView must load packaged localhost assets", url.get().contains("localhost"));
+   assertFalse("Supported-runtime acceptance must not use a compatibility placeholder", updateMessage.get());
+   WebViewTestSupport.checkpoint("launch: real React root rendered");
+  }
+ }
+}

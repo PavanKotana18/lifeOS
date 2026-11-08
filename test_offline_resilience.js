@@ -15,12 +15,13 @@ function check(name, fn) {
 
 check('Application database is Dexie-backed local IndexedDB', () => {
   assert.match(db, /extends Dexie/);
-  assert.match(db, /super\('LifeOS_Database'\)/);
+  assert.match(db, /constructor\(databaseName = 'LifeOS_Database'\)/);
+  assert.match(db, /super\(databaseName\)/);
 });
 
 check('Application bootstrap reads local settings before rendering', () => {
   assert.match(main, /StorageService\.settings\.get/);
-  assert.match(main, /renderApp\(\)/);
+  assert.match(main, /renderApp\(info\.coldStart\)/);
 });
 
 check('Application initial data loading uses local StorageService and Dexie tables', () => {

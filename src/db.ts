@@ -1,17 +1,24 @@
 import Dexie, { Table } from 'dexie';
 import { createSessionManager } from './services/sessionManager';
 import { createLifeOSEncryptedRuntime } from './services/encryptedStorageRuntime';
-import type {
-  LifeOSRawDatabase,
-  LifeOSDatabaseWithTransactions,
+import {
+  BOOTSTRAP_SETTING_KEYS,
+  type LifeOSRawDatabase,
+  type LifeOSDatabaseWithTransactions
 } from './services/encryptedStorageIntegration';
 import { CryptoService } from './services/cryptoService.ts';
+import { convertMinorUnits, decimalToMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
+import { validateAccountTransfer, validateFinancialAccount, validateManualExchangeRate, validatePlannedCommitment, validatePlannedCommitmentReferences } from './services/financialAccounting';
 import {
   Transaction,
   Category,
   Budget,
   SavingsGoal,
   SavingsContribution,
+  FinancialAccount,
+  AccountTransfer,
+  ManualExchangeRate,
+  PlannedCommitment,
   Habit,
   HabitLog,
   Goal,
@@ -25,6 +32,10 @@ export class LifeOSDatabase extends Dexie {
   budgets!: Table<Budget, string>;
   savingsGoals!: Table<SavingsGoal, string>;
   savingsContributions!: Table<SavingsContribution, string>;
+  financialAccounts!: Table<FinancialAccount, string>;
+  accountTransfers!: Table<AccountTransfer, string>;
+  manualExchangeRates!: Table<ManualExchangeRate, string>;
+  plannedCommitments!: Table<PlannedCommitment, string>;
   habits!: Table<Habit, string>;
   habitLogs!: Table<HabitLog, string>;
   goals!: Table<Goal, string>;
@@ -32,14 +43,36 @@ export class LifeOSDatabase extends Dexie {
   tasks!: Table<Task, string>;
   settings!: Table<{ key: string; value: any }, string>;
 
-  constructor() {
-    super('LifeOS_Database');
+  constructor(databaseName = 'LifeOS_Database') {
+    super(databaseName);
     this.version(1).stores({
       transactions: 'id, date, category, type, createdAt',
       categories: 'id, type, name',
       budgets: 'id, monthYear, categoryId',
       savingsGoals: 'id, targetDate',
       savingsContributions: 'id, goalId, date',
+      habits: 'id, frequency, createdAt',
+      habitLogs: 'id, habitId, date, [habitId+date]',
+      goals: 'id, category, priority, status, targetDate',
+      milestones: 'id, goalId',
+      tasks: 'id, dueDate, priority, completed',
+      settings: 'key'
+    });
+    // Add only new tables and non-destructive indexes. No existing record is
+    // rewritten, re-keyed, assigned a currency, or moved during this upgrade.
+    this.version(2).stores({
+      transactions: 'id, date, category, type, createdAt, accountId',
+      // Dexie requires the complete target schema in every version. Omitting an
+      // existing store here would drop it during upgrade, so preserve every v1
+      // store and its indexes explicitly.
+      categories: 'id, type, name',
+      budgets: 'id, monthYear, categoryId',
+      savingsGoals: 'id, targetDate',
+      savingsContributions: 'id, goalId, date',
+      financialAccounts: 'id, name, type, isActive',
+      accountTransfers: 'id, fromAccountId, toAccountId, date',
+      manualExchangeRates: 'id, [baseCurrencyCode+quoteCurrencyCode], effectiveDate',
+      plannedCommitments: 'id, nextDueDate, status, categoryId, accountId',
       habits: 'id, frequency, createdAt',
       habitLogs: 'id, habitId, date, [habitId+date]',
       goals: 'id, category, priority, status, targetDate',
@@ -54,6 +87,37 @@ export class LifeOSDatabase extends Dexie {
 // Shared database instance for the existing storage layer and encrypted integration.
 export const lifeOSDatabase = new LifeOSDatabase();
 const db = lifeOSDatabase;
+
+/** Bootstrap inspection returns ciphertext metadata only, never decrypted records. */
+export async function getRecoveryChallenge() {
+  for (const table of db.tables) {
+    const row = await table.filter((item: any) => item?.__lifeosEncrypted === 1 && item.encrypted).first();
+    if (row) return { table: table.name, recordId: table.name === 'settings' ? row.key : row.id,
+      schemaVersion: 1, encrypted: row.encrypted };
+  }
+  return null;
+}
+
+export async function hasEncryptedRecords(): Promise<boolean> {
+  for (const table of db.tables) {
+    if (await table.filter((item: any) => item &&
+      (Object.prototype.hasOwnProperty.call(item, '__lifeosEncrypted') ||
+       Object.prototype.hasOwnProperty.call(item, 'encrypted'))).first()) return true;
+  }
+  return false;
+}
+
+/** Counts private rows without returning record contents during fresh-install admission. */
+export async function hasPrivateRows(): Promise<boolean> {
+  const tableCounts = await Promise.all([
+    db.transactions.count(), db.categories.count(), db.budgets.count(),
+    db.savingsGoals.count(), db.savingsContributions.count(), db.financialAccounts.count(),
+    db.accountTransfers.count(), db.manualExchangeRates.count(), db.plannedCommitments.count(), db.habits.count(),
+    db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(),
+    db.settings.where('key').noneOf([...BOOTSTRAP_SETTING_KEYS]).count(),
+  ]);
+  return tableCounts.some(count => count > 0);
+}
 
 let recordIdSequence = 0;
 
@@ -164,6 +228,7 @@ export function validateTransactionRecord(
   if (requireComplete && record.type !== 'income' && record.type !== 'expense') {
     throw new Error('Transaction type must be income or expense');
   }
+  validateMoneyMetadata(record);
   if (record.type !== undefined && record.type !== 'income' && record.type !== 'expense') {
     throw new Error('Transaction type must be income or expense');
   }
@@ -176,6 +241,27 @@ export function validateTransactionRecord(
     ) {
       throw new Error(`Transaction ${field} is required`);
     }
+  }
+}
+
+function validateMoneyMetadata(record: { currencyCode?: string; amountMinor?: string; amount?: number }): void {
+  if (record.currencyCode !== undefined) {
+    try {
+      const metadata = getCurrencyMetadata(record.currencyCode);
+      if (metadata.code !== record.currencyCode) throw new Error('Non-canonical currency code');
+    }
+    catch { throw new Error('Financial record currency must be a supported ISO 4217 code'); }
+  }
+  if (record.amountMinor !== undefined &&
+    (typeof record.amountMinor !== 'string' || !/^(0|[1-9]\d*)$/.test(record.amountMinor))) {
+    throw new Error('Financial record minor-unit amount must be a non-negative integer string');
+  }
+  if (record.amountMinor !== undefined && !record.currencyCode) {
+    throw new Error('Exact minor-unit amount requires an explicit currency code');
+  }
+  if (record.amountMinor !== undefined && record.currencyCode && record.amount !== undefined &&
+      decimalToMinorUnits(record.amount, record.currencyCode) !== BigInt(record.amountMinor)) {
+    throw new Error('Major and minor-unit financial amounts do not agree.');
   }
 }
 
@@ -240,8 +326,10 @@ export interface IDataStorage {
     addGoal(goal: Omit<SavingsGoal, 'id' | 'createdAt'>): Promise<SavingsGoal>;
     updateGoal(id: string, updates: Partial<SavingsGoal>): Promise<void>;
     deleteGoal(id: string): Promise<void>;
-    addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>, linkedExpense?: Omit<Transaction, 'id' | 'createdAt'>): Promise<void>;
-    getContributions(goalId: string): Promise<SavingsContribution[]>;
+    addContribution(contribution: Omit<SavingsContribution, 'id' | 'createdAt'>): Promise<void>;
+    updateContribution(id: string, changes: Partial<Pick<SavingsContribution, 'amount' | 'amountMinor' | 'currencyCode' | 'date' | 'notes'>>): Promise<void>;
+    deleteContribution(id: string): Promise<void>;
+    getContributions(goalId?: string): Promise<SavingsContribution[]>;
   };
   habits: {
     getAll(): Promise<Habit[]>;
@@ -280,15 +368,41 @@ export interface IDataStorage {
     clearAll(): Promise<void>;
     seedDemoData(): Promise<void>;
   };
+  accounts: {
+    getAll(): Promise<FinancialAccount[]>;
+    add(input: Omit<FinancialAccount, 'id' | 'createdAt' | 'updatedAt'>): Promise<FinancialAccount>;
+    update(id: string, updates: Partial<Omit<FinancialAccount, 'id' | 'createdAt'>>): Promise<void>;
+    archive(id: string): Promise<void>;
+    delete(id: string): Promise<void>;
+    getTransfers(accountId?: string): Promise<AccountTransfer[]>;
+    addTransfer(input: Omit<AccountTransfer, 'id' | 'createdAt' | 'updatedAt' | 'reversalOfId'> & { id?: string }): Promise<AccountTransfer>;
+    reverseTransfer(id: string, date: string): Promise<AccountTransfer>;
+    updateTransfer(id: string, updates: Partial<Omit<AccountTransfer, 'id' | 'createdAt' | 'reversalOfId'>>): Promise<void>;
+    deleteTransfer(id: string): Promise<void>;
+  };
+  exchangeRates: {
+    getAll(): Promise<ManualExchangeRate[]>;
+    add(input: Omit<ManualExchangeRate, 'id' | 'createdAt' | 'updatedAt'>): Promise<ManualExchangeRate>;
+    update(id: string, updates: Partial<Omit<ManualExchangeRate, 'id' | 'createdAt'>>): Promise<void>;
+    delete(id: string): Promise<void>;
+  };
+  commitments: {
+    getAll(): Promise<PlannedCommitment[]>;
+    add(input: Omit<PlannedCommitment, 'id' | 'createdAt' | 'updatedAt'>): Promise<PlannedCommitment>;
+    update(id: string, updates: Partial<Omit<PlannedCommitment, 'id' | 'createdAt'>>): Promise<void>;
+    delete(id: string): Promise<void>;
+  };
 }
 
 
 export function validateBackupTables(tablesData: any): string[] {
-  const names = [
+  const legacyNames = [
     'transactions', 'categories', 'budgets', 'savingsGoals',
     'savingsContributions', 'habits', 'habitLogs', 'goals',
     'milestones', 'tasks', 'settings'
   ];
+  const addedNames = ['financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments'];
+  const names = [...legacyNames, ...addedNames];
 
   const fail = (table: string, index: number, field: string): never => {
     throw new Error(`Invalid backup: ${table}[${index}].${field}`);
@@ -335,7 +449,12 @@ export function validateBackupTables(tablesData: any): string[] {
   };
 
   if (!obj(tablesData)) throw new Error('Invalid backup tables object');
-  for (const name of names) {
+  for (const name of legacyNames) {
+    if (!Array.isArray(tablesData[name])) throw new Error(`Invalid backup: ${name} must be an array`);
+    ids[name] = unique(tablesData[name], name === 'settings' ? 'key' : 'id', name);
+  }
+  for (const name of addedNames) {
+    if (tablesData[name] === undefined) tablesData[name] = [];
     if (!Array.isArray(tablesData[name])) throw new Error(`Invalid backup: ${name} must be an array`);
     ids[name] = unique(tablesData[name], name === 'settings' ? 'key' : 'id', name);
   }
@@ -352,6 +471,94 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'occurredAt', 'transactions', i);
     optionalInstant(r, 'updatedAt', 'transactions', i);
     optionalBoolean(r, 'isRecurring', 'transactions', i);
+    try { validateMoneyMetadata(r); } catch { fail('transactions', i, 'currency/amountMinor'); }
+    optionalString(r, 'accountId', 'transactions', i);
+    if (r.accountId && !ids.financialAccounts.has(r.accountId)) fail('transactions', i, 'accountId reference');
+  });
+
+  check('financialAccounts', (r, i) => {
+    requiredString(r, 'name', 'financialAccounts', i);
+    if (!enumValue(r.type, ['cash', 'bank', 'credit-card', 'wallet', 'savings', 'other'])) fail('financialAccounts', i, 'type');
+    requiredString(r, 'currencyCode', 'financialAccounts', i);
+    try { validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.openingBalanceMinor }); } catch { fail('financialAccounts', i, 'currency/openingBalanceMinor'); }
+    if (typeof r.isActive !== 'boolean') fail('financialAccounts', i, 'isActive');
+    requiredString(r, 'createdAt', 'financialAccounts', i);
+    optionalString(r, 'description', 'financialAccounts', i);
+    optionalInstant(r, 'updatedAt', 'financialAccounts', i);
+  });
+
+  check('accountTransfers', (r, i) => {
+    requiredString(r, 'fromAccountId', 'accountTransfers', i);
+    requiredString(r, 'toAccountId', 'accountTransfers', i);
+    if (r.fromAccountId === r.toAccountId) fail('accountTransfers', i, 'accounts must differ');
+    const source = tablesData.financialAccounts.find((account: any) => account.id === r.fromAccountId);
+    const target = tablesData.financialAccounts.find((account: any) => account.id === r.toAccountId);
+    if (!source || !target) fail('accountTransfers', i, 'account reference');
+    if (r.fromCurrencyCode !== source.currencyCode || r.toCurrencyCode !== target.currencyCode) fail('accountTransfers', i, 'currency/account mismatch');
+    try {
+      validateMoneyMetadata({ currencyCode: r.fromCurrencyCode, amountMinor: r.fromAmountMinor });
+      validateMoneyMetadata({ currencyCode: r.toCurrencyCode, amountMinor: r.toAmountMinor });
+      const fromMinor = BigInt(r.fromAmountMinor), toMinor = BigInt(r.toAmountMinor);
+      if (fromMinor <= 0n || toMinor <= 0n) fail('accountTransfers', i, 'amounts must be positive');
+      if (r.reversalOfId) {
+        if (r.exchangeRate !== undefined) fail('accountTransfers', i, 'reversal exchangeRate');
+      } else if (r.fromCurrencyCode === r.toCurrencyCode) {
+        if (fromMinor !== toMinor || r.exchangeRate !== undefined) fail('accountTransfers', i, 'same-currency amounts/rate');
+      } else if (typeof r.exchangeRate !== 'string' || convertMinorUnits(fromMinor, r.fromCurrencyCode, r.toCurrencyCode, r.exchangeRate) !== toMinor) {
+        fail('accountTransfers', i, 'exchangeRate conversion');
+      }
+    } catch { fail('accountTransfers', i, 'amount/currency/rate'); }
+    requiredDate(r, 'date', 'accountTransfers', i);
+    requiredString(r, 'createdAt', 'accountTransfers', i);
+    optionalString(r, 'notes', 'accountTransfers', i);
+    optionalString(r, 'reversalOfId', 'accountTransfers', i);
+    optionalInstant(r, 'updatedAt', 'accountTransfers', i);
+  });
+  const reversedTransferIds = new Set<string>();
+  tablesData.accountTransfers.forEach((reversal: any, i: number) => {
+    if (!reversal.reversalOfId) return;
+    const original = tablesData.accountTransfers.find((row: any) => row.id === reversal.reversalOfId);
+    if (!original || original.reversalOfId || reversedTransferIds.has(original.id) ||
+        reversal.fromAccountId !== original.toAccountId || reversal.toAccountId !== original.fromAccountId ||
+        reversal.fromAmountMinor !== original.toAmountMinor || reversal.toAmountMinor !== original.fromAmountMinor ||
+        reversal.fromCurrencyCode !== original.toCurrencyCode || reversal.toCurrencyCode !== original.fromCurrencyCode) {
+      fail('accountTransfers', i, 'reversal link or exact counter-entry');
+    }
+    reversedTransferIds.add(original.id);
+  });
+
+  check('manualExchangeRates', (r, i) => {
+    requiredString(r, 'baseCurrencyCode', 'manualExchangeRates', i);
+    requiredString(r, 'quoteCurrencyCode', 'manualExchangeRates', i);
+    if (r.baseCurrencyCode === r.quoteCurrencyCode) fail('manualExchangeRates', i, 'currency pair must differ');
+    try { getCurrencyMetadata(r.baseCurrencyCode); getCurrencyMetadata(r.quoteCurrencyCode); convertMinorUnits(1n, r.baseCurrencyCode, r.quoteCurrencyCode, r.rate); }
+    catch { fail('manualExchangeRates', i, 'currency/rate'); }
+    requiredDate(r, 'effectiveDate', 'manualExchangeRates', i);
+    requiredString(r, 'createdAt', 'manualExchangeRates', i);
+    optionalString(r, 'sourceLabel', 'manualExchangeRates', i);
+    optionalInstant(r, 'updatedAt', 'manualExchangeRates', i);
+  });
+  const rateKeys = new Set<string>();
+  tablesData.manualExchangeRates.forEach((r: any, i: number) => {
+    const key = `${r.baseCurrencyCode}|${r.quoteCurrencyCode}|${r.effectiveDate}`;
+    if (rateKeys.has(key)) fail('manualExchangeRates', i, 'duplicate currency pair/effectiveDate');
+    rateKeys.add(key);
+  });
+
+  check('plannedCommitments', (r, i) => {
+    requiredString(r, 'title', 'plannedCommitments', i);
+    requiredNumber(r, 'amount', 'plannedCommitments', i);
+    try { validateMoneyMetadata(r); } catch { fail('plannedCommitments', i, 'currency/amountMinor'); }
+    if (!enumValue(r.frequency, ['weekly', 'monthly', 'yearly'])) fail('plannedCommitments', i, 'frequency');
+    requiredDate(r, 'nextDueDate', 'plannedCommitments', i);
+    if (!enumValue(r.status, ['active', 'paused'])) fail('plannedCommitments', i, 'status');
+    requiredString(r, 'createdAt', 'plannedCommitments', i);
+    optionalString(r, 'notes', 'plannedCommitments', i);
+    optionalString(r, 'categoryId', 'plannedCommitments', i);
+    optionalString(r, 'accountId', 'plannedCommitments', i);
+    if (r.categoryId && !ids.categories.has(r.categoryId)) fail('plannedCommitments', i, 'categoryId reference');
+    if (r.accountId && !ids.financialAccounts.has(r.accountId)) fail('plannedCommitments', i, 'accountId reference');
+    optionalInstant(r, 'updatedAt', 'plannedCommitments', i);
   });
 
   check('categories', (r, i) => {
@@ -365,6 +572,7 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredNumber(r, 'monthlyAmount', 'budgets', i);
     if (!month(r.monthYear)) fail('budgets', i, 'monthYear');
     requiredString(r, 'createdAt', 'budgets', i);
+    try { validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.amountMinor, amount: r.monthlyAmount }); } catch { fail('budgets', i, 'currency/amountMinor'); }
     optionalString(r, 'categoryId', 'budgets', i);
     if (r.categoryId && !ids.categories.has(r.categoryId)) fail('budgets', i, 'categoryId reference');
   });
@@ -375,6 +583,10 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredNumber(r, 'currentAmount', 'savingsGoals', i);
     requiredDate(r, 'targetDate', 'savingsGoals', i);
     requiredString(r, 'createdAt', 'savingsGoals', i);
+    try {
+      validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.targetAmountMinor, amount: r.targetAmount });
+      validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.currentAmountMinor, amount: r.currentAmount });
+    } catch { fail('savingsGoals', i, 'currency/amountMinor'); }
     optionalString(r, 'category', 'savingsGoals', i);
     optionalString(r, 'notes', 'savingsGoals', i);
   });
@@ -385,6 +597,7 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredNumber(r, 'amount', 'savingsContributions', i);
     requiredDate(r, 'date', 'savingsContributions', i);
     requiredString(r, 'createdAt', 'savingsContributions', i);
+    try { validateMoneyMetadata(r); } catch { fail('savingsContributions', i, 'currency/amountMinor'); }
     optionalString(r, 'notes', 'savingsContributions', i);
   });
 
@@ -474,23 +687,33 @@ const rawStorageService: IDataStorage = {
       return db.transactions.get(id);
     },
     async add(tx) {
-      return db.transaction('rw', db.transactions, db.categories, async () => {
+      return db.transaction('rw', db.transactions, db.categories, db.financialAccounts, async () => {
         validateTransactionRecord(tx, true);
         await assertTransactionCategory(tx.category, tx.type);
+        if (tx.accountId) {
+          const account = await db.financialAccounts.get(tx.accountId);
+          if (!account || !account.isActive) throw new Error('Choose an active financial account.');
+          if (!tx.currencyCode || tx.currencyCode !== account.currencyCode) throw new Error('An assigned transaction must use the account currency.');
+        }
         const id = createRecordId('tx');
         const createdAt = new Date().toISOString();
-        const record: Transaction = { ...tx, id, createdAt, occurredAt: tx.occurredAt || createdAt };
+        const record: Transaction = { ...tx, id, createdAt };
         await db.transactions.add(record);
         return record;
       });
     },
     async update(id, updates) {
-      await db.transaction('rw', db.transactions, db.categories, async () => {
+      await db.transaction('rw', db.transactions, db.categories, db.financialAccounts, async () => {
         const existing = await db.transactions.get(id);
         if (!existing) return;
         const updated = { ...existing, ...updates };
         validateTransactionRecord(updated, true);
         await assertTransactionCategory(updated.category, updated.type, existing);
+        if (updated.accountId) {
+          const account = await db.financialAccounts.get(updated.accountId);
+          if (!account || (!account.isActive && existing.accountId !== updated.accountId)) throw new Error('Choose an active financial account.');
+          if (!updated.currencyCode || updated.currencyCode !== account.currencyCode) throw new Error('An assigned transaction must use the account currency.');
+        }
         const safeUpdates = { ...updates };
         delete safeUpdates.id;
         delete safeUpdates.createdAt;
@@ -631,14 +854,21 @@ const rawStorageService: IDataStorage = {
       return db.budgets.filter(b => b.monthYear === month).toArray();
     },
     async upsert(budget) {
+    validateMoneyMetadata({ ...budget, amount: budget.monthlyAmount });
       return db.transaction('rw', db.budgets, async () => {
         const existing = await db.budgets
           .filter(b => b.monthYear === budget.monthYear && b.categoryId === budget.categoryId)
           .first();
 
         if (existing) {
-          await db.budgets.update(existing.id, { monthlyAmount: budget.monthlyAmount });
-          return { ...existing, monthlyAmount: budget.monthlyAmount };
+          if (existing.currencyCode && budget.currencyCode && existing.currencyCode !== budget.currencyCode) {
+            throw new Error('A budget cannot change currency without explicit reconciliation.');
+          }
+          const updates = { monthlyAmount: budget.monthlyAmount,
+            ...(budget.amountMinor !== undefined ? { amountMinor: budget.amountMinor } : {}),
+            ...(budget.currencyCode !== undefined ? { currencyCode: budget.currencyCode } : {}) };
+          await db.budgets.update(existing.id, updates);
+          return { ...existing, ...updates };
         }
 
         const record: Budget = {
@@ -659,6 +889,8 @@ const rawStorageService: IDataStorage = {
       return db.savingsGoals.toArray();
     },
     async addGoal(goal) {
+      validateMoneyMetadata({ currencyCode: goal.currencyCode, amountMinor: goal.targetAmountMinor, amount: goal.targetAmount });
+      validateMoneyMetadata({ currencyCode: goal.currencyCode, amountMinor: goal.currentAmountMinor, amount: goal.currentAmount });
       const id = createRecordId('sg');
       const record: SavingsGoal = { ...goal, id, createdAt: new Date().toISOString() };
       await db.savingsGoals.add(record);
@@ -676,7 +908,7 @@ const rawStorageService: IDataStorage = {
         await db.savingsContributions.where('goalId').equals(id).delete();
       });
     },
-    async addContribution(contribution, linkedExpense) {
+    async addContribution(contribution) {
       if (!Number.isFinite(contribution.amount) || contribution.amount <= 0) {
         throw new Error('Savings contribution amount must be a positive finite number');
       }
@@ -685,38 +917,29 @@ const rawStorageService: IDataStorage = {
         'rw',
         db.savingsGoals,
         db.savingsContributions,
-        db.transactions,
-        db.categories,
         async () => {
           const goal = await db.savingsGoals.get(contribution.goalId);
           if (!goal) throw new Error('Savings goal not found');
 
-          if (linkedExpense) {
-            if (
-              linkedExpense.type !== 'expense' ||
-              linkedExpense.amount !== contribution.amount ||
-              linkedExpense.date !== contribution.date
-            ) {
-              throw new Error('Linked savings transfer must match the contribution amount and date');
-            }
-
-            validateTransactionRecord(linkedExpense, true);
-            await assertTransactionCategory(linkedExpense.category, 'expense');
-
-            const transactionId = createRecordId('tx');
-            const createdAt = new Date().toISOString();
-            const transactionRecord: Transaction = {
-              ...linkedExpense,
-              id: transactionId,
-              createdAt,
-              occurredAt: linkedExpense.occurredAt || createdAt
-            };
-            await db.transactions.add(transactionRecord);
+          const currencyCode = contribution.currencyCode || goal.currencyCode;
+          if (goal.currencyCode && contribution.currencyCode && goal.currencyCode !== contribution.currencyCode) {
+            throw new Error('Contribution currency must match its savings goal currency.');
           }
+          validateMoneyMetadata({ currencyCode, amountMinor: contribution.amountMinor, amount: contribution.amount });
+          const exactContributionMinor = currencyCode
+            ? (contribution.amountMinor ? BigInt(contribution.amountMinor) : decimalToMinorUnits(contribution.amount, currencyCode))
+            : null;
+          const currentMinor = exactContributionMinor === null ? null :
+            (goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode!));
 
           const id = createRecordId('sc');
-          await db.savingsGoals.update(goal.id, {
+          const nextMinor = currentMinor === null || exactContributionMinor === null ? null : currentMinor + exactContributionMinor;
+          await db.savingsGoals.update(goal.id, nextMinor === null ? {
             currentAmount: (goal.currentAmount || 0) + contribution.amount
+          } : {
+            currentAmount: Number(minorUnitsToDecimal(nextMinor, currencyCode!)),
+            currentAmountMinor: nextMinor.toString(10),
+            currencyCode
           });
           await db.savingsContributions.add({
             ...contribution, id, createdAt: new Date().toISOString()
@@ -724,9 +947,204 @@ const rawStorageService: IDataStorage = {
         }
       );
     },
+    async updateContribution(id, changes) {
+      validateMoneyMetadata(changes);
+      if (changes.amount !== undefined && (!Number.isFinite(changes.amount) || changes.amount <= 0)) throw new Error('Contribution amount must be greater than zero.');
+      if (changes.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(changes.date)) throw new Error('Contribution date must use YYYY-MM-DD format.');
+      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
+        const existing = await db.savingsContributions.get(id);
+        if (!existing) return;
+        const goal = await db.savingsGoals.get(existing.goalId);
+        if (!goal) throw new Error('Savings goal missing for contribution.');
+        const currencyCode = changes.currencyCode || existing.currencyCode || goal.currencyCode;
+        if (goal.currencyCode && currencyCode && goal.currencyCode !== currencyCode) throw new Error('Contribution currency must match its savings goal currency.');
+        if (changes.currencyCode && existing.currencyCode && changes.currencyCode !== existing.currencyCode) throw new Error('Changing contribution currency requires an explicit conversion.');
+        let nextGoal: Partial<SavingsGoal>;
+        if (currencyCode) {
+          const oldMinor = existing.amountMinor ? BigInt(existing.amountMinor) : decimalToMinorUnits(existing.amount, currencyCode);
+          const newAmount = changes.amount ?? existing.amount;
+          const newMinor = changes.amountMinor ? BigInt(changes.amountMinor) : decimalToMinorUnits(newAmount, currencyCode);
+          const currentMinor = goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode);
+          const nextMinor = currentMinor - oldMinor + newMinor;
+          if (nextMinor < 0n) throw new Error('Contribution history does not reconcile with the saved goal amount.');
+          nextGoal = { currentAmountMinor: nextMinor.toString(10), currentAmount: Number(minorUnitsToDecimal(nextMinor, currencyCode)), currencyCode };
+          changes = { ...changes, amount: Number(minorUnitsToDecimal(newMinor, currencyCode)), amountMinor: newMinor.toString(10), currencyCode };
+        } else {
+          const newAmount = changes.amount ?? existing.amount;
+          const next = goal.currentAmount - existing.amount + newAmount;
+          if (!Number.isFinite(newAmount) || newAmount <= 0 || next < -1e-9) throw new Error('Contribution edit would make the savings total invalid.');
+          nextGoal = { currentAmount: Math.max(0, next) };
+        }
+        const safe = { ...changes };
+        delete (safe as any).id; delete (safe as any).goalId; delete (safe as any).createdAt;
+        await db.savingsGoals.update(goal.id, nextGoal);
+        await db.savingsContributions.update(id, safe);
+      });
+    },
+    async deleteContribution(id) {
+      await db.transaction('rw', db.savingsGoals, db.savingsContributions, async () => {
+        const contribution = await db.savingsContributions.get(id);
+        if (!contribution) return;
+        const goal = await db.savingsGoals.get(contribution.goalId);
+        if (!goal) throw new Error('Savings goal missing for contribution.');
+        const currencyCode = contribution.currencyCode || goal.currencyCode;
+        if (currencyCode) {
+          const amountMinor = contribution.amountMinor ? BigInt(contribution.amountMinor) : decimalToMinorUnits(contribution.amount, currencyCode);
+          const currentMinor = goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode);
+          const nextMinor = currentMinor - amountMinor;
+          if (nextMinor < 0n) throw new Error('Contribution history does not reconcile with the saved goal amount.');
+          await db.savingsGoals.update(goal.id, { currentAmountMinor: nextMinor.toString(10), currentAmount: Number(minorUnitsToDecimal(nextMinor, currencyCode)) });
+        } else {
+          const next = goal.currentAmount - contribution.amount;
+          if (next < -1e-9) throw new Error('Contribution history does not reconcile with the saved goal amount.');
+          await db.savingsGoals.update(goal.id, { currentAmount: Math.max(0, next) });
+        }
+        await db.savingsContributions.delete(id);
+      });
+    },
     async getContributions(goalId) {
-      return db.savingsContributions.where('goalId').equals(goalId).reverse().sortBy('date');
+      const rows = goalId ? await db.savingsContributions.where('goalId').equals(goalId).toArray() : await db.savingsContributions.toArray();
+      return rows.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
     }
+  },
+  accounts: {
+    async getAll() { return (await db.financialAccounts.toArray()).sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name)); },
+    async add(input) {
+      validateFinancialAccount(input);
+      const record: FinancialAccount = { ...input, name: input.name.trim(), description: input.description?.trim() || undefined, id: createRecordId('acct'), createdAt: new Date().toISOString() };
+      await db.financialAccounts.add(record);
+      return record;
+    },
+    async update(id, updates) {
+      await db.transaction('rw', db.financialAccounts, db.transactions, db.accountTransfers, async () => {
+        const existing = await db.financialAccounts.get(id);
+        if (!existing) return;
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        validateFinancialAccount(updated);
+        if (updated.currencyCode !== existing.currencyCode || updated.openingBalanceMinor !== existing.openingBalanceMinor) {
+          const hasTransactions = await db.transactions.where('accountId').equals(id).count();
+          const hasTransfers = await db.accountTransfers.filter(row => row.fromAccountId === id || row.toAccountId === id).count();
+          if (hasTransactions || hasTransfers) {
+            if (updated.currencyCode !== existing.currencyCode) throw new Error('An account currency cannot change after it has financial activity. Create another account instead.');
+            throw new Error('An opening balance cannot change after account activity exists because that would rewrite historical balances. Keep the account for history and create another account if needed.');
+          }
+        }
+        await db.financialAccounts.put({ ...updated, name: updated.name.trim(), description: updated.description?.trim() || undefined });
+      });
+    },
+    async archive(id) { await db.financialAccounts.update(id, { isActive: false, updatedAt: new Date().toISOString() }); },
+    async delete(id) {
+      await db.transaction('rw', db.financialAccounts, db.transactions, db.accountTransfers, db.plannedCommitments, async () => {
+        const hasTransactions = await db.transactions.where('accountId').equals(id).count();
+        const hasTransfers = await db.accountTransfers.filter(row => row.fromAccountId === id || row.toAccountId === id).count();
+        const hasCommitments = await db.plannedCommitments.where('accountId').equals(id).count();
+        if (hasTransactions || hasTransfers || hasCommitments) throw new Error('This account has financial history. Archive it to keep that history intact.');
+        const account = await db.financialAccounts.get(id);
+        if (account && BigInt(account.openingBalanceMinor) !== 0n) throw new Error('This account has a non-zero opening balance. Archive it to preserve that amount.');
+        await db.financialAccounts.delete(id);
+      });
+    },
+    async getTransfers(accountId) {
+      return (await db.accountTransfers.toArray()).filter(row => !accountId || row.fromAccountId === accountId || row.toAccountId === accountId)
+        .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
+    },
+    async addTransfer(input) {
+      if ((input as AccountTransfer).reversalOfId) throw new Error('Reversals must be created from an existing transfer.');
+      const record: AccountTransfer = { ...input, id: input.id || createRecordId('transfer'), createdAt: new Date().toISOString() };
+      await db.transaction('rw', db.financialAccounts, db.accountTransfers, async () => {
+        const [source, destination] = await Promise.all([db.financialAccounts.get(record.fromAccountId), db.financialAccounts.get(record.toAccountId)]);
+        if (!source || !destination) throw new Error('Both transfer accounts must exist.');
+        if (!source.isActive || !destination.isActive) throw new Error('Archived accounts cannot be used for new transfers.');
+        validateAccountTransfer(record, source, destination);
+        await db.accountTransfers.add(record);
+      });
+      return record;
+    },
+    async reverseTransfer(id, date) {
+      const record = await db.transaction('rw', db.financialAccounts, db.accountTransfers, async () => {
+        const original = await db.accountTransfers.get(id);
+        if (!original || original.reversalOfId) throw new Error('Only an original transfer can be reversed.');
+        if (await db.accountTransfers.filter(row => row.reversalOfId === id).count()) throw new Error('This transfer has already been reversed.');
+        const [source, destination] = await Promise.all([db.financialAccounts.get(original.toAccountId), db.financialAccounts.get(original.fromAccountId)]);
+        if (!source || !destination) throw new Error('Transfer accounts are unavailable; no reversal was created.');
+        const reversal: AccountTransfer = { id: createRecordId('transfer-reversal'), fromAccountId: original.toAccountId, toAccountId: original.fromAccountId,
+          fromAmountMinor: original.toAmountMinor, toAmountMinor: original.fromAmountMinor, fromCurrencyCode: original.toCurrencyCode, toCurrencyCode: original.fromCurrencyCode,
+          reversalOfId: original.id, date, notes: `Reversal of ${original.id}`, createdAt: new Date().toISOString() };
+        validateAccountTransfer(reversal, source, destination);
+        await db.accountTransfers.add(reversal);
+        return reversal;
+      });
+      return record;
+    },
+    async updateTransfer(id, updates) {
+      await db.transaction('rw', db.financialAccounts, db.accountTransfers, async () => {
+        const existing = await db.accountTransfers.get(id);
+        if (!existing) return;
+        const allTransfers = await db.accountTransfers.toArray();
+        if (existing.reversalOfId || allTransfers.some(row => row.reversalOfId === id)) throw new Error('A reversed transfer is locked to preserve its audit trail. Remove its reversal before editing.');
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        const [source, destination] = await Promise.all([db.financialAccounts.get(updated.fromAccountId), db.financialAccounts.get(updated.toAccountId)]);
+        if (!source || !destination) throw new Error('Both transfer accounts must exist.');
+        validateAccountTransfer(updated, source, destination);
+        await db.accountTransfers.put(updated);
+      });
+    },
+    async deleteTransfer(id) {
+      await db.transaction('rw', db.accountTransfers, async () => {
+        const existing = await db.accountTransfers.get(id);
+        if (!existing) return;
+        if (!existing.reversalOfId && await db.accountTransfers.filter(row => row.reversalOfId === id).count()) throw new Error('Remove the reversal before deleting the original transfer.');
+        await db.accountTransfers.delete(id);
+      });
+    }
+  },
+  exchangeRates: {
+    async getAll() { return (await db.manualExchangeRates.toArray()).sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || a.baseCurrencyCode.localeCompare(b.baseCurrencyCode)); },
+    async add(input) {
+      const record: ManualExchangeRate = { ...input, id: createRecordId('fx'), createdAt: new Date().toISOString() };
+      validateManualExchangeRate(record);
+      await db.transaction('rw', db.manualExchangeRates, async () => {
+        const duplicate = await db.manualExchangeRates.where('[baseCurrencyCode+quoteCurrencyCode]').equals([record.baseCurrencyCode, record.quoteCurrencyCode]).filter(row => row.effectiveDate === record.effectiveDate).count();
+        if (duplicate) throw new Error('A rate already exists for this currency pair and date. Edit it instead.');
+        await db.manualExchangeRates.add(record);
+      });
+      return record;
+    },
+    async update(id, updates) {
+      await db.transaction('rw', db.manualExchangeRates, async () => {
+        const existing = await db.manualExchangeRates.get(id);
+        if (!existing) return;
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        validateManualExchangeRate(updated);
+        const duplicate = await db.manualExchangeRates.where('[baseCurrencyCode+quoteCurrencyCode]').equals([updated.baseCurrencyCode, updated.quoteCurrencyCode]).filter(row => row.id !== id && row.effectiveDate === updated.effectiveDate).count();
+        if (duplicate) throw new Error('A rate already exists for this currency pair and date.');
+        await db.manualExchangeRates.put(updated);
+      });
+    },
+    async delete(id) { await db.manualExchangeRates.delete(id); }
+  },
+  commitments: {
+    async getAll() { return (await db.plannedCommitments.toArray()).sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.title.localeCompare(b.title)); },
+    async add(input) {
+      const record: PlannedCommitment = { ...input, id: createRecordId('commitment'), createdAt: new Date().toISOString() };
+      validatePlannedCommitment(record);
+      await db.transaction('rw', db.plannedCommitments, db.financialAccounts, db.categories, async () => {
+        validatePlannedCommitmentReferences(record, await db.financialAccounts.toArray(), await db.categories.toArray());
+        await db.plannedCommitments.add(record);
+      });
+      return record;
+    },
+    async update(id, updates) {
+      await db.transaction('rw', db.plannedCommitments, db.financialAccounts, db.categories, async () => {
+        const existing = await db.plannedCommitments.get(id);
+        if (!existing) return;
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        validatePlannedCommitment(updated);
+        validatePlannedCommitmentReferences(updated, await db.financialAccounts.toArray(), await db.categories.toArray());
+        await db.plannedCommitments.put(updated);
+      });
+    },
+    async delete(id) { await db.plannedCommitments.delete(id); }
   },
   habits: {
     async getAll() {
@@ -847,7 +1265,10 @@ const rawStorageService: IDataStorage = {
     async addMilestone(milestone) {
       const id = createRecordId('m');
       const record: Milestone = { ...milestone, id };
-      await db.milestones.add(record);
+      await db.transaction('rw', db.goals, db.milestones, async () => {
+        if (!(await db.goals.get(record.goalId))) throw new Error('Milestone goal does not exist.');
+        await db.milestones.add(record);
+      });
       return record;
     },
     async toggleMilestone(id, completed) {
@@ -988,6 +1409,7 @@ const rawStorageService: IDataStorage = {
         db.budgets.count(),
         db.savingsGoals.count(),
         db.savingsContributions.count(),
+        db.financialAccounts.count(), db.accountTransfers.count(), db.manualExchangeRates.count(), db.plannedCommitments.count(),
         db.habits.count(),
         db.habitLogs.count(),
         db.goals.count(),
@@ -1000,7 +1422,7 @@ const rawStorageService: IDataStorage = {
     async exportData() {
       const tables = [
         db.transactions, db.categories, db.budgets, db.savingsGoals,
-        db.savingsContributions, db.habits, db.habitLogs, db.goals,
+        db.savingsContributions, db.financialAccounts, db.accountTransfers, db.manualExchangeRates, db.plannedCommitments, db.habits, db.habitLogs, db.goals,
         db.milestones, db.tasks, db.settings
       ];
       return db.transaction('r', tables, async () => {
@@ -1014,6 +1436,10 @@ const rawStorageService: IDataStorage = {
             budgets: await db.budgets.toArray(),
             savingsGoals: await db.savingsGoals.toArray(),
             savingsContributions: await db.savingsContributions.toArray(),
+            financialAccounts: await db.financialAccounts.toArray(),
+            accountTransfers: await db.accountTransfers.toArray(),
+            manualExchangeRates: await db.manualExchangeRates.toArray(),
+            plannedCommitments: await db.plannedCommitments.toArray(),
             habits: await db.habits.toArray(),
             habitLogs: await db.habitLogs.toArray(),
             goals: await db.goals.toArray(),
@@ -1042,6 +1468,7 @@ const rawStorageService: IDataStorage = {
 
       const existingCounts = await Promise.all([
         db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(),
+        db.financialAccounts.count(), db.accountTransfers.count(), db.manualExchangeRates.count(), db.plannedCommitments.count(),
         db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(), db.settings.count()
       ]);
       if (existingCounts.some(count => count > 0) && !options.replaceExisting) {
@@ -1055,6 +1482,7 @@ const rawStorageService: IDataStorage = {
         db.budgets,
         db.savingsGoals,
         db.savingsContributions,
+        db.financialAccounts, db.accountTransfers, db.manualExchangeRates, db.plannedCommitments,
         db.habits,
         db.habitLogs,
         db.goals,
@@ -1064,7 +1492,7 @@ const rawStorageService: IDataStorage = {
       ], async () => {
         const liveCounts = await Promise.all([
           db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(),
-          db.savingsContributions.count(), db.habits.count(), db.habitLogs.count(), db.goals.count(),
+          db.savingsContributions.count(), db.financialAccounts.count(), db.accountTransfers.count(), db.manualExchangeRates.count(), db.plannedCommitments.count(), db.habits.count(), db.habitLogs.count(), db.goals.count(),
           db.milestones.count(), db.tasks.count(), db.settings.count()
         ]);
         if (liveCounts.some(count => count > 0) && !options.replaceExisting) {
@@ -1086,7 +1514,7 @@ const rawStorageService: IDataStorage = {
     async clearAll() {
       const tables = [
         db.transactions, db.categories, db.budgets, db.savingsGoals,
-        db.savingsContributions, db.habits, db.habitLogs, db.goals,
+        db.savingsContributions, db.financialAccounts, db.accountTransfers, db.manualExchangeRates, db.plannedCommitments, db.habits, db.habitLogs, db.goals,
         db.milestones, db.tasks, db.settings
       ];
       await db.transaction('rw', tables, async () => {
@@ -1201,9 +1629,10 @@ let encryptedStorageActivated = false;
 /**
  * Migrate existing records and activate encrypted storage.
  *
- * The native key must already be unlocked and the caller must have completed
- * recovery provisioning. This function never provisions a key or falls back
- * to raw storage after migration failure.
+ * The native key must already be unlocked and the user must have either
+ * confirmed recovery-kit setup or explicitly deferred it during first setup.
+ * This function never provisions a key or falls back to raw storage after
+ * migration failure.
  */
 export async function activateEncryptedStorage(): Promise<void> {
   if (encryptedStorageActivated) return;
@@ -1224,15 +1653,15 @@ export async function activateEncryptedStorage(): Promise<void> {
     throw new Error('The LifeOS encryption key is not available in Android Keystore.');
   }
 
-  if (!keyState.recoveryProvisioned) {
-    throw new Error('Recovery protection has not been confirmed. Complete recovery setup before activating encrypted storage.');
+  if (!keyState.recoveryProvisioned && !keyState.recoveryDeferred) {
+    throw new Error('Recovery protection has not been confirmed or explicitly deferred. Encrypted storage remains locked.');
   }
 
   if (!keyState.unlocked || !(await CryptoService.isUnlocked())) {
     throw new Error('The native encryption key is locked. Authenticate before activating encrypted storage.');
   }
 
-  sessionManager.lock();
+  const migrationGeneration = sessionManager.lock();
   await sessionManager.waitForIdle();
 
   try {
@@ -1243,8 +1672,9 @@ export async function activateEncryptedStorage(): Promise<void> {
     const verifiedState = await CryptoService.getKeyState();
     if (
       !verifiedState.metadataConsistent ||
+      verifiedState.recoveryNeedsRebind ||
       !verifiedState.keyProvisioned ||
-      !verifiedState.recoveryProvisioned ||
+      (!verifiedState.recoveryProvisioned && !verifiedState.recoveryDeferred) ||
       !verifiedState.keystoreAliasPresent ||
       !verifiedState.unlocked ||
       !(await CryptoService.isUnlocked())
@@ -1252,6 +1682,9 @@ export async function activateEncryptedStorage(): Promise<void> {
       throw new Error('Native encryption state changed during migration. Storage activation was blocked.');
     }
 
+    if (sessionManager.getGeneration() !== migrationGeneration) {
+      throw new Error('Encrypted migration expired after app lock. Retry in the foreground.');
+    }
     activeStorageTarget = encryptedStorageRuntime.storage as IDataStorage;
     encryptedStorageActivated = true;
     sessionManager.unlock();
@@ -1274,13 +1707,6 @@ export function isEncryptedStorageActivated(): boolean {
   return encryptedStorageActivated;
 }
 
-const BOOTSTRAP_SETTING_KEYS = new Set([
-  'theme',
-  'biometricLockEnabled',
-  'onboardingCompleted',
-  'onboardingStarted',
-  'onboardingStep'
-]);
 
 const READ_OPERATIONS: Record<string, Set<string>> = {
   transactions: new Set(['getAll', 'getById', 'filter']),
@@ -1330,6 +1756,13 @@ function protectStorage<T extends object>(namespace = ''): T {
           (property === 'get' || property === 'set') &&
           typeof args[0] === 'string' &&
           BOOTSTRAP_SETTING_KEYS.has(args[0]);
+
+        // Session authorization alone never permits access to the legacy
+        // plaintext backend. This also covers callbacks retained by the UI.
+        if (!isBootstrapSetting && !encryptedStorageActivated) {
+          sessionManager.lock();
+          throw new Error('Encrypted storage is not ready. Complete secure provisioning before opening private data.');
+        }
 
         const token = isBootstrapSetting
           ? null

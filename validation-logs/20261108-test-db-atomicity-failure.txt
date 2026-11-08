@@ -1,0 +1,9 @@
+Command: node test_db_atomicity.js && node test_encryption_admission.js && node test_encrypted_atomicity.js
+Result: STOPPED at node test_db_atomicity.js; later commands in the chain did not execute.
+
+Exact failure reported by the test process:
+DATABASE ATOMICITY TEST FAILED: Error: The selected category does not exist. Choose an available category.
+    at assertTransactionCategory (/data/data/com.termux/files/home/lifeos2-release-candidate-20261108/src/db.atomicity.cjs:180:11)
+    at async Transaction.<anonymous> (/data/data/com.termux/files/home/lifeos2-release-candidate-20261108/src/db.atomicity.cjs:393:17)
+
+The failure is from category validation during a raw transaction insertion. The stack excerpt does not identify which test call reached that insertion; the exact caller remains unisolated. No production source was changed.
