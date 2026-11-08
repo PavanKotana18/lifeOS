@@ -2,7 +2,7 @@ name: LifeOS Android emulator QA
 
 on:
   push:
-    branches: [qa/lifeos-android-workflow-coverage-20261106]
+    branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos2-release-candidate-20261108]
   pull_request:
     branches: [qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107]
     types: [opened, synchronize, reopened, ready_for_review]
@@ -29,10 +29,33 @@ jobs:
           distribution: temurin
           java-version: '17'
       - run: npm ci
-      - run: npm run test:all
-      - run: npx --no-install tsc --noEmit
-      - run: npm run build
+      - run: mkdir -p candidate-ci-evidence
+      - name: Run complete npm suite
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee candidate-ci-evidence/npm-test.log
+      - name: Run Sentinel security suite
+        run: |
+          set -o pipefail
+          npm run test:sentinel 2>&1 | tee candidate-ci-evidence/sentinel.log
+      - name: Check TypeScript
+        run: |
+          set -o pipefail
+          npx --no-install tsc --noEmit 2>&1 | tee candidate-ci-evidence/typescript.log
+      - name: Build production web application
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee candidate-ci-evidence/production-build.log
       - run: npx cap sync android
+      - name: Install pinned Android SDK components
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -x "$SDKMANAGER"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: "8.2.1"
@@ -72,6 +95,45 @@ jobs:
         run: |
           gradle --version
           gradle -p android --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+      - name: Verify candidate package, version, and stable Debug certificate
+        env:
+          EXPECTED_CERT_SHA256: "735210B06A6088389F5EFADFA630DE42847D5949091C4A146183B579ED7D56A2"
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
+          [[ "$ACTUAL" == "$EXPECTED_CERT_SHA256" ]] || { echo "::error::Debug APK certificate differs from the recorded stable identity."; exit 1; }
+          BADGING="$("$AAPT" dump badging "$APK")"
+          grep -q "package: name='com.lifeos.personal'" <<< "$BADGING"
+          VERSION="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
+          [[ -n "$VERSION" ]] || { echo "::error::Debug APK version metadata is missing."; exit 1; }
+          SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          echo "Verified candidate APK package=com.lifeos.personal version=$VERSION signer_sha256=$ACTUAL apk_sha256=$SHA256"
+          {
+            echo "### Signed candidate Debug APK"
+            echo "- Candidate commit: $GITHUB_SHA"
+            echo "- Package: com.lifeos.personal"
+            echo "- Version: $VERSION"
+            echo "- Debug certificate SHA-256: $ACTUAL"
+            echo "- APK SHA-256: $SHA256"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload signed candidate Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeOS-signed-debug-apk-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload candidate build and test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeOS-candidate-build-validation-${{ github.sha }}
+          path: candidate-ci-evidence/**
+          if-no-files-found: warn
+          retention-days: 30
       - name: Stage APK artifacts for emulator jobs
         run: |
           mkdir -p android-apks
@@ -175,7 +237,7 @@ jobs:
           disable-animations: true
           script: |
             bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
-      - name: Verify nonzero JUnit test count and passing smoke test
+      - name: Require the complete Android smoke suite with zero skipped tests
         if: success()
         run: |
           python3 - <<'PY'
@@ -184,7 +246,10 @@ jobs:
           tests = int(report.attrib.get('tests', '0'))
           failures = int(report.attrib.get('failures', '0'))
           print(f"JUnit tests={tests} failures={failures} skipped={report.attrib.get('skipped', '0')}")
-          if tests <= 0 or failures:
+          skipped = int(report.attrib.get('skipped', '0'))
+          expected = 19
+          print(f"Expected={expected} executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped}")
+          if tests != expected or failures or skipped:
               sys.exit(1)
           PY
       - name: Capture sanitized emulator failure evidence
@@ -256,7 +321,7 @@ jobs:
           disable-animations: true
           script: |
             bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
-      - name: Verify nonzero JUnit test count and passing smoke test
+      - name: Require the complete Android suite with zero skipped tests
         if: success()
         run: |
           python3 - <<'PY'
@@ -265,7 +330,10 @@ jobs:
           tests = int(report.attrib.get('tests', '0'))
           failures = int(report.attrib.get('failures', '0'))
           print("${{ matrix.id }} JUnit tests={} failures={} skipped={}".format(tests, failures, report.attrib.get('skipped', '0')))
-          if tests <= 0 or failures:
+          skipped = int(report.attrib.get('skipped', '0'))
+          expected = 19
+          print("Expected={} executed={} passed={} failed={} skipped={}".format(expected, tests, tests-failures-skipped, failures, skipped))
+          if tests != expected or failures or skipped:
               sys.exit(1)
           PY
       - name: Capture sanitized emulator failure evidence

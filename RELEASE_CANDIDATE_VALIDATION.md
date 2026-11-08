@@ -7,7 +7,7 @@ Status meanings: PASS = executed successfully on the recorded candidate/stage; F
 
 | Gate | Evidence required | Status | Evidence / blocker |
 |---|---|---|---|
-| Git ancestry and no duplicate integration | Exact PR SHAs, merge parents, stage ancestry | PASS baseline | #18/#19 join at #20; candidate integrated through #22 only; #23–#25 not integrated due stop condition |
+| Git ancestry and no duplicate integration | Exact PR SHAs, merge parents, stage ancestry | PASS through #25 | #18/#19 join at #20; source histories integrated sequentially through #23, #24, and #25; no duplicate ancestor cherry-picks |
 | Candidate isolation | New branch/worktree from pinned main; no prior worktree changed | PASS baseline | Clean candidate at pinned base |
 | Per-stage focused tests | Relevant npm contracts after each integrated stage | PASS through #25 | #25 DB atomicity 62; encrypted admission 6/6; encrypted atomicity 8/8; backup validation 23/23; IndexedDB backup 6/6; Money 2 workflows 21; Profile and navigation focused suites pass. Includes v1→v2 preservation and synthetic Amazon/HDFC reversal/undo. See `validation-logs/`. | `npm test` exit 0 after each; simulated/native-source and disposable IndexedDB tests |
 | Per-stage TypeScript | `npx tsc --noEmit` after each stage | PASS through #25 | #25 exit 0: `validation-logs/20261108-pr25-typescript.txt` | Exit 0 after each |
@@ -19,11 +19,18 @@ Status meanings: PASS = executed successfully on the recorded candidate/stage; F
 | Backup compatibility | Legacy 11-table and current 15-table validation/round-trip/rollback | PASS in Node; Android SAF BLOCKED | Legacy 11-table and current 15-table round trips/rollback covered; picker operation is not device-verified |
 | Android SAF backup/restore | Real Android document picker and restore | BLOCKED | Requires emulator/device execution |
 | Money 2.0 invariants | Exact balances, liability signs, transfer/reversal/undo, no income inflation | PASS in synthetic suite | 62 DB assertions + 21 Money workflow checks; synthetic Amazon/HDFC values in progress log |
-| Android instrumentation API 29 | Full suite; exact expected/executed/pass/fail/skip count | NOT RUN | Historical #20 run passed; candidate suite not yet executed |
-| Android instrumentation API 34 | Full suite; exact expected/executed/pass/fail/skip count | NOT RUN | Existing workflow does not yet fail on skips/count mismatch; candidate fix pending |
-| Android instrumentation API 35 | Full suite including screenshot/lifecycle acceptance | NOT RUN | Prior failure must be resolved and rerun |
+| Android instrumentation API 29 | Full suite; exact expected/executed/pass/fail/skip count | BLOCKED pending hosted CI | Candidate workflow now requires 19 executed, 0 failed, 0 skipped; not yet triggered on current candidate SHA |
+| Android instrumentation API 34 | Full suite; exact expected/executed/pass/fail/skip count | BLOCKED pending hosted CI | Candidate workflow now requires 19 executed, 0 failed, 0 skipped; not yet triggered on current candidate SHA |
+| Android instrumentation API 35 | Full suite including screenshot/lifecycle acceptance | BLOCKED pending hosted CI | Screenshot lifecycle test remains included in the 19-test suite; rerun must complete with zero skips/failures |
 | Notification Android acceptance | Optional reminders, permission behavior, restore and tap route | NOT RUN | No architecture change planned |
 | Profile/navigation acceptance | Settings persistence, swipe guards, fonts, keyboard, accessibility | NOT RUN | Physical acceptance required |
-| Debug APK | Exact candidate SHA, package, version, signer fingerprint, artifact integrity | BLOCKED | No CI run triggered and no APK for this candidate SHA |
+| Debug APK | Exact candidate SHA, package, version, signer fingerprint, artifact integrity | BLOCKED pending hosted CI | Candidate workflow now builds, verifies expected stable signer/package/version, and uploads SHA-tagged artifact; no artifact exists for the current SHA yet |
 | Installed-data update test | Candidate install over disposable prior build; encrypted data retained | BLOCKED | Physical Android update install required |
-| Draft candidate PR | Correct base, draft state, exact candidate SHA | BLOCKED | Not opened: candidate is incomplete and mandatory suite fails at #22 |
+| Draft candidate PR | Correct base, draft state, exact candidate SHA | BLOCKED pending hosted gates | Not opened; awaiting candidate-specific Android CI and signed APK verification |
+
+
+## Latest category fixture and local validation update (2026-11-08)
+
+- Exact fixture: default expense category ID `cat_food` (`Food`). The synthetic ₹500 Amazon credit-card expense inserts `category: 'Food'`; the following balance assertion was unreachable when the missing fixture caused the expected referential-integrity rejection. Normal category initialization is now called before transaction fixtures and its result is asserted. No production validator changed. Current post-#25 location: `test_db_atomicity.js:784`; original #22-stage layout: line 571.
+- `node test_db_atomicity.js`: PASS, 62 assertions. `npm run test:encrypted`: PASS (18 facade, 58 migration, 10 transaction coordinator, 7 session coordinator assertions). Full `npm test`: PASS, exit 0. Sentinel: 6/6 suites PASS. TypeScript: PASS, exit 0. Production build: PASS, 2,255 modules; nonfatal 624.36 kB bundle warning. Evidence logs: `validation-logs/20261108-final-{npm-test,sentinel,typescript,production-build}.txt`.
+- Candidate Android workflow change is syntax-checked and includes an exact 19-test/zero-skip gate for API 29, 34, and 35, signed Debug APK identity checks, and retained test logs. These Android checks remain BLOCKED until the branch is pushed and hosted Actions runs. No physical-device test is claimed.
