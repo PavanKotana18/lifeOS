@@ -251,6 +251,15 @@
         "Static/source inspection"
       ],
       "limitations": "Actual session/recovery/backup service behavior; Java guards static only, no native device validation."
+    },
+    {
+      "path": "test_local_consolidation.js",
+      "categories": [
+        "Production integration",
+        "Unit",
+        "Mocked native simulation"
+      ],
+      "limitations": "Production finance/notification services and App handlers, disposable Dexie; Android permission/alarm interfaces simulated."
     }
   ],
   "required_device_cases": [
