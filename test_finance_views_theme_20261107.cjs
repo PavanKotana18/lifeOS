@@ -10,7 +10,9 @@ assert.ok(!/\b(?:text|bg|border)-(?:slate|indigo|emerald|amber|rose|sky)-\d{2,3}
 for (const token of ['lifeos-panel', 'lifeos-input', 'lifeos-accent-button', 'var(--success)', 'var(--danger)', 'var(--warning)', 'var(--accent)']) {
   assert.ok(finance.includes(token), `Finance views use ${token}`);
 }
-assert.ok(/aria-current=\{financeSubtab === sub/.test(finance));
+assert.ok(/id="money-destination"/.test(finance), 'dedicated Money section selector remains accessible');
+assert.ok(/value=\{financeSubtab\}/.test(finance), 'current Money destination remains selected');
+assert.ok(!/overflow-x-auto[^\n]*financeSubtab/.test(finance), 'Money navigation has no horizontal finance tab strip');
 assert.match(finance, /role="progressbar"/);
 assert.ok(/filteredTransactions\.map\(t =>/.test(finance));
 assert.ok(!finance.includes('text-white'), 'Finance controls use token-provided foregrounds');

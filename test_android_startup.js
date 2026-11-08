@@ -46,7 +46,7 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
   const html = { classList: { toggle() {} }, style: { setProperty: (key, value) => themeValues.set(key, value) }, dataset: {} };
   let resolveRendered;
   const rendered = new Promise(resolve => { resolveRendered = resolve; });
-  const react = { createElement: () => ({}), StrictMode: {} };
+  const react = { createElement: () => ({}), StrictMode: {}, useEffect: () => {}, useState: initial => [initial, () => {}] };
   const dom = { createRoot: actual => {
     assert.equal(actual, root);
     return { render: () => { renderCount++; ready = html.dataset.themeReady === 'true'; resolveRendered(); } };
@@ -55,6 +55,7 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
     react,
     'react-dom/client': dom,
     './App': () => {},
+    './components/LifeOSBrand': { LifeOSLaunchReveal: () => null },
     './db': { StorageService: { settings: { get: (_key, fallback) => readPreference ? readPreference() : Promise.resolve(fallback) } } },
     './services/domainUtils': { resolveAppearance: (preference, systemDark) => preference === 'system' ? systemDark ? 'dark' : 'light' : preference },
     './services/systemAppearance': { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveInitialVisualTheme },
@@ -62,14 +63,14 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
       ...themeCatalog,
       applyThemeTokens: (id, mode) => themeCatalog.applyThemeTokens(id, mode, html),
     },
-    '@capacitor/core': { Capacitor: { isNativePlatform: () => true }, registerPlugin: () => ({ getSystemAppearance: nativeAppearance }) },
+    '@capacitor/core': { Capacitor: { isNativePlatform: () => true }, registerPlugin: name => name === 'SystemAppearance' ? ({ getSystemAppearance: nativeAppearance }) : ({ getLaunchInfo: async () => ({ coldStart: false }) }) },
     './index.css': {},
   };
   vm.runInNewContext(mainCode, {
     exports: {},
     require: name => { assert.ok(Object.hasOwn(imports, name), `Unexpected entrypoint dependency ${name}`); return imports[name]; },
     document: { getElementById: () => root, documentElement: html, querySelector: () => ({ setAttribute() {} }) },
-    window: { matchMedia: () => ({ matches: false }) },
+    window: { matchMedia: () => ({ matches: false }), setTimeout, clearTimeout },
     localStorage: { setItem: () => { if (cacheThrows) throw new Error('cache unavailable'); } },
     console: { warn() {} },
   });

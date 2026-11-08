@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { StorageService } from './db';
@@ -7,17 +8,56 @@ import { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveIn
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId } from './services/themeCatalog';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import './index.css';
+import { LifeOSLaunchReveal } from './components/LifeOSBrand';
 
 const SystemAppearance = registerPlugin<{ getSystemAppearance: () => Promise<{ dark: boolean }> }>('SystemAppearance');
+const LaunchExperience = registerPlugin<{
+  getLaunchInfo: () => Promise<{ coldStart: boolean }>;
+  releaseNativeSplash: () => Promise<void>;
+}>('LaunchExperience');
 
 const root = document.getElementById('root')!;
-const renderApp = () => ReactDOM.createRoot(root).render(<React.StrictMode><App /></React.StrictMode>);
+function readLaunchInfo(): Promise<{ coldStart: boolean }> {
+  if (!Capacitor.isNativePlatform()) return Promise.resolve({ coldStart: false });
+  return new Promise(resolve => {
+    const fallback = () => {
+      void LaunchExperience.releaseNativeSplash().catch(() => {});
+      resolve({ coldStart: false });
+    };
+    const timeout = window.setTimeout(fallback, 700);
+    LaunchExperience.getLaunchInfo().then(
+      info => { window.clearTimeout(timeout); resolve({ coldStart: info.coldStart === true }); },
+      () => { window.clearTimeout(timeout); fallback(); },
+    );
+  });
+}
+function BootstrappedApp({ coldStart }: { coldStart: boolean }) {
+  const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const [showReveal, setShowReveal] = useState(coldStart);
+  useEffect(() => {
+    if (!coldStart) return;
+    // This effect runs after React committed the same branded cover under the
+    // native splash, preventing a blank WebView handoff.
+    void LaunchExperience.releaseNativeSplash().catch(() => {});
+    let elapsed = false;
+    let ready = (window as Window & { lifeosStartupReady?: boolean }).lifeosStartupReady === true;
+    const finishIfReady = () => { if (elapsed && ready) setShowReveal(false); };
+    const onReady = () => { ready = true; finishIfReady(); };
+    window.addEventListener('lifeos:startup-ready', onReady);
+    const timer = window.setTimeout(() => { elapsed = true; finishIfReady(); }, reducedMotion ? 0 : 1600);
+    finishIfReady();
+    return () => { window.clearTimeout(timer); window.removeEventListener('lifeos:startup-ready', onReady); };
+  }, [coldStart, reducedMotion]);
+  return <React.StrictMode><App />{showReveal && <LifeOSLaunchReveal reducedMotion={reducedMotion} />}</React.StrictMode>;
+}
+
+const renderApp = (coldStart: boolean) => ReactDOM.createRoot(root).render(<BootstrappedApp coldStart={coldStart} />);
 
 async function bootstrapAppearance() {
   let cachedTheme = DEFAULT_THEME_ID;
   try { cachedTheme = resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { /* Cosmetic cache is optional. */ }
   const [themeId, preference] = await Promise.all([
-    resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', cachedTheme)),
+    resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', cachedTheme), 1500, cachedTheme),
     resolveInitialAppearancePreference(() => StorageService.settings.get('theme', 'system')),
   ]);
   const mediaDark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -40,5 +80,5 @@ void bootstrapAppearance().catch(() => {
   console.warn('LifeOS could not apply the initial appearance.');
 }).finally(() => {
   document.documentElement.dataset.themeReady = 'true';
-  renderApp();
+  void readLaunchInfo().then(info => renderApp(info.coldStart));
 });

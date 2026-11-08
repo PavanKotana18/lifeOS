@@ -91,7 +91,10 @@ export function createEncryptedDexieStore(options: EncryptedDexieStoreOptions) {
     const recordId = identityOf(tableName, record);
 
     if (tableName === 'settings' && bootstrapKeys.has(recordId)) {
-      return record;
+      // A value that was encrypted before it became bootstrap-readable must
+      // never be downgraded by a later profile/settings update.
+      const existing = await table.get(recordId);
+      if (!isEncryptedRow(existing)) return record;
     }
 
     return codec.seal(tableName, recordId, record);

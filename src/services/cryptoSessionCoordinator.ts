@@ -4,6 +4,8 @@ export interface CryptoLifecycleAdapter {
   getKeyState(): Promise<{
     keyProvisioned: boolean;
     recoveryProvisioned: boolean;
+    recoveryDeferred?: boolean;
+    initialSetupPending?: boolean;
     recoveryNeedsRebind: boolean;
     metadataConsistent: boolean;
     keystoreAliasPresent: boolean;
@@ -11,7 +13,8 @@ export interface CryptoLifecycleAdapter {
   }>;
   prepareRecovery?(): Promise<PreparedRecovery>;
   confirmRecovery?(): Promise<void>;
-  setup(): Promise<{ success: boolean; message?: string }>;
+  deferRecovery?(): Promise<void>;
+  setup(options?: { deferRecovery?: boolean }): Promise<{ success: boolean; message?: string }>;
   unlock(): Promise<{ success: boolean; message?: string }>;
   lock(): Promise<void>;
   isUnlocked(): Promise<boolean>;
@@ -33,6 +36,8 @@ export interface ProtectedStorageOptions {
   isStorageActive(): boolean;
 }
 
+export type NewUserRecoveryChoice = 'setup' | 'later';
+
 /** One owner for startup/resume/retry; replacement keys are never provisioned. */
 export function createProtectedSessionController(
   crypto: CryptoLifecycleAdapter,
@@ -43,7 +48,7 @@ export function createProtectedSessionController(
   let pending: Promise<void> | null = null;
   let closing: Promise<void> = Promise.resolve();
   return Object.freeze({
-    open(): Promise<void> {
+    open(openOptions: { recoveryChoice?: NewUserRecoveryChoice } = {}): Promise<void> {
       if (pending) return pending;
       const attempt = ++epoch;
       session.lock();
@@ -61,6 +66,7 @@ export function createProtectedSessionController(
           await session.waitForIdle();
           current();
           let state = await crypto.getKeyState();
+          let keyCreatedThisAttempt = false;
           current();
           if (!state.metadataConsistent || state.recoveryNeedsRebind) {
             throw new Error('The existing encryption key needs recovery. No replacement key was created.');
@@ -68,7 +74,8 @@ export function createProtectedSessionController(
           if (!state.keyProvisioned) {
             // Inspect durable rows, not just volatile JS activation flags. Even
             // partial/malformed ciphertext prevents provisioning another key.
-            if (!storage || state.recoveryProvisioned || state.keystoreAliasPresent || state.unlocked ||
+            const resumableSetupAlias = state.initialSetupPending === true;
+            if (!storage || state.recoveryProvisioned || (state.keystoreAliasPresent && !resumableSetupAlias) || state.unlocked ||
                 storage.isStorageActive() || await storage.hasEncryptedRecords()) {
               throw new Error('The existing encryption key needs recovery. No replacement key was created.');
             }
@@ -79,14 +86,15 @@ export function createProtectedSessionController(
             // before creating a key; never act on the earlier snapshot.
             state = await crypto.getKeyState();
             current();
-            if (!state.metadataConsistent || state.keyProvisioned || state.recoveryProvisioned || state.keystoreAliasPresent ||
-                state.recoveryNeedsRebind || state.unlocked || await storage.hasEncryptedRecords()) {
+            if (!state.metadataConsistent || state.keyProvisioned || state.recoveryProvisioned ||
+                (state.keystoreAliasPresent && !state.initialSetupPending) || state.recoveryNeedsRebind || state.unlocked || await storage.hasEncryptedRecords()) {
               throw new Error('Encryption state changed during setup. Retry or recover the existing key.');
             }
             current();
-            const result = await crypto.setup();
+            const result = await crypto.setup({ deferRecovery: openOptions.recoveryChoice === 'later' });
             current();
             if (!result?.success) throw new Error(result?.message || 'Secure setup was cancelled or failed.');
+            keyCreatedThisAttempt = true;
           } else {
             if (!state.keystoreAliasPresent) throw new Error('The existing encryption key needs recovery.');
             if (!storage || !state.unlocked) {
@@ -102,19 +110,33 @@ export function createProtectedSessionController(
             throw new Error('Native encryption setup could not be verified. Data remains locked.');
           }
           if (!state.recoveryProvisioned) {
-            if (!storage || !crypto.prepareRecovery || !crypto.confirmRecovery) {
+            if (state.recoveryDeferred) {
+              // This persisted flag is written by native code only after the
+              // user explicitly chooses device-only recovery on first setup.
+            } else if (keyCreatedThisAttempt && openOptions.recoveryChoice === 'later') {
+              if (!crypto.deferRecovery) throw new Error('This Android build cannot defer recovery safely.');
+              await crypto.deferRecovery();
+              current();
+              state = await crypto.getKeyState();
+              if (!state.metadataConsistent || !state.recoveryDeferred || state.recoveryProvisioned ||
+                  !state.keyProvisioned || !state.keystoreAliasPresent || !state.unlocked ||
+                  !(await crypto.isUnlocked())) {
+                throw new Error('Recovery preference could not be verified. Data remains locked.');
+              }
+            } else if (!storage || !crypto.prepareRecovery || !crypto.confirmRecovery) {
               throw new Error('The existing encryption key needs recovery protection.');
+            } else {
+              const prepared = await crypto.prepareRecovery();
+              current();
+              if (!(await storage.confirmRecovery(prepared))) throw new Error('Recovery setup was cancelled. Data remains locked.');
+              current();
+              await crypto.confirmRecovery();
+              current();
             }
-            const prepared = await crypto.prepareRecovery();
-            current();
-            if (!(await storage.confirmRecovery(prepared))) throw new Error('Recovery setup was cancelled. Data remains locked.');
-            current();
-            await crypto.confirmRecovery();
-            current();
           }
           const verified = await crypto.getKeyState();
           if (!verified.metadataConsistent || verified.recoveryNeedsRebind ||
-              !verified.keyProvisioned || !verified.recoveryProvisioned ||
+              !verified.keyProvisioned || (!verified.recoveryProvisioned && !verified.recoveryDeferred) ||
               !verified.keystoreAliasPresent || !verified.unlocked || !(await crypto.isUnlocked())) {
             throw new Error('The native encryption key is unavailable. Data remains locked.');
           }
@@ -132,7 +154,8 @@ export function createProtectedSessionController(
             const nativeUnlocked = await crypto.isUnlocked();
             if (attempt !== epoch || !session.isUnlocked() ||
                 (activationGeneration !== undefined && session.getGeneration?.() !== activationGeneration) || !activated.metadataConsistent ||
-                !activated.keyProvisioned || !activated.recoveryProvisioned || !activated.keystoreAliasPresent ||
+                !activated.keyProvisioned || !activated.keystoreAliasPresent ||
+                (!activated.recoveryProvisioned && !activated.recoveryDeferred) ||
                 activated.recoveryNeedsRebind || !activated.unlocked || !nativeUnlocked) {
               throw new Error('Native encryption changed during activation. Data remains locked.');
             }

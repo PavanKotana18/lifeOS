@@ -185,7 +185,7 @@ async function main() {
       tableName: 'settings',
       table: db.settings,
       codec,
-      bootstrapKeys: new Set(['theme', 'biometricLockEnabled'])
+      bootstrapKeys: new Set(['theme', 'biometricLockEnabled', 'displayName'])
     });
 
     await settings.put({ key: 'theme', value: 'dark' });
@@ -197,6 +197,15 @@ async function main() {
     check(rawTheme.value === 'dark' && rawTheme.__lifeosEncrypted === undefined, 'Allowlisted bootstrap setting remains plaintext');
     check(rawCurrency.value === undefined && rawCurrency.__lifeosEncrypted === 1, 'Non-bootstrap setting is encrypted');
     check((await settings.get('currency')).value === 'INR', 'Encrypted settings decrypt correctly');
+
+    await settings.put({ key: 'displayName', value: 'New-user name' });
+    check((await db.settings.get('displayName')).value === 'New-user name', 'New-user display name is restart-readable as a bootstrap profile preference');
+    const protectedName = await codec.seal('settings', 'displayName', { key: 'displayName', value: 'Existing protected name' });
+    await db.settings.put(protectedName);
+    await settings.put({ key: 'displayName', value: 'Edited protected name' });
+    const updatedProtectedName = await db.settings.get('displayName');
+    check(updatedProtectedName.__lifeosEncrypted === 1, 'An already encrypted profile name is never downgraded to plaintext');
+    check((await settings.get('displayName')).value === 'Edited protected name', 'Already encrypted profile name remains readable through the facade');
 
     await db.transactions.put({
       id: 'tampered',

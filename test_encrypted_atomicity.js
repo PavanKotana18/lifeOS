@@ -57,20 +57,17 @@ const h = require('./tests/wp0/production-harness.cjs');
     const goalBefore = await f.StorageService.savings.getGoals();
     const contributionsBefore = await f.StorageService.savings.getContributions(goal.id);
     const transactionsBefore = await f.StorageService.transactions.getAll();
-    const failEncryptedCommit = () => { throw new Error('Injected encrypted transaction failure'); };
-    f.lifeOSDatabase.transactions.hook('creating').subscribe(failEncryptedCommit);
+    const failEncryptedCommit = () => { throw new Error('Injected encrypted contribution failure'); };
+    f.lifeOSDatabase.savingsContributions.hook('creating').subscribe(failEncryptedCommit);
     try {
       await assert.rejects(
         f.StorageService.savings.addContribution(
-          { goalId: goal.id, amount: 50, date: '2026-11-08' },
-          { type: 'expense', amount: 50, category: category.name,
-            description: 'Encrypted atomic rollback fixture', date: '2026-11-08',
-            paymentMethod: 'Cash' }
+          { goalId: goal.id, amount: 50, date: '2026-11-08' }
         ),
-        /Injected encrypted transaction failure/
+        /Injected encrypted contribution failure/
       );
     } finally {
-      f.lifeOSDatabase.transactions.hook('creating').unsubscribe(failEncryptedCommit);
+      f.lifeOSDatabase.savingsContributions.hook('creating').unsubscribe(failEncryptedCommit);
     }
     assert.deepEqual(await f.StorageService.savings.getGoals(), goalBefore);
     assert.deepEqual(await f.StorageService.savings.getContributions(goal.id), contributionsBefore);
@@ -78,10 +75,10 @@ const h = require('./tests/wp0/production-harness.cjs');
     const goalAfterFailure = await f.lifeOSDatabase.savingsGoals.get(goal.id);
     check(goalAfterFailure.__lifeosEncrypted === 1 && goalAfterFailure.currentAmount === undefined &&
       (await f.StorageService.savings.getGoals()).find(row => row.id === goal.id)?.currentAmount === 100,
-      'Injected encrypted multi-table failure rolls back without plaintext fallback or partial goal update');
+      'Injected encrypted contribution failure rolls back the multi-table write without plaintext fallback or partial goal update');
     check((await f.StorageService.savings.getContributions(goal.id)).length === 0 &&
-      !(await f.StorageService.transactions.getAll()).some(row => row.description === 'Encrypted atomic rollback fixture'),
-      'Encrypted contribution and linked transaction both remain absent after rollback');
+      (await f.StorageService.transactions.getAll()).length === transactionsBefore.length,
+      'Encrypted failed contribution leaves no contribution or spending transaction');
 
     await Promise.all([
       f.StorageService.savings.addContribution({ goalId: goal.id, amount: 40, date: '2026-11-08' }),

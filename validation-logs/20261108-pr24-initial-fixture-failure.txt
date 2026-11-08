@@ -1,0 +1,6 @@
+Initial PR #24 full npm run stopped at test_encrypted_atomicity.js:63.
+Failure: AssertionError [ERR_ASSERTION]: Missing expected rejection.
+Old expectation: a savings contribution linked to a cash-flow expense would trigger an injected transactions-table failure.
+Cause: PR #24 removes automatic expense creation from savings contributions so they do not inflate spending.
+Correction: the synthetic encrypted-session test now injects failure on the actual savingsContributions Dexie write while the production coordinator updates the goal and contribution records together. It asserts both records roll back, no spending transaction appears, and concurrent contributions remain correct.
+Retest: node test_encrypted_atomicity.js PASS 8/8; full npm test PASS, exit 0.

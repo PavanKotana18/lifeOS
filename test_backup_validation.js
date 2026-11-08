@@ -46,6 +46,13 @@ Module._load = function (request, parent, isMain) {
       return sessionLoaded.exports;
     }
 
+    if (request === './services/encryptedStorageIntegration') {
+      return { BOOTSTRAP_SETTING_KEYS: new Set([
+        'theme', 'visualTheme', 'biometricLockEnabled',
+        'onboardingCompleted', 'onboardingStarted', 'onboardingStep'
+      ]) };
+    }
+
     if (request === './services/encryptedStorageRuntime') {
       return {
         createLifeOSEncryptedRuntime: () => ({

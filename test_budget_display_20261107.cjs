@@ -1,0 +1,25 @@
+'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+require('./scripts/register-ts-test-loader.cjs');
+const { getBudgetDisplayStatus } = require('./src/services/budgetDisplay.ts');
+const app = fs.readFileSync('src/App.tsx', 'utf8');
+
+assert.deepEqual(getBudgetDisplayStatus(40, 100), { percentUsed: 40, barPercent: 40, remaining: 60, overBy: 0, isOver: false });
+assert.deepEqual(getBudgetDisplayStatus(100, 100), { percentUsed: 100, barPercent: 100, remaining: 0, overBy: 0, isOver: false });
+assert.deepEqual(getBudgetDisplayStatus(150, 100), { percentUsed: 150, barPercent: 100, remaining: 0, overBy: 50, isOver: true });
+assert.equal(getBudgetDisplayStatus(0, 0).percentUsed, null);
+assert.equal(getBudgetDisplayStatus(30, 0).isOver, false, 'an absent limit is not presented as an exceeded budget');
+assert.equal(getBudgetDisplayStatus(-1, 10).percentUsed, null);
+assert.equal(getBudgetDisplayStatus(Number.NaN, 10).percentUsed, null);
+assert.match(app, /getBudgetDisplayStatus\(categoryMissing \? Number\.NaN : spent, b\.monthlyAmount\)/);
+assert.match(app, /aria-valuetext=\{budgetStatus\.isOver \? overAccessibleLabel : budgetLabel\}/);
+assert.match(app, /\$\{budgetStatus\.percentUsed\.toFixed\(0\)\}% used · \$\{formatMoney\(budgetStatus\.overBy\)\} over plan/);
+assert.match(app, /Set a limit to track remaining/);
+assert.match(app, /getBudgetDisplayStatus\(categoryMissing \? Number\.NaN : spent, b\.monthlyAmount\)/, 'orphaned category budgets do not present zero spend as verified');
+assert.match(app, /Restore category to track this plan/);
+assert.match(app, /aria-label=\{`\$\{budgetName\} usage`\}/, 'missing categories are not announced as overall budgets');
+assert.match(app, /window\.confirm\(`Delete \$\{budgetName\}\? Saved transactions will remain unchanged\./);
+assert.match(app, /Budget deletion could not be confirmed\. Refresh before retrying\./);
+assert.match(app, /Budget deleted\. Reopen Finance to refresh the latest data\./, 'post-delete refresh failure is not reported as delete failure');
+console.log('BUDGET DISPLAY: 17 arithmetic, status, deletion and accessibility assertions passed with synthetic amounts.');
