@@ -28,6 +28,30 @@ export function getCurrencyMetadata(code: string): CurrencyMetadata {
   return metadata;
 }
 
+/** Localized currency name for selection UI. Falls back safely on older WebViews without Intl.DisplayNames. */
+export function getCurrencyDisplayName(code: string, locale?: string): string {
+  const normalized = String(code || '').toUpperCase();
+  getCurrencyMetadata(normalized);
+  try {
+    const DisplayNames = (Intl as typeof Intl & { DisplayNames?: new (locales: string | string[] | undefined, options: { type: 'currency' }) => { of: (value: string) => string | undefined } }).DisplayNames;
+    return (DisplayNames && new DisplayNames(locale, { type: 'currency' }).of(normalized)) || normalized;
+  } catch { return normalized; }
+}
+
+/** A readable local symbol where the runtime has one; the ISO code remains the identity. */
+export function getCurrencySymbol(code: string, locale?: string): string {
+  getCurrencyMetadata(code);
+  try {
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' })
+      .formatToParts(0).find(part => part.type === 'currency')?.value || code.toUpperCase();
+  } catch { return code.toUpperCase(); }
+}
+
+export function formatCurrencyChoice(code: string, locale?: string): string {
+  const normalized = String(code || '').toUpperCase();
+  return `${getCurrencyDisplayName(normalized, locale)} (${normalized} · ${getCurrencySymbol(normalized, locale)})`;
+}
+
 const pow10 = (digits: number) => 10n ** BigInt(digits);
 const MAX_INPUT_DIGITS = 128;
 
@@ -65,6 +89,21 @@ export function minorUnitsToDecimal(minorUnits: bigint, currencyCode: string): s
   if (fractionDigits === 0) return `${negative ? '-' : ''}${whole}`;
   const fraction = String(magnitude % divisor).padStart(fractionDigits, '0');
   return `${negative ? '-' : ''}${whole}.${fraction}`;
+}
+
+/** Normalize one persisted amount while retaining a legacy-friendly major-unit number. */
+export function createMoneyRecordAmount(value: string | number, currencyCode: string, allowZero = false): {
+  amount: number;
+  amountMinor: string;
+  currencyCode: string;
+} {
+  const minor = decimalToMinorUnits(value, currencyCode);
+  if (minor < 0n || (minor === 0n && !allowZero)) throw new RangeError('Amount must be greater than zero.');
+  const amount = Number(minorUnitsToDecimal(minor, currencyCode));
+  if (!Number.isFinite(amount) || decimalToMinorUnits(amount, currencyCode) !== minor) {
+    throw new RangeError('Amount is too large to store safely at this currency precision.');
+  }
+  return { amount, amountMinor: minor.toString(10), currencyCode: getCurrencyMetadata(currencyCode).code };
 }
 
 export function serializeMinorUnits(minorUnits: bigint): string {

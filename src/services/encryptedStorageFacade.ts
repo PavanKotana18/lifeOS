@@ -4,6 +4,10 @@ import type {
   Budget,
   SavingsGoal,
   SavingsContribution,
+  FinancialAccount,
+  AccountTransfer,
+  ManualExchangeRate,
+  PlannedCommitment,
   Habit,
   HabitLog,
   Goal,
@@ -20,6 +24,25 @@ import type {
   PreparedMutation,
 } from './encryptedTransactionCoordinator';
 import { sortTransactions } from './domainUtils';
+import { decimalToMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './financeCore';
+import { validateAccountTransfer, validateFinancialAccount, validateManualExchangeRate, validatePlannedCommitment, validatePlannedCommitmentReferences } from './financialAccounting';
+
+function validateMoneyMetadata(value: { currencyCode?: string; amountMinor?: string; amount?: number }): void {
+  if (value.currencyCode !== undefined && getCurrencyMetadata(value.currencyCode).code !== value.currencyCode) {
+    throw new Error('Currency code must use canonical ISO 4217 capitalization.');
+  }
+  if (value.amountMinor !== undefined &&
+      (typeof value.amountMinor !== 'string' || !/^(0|[1-9]\d*)$/.test(value.amountMinor))) {
+    throw new Error('Minor-unit amount must be a non-negative integer string.');
+  }
+  if (value.amountMinor !== undefined && !value.currencyCode) {
+    throw new Error('Minor-unit amount requires an explicit currency.');
+  }
+  if (value.amountMinor !== undefined && value.currencyCode && value.amount !== undefined &&
+      decimalToMinorUnits(value.amount, value.currencyCode) !== BigInt(value.amountMinor)) {
+    throw new Error('Major and minor-unit financial amounts do not agree.');
+  }
+}
 
 export interface EncryptedStorageTransaction {
   run<T>(
@@ -55,6 +78,10 @@ const TABLES: EncryptedTable[] = [
   'budgets',
   'savingsGoals',
   'savingsContributions',
+  'financialAccounts',
+  'accountTransfers',
+  'manualExchangeRates',
+  'plannedCommitments',
   'habits',
   'habitLogs',
   'goals',
@@ -192,12 +219,19 @@ export function createEncryptedStorageFacade(
         helpers.validateTransactionRecord(record, true);
 
         return coordinator.run(async ctx => {
-          const categories = await ctx.getAll<Category>('categories');
+          const [categories, accounts] = await Promise.all([
+            ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')
+          ]);
           const match = categories.find(
             item => item.name.trim().toLowerCase() === record.category.trim().toLowerCase()
           );
           if (!match || match.name !== record.category.trim() || match.type !== record.type) {
             throw new Error('The selected category does not exist or does not match the transaction type.');
+          }
+          if (record.accountId) {
+            const account = accounts.find(row => row.id === record.accountId);
+            if (!account || !account.isActive) throw new Error('Choose an active financial account.');
+            if (!record.currencyCode || record.currencyCode !== account.currencyCode) throw new Error('An assigned transaction must use the account currency.');
           }
           ctx.add('transactions', record);
           return record;
@@ -210,7 +244,9 @@ export function createEncryptedStorageFacade(
           if (!existing) throw new Error('Transaction not found.');
           const merged = { ...existing, ...changes, id, createdAt: existing.createdAt };
           helpers.validateTransactionRecord(merged, true);
-          const categories = await ctx.getAll<Category>('categories');
+          const [categories, accounts] = await Promise.all([
+            ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')
+          ]);
           const match = categories.find(
             item => item.name.trim().toLowerCase() === merged.category.trim().toLowerCase()
           );
@@ -219,6 +255,11 @@ export function createEncryptedStorageFacade(
             !(existing.category === merged.category && existing.type === merged.type)
           ) {
             throw new Error('The selected category does not exist or does not match the transaction type.');
+          }
+          if (merged.accountId) {
+            const account = accounts.find(row => row.id === merged.accountId);
+            if (!account || (!account.isActive && existing.accountId !== merged.accountId)) throw new Error('Choose an active financial account.');
+            if (!merged.currencyCode || merged.currencyCode !== account.currencyCode) throw new Error('An assigned transaction must use the account currency.');
           }
           ctx.put('transactions', {
             ...merged,
@@ -298,12 +339,18 @@ export function createEncryptedStorageFacade(
 
       upsert: async (input: Omit<Budget, 'id' | 'createdAt'>) =>
         coordinator.run(async ctx => {
+          validateMoneyMetadata({ ...input, amount: input.monthlyAmount });
           const rows = await ctx.getAll<Budget>('budgets');
           const existing = rows.find(
             row => row.monthYear === input.monthYear && row.categoryId === input.categoryId
           );
           if (existing) {
-            const updated = { ...existing, monthlyAmount: input.monthlyAmount };
+            if (existing.currencyCode && input.currencyCode && existing.currencyCode !== input.currencyCode) {
+              throw new Error('A budget cannot change currency without explicit reconciliation.');
+            }
+            const updated = { ...existing, monthlyAmount: input.monthlyAmount,
+              ...(input.amountMinor !== undefined ? { amountMinor: input.amountMinor } : {}),
+              ...(input.currencyCode !== undefined ? { currencyCode: input.currencyCode } : {}) };
             ctx.put('budgets', updated);
             return updated;
           }
@@ -322,12 +369,15 @@ export function createEncryptedStorageFacade(
     savings: {
       getGoals: () => readAll<SavingsGoal>('savingsGoals'),
 
-      addGoal: async (input: Omit<SavingsGoal, 'id' | 'createdAt'>) =>
-        add('savingsGoals', {
+      addGoal: async (input: Omit<SavingsGoal, 'id' | 'createdAt'>) => {
+        validateMoneyMetadata({ currencyCode: input.currencyCode, amountMinor: input.targetAmountMinor, amount: input.targetAmount });
+        validateMoneyMetadata({ currencyCode: input.currencyCode, amountMinor: input.currentAmountMinor, amount: input.currentAmount });
+        return add('savingsGoals', {
           ...input,
           id: helpers.createRecordId('sg'),
           createdAt: new Date().toISOString(),
-        }),
+        });
+      },
 
       updateGoal: (id: string, changes: Partial<SavingsGoal>) =>
         update('savingsGoals', id, changes),
@@ -346,13 +396,25 @@ export function createEncryptedStorageFacade(
         if (!Number.isFinite(input.amount) || input.amount <= 0) {
           throw new Error('Contribution amount must be greater than zero.');
         }
+        validateMoneyMetadata({ ...input, amount: input.amount });
         const goal = await ctx.get<SavingsGoal>('savingsGoals', input.goalId);
         if (!goal) throw new Error('Savings goal not found.');
-
-        ctx.put('savingsGoals', {
-          ...goal,
-          currentAmount: goal.currentAmount + input.amount,
-        });
+        if (goal.currencyCode && input.currencyCode && goal.currencyCode !== input.currencyCode) {
+          throw new Error('Contribution currency must match its savings goal currency.');
+        }
+        const currencyCode = input.currencyCode || goal.currencyCode;
+        if (currencyCode) {
+          const addition = input.amountMinor ? BigInt(input.amountMinor) : decimalToMinorUnits(input.amount, currencyCode);
+          const current = goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode);
+          const next = current + addition;
+          ctx.put('savingsGoals', {
+            ...goal, currencyCode,
+            currentAmount: Number(minorUnitsToDecimal(next, currencyCode)),
+            currentAmountMinor: next.toString(10),
+          });
+        } else {
+          ctx.put('savingsGoals', { ...goal, currentAmount: goal.currentAmount + input.amount });
+        }
         ctx.add('savingsContributions', {
           ...input,
           id: helpers.createRecordId('contrib'),
@@ -360,9 +422,221 @@ export function createEncryptedStorageFacade(
         });
       }),
 
-      getContributions: async (goalId: string) =>
-        sortByDate((await readAll<SavingsContribution>('savingsContributions'))
-          .filter(row => row.goalId === goalId)),
+      updateContribution: async (id: string, changes: Partial<Pick<SavingsContribution, 'amount' | 'amountMinor' | 'currencyCode' | 'date' | 'notes'>>) =>
+        coordinator.run(async ctx => {
+          validateMoneyMetadata(changes);
+          if (changes.amount !== undefined && (!Number.isFinite(changes.amount) || changes.amount <= 0)) throw new Error('Contribution amount must be greater than zero.');
+          const existing = await ctx.get<SavingsContribution>('savingsContributions', id);
+          if (!existing) return;
+          const goal = await ctx.get<SavingsGoal>('savingsGoals', existing.goalId);
+          if (!goal) throw new Error('Savings goal missing for contribution.');
+          const currencyCode = changes.currencyCode || existing.currencyCode || goal.currencyCode;
+          if (goal.currencyCode && currencyCode && goal.currencyCode !== currencyCode) throw new Error('Contribution currency must match its savings goal currency.');
+          if (changes.currencyCode && existing.currencyCode && changes.currencyCode !== existing.currencyCode) throw new Error('Changing contribution currency requires an explicit conversion.');
+          let updatedGoal: SavingsGoal;
+          if (currencyCode) {
+            const oldMinor = existing.amountMinor ? BigInt(existing.amountMinor) : decimalToMinorUnits(existing.amount, currencyCode);
+            const newAmount = changes.amount ?? existing.amount;
+            const newMinor = changes.amountMinor ? BigInt(changes.amountMinor) : decimalToMinorUnits(newAmount, currencyCode);
+            const currentMinor = goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode);
+            const nextMinor = currentMinor - oldMinor + newMinor;
+            if (newMinor <= 0n || nextMinor < 0n) throw new Error('Contribution edit would make the savings total invalid.');
+            updatedGoal = { ...goal, currencyCode, currentAmountMinor: nextMinor.toString(10), currentAmount: Number(minorUnitsToDecimal(nextMinor, currencyCode)) };
+            changes = { ...changes, amount: Number(minorUnitsToDecimal(newMinor, currencyCode)), amountMinor: newMinor.toString(10), currencyCode };
+          } else {
+            const newAmount = changes.amount ?? existing.amount;
+            const next = goal.currentAmount - existing.amount + newAmount;
+            if (!Number.isFinite(newAmount) || newAmount <= 0 || next < -1e-9) throw new Error('Contribution edit would make the savings total invalid.');
+            updatedGoal = { ...goal, currentAmount: Math.max(0, next) };
+          }
+          ctx.put('savingsGoals', updatedGoal);
+          ctx.put('savingsContributions', { ...existing, ...changes, id, goalId: existing.goalId, createdAt: existing.createdAt });
+        }),
+
+      deleteContribution: async (id: string) => coordinator.run(async ctx => {
+        const existing = await ctx.get<SavingsContribution>('savingsContributions', id);
+        if (!existing) return;
+        const goal = await ctx.get<SavingsGoal>('savingsGoals', existing.goalId);
+        if (!goal) throw new Error('Savings goal missing for contribution.');
+        const currencyCode = existing.currencyCode || goal.currencyCode;
+        if (currencyCode) {
+          const amountMinor = existing.amountMinor ? BigInt(existing.amountMinor) : decimalToMinorUnits(existing.amount, currencyCode);
+          const currentMinor = goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, currencyCode);
+          const nextMinor = currentMinor - amountMinor;
+          if (nextMinor < 0n) throw new Error('Contribution history does not reconcile with the saved goal amount.');
+          ctx.put('savingsGoals', { ...goal, currentAmountMinor: nextMinor.toString(10), currentAmount: Number(minorUnitsToDecimal(nextMinor, currencyCode)) });
+        } else {
+          const next = goal.currentAmount - existing.amount;
+          if (next < -1e-9) throw new Error('Contribution history does not reconcile with the saved goal amount.');
+          ctx.put('savingsGoals', { ...goal, currentAmount: Math.max(0, next) });
+        }
+        ctx.delete('savingsContributions', id);
+      }),
+
+      getContributions: async (goalId?: string) =>
+        (await readAll<SavingsContribution>('savingsContributions'))
+          .filter(row => !goalId || row.goalId === goalId)
+          .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)),
+    },
+
+    accounts: {
+      getAll: async () => (await readAll<FinancialAccount>('financialAccounts')).sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name)),
+      add: async input => {
+        validateFinancialAccount(input);
+        const record: FinancialAccount = { ...input, name: input.name.trim(), description: input.description?.trim() || undefined,
+          id: helpers.createRecordId('acct'), createdAt: new Date().toISOString() };
+        await coordinator.run(async ctx => ctx.add('financialAccounts', record));
+        return record;
+      },
+      update: async (id, updates) => coordinator.run(async ctx => {
+        const existing = await ctx.get<FinancialAccount>('financialAccounts', id);
+        if (!existing) return;
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        validateFinancialAccount(updated);
+        if (updated.currencyCode !== existing.currencyCode || updated.openingBalanceMinor !== existing.openingBalanceMinor) {
+          const [transactions, transfers] = await Promise.all([
+            ctx.getAll<Transaction>('transactions'), ctx.getAll<AccountTransfer>('accountTransfers')
+          ]);
+          const hasActivity = transactions.some(row => row.accountId === id) || transfers.some(row => row.fromAccountId === id || row.toAccountId === id);
+          if (hasActivity) {
+            if (updated.currencyCode !== existing.currencyCode) throw new Error('An account currency cannot change after it has financial activity. Create another account instead.');
+            throw new Error('An opening balance cannot change after account activity exists because that would rewrite historical balances. Keep the account for history and create another account if needed.');
+          }
+        }
+        ctx.put('financialAccounts', { ...updated, name: updated.name.trim(), description: updated.description?.trim() || undefined });
+      }),
+      archive: async id => coordinator.run(async ctx => {
+        const existing = await ctx.get<FinancialAccount>('financialAccounts', id);
+        if (existing) ctx.put('financialAccounts', { ...existing, isActive: false, updatedAt: new Date().toISOString() });
+      }),
+      delete: async id => coordinator.run(async ctx => {
+        const existing = await ctx.get<FinancialAccount>('financialAccounts', id);
+        if (!existing) return;
+        const [transactions, transfers, commitments] = await Promise.all([
+          ctx.getAll<Transaction>('transactions'), ctx.getAll<AccountTransfer>('accountTransfers'), ctx.getAll<PlannedCommitment>('plannedCommitments')
+        ]);
+        if (transactions.some(row => row.accountId === id) || transfers.some(row => row.fromAccountId === id || row.toAccountId === id) || commitments.some(row => row.accountId === id)) {
+          throw new Error('This account has financial history. Archive it to keep that history intact.');
+        }
+        if (BigInt(existing.openingBalanceMinor) !== 0n) throw new Error('This account has a non-zero opening balance. Archive it to preserve that amount.');
+        ctx.delete('financialAccounts', id);
+      }),
+      getTransfers: async accountId => (await readAll<AccountTransfer>('accountTransfers'))
+        .filter(row => !accountId || row.fromAccountId === accountId || row.toAccountId === accountId)
+        .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt)),
+      addTransfer: async input => {
+        if ((input as AccountTransfer).reversalOfId) throw new Error('Reversals must be created from an existing transfer.');
+        const id = input.id || helpers.createRecordId('transfer');
+        const createdAt = new Date().toISOString();
+        const record: AccountTransfer = { ...input, id, createdAt };
+        await coordinator.run(async ctx => {
+          const [source, destination] = await Promise.all([
+            ctx.get<FinancialAccount>('financialAccounts', record.fromAccountId), ctx.get<FinancialAccount>('financialAccounts', record.toAccountId)
+          ]);
+          if (!source || !destination) throw new Error('Both transfer accounts must exist.');
+          if (!source.isActive || !destination.isActive) throw new Error('Archived accounts cannot be used for new transfers.');
+          validateAccountTransfer(record, source, destination);
+          ctx.add('accountTransfers', record);
+        });
+        return record;
+      },
+      reverseTransfer: async (id, date) => {
+        const transferId = helpers.createRecordId('transfer-reversal');
+        const createdAt = new Date().toISOString();
+        let result: AccountTransfer | undefined;
+        await coordinator.run(async ctx => {
+          const original = await ctx.get<AccountTransfer>('accountTransfers', id);
+          if (!original || original.reversalOfId) throw new Error('Only an original transfer can be reversed.');
+          const transfers = await ctx.getAll<AccountTransfer>('accountTransfers');
+          if (transfers.some(row => row.reversalOfId === id)) throw new Error('This transfer has already been reversed.');
+          const [source, destination] = await Promise.all([
+            ctx.get<FinancialAccount>('financialAccounts', original.toAccountId), ctx.get<FinancialAccount>('financialAccounts', original.fromAccountId)
+          ]);
+          if (!source || !destination) throw new Error('Transfer accounts are unavailable; no reversal was created.');
+          const reversal: AccountTransfer = { id: transferId, fromAccountId: original.toAccountId, toAccountId: original.fromAccountId,
+            fromAmountMinor: original.toAmountMinor, toAmountMinor: original.fromAmountMinor, fromCurrencyCode: original.toCurrencyCode, toCurrencyCode: original.fromCurrencyCode,
+            reversalOfId: original.id, date, notes: `Reversal of ${original.id}`, createdAt };
+          validateAccountTransfer(reversal, source, destination);
+          ctx.add('accountTransfers', reversal);
+          result = reversal;
+        });
+        if (!result) throw new Error('Transfer reversal was not committed.');
+        return result;
+      },
+      updateTransfer: async (id, updates) => coordinator.run(async ctx => {
+        const existing = await ctx.get<AccountTransfer>('accountTransfers', id);
+        if (!existing) return;
+        const allTransfers = await ctx.getAll<AccountTransfer>('accountTransfers');
+        if (existing.reversalOfId || allTransfers.some(row => row.reversalOfId === id)) throw new Error('A reversed transfer is locked to preserve its audit trail. Remove its reversal before editing.');
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        const [source, destination] = await Promise.all([
+          ctx.get<FinancialAccount>('financialAccounts', updated.fromAccountId), ctx.get<FinancialAccount>('financialAccounts', updated.toAccountId)
+        ]);
+        if (!source || !destination) throw new Error('Both transfer accounts must exist.');
+        validateAccountTransfer(updated, source, destination);
+        ctx.put('accountTransfers', updated);
+      }),
+      deleteTransfer: async id => coordinator.run(async ctx => {
+        const existing = await ctx.get<AccountTransfer>('accountTransfers', id);
+        if (!existing) return;
+        const allTransfers = await ctx.getAll<AccountTransfer>('accountTransfers');
+        if (!existing.reversalOfId && allTransfers.some(row => row.reversalOfId === id)) throw new Error('Remove the reversal before deleting the original transfer.');
+        ctx.delete('accountTransfers', id);
+      }),
+    },
+
+    exchangeRates: {
+      getAll: async () => (await readAll<ManualExchangeRate>('manualExchangeRates'))
+        .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || a.baseCurrencyCode.localeCompare(b.baseCurrencyCode)),
+      add: async input => {
+        const record: ManualExchangeRate = { ...input, id: helpers.createRecordId('fx'), createdAt: new Date().toISOString() };
+        validateManualExchangeRate(record);
+        await coordinator.run(async ctx => {
+          const rows = await ctx.getAll<ManualExchangeRate>('manualExchangeRates');
+          if (rows.some(row => row.baseCurrencyCode === record.baseCurrencyCode && row.quoteCurrencyCode === record.quoteCurrencyCode && row.effectiveDate === record.effectiveDate)) {
+            throw new Error('A rate already exists for this currency pair and date. Edit it instead.');
+          }
+          ctx.add('manualExchangeRates', record);
+        });
+        return record;
+      },
+      update: async (id, updates) => coordinator.run(async ctx => {
+        const existing = await ctx.get<ManualExchangeRate>('manualExchangeRates', id);
+        if (!existing) return;
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        validateManualExchangeRate(updated);
+        const rows = await ctx.getAll<ManualExchangeRate>('manualExchangeRates');
+        if (rows.some(row => row.id !== id && row.baseCurrencyCode === updated.baseCurrencyCode && row.quoteCurrencyCode === updated.quoteCurrencyCode && row.effectiveDate === updated.effectiveDate)) {
+          throw new Error('A rate already exists for this currency pair and date.');
+        }
+        ctx.put('manualExchangeRates', updated);
+      }),
+      delete: async id => coordinator.run(async ctx => ctx.delete('manualExchangeRates', id)),
+    },
+
+    commitments: {
+      getAll: async () => (await readAll<PlannedCommitment>('plannedCommitments'))
+        .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.title.localeCompare(b.title)),
+      add: async input => {
+        const record: PlannedCommitment = { ...input, id: helpers.createRecordId('commitment'), createdAt: new Date().toISOString() };
+        validatePlannedCommitment(record);
+        await coordinator.run(async ctx => {
+          const [accounts, categories] = await Promise.all([ctx.getAll<FinancialAccount>('financialAccounts'), ctx.getAll<Category>('categories')]);
+          validatePlannedCommitmentReferences(record, accounts, categories);
+          ctx.add('plannedCommitments', record);
+        });
+        return record;
+      },
+      update: async (id, updates) => coordinator.run(async ctx => {
+        const existing = await ctx.get<PlannedCommitment>('plannedCommitments', id);
+        if (!existing) return;
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        validatePlannedCommitment(updated);
+        const [accounts, categories] = await Promise.all([ctx.getAll<FinancialAccount>('financialAccounts'), ctx.getAll<Category>('categories')]);
+        validatePlannedCommitmentReferences(updated, accounts, categories);
+        ctx.put('plannedCommitments', updated);
+      }),
+      delete: async id => coordinator.run(async ctx => ctx.delete('plannedCommitments', id)),
     },
 
     habits: {
@@ -608,8 +882,8 @@ export function createEncryptedStorageFacade(
 
           for (const table of TABLES) {
             ctx.clear(table);
-            for (const row of tables[table]) ctx.add(table, row);
-            counts[table] = tables[table].length;
+            for (const row of tables[table] ?? []) ctx.add(table, row);
+            counts[table] = (tables[table] ?? []).length;
           }
         });
 

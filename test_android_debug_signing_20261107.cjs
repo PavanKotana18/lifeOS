@@ -19,6 +19,8 @@ assert.match(workflow, /keytool -list[\s\S]*?Verify debug APK signing identity a
   'CI validates the keystore and checks the APK signature, package ID and versionCode');
 assert.match(workflow, /SHA-256 signer: \$ACTUAL/,
   'CI writes the verified fingerprint to the summary without treating it as shell syntax');
+assert.match(workflow, /name: Check Android release signing secrets\s+id: signing\s+if: >-\s+github\.event_name != 'pull_request' &&\s+\(github\.ref == 'refs\/heads\/main' \|\| github\.ref == 'refs\/heads\/develop' \|\| startsWith\(github\.ref, 'refs\/heads\/release\/'\)\)/,
+  'signed release packaging is not eligible on feature branches or pull requests');
 assert.doesNotMatch(fs.readdirSync('android/app').join('\n'), /\.keystore|\.jks/,
   'keystore material is not added to the Android project');
 console.log('ANDROID SIGNING CONTRACT: package identity is stable; versionCode advances; persistent debug signing is secret-gated and no key file is committed.');

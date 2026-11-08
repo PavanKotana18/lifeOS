@@ -13,6 +13,11 @@ async function seed(f) {
   await f.StorageService.categories.getAll();
   await f.StorageService.backup.seedDemoData();
   await f.StorageService.settings.set('wp0Synthetic', true);
+  const cash = await f.StorageService.accounts.add({ name: 'WP0 cash', type: 'cash', currencyCode: 'USD', openingBalanceMinor: '10000', isActive: true });
+  const bank = await f.StorageService.accounts.add({ name: 'WP0 bank', type: 'bank', currencyCode: 'INR', openingBalanceMinor: '0', isActive: true });
+  await f.StorageService.accounts.addTransfer({ fromAccountId: cash.id, toAccountId: bank.id, fromAmountMinor: '100', toAmountMinor: '8300', fromCurrencyCode: 'USD', toCurrencyCode: 'INR', exchangeRate: '83', date: '2026-11-08' });
+  await f.StorageService.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '83', effectiveDate: '2026-11-08', sourceLabel: 'synthetic fixture' });
+  await f.StorageService.commitments.add({ title: 'Synthetic monthly bill', amount: 12, amountMinor: '1200', currencyCode: 'USD', frequency: 'monthly', nextDueDate: '2026-12-01', status: 'active' });
   const json = await f.StorageService.backup.exportData();
   const parsed = JSON.parse(json);
   h.equal(f.validateBackupTables(parsed.tables), h.TABLES, 'Actual validator contract');
@@ -338,6 +343,7 @@ const cases = [
       h.check(typeof contents === 'string', 'Actual UI export must invoke file bridge');
       const rows = parseCsv(contents), column = rows[0].indexOf('description');
       h.check(column >= 0 && rows.length === descriptions.length + 1, 'CSV header and row counts');
+      h.check(!rows[0].includes('id') && !rows.flat().some(cell => cell.startsWith('wp0-')), 'CSV omits internal transaction identifiers');
       h.equal(rows.at(-1)[column], descriptions.at(-1), 'Literal commas/quotes/newlines survive production export');
       h.contract(rows.slice(1, -1).map(r => r[column]), payloads.map(p => "'" + p));
     }); }

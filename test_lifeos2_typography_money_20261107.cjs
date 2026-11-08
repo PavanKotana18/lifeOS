@@ -51,6 +51,7 @@ const markup = renderToStaticMarkup(React.createElement(MoneyHome, {
   largestCategory: { name: 'Food', amount: 3500 }, expenseChange: 5, hasPreviousMonthRecords: true,
   transactions: [{ id: 'synthetic-1', type: 'expense', amount: 1250, date: '2026-11-07', occurredAt: '2026-11-07T08:30:00.000Z', category: 'Food', description: 'Lunch' }],
   formatMoney: amount => formatCurrency(amount, 'INR', 'en-IN'), formatDate: date => date, formatTime: date => date.toISOString().slice(11, 16),
+  accountSummaries: [], savingsGoals: [], legacyCurrency: 'INR', onAccounts() {},
   onMonthChange() {}, onAddExpense() {}, onAddIncome() {}, onMoveToSavings() {}, onTransactions() {}, onBudgets() {}, onSavings() {}, onAnalytics() {}, onPlanning() {}, onEditTransaction() {},
 }));
 assert.match(markup, /Recorded cash flow/);

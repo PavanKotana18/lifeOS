@@ -29,10 +29,9 @@ check(
 
 // F-02: Form submission must persist the selected category.
 check(
-  app.includes(
-    "StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount, monthYear: value('month') })"
-  ),
-  'Budget submission persists the optional category ID'
+  app.includes("const money = createMoneyRecordAmount(value('amount'), userPrefs.currency)") &&
+  app.includes("StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month') })"),
+  'Budget submission persists category, exact minor units, and explicit currency'
 );
 
 // F-02: Empty category must retain overall-budget behaviour.
@@ -148,7 +147,8 @@ check(
 check(
   db.includes('async addContribution(contribution)') &&
   !db.includes('linkedExpense') &&
-  app.includes('StorageService.savings.addContribution(contribution)') &&
+  app.includes('StorageService.savings.addContribution({') &&
+  app.includes('amountMinor: money.amountMinor') &&
   !app.includes('paymentMethod: \'Savings transfer\''),
   'New savings contributions update goal progress without creating expense records'
 );
@@ -164,7 +164,8 @@ check(
 
 // UI explains that goal progress is not an expense.
 check(
-  app.includes('Account transfers are not available yet') &&
+  app.includes('A contribution updates this savings goal only') &&
+  app.includes('record that separately as a transfer') &&
   !app.includes('Record this contribution as an expense in monthly cash flow'),
   'Savings contribution UI distinguishes saving from spending'
 );

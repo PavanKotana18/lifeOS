@@ -55,7 +55,7 @@ const cryptoMock = {
 
 const tables = [
   'transactions', 'categories', 'budgets', 'savingsGoals',
-  'savingsContributions', 'habits', 'habitLogs', 'goals',
+  'savingsContributions', 'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'habits', 'habitLogs', 'goals',
   'milestones', 'tasks', 'settings'
 ];
 

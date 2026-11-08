@@ -11,6 +11,9 @@ assert.equal(finance.getCurrencyMetadata('XCG').fractionDigits, 2);
 assert.equal(finance.getCurrencyMetadata('AFN').fractionDigits, 0);
 assert.equal(finance.getCurrencyMetadata('JPY').fractionDigits, 0);
 assert.equal(finance.getCurrencyMetadata('KWD').fractionDigits, 3);
+assert.match(finance.getCurrencyDisplayName('USD', 'en'), /US Dollar/i);
+assert.equal(finance.getCurrencySymbol('INR', 'en-IN'), '₹');
+assert.match(finance.formatCurrencyChoice('INR', 'en'), /Indian Rupee.*INR.*₹/);
 assert.throws(() => finance.getCurrencyMetadata('XYZ'), /Unsupported currency/);
 assert.equal(finance.convertMinorUnits(100n, 'USD', 'INR', '83.125'), 8313n);
 assert.equal(finance.convertMinorUnits(-100n, 'USD', 'INR', '83.125'), -8313n);
@@ -101,4 +104,4 @@ for (const input of [
   { startingMinorUnits: 0n, monthlyContributionMinorUnits: 0n, months: 12, annualReturnBasisPoints: -120000, annualInflationBasisPoints: 0 },
 ]) assert.throws(() => finance.projectSavings(input));
 
-console.log('FINANCE CORE: 53 assertions passed; calculations use integer minor units and synthetic inputs only.');
+console.log('FINANCE CORE: 56 assertions passed; calculations use integer minor units and synthetic inputs only.');

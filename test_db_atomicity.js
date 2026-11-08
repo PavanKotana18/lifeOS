@@ -5,6 +5,7 @@ const path = require('path');
 const Module = require('module');
 const ts = require('typescript');
 const assert = require('assert');
+const Dexie = require('dexie');
 
 async function main() {
   const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8') + '\n\n// Test-only access to the raw Dexie instance.\nexport { db, rawStorageService as legacyStorageService };\n';
@@ -19,6 +20,24 @@ async function main() {
   const loaded = new Module(path.join(__dirname, 'src/db.atomicity.cjs'), module);
   loaded.filename = path.join(__dirname, 'src/db.atomicity.cjs');
   loaded.paths = module.paths;
+  const financeSource = fs.readFileSync(path.join(__dirname, 'src/services/financeCore.ts'), 'utf8');
+  const financeCompiled = ts.transpileModule(financeSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.atomicity.cjs'), module);
+  financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.atomicity.cjs');
+  financeLoaded.paths = module.paths;
+  financeLoaded._compile(financeCompiled, financeLoaded.filename);
+  const accountingSource = fs.readFileSync(path.join(__dirname, 'src/services/financialAccounting.ts'), 'utf8');
+  const accountingCompiled = ts.transpileModule(accountingSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const accountingLoaded = new Module(path.join(__dirname, 'src/services/financialAccounting.atomicity.cjs'), module);
+  accountingLoaded.filename = path.join(__dirname, 'src/services/financialAccounting.atomicity.cjs');
+  accountingLoaded.paths = module.paths;
+  const accountingRequire = accountingLoaded.require.bind(accountingLoaded);
+  accountingLoaded.require = request => request === './financeCore' ? financeLoaded.exports : accountingRequire(request);
+  accountingLoaded._compile(accountingCompiled, accountingLoaded.filename);
   const sessionSource = fs.readFileSync(
     path.join(__dirname, 'src/services/sessionManager.ts'),
     'utf8'
@@ -53,6 +72,8 @@ async function main() {
     parent.filename &&
     parent.filename.endsWith('/src/db.atomicity.cjs')
   ) {
+    if (request === './services/financeCore') return financeLoaded.exports;
+    if (request === './services/financialAccounting') return accountingLoaded.exports;
     if (request === './services/encryptedStorageIntegration') {
       return { BOOTSTRAP_SETTING_KEYS: new Set([
         'theme', 'visualTheme', 'biometricLockEnabled',
@@ -98,12 +119,8 @@ async function main() {
     Module._load = originalModuleLoad;
   }
 
-  const {
-    db,
-    StorageService: ProtectedStorageService,
-    legacyStorageService: RawStorageService,
-    sessionManager
-  } = loaded.exports;
+  const { db, LifeOSDatabase, legacyStorageService: StorageService, sessionManager } = loaded.exports;
+  const { calculateAccountBalances } = accountingLoaded.exports;
   await db.open();
 
   let passed = 0;
@@ -113,44 +130,15 @@ async function main() {
     console.log('PASS:', message);
   };
 
-  // This loader deliberately has no native key and no encrypted runtime. These
-  // assertions verify that the production facade remains closed in that state.
-  console.log('========== ENCRYPTED ADMISSION GUARD TESTS ==========');
-  await assert.rejects(
-    ProtectedStorageService.categories.getAll(),
-    /Encrypted storage is not ready/
-  );
-  check(!sessionManager.isUnlocked(), 'Unprovisioned private read stays blocked and relocks the JS session');
 
-  await assert.rejects(
-    ProtectedStorageService.settings.set('currency', 'USD'),
-    /Encrypted storage is not ready/
-  );
-  assert.strictEqual(await db.settings.get('currency'), undefined);
-  check(!sessionManager.isUnlocked(), 'Unprovisioned private write is blocked without changing settings');
-
-  await assert.rejects(
-    ProtectedStorageService.backup.exportData(),
-    /Encrypted storage is not ready/
-  );
-  check(!sessionManager.isUnlocked(), 'Unprovisioned backup export is blocked');
-
-  await ProtectedStorageService.settings.set('theme', 'system');
-  check(
-    await ProtectedStorageService.settings.get('theme', 'dark') === 'system',
-    'Allowlisted bootstrap theme remains available while private storage is closed'
-  );
-
+  // This fixture intentionally tests raw migration-era algorithm atomicity.
+  // Actual protected admission/lease behavior is tested against the encrypted
+  // facade in test_secure_startup.js and test_encryption_admission.js.
   sessionManager.unlock();
-  await assert.rejects(
-    ProtectedStorageService.categories.getAll(),
-    /Encrypted storage is not ready/
-  );
-  check(!sessionManager.isUnlocked(), 'JS session unlock alone cannot bypass missing secure provisioning');
-
-  // The remaining assertions intentionally test raw Dexie domain transactions.
-  // Production-facade behavior under a valid synthetic encrypted session is
-  // covered separately by test_encrypted_atomicity.js.
+  const fixtureCategories = await StorageService.categories.getAll();
+  check(fixtureCategories.some(category =>
+    category.id === 'cat_food' && category.name === 'Food' && category.type === 'expense'
+  ), 'Normal category setup provides the Food fixture before transaction inserts');
   const stamp = '2026-11-01T10:00:00.000Z';
 
   try {
@@ -165,7 +153,7 @@ async function main() {
     db.savingsContributions.hook('creating').subscribe(contributionFailure);
 
     try {
-      await assert.rejects(RawStorageService.savings.addContribution({
+      await assert.rejects(StorageService.savings.addContribution({
         goalId: 'sg-atomic', amount: 500, date: '2026-11-01'
       }));
     } finally {
@@ -180,12 +168,12 @@ async function main() {
 
     // 2. Invalid amounts and missing goals must be rejected.
     await assert.rejects(
-      RawStorageService.savings.addContribution({
+      StorageService.savings.addContribution({
         goalId: 'sg-atomic', amount: 0, date: '2026-11-01'
       })
     );
     await assert.rejects(
-      RawStorageService.savings.addContribution({
+      StorageService.savings.addContribution({
         goalId: 'missing-goal', amount: 100, date: '2026-11-01'
       })
     );
@@ -196,12 +184,7 @@ async function main() {
       'Invalid amounts and missing goals create no financial records'
     );
 
-    // 3. Savings contributions update goal progress without manufacturing
-    // transaction spending. Use a valid category and retain an older expense.
-    const initialCategories = await RawStorageService.categories.getAll();
-    check(initialCategories.some(category =>
-      category.id === 'cat_inv' && category.name === 'Investments' && category.type === 'expense'
-    ), 'Savings history fixture uses a normally seeded expense category');
+    // 3. Savings progress must not create or mutate a spending transaction.
     const historicalSavingsExpense = {
       id: 'legacy-savings-expense', type: 'expense', amount: 250,
       category: 'Investments', description: 'Savings contribution: Older fund',
@@ -210,10 +193,9 @@ async function main() {
     };
     await db.transactions.add(historicalSavingsExpense);
     const transactionsBeforeContribution = await db.transactions.count();
-    await RawStorageService.savings.addContribution({
+    await StorageService.savings.addContribution({
       goalId: 'sg-atomic', amount: 250, date: '2026-11-01', notes: 'Goal progress only'
     });
-
     check(
       (await db.savingsGoals.get('sg-atomic')).currentAmount === 1250 &&
       await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 1 &&
@@ -222,12 +204,12 @@ async function main() {
       'Savings contribution adds no expense and leaves historical savings expense unchanged'
     );
 
-    // A transaction-table failure must not turn goal progress into spending.
+    // A transaction-table failure cannot turn goal progress into spending.
     const unrelatedTransactionFailure = () => { throw new Error('Injected unrelated transaction failure'); };
     db.transactions.hook('creating').subscribe(unrelatedTransactionFailure);
 
     try {
-      await RawStorageService.savings.addContribution({
+      await StorageService.savings.addContribution({
         goalId: 'sg-atomic', amount: 50, date: '2026-11-01'
       });
     } finally {
@@ -239,7 +221,7 @@ async function main() {
       await db.savingsContributions.where('goalId').equals('sg-atomic').count() === 2 &&
       await db.transactions.count() === transactionsBeforeContribution &&
       JSON.stringify(await db.transactions.get(historicalSavingsExpense.id)) === JSON.stringify(historicalSavingsExpense),
-      'Savings contributions stay independent of transaction writes and preserve history'
+      'Contribution commit is independent of transaction creation and preserves historical rows'
     );
 
     // 4. Habit deletion must roll back if dependent-log deletion fails.
@@ -256,7 +238,7 @@ async function main() {
     db.habitLogs.hook('deleting').subscribe(habitDeleteFailure);
 
     try {
-      await assert.rejects(RawStorageService.habits.delete('habit-atomic'));
+      await assert.rejects(StorageService.habits.delete('habit-atomic'));
     } finally {
       db.habitLogs.hook('deleting').unsubscribe(habitDeleteFailure);
     }
@@ -283,7 +265,7 @@ async function main() {
     db.milestones.hook('deleting').subscribe(milestoneDeleteFailure);
 
     try {
-      await assert.rejects(RawStorageService.goals.delete('goal-atomic'));
+      await assert.rejects(StorageService.goals.delete('goal-atomic'));
     } finally {
       db.milestones.hook('deleting').unsubscribe(milestoneDeleteFailure);
     }
@@ -304,7 +286,7 @@ async function main() {
     db.savingsContributions.hook('deleting').subscribe(savingsDeleteFailure);
 
     try {
-      await assert.rejects(RawStorageService.savings.deleteGoal('sg-atomic'));
+      await assert.rejects(StorageService.savings.deleteGoal('sg-atomic'));
     } finally {
       db.savingsContributions.hook('deleting').unsubscribe(savingsDeleteFailure);
     }
@@ -316,8 +298,8 @@ async function main() {
     );
 
 
-    // Valid calendar dates must be accepted by the raw database service.
-    await RawStorageService.habits.logCompletion('habit-atomic', '2026-11-02', true);
+    // Valid calendar dates must be accepted by the production write path.
+    await StorageService.habits.logCompletion('habit-atomic', '2026-11-02', true);
     const validDateLog = await db.habitLogs
       .where('[habitId+date]')
       .equals(['habit-atomic', '2026-11-02'])
@@ -335,8 +317,8 @@ async function main() {
     });
 
     await Promise.all([
-      RawStorageService.habits.logCompletion('habit-log-race', '2026-11-02', true),
-      RawStorageService.habits.logCompletion('habit-log-race', '2026-11-02', true)
+      StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true),
+      StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true)
     ]);
 
     const raceLogs = await db.habitLogs
@@ -353,13 +335,13 @@ async function main() {
 
     // 7. Invalid dates and missing habits must not create records.
     await assert.rejects(
-      RawStorageService.habits.logCompletion('habit-log-race', '2026-02-30', true)
+      StorageService.habits.logCompletion('habit-log-race', '2026-02-30', true)
     );
     await assert.rejects(
-      RawStorageService.habits.logCompletion('missing-habit', '2026-11-02', true)
+      StorageService.habits.logCompletion('missing-habit', '2026-11-02', true)
     );
     await assert.rejects(
-      RawStorageService.habits.logCompletion('habit-log-race', '02-11-2026', true)
+      StorageService.habits.logCompletion('habit-log-race', '02-11-2026', true)
     );
 
     check(
@@ -378,7 +360,7 @@ async function main() {
 
     try {
       await assert.rejects(
-        RawStorageService.habits.logCompletion('habit-log-rollback', '2026-11-03', true)
+        StorageService.habits.logCompletion('habit-log-rollback', '2026-11-03', true)
       );
     } finally {
       db.habitLogs.hook('creating').unsubscribe(logInsertFailure);
@@ -390,8 +372,8 @@ async function main() {
     );
 
     // 9. Repeated completion toggles update the same record.
-    await RawStorageService.habits.logCompletion('habit-log-race', '2026-11-02', false);
-    await RawStorageService.habits.logCompletion('habit-log-race', '2026-11-02', true);
+    await StorageService.habits.logCompletion('habit-log-race', '2026-11-02', false);
+    await StorageService.habits.logCompletion('habit-log-race', '2026-11-02', true);
 
     const toggledLogs = await db.habitLogs
       .where('[habitId+date]')
@@ -409,8 +391,8 @@ async function main() {
     Date.now = () => 1793530000000;
     try {
       const habits = await Promise.all([
-        RawStorageService.habits.add({ name: 'Rapid habit A', frequency: 'daily', color: '#123456' }),
-        RawStorageService.habits.add({ name: 'Rapid habit B', frequency: 'daily', color: '#654321' })
+        StorageService.habits.add({ name: 'Rapid habit A', frequency: 'daily', color: '#123456' }),
+        StorageService.habits.add({ name: 'Rapid habit B', frequency: 'daily', color: '#654321' })
       ]);
       check(
         habits[0].id !== habits[1].id &&
@@ -419,8 +401,8 @@ async function main() {
       );
 
       const savingsGoals = await Promise.all([
-        RawStorageService.savings.addGoal({ title: 'Rapid savings A', targetAmount: 1000, currentAmount: 0, targetDate: '2027-01-01' }),
-        RawStorageService.savings.addGoal({ title: 'Rapid savings B', targetAmount: 2000, currentAmount: 0, targetDate: '2027-02-01' })
+        StorageService.savings.addGoal({ title: 'Rapid savings A', targetAmount: 1000, currentAmount: 0, targetDate: '2027-01-01' }),
+        StorageService.savings.addGoal({ title: 'Rapid savings B', targetAmount: 2000, currentAmount: 0, targetDate: '2027-02-01' })
       ]);
       check(
         savingsGoals[0].id !== savingsGoals[1].id &&
@@ -429,98 +411,98 @@ async function main() {
       );
 
       const goals = await Promise.all([
-        RawStorageService.goals.add({ title: 'Rapid goal A', category: 'Education', targetValue: 10, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-01-01', priority: 'Medium', status: 'In Progress' }),
-        RawStorageService.goals.add({ title: 'Rapid goal B', category: 'Education', targetValue: 20, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-02-01', priority: 'Medium', status: 'In Progress' })
+        StorageService.goals.add({ title: 'Rapid goal A', category: 'Education', targetValue: 10, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-01-01', priority: 'Medium', status: 'In Progress' }),
+        StorageService.goals.add({ title: 'Rapid goal B', category: 'Education', targetValue: 20, currentValue: 0, startDate: '2026-11-01', targetDate: '2027-02-01', priority: 'Medium', status: 'In Progress' })
       ]);
       check(goals[0].id !== goals[1].id, 'Rapid goal creation generates distinct IDs');
 
       const milestones = await Promise.all([
-        RawStorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone A', completed: false }),
-        RawStorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone B', completed: false })
+        StorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone A', completed: false }),
+        StorageService.goals.addMilestone({ goalId: goals[0].id, title: 'Rapid milestone B', completed: false })
       ]);
       check(milestones[0].id !== milestones[1].id, 'Rapid milestone creation generates distinct IDs');
 
       // F12: Goal closure requires 100% numeric progress and all milestones.
-      const closureGoal = await RawStorageService.goals.add({
+      const closureGoal = await StorageService.goals.add({
         title: 'F12 all milestones', category: 'Education',
         targetValue: 10, currentValue: 10,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'In Progress'
       });
       const closureMilestones = await Promise.all([
-        RawStorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step A', completed: false }),
-        RawStorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step B', completed: false })
+        StorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step A', completed: false }),
+        StorageService.goals.addMilestone({ goalId: closureGoal.id, title: 'Step B', completed: false })
       ]);
-      await RawStorageService.goals.toggleMilestone(closureMilestones[0].id, true);
+      await StorageService.goals.toggleMilestone(closureMilestones[0].id, true);
       check(
         (await db.goals.get(closureGoal.id)).status === 'In Progress',
         'F12: one incomplete milestone prevents goal closure'
       );
-      await RawStorageService.goals.toggleMilestone(closureMilestones[1].id, true);
+      await StorageService.goals.toggleMilestone(closureMilestones[1].id, true);
       check(
         (await db.goals.get(closureGoal.id)).status === 'Completed',
         'F12 RUNTIME: final milestone closes a fully funded goal'
       );
 
-      const numericGoal = await RawStorageService.goals.add({
+      const numericGoal = await StorageService.goals.add({
         title: 'F12 numeric threshold', category: 'Education',
         targetValue: 10, currentValue: 9,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'In Progress'
       });
-      const numericMilestone = await RawStorageService.goals.addMilestone({
+      const numericMilestone = await StorageService.goals.addMilestone({
         goalId: numericGoal.id, title: 'Complete step', completed: false
       });
-      await RawStorageService.goals.toggleMilestone(numericMilestone.id, true);
+      await StorageService.goals.toggleMilestone(numericMilestone.id, true);
       check(
         (await db.goals.get(numericGoal.id)).status === 'In Progress',
         'F12: completed milestones cannot compensate for numeric progress below 100%'
       );
-      await RawStorageService.goals.update(numericGoal.id, { currentValue: 10 });
+      await StorageService.goals.update(numericGoal.id, { currentValue: 10 });
       check(
         (await db.goals.get(numericGoal.id)).status === 'Completed',
         'F12: reaching the numeric target closes a goal with all milestones complete'
       );
 
-      const pausedGoal = await RawStorageService.goals.add({
+      const pausedGoal = await StorageService.goals.add({
         title: 'F12 paused goal', category: 'Education',
         targetValue: 10, currentValue: 10,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'Paused'
       });
-      const pausedMilestone = await RawStorageService.goals.addMilestone({
+      const pausedMilestone = await StorageService.goals.addMilestone({
         goalId: pausedGoal.id, title: 'Paused step', completed: false
       });
-      await RawStorageService.goals.toggleMilestone(pausedMilestone.id, true);
-      await RawStorageService.goals.update(pausedGoal.id, { currentValue: 10 });
+      await StorageService.goals.toggleMilestone(pausedMilestone.id, true);
+      await StorageService.goals.update(pausedGoal.id, { currentValue: 10 });
       check(
         (await db.goals.get(pausedGoal.id)).status === 'Paused',
         'F12: progress and milestone updates preserve Paused status'
       );
 
-      const reopenGoal = await RawStorageService.goals.add({
+      const reopenGoal = await StorageService.goals.add({
         title: 'F12 reopen goal', category: 'Education',
         targetValue: 10, currentValue: 10,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'In Progress'
       });
-      const reopenMilestone = await RawStorageService.goals.addMilestone({
+      const reopenMilestone = await StorageService.goals.addMilestone({
         goalId: reopenGoal.id, title: 'Reopen step', completed: true
       });
-      await RawStorageService.goals.update(reopenGoal.id, { currentValue: 10 });
-      await RawStorageService.goals.toggleMilestone(reopenMilestone.id, false);
+      await StorageService.goals.update(reopenGoal.id, { currentValue: 10 });
+      await StorageService.goals.toggleMilestone(reopenMilestone.id, false);
       check(
         (await db.goals.get(reopenGoal.id)).status === 'In Progress',
         'F12: reopening a milestone reopens a completed goal'
       );
 
-      const zeroTargetGoal = await RawStorageService.goals.add({
+      const zeroTargetGoal = await StorageService.goals.add({
         title: 'F12 zero target', category: 'Education',
         targetValue: 0, currentValue: 0,
         startDate: '2026-11-01', targetDate: '2027-01-01',
         priority: 'High', status: 'In Progress'
       });
-      await RawStorageService.goals.update(zeroTargetGoal.id, { currentValue: 0 });
+      await StorageService.goals.update(zeroTargetGoal.id, { currentValue: 0 });
       check(
         (await db.goals.get(zeroTargetGoal.id)).status === 'In Progress',
         'F12: zero target cannot qualify a goal for 100% closure'
@@ -528,8 +510,8 @@ async function main() {
 
 
       const budgets = await Promise.all([
-        RawStorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 100 }),
-        RawStorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 200 })
+        StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 100 }),
+        StorageService.budgets.upsert({ monthYear: '2026-11', monthlyAmount: 200 })
       ]);
       const monthlyBudgets = await db.budgets.where('monthYear').equals('2026-11').toArray();
       check(
@@ -541,31 +523,21 @@ async function main() {
     }
 
     // 16. Transaction storage rejects invalid records and preserves identity fields.
-    // Seed categories through the normal first-run path before referencing Food.
-    // This test's category-table reset/seed concurrency check runs later below.
-    const transactionCategories = await RawStorageService.categories.getAll();
-    check(
-      transactionCategories.some(category =>
-        category.id === 'cat_food' && category.name === 'Food' && category.type === 'expense'
-      ),
-      'Transaction validation fixture initializes the normal Food category'
-    );
-
-    await assert.rejects(RawStorageService.transactions.add({
+    await assert.rejects(StorageService.transactions.add({
       amount: 0, date: '2026-11-01', category: 'Food',
       description: 'Invalid amount', paymentMethod: 'Cash', type: 'expense'
     }));
-    await assert.rejects(RawStorageService.transactions.add({
+    await assert.rejects(StorageService.transactions.add({
       amount: 100, date: '2026-02-30', category: 'Food',
       description: 'Invalid date', paymentMethod: 'Cash', type: 'expense'
     }));
-    const validTransaction = await RawStorageService.transactions.add({
+    const validTransaction = await StorageService.transactions.add({
       amount: 100, date: '2026-11-01', category: 'Food',
       description: 'Storage validation', paymentMethod: 'Cash', type: 'expense'
     });
-    await assert.rejects(RawStorageService.transactions.update(validTransaction.id, { amount: -1 }));
-    await assert.rejects(RawStorageService.transactions.update(validTransaction.id, { date: '2026-02-30' }));
-    await RawStorageService.transactions.update(validTransaction.id, {
+    await assert.rejects(StorageService.transactions.update(validTransaction.id, { amount: -1 }));
+    await assert.rejects(StorageService.transactions.update(validTransaction.id, { date: '2026-02-30' }));
+    await StorageService.transactions.update(validTransaction.id, {
       amount: 125,
       id: 'attempted-id-overwrite',
       createdAt: '1999-01-01T00:00:00.000Z'
@@ -586,7 +558,7 @@ async function main() {
       id: 'habit-identity', name: 'Original habit',
       frequency: 'daily', color: '#123456', createdAt: identityStamp
     });
-    await RawStorageService.habits.update('habit-identity', {
+    await StorageService.habits.update('habit-identity', {
       id: 'overwritten-habit', createdAt: 'tampered', name: 'Updated habit'
     });
     const updatedHabit = await db.habits.get('habit-identity');
@@ -605,7 +577,7 @@ async function main() {
       startDate: '2026-11-01', targetDate: '2027-01-01',
       priority: 'High', status: 'In Progress', createdAt: identityStamp
     });
-    await RawStorageService.goals.update('goal-identity', {
+    await StorageService.goals.update('goal-identity', {
       id: 'overwritten-goal', createdAt: 'tampered', title: 'Updated goal'
     });
     const updatedGoal = await db.goals.get('goal-identity');
@@ -622,7 +594,7 @@ async function main() {
       id: 'task-identity', title: 'Original task',
       createdAt: identityStamp, completed: false
     });
-    await RawStorageService.tasks.update('task-identity', {
+    await StorageService.tasks.update('task-identity', {
       id: 'overwritten-task', createdAt: 'tampered', title: 'Updated task'
     });
     const updatedTask = await db.tasks.get('task-identity');
@@ -638,10 +610,10 @@ async function main() {
     // 18. Concurrent first-run category initialization is atomic.
     await db.categories.clear();
     const categoryLoads = await Promise.all([
-      RawStorageService.categories.getAll(),
-      RawStorageService.categories.getAll(),
-      RawStorageService.categories.getAll(),
-      RawStorageService.categories.getAll()
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll(),
+      StorageService.categories.getAll()
     ]);
     const persistedCategories = await db.categories.toArray();
     const categoryIds = persistedCategories.map(category => category.id);
@@ -654,19 +626,19 @@ async function main() {
     );
 
     // 18. Category deletion must preserve budget references and transaction history.
-    const protectedCategory = await RawStorageService.categories.add({
+    const protectedCategory = await StorageService.categories.add({
       name: 'Protected budget category',
       type: 'expense',
       color: '#123456'
     });
 
-    await RawStorageService.budgets.upsert({
+    await StorageService.budgets.upsert({
       monthYear: '2099-01',
       categoryId: protectedCategory.id,
       monthlyAmount: 500
     });
 
-    const historicalTransaction = await RawStorageService.transactions.add({
+    const historicalTransaction = await StorageService.transactions.add({
       amount: 75,
       date: '2026-11-01',
       category: protectedCategory.name,
@@ -676,7 +648,7 @@ async function main() {
     });
 
     await assert.rejects(
-      RawStorageService.categories.delete(protectedCategory.id),
+      StorageService.categories.delete(protectedCategory.id),
       /linked to one or more budgets/i
     );
 
@@ -689,7 +661,7 @@ async function main() {
     await db.budgets.where('categoryId').equals(protectedCategory.id).delete();
 
     await assert.rejects(
-      RawStorageService.categories.delete(protectedCategory.id),
+      StorageService.categories.delete(protectedCategory.id),
       /used by existing transactions/i
     );
 
@@ -699,8 +671,8 @@ async function main() {
       'Category deletion is blocked while a transaction references it'
     );
 
-    await RawStorageService.transactions.delete(historicalTransaction.id);
-    await RawStorageService.categories.delete(protectedCategory.id);
+    await StorageService.transactions.delete(historicalTransaction.id);
+    await StorageService.categories.delete(protectedCategory.id);
 
     check(
       !(await db.categories.get(protectedCategory.id)) &&
@@ -708,7 +680,197 @@ async function main() {
       'Category can be deleted after its budget and transaction references are removed'
     );
 
-    console.log(`\nDATABASE ATOMICITY TESTS: ${passed} assertions PASSED (raw database fixture; encrypted facade covered separately)`);
+    await db.savingsGoals.add({
+      id: 'sg-exact', title: 'Exact savings', targetAmount: 10, targetAmountMinor: '1000',
+      currentAmount: 0.1, currentAmountMinor: '10', currencyCode: 'USD',
+      targetDate: '2027-01-01', createdAt: stamp,
+    });
+    await StorageService.savings.addContribution({
+      goalId: 'sg-exact', amount: 0.2, amountMinor: '20', currencyCode: 'USD', date: '2026-11-01',
+    });
+    await assert.rejects(StorageService.savings.addContribution({
+      goalId: 'sg-exact', amount: 0.01, amountMinor: '1', currencyCode: 'EUR', date: '2026-11-01',
+    }), /currency/i);
+    check(
+      (await db.savingsGoals.get('sg-exact')).currentAmountMinor === '30' &&
+      await db.savingsContributions.where('goalId').equals('sg-exact').count() === 1,
+      'Exact savings contributions reconcile minor units and reject mixed currencies atomically'
+    );
+    const exactContribution = await db.savingsContributions.where('goalId').equals('sg-exact').first();
+    await StorageService.savings.updateContribution(exactContribution.id, { amount: 0.3, amountMinor: '30', currencyCode: 'USD' });
+    check((await db.savingsGoals.get('sg-exact')).currentAmountMinor === '40',
+      'Editing a contribution atomically applies the exact minor-unit difference to its goal');
+    await StorageService.savings.deleteContribution(exactContribution.id);
+    check((await db.savingsGoals.get('sg-exact')).currentAmountMinor === '10' && await db.savingsContributions.where('goalId').equals('sg-exact').count() === 0,
+      'Deleting a contribution atomically reconciles goal progress without changing transactions');
+
+    const cash = await StorageService.accounts.add({ name: 'Everyday cash', type: 'cash', currencyCode: 'USD', openingBalanceMinor: '10000', isActive: true });
+    const bank = await StorageService.accounts.add({ name: 'Main bank', type: 'bank', currencyCode: 'USD', openingBalanceMinor: '5000', isActive: true });
+    const card = await StorageService.accounts.add({ name: 'Credit card', type: 'credit-card', currencyCode: 'USD', openingBalanceMinor: '20000', isActive: true });
+    const rupees = await StorageService.accounts.add({ name: 'Rupee wallet', type: 'wallet', currencyCode: 'INR', openingBalanceMinor: '0', isActive: true });
+    const unusedNonzero = await StorageService.accounts.add({ name: 'Unused funded wallet', type: 'wallet', currencyCode: 'USD', openingBalanceMinor: '500', isActive: true });
+    await assert.rejects(StorageService.accounts.delete(unusedNonzero.id), /non-zero opening balance/i);
+    check(Boolean(await db.financialAccounts.get(unusedNonzero.id)), 'Deleting an unused funded account cannot erase its opening amount');
+    await StorageService.accounts.archive(unusedNonzero.id);
+    const unusedEmpty = await StorageService.accounts.add({ name: 'Empty wallet', type: 'wallet', currencyCode: 'USD', openingBalanceMinor: '0', isActive: true });
+    await StorageService.accounts.delete(unusedEmpty.id);
+    check(!(await db.financialAccounts.get(unusedEmpty.id)), 'An unused zero-balance account can be deleted safely');
+    const transactionCountBeforeAccounts = await db.transactions.count();
+    const openingBalances = calculateAccountBalances([cash, bank, card, rupees], [], []);
+    check(openingBalances.get(cash.id) === 10000n && openingBalances.get(card.id) === 20000n && await db.transactions.count() === transactionCountBeforeAccounts,
+      'Opening balances affect account balances only and never create income records');
+
+    const transactionCountBeforePosting = await db.transactions.count();
+    await StorageService.transactions.add({ type: 'expense', amount: 12.34, amountMinor: '1234', currencyCode: 'USD', accountId: cash.id,
+      category: 'Food', description: 'Account-linked purchase', date: '2026-11-08', paymentMethod: 'Cash' });
+    await StorageService.transactions.add({ type: 'income', amount: 3, amountMinor: '300', currencyCode: 'USD', accountId: cash.id,
+      category: 'Salary', description: 'Account-linked income', date: '2026-11-08', paymentMethod: 'Bank' });
+    await StorageService.transactions.add({ type: 'expense', amount: 10, amountMinor: '1000', currencyCode: 'USD', accountId: card.id,
+      category: 'Food', description: 'Card purchase', date: '2026-11-08', paymentMethod: 'Credit card' });
+    const transferId = 'transfer-idempotency-test';
+    const transfer = await StorageService.accounts.addTransfer({ id: transferId, fromAccountId: cash.id, toAccountId: bank.id,
+      fromAmountMinor: '500', toAmountMinor: '500', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08' });
+    await assert.rejects(StorageService.accounts.addTransfer({ id: transferId, fromAccountId: cash.id, toAccountId: bank.id,
+      fromAmountMinor: '500', toAmountMinor: '500', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08' }));
+    await StorageService.accounts.addTransfer({ fromAccountId: bank.id, toAccountId: card.id, fromAmountMinor: '1000', toAmountMinor: '1000',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-11-08', notes: 'Card payment' });
+    await assert.rejects(StorageService.accounts.update(cash.id, { openingBalanceMinor: '1' }), /opening balance cannot change/i);
+    check((await db.financialAccounts.get(cash.id)).openingBalanceMinor === '10000',
+      'Account opening balance cannot be rewritten after transactions or transfers exist');
+    await StorageService.accounts.addTransfer({ fromAccountId: cash.id, toAccountId: rupees.id, fromAmountMinor: '100', toAmountMinor: '8300',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'INR', exchangeRate: '83', date: '2026-11-08' });
+    const balances = calculateAccountBalances([cash, bank, card, rupees], await db.transactions.toArray(), await db.accountTransfers.toArray());
+    check(balances.get(cash.id) === 8466n && balances.get(bank.id) === 4500n && balances.get(card.id) === 20000n && balances.get(rupees.id) === 8300n,
+      'Account balances reconcile opening amounts, income, expenses, liabilities, same-currency and explicit FX transfers');
+    check(await db.transactions.count() === transactionCountBeforePosting + 3 && await db.accountTransfers.count() === 3,
+      'Transfers remain separately linked ledger entries and do not inflate income or expense transactions');
+    await assert.rejects(StorageService.accounts.addTransfer({ fromAccountId: cash.id, toAccountId: rupees.id, fromAmountMinor: '100', toAmountMinor: '1',
+      fromCurrencyCode: 'USD', toCurrencyCode: 'INR', exchangeRate: '83', date: '2026-11-08' }), /rate/i);
+    check(await db.accountTransfers.count() === 3, 'An invalid cross-currency transfer leaves no partial record');
+    const originalFxTransfer = (await db.accountTransfers.toArray()).find(row => row.fromAccountId === cash.id && row.toAccountId === rupees.id);
+    const reversal = await StorageService.accounts.reverseTransfer(originalFxTransfer.id, '2026-11-09');
+    check(reversal.reversalOfId === originalFxTransfer.id && reversal.fromAmountMinor === originalFxTransfer.toAmountMinor && reversal.toAmountMinor === originalFxTransfer.fromAmountMinor && reversal.exchangeRate === undefined,
+      'Cross-currency reversal preserves the exact original minor-unit amounts as a linked counter-entry');
+    await assert.rejects(StorageService.accounts.reverseTransfer(originalFxTransfer.id, '2026-11-09'), /already been reversed/i);
+    await assert.rejects(StorageService.accounts.updateTransfer(originalFxTransfer.id, { notes: 'change' }), /reversed/i);
+    await assert.rejects(StorageService.accounts.deleteTransfer(originalFxTransfer.id), /Remove the reversal/i);
+    const reversedBalances = calculateAccountBalances([cash, bank, card, rupees], await db.transactions.toArray(), await db.accountTransfers.toArray());
+    check(reversedBalances.get(cash.id) === 8566n && reversedBalances.get(rupees.id) === 0n, 'Exact reversal returns each cross-currency account to its pre-transfer balance');
+    await StorageService.accounts.deleteTransfer(reversal.id);
+    await StorageService.accounts.updateTransfer(transfer.id, { fromAmountMinor: '600', toAmountMinor: '600' });
+    check((await db.accountTransfers.get(transfer.id)).fromAmountMinor === '600', 'Transfer edits replace one linked transfer record without duplicate postings');
+    await StorageService.accounts.deleteTransfer(transfer.id);
+    check(!(await db.accountTransfers.get(transfer.id)), 'Transfer deletion removes the linked entry and derived balances recalculate');
+    await assert.rejects(StorageService.accounts.update(cash.id, { currencyCode: 'EUR' }), /cannot change/i);
+    await assert.rejects(StorageService.accounts.delete(bank.id), /archive/i);
+    await StorageService.accounts.archive(bank.id);
+    check((await StorageService.accounts.getAll()).find(account => account.id === bank.id)?.isActive === false,
+      'Archived accounts remain persisted and available for historical reports');
+
+    // Reproduce the physically accepted Amazon/HDFC credit-card reversal case
+    // with isolated synthetic INR accounts and exact paise arithmetic.
+    const amazonCard = await StorageService.accounts.add({ name: 'Amazon credit card', type: 'credit-card',
+      currencyCode: 'INR', openingBalanceMinor: '1000000', isActive: true });
+    const hdfcBank = await StorageService.accounts.add({ name: 'HDFC bank', type: 'bank',
+      currencyCode: 'INR', openingBalanceMinor: '2000000', isActive: true });
+    const syntheticAccounts = await StorageService.accounts.getAll();
+    const knownScenarioBalances = async () => calculateAccountBalances(syntheticAccounts,
+      await db.transactions.toArray(), await db.accountTransfers.toArray());
+    const starting = await knownScenarioBalances();
+    check(starting.get(amazonCard.id) === 1000000n && starting.get(hdfcBank.id) === 2000000n,
+      'Synthetic Amazon/HDFC opening liabilities and bank funds start at ₹10,000 and ₹20,000');
+
+    const knownScenarioTransactionCount = await db.transactions.count();
+    await StorageService.transactions.add({ type: 'expense', amount: 500, amountMinor: '50000', currencyCode: 'INR',
+      accountId: amazonCard.id, category: 'Food', description: 'Synthetic card purchase', date: '2026-11-08',
+      paymentMethod: 'Credit card' });
+    const afterExpense = await knownScenarioBalances();
+    check(afterExpense.get(amazonCard.id) === 1050000n && afterExpense.get(hdfcBank.id) === 2000000n,
+      '₹500 card purchase raises card liability without changing the bank balance');
+
+    const unrelatedFiveThousand = await StorageService.accounts.addTransfer({ fromAccountId: amazonCard.id,
+      toAccountId: hdfcBank.id, fromAmountMinor: '500000', toAmountMinor: '500000',
+      fromCurrencyCode: 'INR', toCurrencyCode: 'INR', date: '2026-11-08' });
+    const reversibleThreeThousand = await StorageService.accounts.addTransfer({ fromAccountId: hdfcBank.id,
+      toAccountId: amazonCard.id, fromAmountMinor: '300000', toAmountMinor: '300000',
+      fromCurrencyCode: 'INR', toCurrencyCode: 'INR', date: '2026-11-08' });
+    let knownBalances = await knownScenarioBalances();
+    check(knownBalances.get(amazonCard.id) === 1250000n && knownBalances.get(hdfcBank.id) === 2200000n,
+      '₹5,000 and ₹3,000 transfers update the card liability and HDFC balance with exact paise');
+    const cashFlowBeforeReversal = (await db.transactions.toArray()).map(row => ({
+      id: row.id, type: row.type, amount: row.amount, amountMinor: row.amountMinor
+    }));
+
+    const knownReversal = await StorageService.accounts.reverseTransfer(reversibleThreeThousand.id, '2026-11-09');
+    knownBalances = await knownScenarioBalances();
+    check(knownBalances.get(amazonCard.id) === 1550000n && knownBalances.get(hdfcBank.id) === 2500000n &&
+      knownReversal.reversalOfId === reversibleThreeThousand.id,
+      'Reversing the ₹3,000 transfer restores both balances and links its audit record');
+    check(JSON.stringify(await db.accountTransfers.get(unrelatedFiveThousand.id)) === JSON.stringify(unrelatedFiveThousand),
+      'Reversing ₹3,000 leaves the unrelated ₹5,000 transfer untouched');
+
+    await StorageService.accounts.deleteTransfer(knownReversal.id);
+    knownBalances = await knownScenarioBalances();
+    check(knownBalances.get(amazonCard.id) === 1250000n && knownBalances.get(hdfcBank.id) === 2200000n &&
+      Boolean(await db.accountTransfers.get(reversibleThreeThousand.id)) &&
+      !(await db.accountTransfers.get(knownReversal.id)),
+      'Undoing reversal reactivates the original ₹3,000 transfer without recreating it');
+    check(JSON.stringify(await db.accountTransfers.get(unrelatedFiveThousand.id)) === JSON.stringify(unrelatedFiveThousand) &&
+      JSON.stringify((await db.transactions.toArray()).map(row => ({
+        id: row.id, type: row.type, amount: row.amount, amountMinor: row.amountMinor
+      }))) === JSON.stringify(cashFlowBeforeReversal) &&
+      await db.transactions.count() === knownScenarioTransactionCount + 1,
+      'Transfer reversal and undo change neither the ₹5,000 transfer nor income/expense history');
+
+    const rate = await StorageService.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '83.125', effectiveDate: '2026-11-08', sourceLabel: 'Manual statement' });
+    await assert.rejects(StorageService.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '84', effectiveDate: '2026-11-08' }), /already exists/i);
+    await StorageService.exchangeRates.update(rate.id, { rate: '83.25' });
+    check((await StorageService.exchangeRates.getAll())[0].rate === '83.25', 'Manual offline exchange rates support history and safe edits');
+    await StorageService.exchangeRates.delete(rate.id);
+
+    const beforeCommitmentTransactions = await db.transactions.count();
+    const commitment = await StorageService.commitments.add({ title: 'Monthly rent', amount: 1200, amountMinor: '120000', currencyCode: 'USD',
+      frequency: 'monthly', nextDueDate: '2026-12-01', categoryId: 'cat_rent', accountId: cash.id, status: 'active' });
+    check(await db.transactions.count() === beforeCommitmentTransactions && (await StorageService.commitments.getAll())[0].id === commitment.id,
+      'A planned bill is stored separately and never posts an actual expense');
+    await StorageService.commitments.update(commitment.id, { status: 'paused' });
+    check((await StorageService.commitments.getAll())[0].status === 'paused', 'Commitments can be paused without posting a transaction');
+    await assert.rejects(StorageService.accounts.delete(cash.id), /archive/i);
+    await StorageService.commitments.delete(commitment.id);
+
+    const migrationName = `lifeos-v1-upgrade-${Date.now()}`;
+    const legacyDb = new Dexie(migrationName);
+    legacyDb.version(1).stores({ transactions: 'id, date, category, type, createdAt', categories: 'id, type, name', budgets: 'id, monthYear, categoryId',
+      savingsGoals: 'id, targetDate', savingsContributions: 'id, goalId, date', habits: 'id, frequency, createdAt', habitLogs: 'id, habitId, date, [habitId+date]',
+      goals: 'id, category, priority, status, targetDate', milestones: 'id, goalId', tasks: 'id, dueDate, priority, completed', settings: 'key' });
+    await legacyDb.open();
+    const legacyRecord = { id: 'legacy-tx', type: 'expense', amount: 1.23, category: 'Food', description: 'legacy row', date: '2026-11-01', paymentMethod: 'Cash', createdAt: stamp };
+    const legacyCategory = { id: 'legacy-cat', name: 'Food', type: 'expense', color: '#123456' };
+    const legacyBudget = { id: 'legacy-budget', monthYear: '2026-11', monthlyAmount: 100, categoryId: 'legacy-cat' };
+    const legacyTask = { id: 'legacy-task', title: 'Preserved task', dueDate: '2026-11-09', priority: 'Medium', recurring: 'None', completed: false };
+    await legacyDb.table('transactions').put(legacyRecord);
+    await legacyDb.table('categories').put(legacyCategory);
+    await legacyDb.table('budgets').put(legacyBudget);
+    await legacyDb.table('tasks').put(legacyTask);
+    await legacyDb.table('settings').put({ key: 'displayName', value: 'Existing profile' });
+    legacyDb.close();
+    const upgradedDb = new LifeOSDatabase(migrationName);
+    await upgradedDb.open();
+    check(upgradedDb.verno === 2 && JSON.stringify(await upgradedDb.transactions.get('legacy-tx')) === JSON.stringify(legacyRecord),
+      'Version 1 upgrade adds finance stores without rewriting existing transactions');
+    check(['transactions', 'categories', 'budgets', 'savingsGoals', 'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings'].every(name => upgradedDb.tables.some(table => table.name === name)),
+      'Version 2 schema retains every pre-existing Dexie table and relationship store');
+    check(JSON.stringify(await upgradedDb.categories.get('legacy-cat')) === JSON.stringify(legacyCategory) &&
+      JSON.stringify(await upgradedDb.budgets.get('legacy-budget')) === JSON.stringify(legacyBudget) &&
+      JSON.stringify(await upgradedDb.tasks.get('legacy-task')) === JSON.stringify(legacyTask) &&
+      (await upgradedDb.settings.get('displayName')).value === 'Existing profile',
+      'Version 1 upgrade preserves records from every existing store, including task and profile data');
+    check(await upgradedDb.financialAccounts.count() === 0 && await upgradedDb.accountTransfers.count() === 0 &&
+      await upgradedDb.manualExchangeRates.count() === 0 && await upgradedDb.plannedCommitments.count() === 0,
+      'Version 1 upgrade starts new financial stores empty without guessing history');
+    await upgradedDb.delete();
+
+    console.log(`\nDATABASE ATOMICITY TESTS: ${passed} legacy-internal assertions PASSED`);
   } finally {
     await db.delete();
   }

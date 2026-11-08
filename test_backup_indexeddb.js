@@ -21,6 +21,24 @@ async function main() {
   const loaded = new Module(path.join(__dirname, 'src/db.integration.cjs'), module);
   loaded.filename = path.join(__dirname, 'src/db.integration.cjs');
   loaded.paths = module.paths;
+  const financeSource = fs.readFileSync(path.join(__dirname, 'src/services/financeCore.ts'), 'utf8');
+  const financeCompiled = ts.transpileModule(financeSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const financeLoaded = new Module(path.join(__dirname, 'src/services/financeCore.integration.cjs'), module);
+  financeLoaded.filename = path.join(__dirname, 'src/services/financeCore.integration.cjs');
+  financeLoaded.paths = module.paths;
+  financeLoaded._compile(financeCompiled, financeLoaded.filename);
+  const accountingSource = fs.readFileSync(path.join(__dirname, 'src/services/financialAccounting.ts'), 'utf8');
+  const accountingCompiled = ts.transpileModule(accountingSource, { compilerOptions: {
+    module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true
+  } }).outputText;
+  const accountingLoaded = new Module(path.join(__dirname, 'src/services/financialAccounting.integration.cjs'), module);
+  accountingLoaded.filename = path.join(__dirname, 'src/services/financialAccounting.integration.cjs');
+  accountingLoaded.paths = module.paths;
+  const accountingRequire = accountingLoaded.require.bind(accountingLoaded);
+  accountingLoaded.require = request => request === './financeCore' ? financeLoaded.exports : accountingRequire(request);
+  accountingLoaded._compile(accountingCompiled, accountingLoaded.filename);
   const sessionSource = fs.readFileSync(
     path.join(__dirname, 'src/services/sessionManager.ts'),
     'utf8'
@@ -55,6 +73,8 @@ async function main() {
     parent.filename &&
     parent.filename.endsWith('/src/db.integration.cjs')
   ) {
+    if (request === './services/financeCore') return financeLoaded.exports;
+    if (request === './services/financialAccounting') return accountingLoaded.exports;
     if (request === './services/encryptedStorageIntegration') {
       return { BOOTSTRAP_SETTING_KEYS: new Set([
         'theme', 'visualTheme', 'biometricLockEnabled',
@@ -190,7 +210,7 @@ async function main() {
   await db.tasks.put({
     id: 'clear-rollback-task', title: 'Must survive failed clear',
     dueDate: '2026-10-31', priority: 'Medium', category: 'Test',
-    recurring: 'None', completed: false
+    recurring: 'None', completed: false, createdAt: stamp
   });
   const originalTasksClear = db.tasks.clear;
   db.tasks.clear = async function () {
@@ -205,8 +225,25 @@ async function main() {
   assert.ok(await db.tasks.get('clear-rollback-task'));
   console.log('PASS: Failed clearAll rolls back earlier table clears');
 
+  // New encrypted-domain data must travel through the existing backup envelope.
+  await db.financialAccounts.put({ id: 'backup-cash', name: 'Cash', type: 'cash', currencyCode: 'USD', openingBalanceMinor: '25000', isActive: true, createdAt: stamp });
+  await db.accountTransfers.put({ id: 'backup-transfer', fromAccountId: 'backup-cash', toAccountId: 'backup-bank', fromAmountMinor: '1000', toAmountMinor: '1000', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', date: '2026-10-31', createdAt: stamp });
+  await db.accountTransfers.put({ id: 'backup-reversal', fromAccountId: 'backup-bank', toAccountId: 'backup-cash', fromAmountMinor: '1000', toAmountMinor: '1000', fromCurrencyCode: 'USD', toCurrencyCode: 'USD', reversalOfId: 'backup-transfer', date: '2026-11-01', createdAt: stamp });
+  await db.financialAccounts.put({ id: 'backup-bank', name: 'Bank', type: 'bank', currencyCode: 'USD', openingBalanceMinor: '0', isActive: true, createdAt: stamp });
+  await db.manualExchangeRates.put({ id: 'backup-rate', baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '83.25', effectiveDate: '2026-10-31', createdAt: stamp });
+  await db.plannedCommitments.put({ id: 'backup-rent', title: 'Rent', amount: 20, amountMinor: '2000', currencyCode: 'USD', frequency: 'monthly', nextDueDate: '2026-11-01', status: 'active', createdAt: stamp });
+  const financeBackup = await StorageService.backup.exportData();
+  await StorageService.backup.clearAll();
+  await StorageService.backup.importData(financeBackup, { replaceExisting: true });
+  assert.strictEqual((await db.accountTransfers.get('backup-transfer')).toAccountId, 'backup-bank');
+  assert.strictEqual((await db.accountTransfers.get('backup-reversal')).reversalOfId, 'backup-transfer');
+  assert.strictEqual((await db.financialAccounts.get('backup-cash')).openingBalanceMinor, '25000');
+  assert.strictEqual((await db.manualExchangeRates.get('backup-rate')).rate, '83.25');
+  assert.strictEqual((await db.plannedCommitments.get('backup-rent')).status, 'active');
+  console.log('PASS: Account, transfer, manual-rate and commitment records survive backup restore with links intact');
+
   await db.delete();
-  console.log('\nREAL DEXIE / INDEXEDDB BACKUP TESTS: 5/5 PASSED');
+  console.log('\nREAL DEXIE / INDEXEDDB BACKUP TESTS: 6/6 PASSED');
 }
 
 main().catch(error => {

@@ -2,6 +2,13 @@
 const assert = require('node:assert/strict');
 require('./scripts/register-ts-test-loader.cjs');
 const { buildFinanceAnalytics } = require('./src/services/financeAnalytics.ts');
+const { createMoneyRecordAmount } = require('./src/services/financeCore.ts');
+
+assert.deepEqual(createMoneyRecordAmount('12.34', 'INR'), { amount: 12.34, amountMinor: '1234', currencyCode: 'INR' });
+assert.deepEqual(createMoneyRecordAmount('123.5', 'JPY'), { amount: 124, amountMinor: '124', currencyCode: 'JPY' });
+assert.deepEqual(createMoneyRecordAmount('1.2345', 'KWD'), { amount: 1.235, amountMinor: '1235', currencyCode: 'KWD' });
+assert.throws(() => createMoneyRecordAmount('9007199254740992.01', 'USD'), /too large/i,
+  'major-unit compatibility value cannot silently lose precision beyond JavaScript safe range');
 
 const fractional = buildFinanceAnalytics(
   [{ date: '2026-11-07', amount: 1.005, type: 'expense', category: 'Food' }],
@@ -26,4 +33,16 @@ const threeDecimal = buildFinanceAnalytics(
   [], '2026-11', 2, [], 'KWD'
 );
 assert.equal(threeDecimal.totalExpenses, 1.235, 'three-decimal currencies retain their minor-unit precision');
-console.log('FINANCE ANALYTICS MONEY: 7 currency-precision and rounding assertions passed.');
+
+const mixed = buildFinanceAnalytics([
+  { date: '2026-11-02', amount: 10, type: 'expense', category: 'Food' }, // pre-currency legacy row
+  { date: '2026-11-03', amount: 0.1, amountMinor: '11', currencyCode: 'USD', type: 'expense', category: 'Food' },
+  { date: '2026-11-04', amount: 25, amountMinor: '2500', currencyCode: 'INR', type: 'expense', category: 'Travel' },
+], [
+  { monthYear: '2026-11', monthlyAmount: 50 },
+  { monthYear: '2026-11', monthlyAmount: 20, amountMinor: '2000', currencyCode: 'USD' },
+], '2026-11', 2, [], 'INR');
+assert.equal(mixed.totalExpenses, 35, 'analytics sum legacy reporting-context rows and matching explicit currency only');
+assert.equal(mixed.excludedCurrencyCount, 2, 'analytics reports incompatible transaction and budget currencies instead of adding them');
+assert.equal(mixed.categories.find(row => row.name === 'Travel').amount, 25, 'exact per-record minor units drive category totals');
+console.log('FINANCE ANALYTICS MONEY: 13 currency-precision, explicit-identity, and mixed-currency assertions passed.');

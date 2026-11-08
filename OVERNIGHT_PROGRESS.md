@@ -295,3 +295,218 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - Added explicit confirmation, scoped rollback messaging, optimistic list removal after successful delete, and separate refresh-failure messaging. Saved transactions are explicitly left unchanged.
 - `test_budget_display_20261107.cjs`: 17/17; TypeScript, production build, and `git diff --check`: PASS. Current local changes are limited to the budget-card handler, its regression assertions and this checkpoint.
 - Run `42355347997` has now passed for `8d345aadbc526202af8416c39f3feb8643bd6eef`. The budget deletion follow-up is committed locally as `ff125c4f2dfe1a8f83c882d4bc835e4c34c9b713` and is ready to push after updating PR #24 evidence.
+# Overnight LifeOS bulk development progress
+
+## 2026-11-07 — Start / checkpoint A
+
+- **Branch and base:** `feature/lifeos2-bulk-development-20261107`, based on PR #24 head `f1a26b199f4db8b7b0f64fd9136f23d6dfebb927`.
+- **Workspace:** `/data/data/com.termux/files/home/lifeos-bulk-20261107`; clean at creation. PR #24 notification branch remains separate.
+- **Preservation:** The original `/data/data/com.termux/files/home/lifeOS` worktree has pre-existing tracked edits in `src/App.tsx`, `src/services/notificationService.ts`, `test_auth_lifecycle.js`, `test_sec01_orphan_keystore.js`, and untracked `.audit-backup/`. No original-worktree files were changed.
+- **Reviewed:** App shell, navigation metadata/history, Profile/settings rendering, finance services and screens, database/encrypted-storage integration, backup validation, Android native manifest/plugins and available tests/workflows.
+- **Findings:** `App.tsx` is 2,421 lines and owns the Profile UI. The four primary destinations already map to existing navigation state. Exact money/currency calculation helpers exist, but stored transactions still have numeric amounts and no currency/account identity. Dexie declares schema v1 only; adding account/transfer data touches encryption and backup contracts. Notifications are native AlarmManager-backed through Capacitor Local Notifications; retain that scheduler absent new evidence.
+- **Tests run:** None in the new branch yet. Previous PR #24 checkpoint evidence is preserved but not treated as validation of new code.
+- **Completed:** Repository state check, isolated worktree/branch creation, initial architecture and migration-risk report.
+- **Next:** Extract a focused Profile/settings screen and test persistence/navigation without changing encrypted-storage semantics; then implement guarded swipe navigation.
+- **Uncommitted:** This audit and progress log.
+
+## Checkpoint B — Profile routes and swipe navigation (2026-11-08)
+- **Branch/commit:** `feature/lifeos2-bulk-development-20261107` based on PR #24 head `f1a26b199f4db8b7b0f64fd9136f23d6dfebb927`; implementation changes are currently uncommitted.
+- **Completed:** Split the Settings landing page from six destination screens; retained biometric, recovery, backup, CSV export, demo-data, onboarding restart and reset actions in their appropriate sections. Added persisted swipe-navigation preference and guarded left/right gesture handling on the main content.
+- **Tests actually run:** navigation gesture tests (14 checks), profile route/preference checks, existing navigation IA tests and settings accessibility checks passed. `npx tsc --noEmit` passed.
+- **Install note:** A clean `npm ci` installed the repository lockfile dependencies locally; no package versions were changed. `esbuild` emitted npm's install-script approval warning, but TypeScript and tests ran. No Android emulator/device tests were run.
+- **Known blockers/limits:** Real touch feel and accessibility gesture behavior still need Android device review. Finance account/transfer persistence is not safe to add until Dexie, encryption admission and backup migration support are designed together; no historical currency or account is being guessed.
+- **Next:** Review the existing finance engine and Money screens, implement only migration-safe functionality, add tests, then run full repository checks and Android CI if feasible.
+
+## Checkpoint C — Safe Money improvements and regression verification (2026-11-08)
+- **Reviewed:** Money overview, integer-minor-unit calculations, finance analytics, Dexie schema, encrypted-store allowlist, backup validation and current Android notification ownership.
+- **Implemented:** Currency selection now displays localized currency names, ISO codes and symbols. The financial currency cannot be changed after transactions, budgets or savings goals exist because legacy values lack explicit currency and changing it would relabel history. No financial schema or stored records were changed. The existing Capacitor local-notification path already delegates to Android's AlarmManager-backed receivers; no second native scheduler was introduced.
+- **Tests actually run:** Full `npm test` chain completed with all visible suites passing, including new Profile and swipe cases, WP0 regressions, encrypted migration/security suites, finance, notification contracts and Android runner simulations. `npm run test:sentinel` passed all 6 suites (0 failed; SAF real OS picker is documented as device-blocked in Sentinel output). `npm run build` passed before the localized currency selector change; `npx tsc --noEmit` and focused finance tests passed after the code change. Final build will be rerun before checkpoint.
+- **Known blockers:** No Android emulator/device was used in this Termux run, so swipe touch feel and native notification execution remain unverified. Persisted accounts/transfers/per-record currency require a separately designed versioned encrypted Dexie + backup migration; no guesses or partial schema writes were made.
+- **Next:** Rerun final TypeScript/build, inspect Android tool availability and diff, update report, then commit/push a reviewable branch checkpoint and request hosted CI.
+
+## Checkpoint D — Final local validation (2026-11-08)
+- **Review:** Confirmed the profile remains reachable from the avatar, the swipe event listener uses existing navigation state, money currency values remain safe for legacy data, and notification scheduling remains on Capacitor's native AlarmManager path.
+- **Tests:** The full `npm test` chain completed through its final Android-runner contract tests without a failure; `npm run test:sentinel` passed 6/6 suites; focused Profile, settings, navigation, finance core and finance analytics suites passed; TypeScript and production build passed; `git diff --check` passed.
+- **Android limitation:** `java` and `adb` exist, but there is no configured Android SDK, no connected device, and this checkout has no Gradle wrapper. No APK or native device result is claimed. Vite emits the existing >500 kB main-chunk warning.
+- **Next:** Review staged files and baseline statuses, commit the feature branch checkpoint, push it, and request GitHub-hosted build validation. Do not alter PR #24 or the original checkout.
+
+## Checkpoint E — Preferences component extraction
+- **Change:** Moved locale, units, date/time formats, currency safety guidance and the swipe opt-out into reusable `ProfilePreferences.tsx`; App now supplies the saved preference state and persistence callback. No storage schema changed.
+- **Verification:** TypeScript passed; Profile and Settings accessibility contracts passed; production build passed (2,252 modules). A source test first referenced the old inline toggle, then was updated to assert the extracted production component; the corrected test passes.
+- **Hosted CI:** Run `42402575188` for commit `e54b9a24c9df7b05eef0478bbea7dac119306049` passed automated checks and was still building Android packaging when last checked. The next pushed commit will receive its own CI run.
+- **Next:** Commit/push this extraction as a small follow-up, then verify its hosted run without waiting indefinitely.
+
+## Checkpoint F — Production-component rendering tests
+- **Change:** Added server-rendered assertions for the actual Profile home, subpage shell and Preferences component, including destination links, identity/local-only copy, back navigation, currency lock and swipe preference. This supplements rather than replaces the pure gesture and source contracts.
+- **Tests:** Full `npm test` ran through the final Android-runner contract checks with no reported failure; the output is saved at `/data/data/com.termux/files/usr/tmp/lifeos-bulk-npm-test.log`. The added Profile component render test and TypeScript check passed directly.
+- **Hosted CI:** Run `42402575188` completed successfully for the first code checkpoint. Run `42402896503` has passed automated checks and is building the Android APK/release artifact for commit `8c8b3ed72f18874d99742b54153e72c055119b78`.
+- **Next:** Commit/push the test-only additions, verify the final hosted run and update the PR/checkpoint with its actual result.
+
+## Checkpoint G — Searchable currency picker
+- **Change:** Added in-place currency search by localized name, ISO code or symbol. The existing selection stays visible even when it does not match the current search. This is presentation-only; it does not change records.
+- **Tests:** Server-rendered Profile/Preferences test, Settings accessibility test, TypeScript and Vite production build passed. Build still emits the >500 kB chunk advisory.
+- **Hosted CI:** Run `42403261537` passed Automated checks and was building the Debug APK when last checked. This run is for `38db7a4`; the searchable picker will be included in the next pushed commit and require final CI.
+- **Next:** Commit the searchable picker, wait for the active hosted build to finish, then push this final checkpoint and verify its run/artifact.
+
+## Checkpoint H — Search responsiveness
+- **Change:** Currency labels are now prepared once per locale and reused while the user types, avoiding repeated currency-format construction for every search keystroke.
+- **Verification:** Search/profile rendered tests, Settings accessibility test, TypeScript and production build passed after this adjustment.
+- **Hosted CI:** Run `42403261537` passed Automated checks and was still packaging Android when last checked. The upcoming pushed checkpoint will contain this final search optimization.
+
+## Continuation checkpoint — 2026-11-07 19:18 UTC
+
+- Reviewed: Current PR #25 branch and worktree, prior audit/progress, finance record types, Dexie v1 schema, encrypted record codec/facade, raw storage, backup validation, currency preference lock, transaction entry, and Money analytics.
+- Found: Financial records relied on the global reporting currency and major-unit JavaScript numbers. Legacy currency is protected by the existing preference lock, but records had no explicit currency identity. There is no accounts/transfer model yet. No schema migration was made because the current encrypted table allowlist and backup format do not contain account tables.
+- Changed: Added optional exact minor-unit strings and ISO currency fields to transaction, budget, savings goal, and contribution records. New transaction creation records selected currency and exact units; existing records remain unchanged. New savings/budget inputs retain exact units. Analytics uses exact fields when present, excludes explicitly mismatched currencies, and reports the excluded count. Backup validation accepts old records and validates new metadata.
+- Tests: `npx tsc --noEmit` PASS; `node test_finance_analytics_money_20261107.cjs` PASS (13 assertions); `node test_lifeos.js` PASS (102 assertions); `node test_backup_validation.js` PASS (22 cases); `node test_db_atomicity.js` PASS (32 assertions). No Android build or device test run in this checkpoint.
+- Unfinished: Accounts, balances, transfers, FX-rate storage, contribution edit/delete, and full dedicated Money pages remain unimplemented. These need storage/backup contract work and focused tests. The finance preference remains fixed when existing financial records are present, retaining legacy interpretation.
+- Next: Verify raw/encrypted storage parity for newly added money metadata, extend savings contributions to safe edit/delete reconciliation, then run the full suite, Sentinel, build, and Android-compatible verification. Review diff before committing.
+- Current branch/head at checkpoint start: `feature/lifeos2-bulk-development-20261107` / `4861a7a133282301429cd7383b2ab8f1ff1fc641`; changes are uncommitted.
+
+## Finance checkpoint — 2026-11-07 19:22 UTC
+
+- Reviewed: Finance write paths in both raw Dexie and encrypted storage, backup validation, transaction/budget/savings inputs, analytics aggregation, and savings goal presentation.
+- Changed: New transaction, budget, savings goal, and contribution records now retain exact minor-unit strings and explicit ISO currency codes without adding a Dexie table or rewriting prior rows. Analytics and account-summary calculations only include the reporting currency plus untouched legacy rows, and show when explicit other-currency items are excluded. Transaction history formats an explicitly tagged row in its own currency. Savings contributions can now be listed, edited, and deleted; goal totals are reconciled atomically and mismatched currencies are rejected.
+- Tests: TypeScript PASS; finance currency/analytics tests PASS (13 assertions); core LifeOS tests PASS (102 assertions); backup tests PASS (22 cases); raw database atomicity PASS (33 assertions before the latest edit/delete additions); encrypted facade PASS (17 assertions); Money visual regression PASS (19 cases). The first savings component test attempt failed because its fixture did not pass optional history; the component now safely defaults to no history, and the test passed on retry. No test assertion was removed or relaxed.
+- Unfinished: Accounts, account balances, transfers, manual exchange-rate persistence/conversion, and dedicated Accounts/Planning pages remain outstanding. No schema migration was introduced. Old backup compatibility is covered for the additive optional fields; no account-table format exists to validate yet.
+- Next: Run full npm suite and Sentinel, then production build and inspect Android build availability. Add focused account/transfer model only if it can be integrated end-to-end with encrypted storage and backup in this workspace; otherwise document that work as remaining rather than ship a disconnected model.
+- Branch: `feature/lifeos2-bulk-development-20261107`; changes remain uncommitted, based on `4861a7a133282301429cd7383b2ab8f1ff1fc641`.
+
+## Finance continuation verification — 2026-11-08
+
+- **Branch/head:** `feature/lifeos2-bulk-development-20261107` at `4861a7a133282301429cd7383b2ab8f1ff1fc641`; PR #25 is still open/draft and its remote head matched at inspection. All application work remains in the existing bulk worktree.
+- **Completed:** New transactions, budgets, savings goals and contributions now preserve explicit currency and exact minor-unit metadata. Legacy rows and old backup meanings remain unchanged. Savings contribution history supports editing and deletion with atomic goal-total reconciliation in raw and encrypted storage. Money overview, transaction formatting and analytics honor explicit currency and report items excluded from reporting-currency totals.
+- **Profile/navigation review:** Automated checks confirm profile destinations remain wired (appearance, preferences, notifications, privacy/security, backup and about), currency selection remains searchable and guarded against legacy relabeling, and swipe gestures retain direction/threshold/control exclusions, no-wrap behavior and persisted opt-out. No live touch evaluation was performed.
+- **Tests actually run after the latest code changes:** `npm test` PASS (complete command chain); `npm run test:sentinel` PASS (6/6 suites; Sentinel's physical Android SAF operation remains unavailable); `npx tsc --noEmit` PASS; `npm run build` PASS; `git diff --check` PASS. Vite reports its existing main-chunk size advisory. Android instrumentation and device acceptance were not run.
+- **Android environment:** `adb` is installed but reports no connected devices; no Android SDK environment is configured and this worktree has no Gradle wrapper. Hosted CI is required for Android APK compilation. No current-code APK is available yet.
+- **Migration decision:** No Dexie schema change or new table was needed for optional financial metadata. Existing backups still accept rows without new fields. Accounts, transfers, persisted exchange rates and planned commitments remain unfinished because they require a coordinated versioned encrypted-storage and backup migration plus reconciliation tests.
+- **Next:** Review and commit the finance continuation; push only to the PR #25 branch, then inspect hosted CI and APK artifact. Report remaining accounts/transfers/FX/commitment work explicitly rather than implying full Finance 2.0 completion.
+- **Hosted result:** Commit `f630ca487bfbe54be019251ecaaa305cfa7fdef2` passed both PR jobs in run `42407523650`: automated checks and signed Android Debug APK build. The Debug APK artifact is [available here](https://github.com/PavanKotana18/lifeOS/actions/runs/42407523650/artifacts/13587883700). The instrumentation APK was also uploaded ([artifact](https://github.com/PavanKotana18/lifeOS/actions/runs/42407523650/artifacts/13588361189)) but was not executed. PR #25 remains open and draft; its description now reflects what is implemented and what is deferred.
+
+## Money 2.0 continuation — 2026-11-08, database and backup checkpoint
+
+- **Reviewed:** Current PR #25 HEAD/worktree, the v1/v2 Dexie definitions, encrypted table codecs/facade, backup validators/import transactions, accounts/transfers/rates/commitments storage contracts, and Money navigation.
+- **Found:** The first v2 schema draft named only the newly added finance tables. Dexie version schemas must describe the full target set; omitting old tables risked dropping existing user tables during upgrade. Existing user records and encrypted backup compatibility are therefore a release-critical migration concern.
+- **Changed:** Updated v2 schema to retain every v1 table and index while adding the four new finance tables and the optional transaction account index. Extended the disposable upgrade test to confirm old transaction, category, budget, task and profile settings survive unchanged. Updated Sentinel's schema expectations. Added a real IndexedDB backup/restore round trip for accounts, transfers, manual rates and commitments.
+- **Tested:** TypeScript PASS; database atomicity/migration tests PASS (48 assertions); backup validation PASS (23); encrypted facade PASS (18); IndexedDB backup rollback and financial round-trip PASS (6 checks). One first backup-roundtrip attempt exposed an invalid legacy test task without `createdAt`; the fixture was corrected and the test now passes. No source behavior was weakened.
+- **Remaining:** User-facing Accounts/Transfers and Planning/Commitments/FX screens are not implemented yet. Full npm/Sentinel/build/Android checks remain pending for this checkpoint.
+- **Next:** Add dedicated Accounts and Planning interfaces backed by encrypted storage, connect them to Money navigation, then run full regressions and build checks. Android package delivery depends on hosted CI.
+
+## Money 2.0 continuation — 2026-11-08, first functional UI checkpoint
+
+- **Reviewed:** Existing Money home/navigation, transaction entry and exact-money builder, account/transfer storage contracts, account balance logic, reporting-currency behavior, and profile/Money screen styling.
+- **Changed:** Added a dedicated Accounts page with optional account creation/editing, current balances calculated from exact minor units, account history, archive/restore, guarded deletion, and same/cross-currency transfer create/edit/delete. Added a Planning page for recurring commitments and dated manual exchange-rate history. Added account balances to Money overview without combining unlike currencies. Transaction entry can now assign an optional active account and select an explicit currency; the storage layer rejects currency/account mismatches.
+- **Migration and backup:** Kept all prior Dexie stores in v2; new accounts/transfers/rates/commitments are included in encrypted codecs/facade and backup import/export. The upgrade and backup tests verify references and older record preservation.
+- **Verification:** Current TypeScript check PASS after UI integration. Database and encrypted storage focused tests listed in the prior checkpoint PASS. The full suite has not yet run against the newly connected screens.
+- **Remaining:** Run broader tests/build; fix any workflow regressions; add the new screens to Money navigation tests; inspect UI interaction/error handling. Native Android build is not locally configured and requires hosted CI.
+- **Next:** Harden UI save/edit behavior and exact currency formatting, then run full npm, Sentinel, TypeScript and production build before committing/pushing this checkpoint.
+
+## Money 2.0 continuation — 2026-11-08, workflow integration checkpoint
+
+- **Changed:** Connected accounts, transfers, manual rates and commitments to Money navigation and encrypted storage. Money home now shows real per-account balances and existing savings-goal progress without summing unlike currencies. Transactions support optional account assignment plus account/currency filters; the form rejects assigning a record to an account with a different currency. Savings goals can now be edited while contribution totals remain untouched.
+- **Tests:** Latest TypeScript check PASS; server-rendered Money 2 screens and exact account/card balance calculations pass (12 checks). Prior database migration, facade and backup tests remain passing. A full npm/Sentinel/build run is next.
+- **Remaining:** Broader regression behavior (including existing Savings UI tests), full production build, Android hosted build, and review of known migration/backup limits.
+
+## Money 2.0 continuation — 2026-11-08, encrypted integration correction
+
+- **Found:** Extending the encrypted facade and record codec was not sufficient: `CryptoService` maintains a separate authenticated-data table allowlist. The new finance tables would fail closed when encrypting a record until that allowlist was updated.
+- **Changed:** Added all four new encrypted table names to the AAD allowlist and a crypto-service regression test. Extended the WP0 disposable encrypted harness to write/export all four new domains so it verifies actual encryption and restore integration. Aligned its expected table order with the backup validator. Added account/currency transaction-filter behavior coverage.
+- **Verification:** `npm run test:wp0` PASS (11 suites including restore, recovery, and legacy backup; new records are seeded in synthetic encrypted fixtures). `test_crypto_service.js` PASS (26 checks), `test_lifeos_stabilization.js` PASS (6), money workflow rendering PASS (12), TypeScript PASS.
+- **Full suite:** The first `npm test` run found the missing AAD allowlist and test-harness contracts; these were corrected. A second full run is in progress. No encryption fallback or test suppression was introduced.
+- **Next:** Finish full suite, Sentinel, production build, review diff, and determine Android build artifact availability through the existing hosted PR workflow.
+
+## Money 2.0 continuation — 2026-11-08, full Node regression checkpoint
+
+- **Full `npm test`:** PASS after the encryption table allowlist/harness fix and updating the quick-entry regression to verify minor-unit keyboard precision for the selected transaction currency. The complete script chain reached all UI, profile, finance, encryption, notification, recovery and Android-runner contract suites. Android runner checks are simulated ADB contracts only.
+- **Additional focused coverage:** `npm run test:wp0` PASS (11/11 suites); database atomicity/migration PASS (49 assertions); IndexedDB backup/restore PASS (6); crypto-service PASS (26); financial workflow rendering/calculation PASS (12); transaction filtering and stabilization PASS (6); `git diff --check` PASS.
+- **Remaining:** Run standalone Sentinel, TypeScript, production build, inspect Android Gradle/build availability, and run Android CI after pushing a reviewed commit. No physical-device validation has occurred.
+
+## Money 2.0 continuation — 2026-11-08, transfer reversal and preservation checkpoint
+
+- **Changed:** Added linked exact counter-entry reversals for transfers. The original remains in history; duplicate reversal, editing a reversed record, or deleting its original is blocked until the reversal is removed. Cross-currency reversals preserve both posted minor-unit amounts and restore account balances without fabricating a replacement FX rate. The Accounts editor also retains an archived account's state when editing.
+- **Verification:** Encrypted storage facade PASS (18); real IndexedDB backup/restore PASS (6), including linked reversal round-trip; database atomicity PASS (51 assertions); TypeScript PASS; `git diff --check` PASS. A complete `npm test` rerun is in progress, with secure-startup regressions passing so far.
+- **Limit:** Android SDK/Gradle wrapper is unavailable in this Termux worktree; native APK verification requires the existing GitHub Actions workflow. Manual FX rates are stored for explicit use, while unlike-currency totals remain separated; planned commitments remain plans and do not auto-post.
+- **Next:** Finish full tests, Sentinel, production build, review exact diff and PR state, then commit/push to the existing PR #25 branch and inspect the resulting CI artifact.
+
+## Money 2.0 continuation — 2026-11-08, accounting display correctness
+
+- **Changed:** Account history now displays credit-card purchases as increasing the amount owed and card payments as reducing it. Corrected Savings copy to explain that a contribution is a goal update and a separate tracked-account move should be recorded as a transfer. Editing an archived account preserves its archived state.
+- **Verification:** Money workflow rendering/calculation tests PASS (12 checks); encrypted facade PASS (18); IndexedDB backup/restore PASS (6); migration/atomicity PASS (51); TypeScript PASS; whitespace/diff check PASS.
+- **Next:** Rerun the full Node suite and Sentinel after the final UI/accounting changes, rebuild production assets, review the change set and publish the checkpoint. Hosted Android CI is still needed for APK evidence.
+
+## Money 2.0 continuation — 2026-11-08, full regression rerun
+
+- **Found:** The first final `npm test` rerun stopped on an old audit assertion expecting the former Savings copy. Updated that assertion to verify the new, accurate contribution-versus-transfer explanation; it now checks the same user-facing financial distinction.
+- **Verification:** The subsequent full `npm test` PASS, including encrypted/startup, database, notification, financial, profile, navigation and UI contract suites. Remote PR branch still matches base commit `e019c34d754e6ef5d7d4104edfd9a16d484833f4` (0 ahead/behind before this checkpoint). Focused reversal, backup, facade and migration tests pass.
+- **Next:** Run Sentinel, build and final source/diff review; then create a cohesive commit, push to PR #25, and verify hosted CI/APK evidence.
+
+## Money 2.0 continuation — 2026-11-08, opening-balance history guard
+
+- **Changed:** Prevented changing an account opening balance once it has transaction or transfer history; the same guard protects the account currency. The UI disables those fields and explains why; both raw Dexie and encrypted facade enforce it. Added regressions proving the stored starting value is retained.
+- **Verification:** Focused database atomicity PASS (52 assertions), encrypted facade PASS (18), Money rendering/accounting PASS (12), TypeScript and diff checks PASS. The final full `npm test` run is in progress.
+- **Next:** Finish full tests, rebuild, perform final review, commit and push. Account history is preserved by linked transfer reversal rather than destructive replacement. Android APK still requires CI.
+
+## Money 2.0 continuation — 2026-11-08, full regression checkpoint
+
+- **Verification:** Full `npm test` PASS after transfer reversal, archived-account preservation and the opening-balance history guard. The previously stale Savings source assertion was updated to check the current contribution/transfer explanation and passes. Sentinel PASS (6/6) was run earlier in this checkpoint; I will rerun it once after this final storage guard. TypeScript and production build passed before this last guard; focused TypeScript passed after it.
+- **Next:** Final Sentinel, production build, diff review, commit/push and hosted Android CI. Physical-device acceptance remains unperformed.
+
+## Money 2.0 continuation — 2026-11-08, funded account deletion safeguard
+
+- **Changed:** An unreferenced account with a non-zero opening balance can no longer be deleted and silently lose that value; it must be archived. A truly unused zero-balance account remains deletable. Raw and encrypted storage enforce the rule. Added matching regressions and made the account action label explicit.
+- **Verification:** Latest focused database atomicity PASS (54 assertions), encrypted storage facade PASS (18), money workflow PASS (17 assertions), TypeScript and diff checks PASS. Full `npm test`, Sentinel, and web build had passed immediately before this final focused deletion safeguard; a final full rerun follows before commit.
+- **Next:** Final npm/Sentinel/build verification, review and publish the PR #25 checkpoint. Android signing/build remains delegated to hosted CI.
+
+## Money 2.0 continuation — 2026-11-08, final local verification checkpoint
+
+- **Verification:** Full `npm test` PASS after the transfer, opening-balance, and deletion protections. Latest `npx tsc --noEmit` PASS. Latest `npm run build` PASS (Vite reports the existing large-chunk advisory). Latest Sentinel log reports all 6 suites passed and CI gate PASSED, but its Node process remained alive after printing the final summary; after a bounded 2-minute wait I interrupted only that local run. This is recorded as a runner teardown limitation, not concealed as a clean process exit. An earlier Sentinel run in this checkpoint exited normally with 6/6 PASS.
+- **Android:** No local Gradle command/wrapper or Android SDK build setup was found. Hosted CI must provide the signed debug APK and instrumentation compilation result; no physical device was used.
+- **Next:** Final diff/status review, commit and push the verified changes to the existing PR #25 branch, then inspect GitHub Actions and artifact availability.
+
+## Money 2.0 continuation — 2026-11-08, pushed checkpoint
+
+- **Commit:** `0c3740ebcd60e7801bbe96891c28503cc63bcfe7` — `feat(finance): add encrypted accounts transfers and planned bills`.
+- **Branch/PR:** Pushed only to `feature/lifeos2-bulk-development-20261107`; PR #25 remains OPEN and draft, stacked on the existing LifeOS 2 milestone branch. The remote branch matched before push; no rebase/reset was needed.
+- **Local verification:** Full `npm test` PASS; TypeScript PASS; production build PASS; targeted encrypted facade, transfer/reversal, database migration/atomicity, and disposable IndexedDB backup tests PASS. Sentinel summary reports 6/6 suites PASS; the final rerun did not terminate after its pass summary and was bounded-interrupted, while the earlier Sentinel run completed normally.
+- **Hosted validation:** Build/APK workflow run `42413790049` is currently in progress for this exact commit. Await terminal status and signed APK artifact before final handoff.
+
+## Money 2.0 continuation — 2026-11-08, hosted artifact and release-branch guard
+
+- **Hosted run `42413790049`:** Automated checks and Android Debug build succeeded for `0c3740ebcd60e7801bbe96891c28503cc63bcfe7`. It built the Debug APK, verified the persistent signer/package/version, and compiled the instrumentation APK (not executed). The existing workflow also generated a signed release APK on this feature-branch push; it was not published as a GitHub Release or to Play, and its generated Actions artifact was deleted. The Debug APK artifact was retained.
+- **Correction:** Added a workflow condition so release-signing secrets and packaging are only eligible on `main`, `develop`, or `release/*` refs, not feature pushes or pull requests. Added a signing-workflow regression; it passes.
+- **Next:** Push this focused CI safety follow-up and verify that a new run builds the Debug APK without creating a release artifact. The existing draft PR stays open.
+
+## Money 2.0 continuation — 2026-11-08, delivery complete
+
+- **Final code/CI checkpoint:** `102c1fa4505fa94744aaa04ca331b70ff43626ae` passed hosted run `42414286404`, including all automated checks, Sentinel, web build, Capacitor sync, signed Debug APK construction, and signature/package/version verification. Feature-branch release signing was skipped. Artifacts: Debug APK `13590843125`; instrumentation APK `13590299671` (compiled only; not run).
+- **PR:** https://github.com/PavanKotana18/lifeOS/pull/25 remains OPEN and draft, stacked on PR #24. The PR description contains the migration rules, accounting invariants, test results, known limits, and artifact links.
+- **Limitations:** No physical-device or Android instrumentation execution. Mixed-currency reports do not automatically convert; commitments do not auto-advance/post/remind. Local final Sentinel output reported 6/6 pass, but its last invocation did not exit cleanly after the final summary; the earlier invocation exited normally, and hosted Sentinel passed.
+- **Release-artifact safety:** The first run created a signed release APK artifact due the former workflow condition. It was deleted, not published. A branch guard was added; final run confirms release signing/upload skipped.
+- **Next:** User review of PR #25 and physical install/acceptance of the Debug APK. Do not merge or release.
+
+## Bulk completion audit continuation — 2026-11-08
+
+- **Reviewed before edits:** Existing audit map and full dated progress history; PR #25 description, OPEN/draft state, target branch and all commits; current Money accounts/planning/overview screens; finance/storage/backup migration contracts; swipe resolver/preference; Profile routes and accessibility tests; PR workflow history and artifacts.
+- **Verified PR evidence:** Prior head `102c1fa4505fa94744aaa04ca331b70ff43626ae` passed hosted run `42414286404`; signed Debug APK artifact `13590843125` remains available, instrumentation APK compiled only. PR #25 is still draft/open. No separate overnight spec file exists; mission scope maps to the audit map and this log.
+- **Found:** Main implementation largely exists. Analytics intentionally keep mixed currencies separate; commitments do not auto-post or auto-advance; device-only Profile, backup picker, keyboard, visual and swipe checks remain outstanding. Transfer reversal confirmation used internal terminology without identifying account context, and the transaction CSV exported the internal record ID.
+- **Changed:** Removed the internal ID column from transaction CSV. Reversal confirmation now identifies the accounts/date and describes the return amount, preserved history, undo option and unchanged income/spending totals. Added regression assertions for user-visible ID hiding and context-rich confirmation. Added a requirement-by-requirement completion matrix to `docs/remediation/bulk-development-20261107/AUDIT_AND_IMPLEMENTATION_MAP.md`.
+- **Physical evidence preserved:** User-reported ₹3,000 reversal, balance restoration, undo, original reactivation and unrelated ₹5,000 transfer preservation all passed on a device. This session has not performed device testing.
+- **Verification status:** Focused and full final reruns are pending. The matrix marks unverified Android behavior BLOCKED/PARTIAL instead of claiming completion.
+- **Next:** Run focused checks, then the full `npm test`, Sentinel, TypeScript, production build and final diff review. If clean, commit and push only this PR #25 branch, then verify exact-head Actions/APK and keep the PR draft/unmerged.
+
+## Bulk completion audit continuation — final local verification
+
+- **Changed:** The transfer reversal confirmation is now generated by a focused formatter and includes account names, date, returned amount(s), preservation of original history, undo guidance and no change to income/spending totals. The CSV no longer includes the internal transaction ID. Added same-currency and cross-currency confirmation tests and a production CSV regression.
+- **Tests:** Final `npm test` exited 0; WP0 controls 11/11 passed; Sentinel exited 0 with 6/6 suites; `npx tsc --noEmit` passed; `npm run build` passed; `git diff --check` passed. The build reports the existing large-chunk warning (main JS 624.36 kB).
+- **Android:** No local SDK/wrapper/device is available. Prior hosted run `42414286404` passed for old head and retained a signed Debug APK; new exact-head CI/APK evidence is still pending. The instrumentation APK is compiled only, not executed.
+- **Physical-device results:** The user's five stated transfer checks remain recorded as passed; this session performed no physical-device test. Profile visuals, swipe gesture feel, Android IME, biometric and SAF picker remain to be accepted on device.
+- **Next:** Review clean diff, commit and push only this branch, verify the new GitHub Actions result and signed Debug APK, confirm PR #25 remains draft/open, and provide the acceptance checklist and explicit incomplete items.
+
+## Bulk completion audit continuation — hosted verification complete
+
+- **Commit:** `2a8bf8af9346e1332d98c68f5d2d0b55615f10de` (`fix(finance): clarify transfer reversals and hide record IDs`), pushed only to the PR #25 branch.
+- **Hosted run:** `42445435389` completed successfully for that exact SHA. Automated tests and Sentinel passed; the Android Debug build passed, persistent signer/package/version checks passed, and the instrumentation APK compiled. Release signing/upload was skipped for the feature branch.
+- **Artifacts:** Debug APK `13602918525`; instrumentation APK `13603003281` (compiled only, not executed). No physical device was used by this session.
+- **PR state:** #25 is OPEN and draft, target `feature/lifeos2-milestone-a-20261107`. No merge/release was performed.
+- **Remaining:** Device-only visual/accessibility, swipe/edge-back, IME, Android biometric, notification and SAF export/restore acceptance. Mixed-currency analytics remain separate by design; commitments remain plans and do not auto-post. API 36/Play policy compliance remains outside this PR's verified build target.
+- **Exact acceptance steps:** Recorded in the final section of `docs/remediation/bulk-development-20261107/AUDIT_AND_IMPLEMENTATION_MAP.md`.
