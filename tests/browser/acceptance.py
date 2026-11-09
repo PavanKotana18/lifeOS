@@ -70,7 +70,7 @@ try:
  assert len(first_category.find_elements(By.TAG_NAME,'option'))>1, 'Mandatory onboarding must load categories before opening the private workspace'
  Select(first_category).select_by_index(1);capture('expense-form')
  click('Save transaction');assert not d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]'), 'First record after onboarding must not prompt again'
- w.until(lambda: d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done((await m.StorageService.transactions.getAll()).length));")==1)
+ w.until(lambda _: d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done((await m.StorageService.transactions.getAll()).length));")==1)
  passed('First expense: categories are ready, no repeated protection prompt, and encrypted save succeeds')
  tab('plan'); click('Add task'); capture('task-form'); click('More task details'); capture('task-advanced-form'); click('More task details'); field('Task title','QA morning walk'); save('Save task'); wait('.plan-hub-task'); passed('Create task through UI')
  tab('finance')
