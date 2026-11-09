@@ -46,6 +46,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(BiometricAuthPlugin.class);
         registerPlugin(LifeOSCryptoPlugin.class);
         registerPlugin(LifeOSBackupPlugin.class);
+        registerPlugin(LifeOSClipboardPlugin.class);
         registerPlugin(NotificationSettingsPlugin.class);
         registerPlugin(StorageAccessPlugin.class);
         registerPlugin(SystemAppearancePlugin.class);

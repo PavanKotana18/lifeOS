@@ -1,19 +1,23 @@
 """Real React UI/browser evidence. Synthetic native crypto adapter; never Android evidence."""
-import json, os, time, traceback
+import json, os, time, traceback, tempfile, shutil
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 out=Path('test-results/directed-visual'); out.mkdir(parents=True,exist_ok=True)
+download_dir=tempfile.mkdtemp(prefix='lifeos-acceptance-recovery-')
 options=webdriver.ChromeOptions()
 options.add_argument('--headless=new'); options.add_argument('--no-sandbox'); options.add_argument('--disable-dev-shm-usage')
 options.add_argument('--window-size=430,950')
+options.add_experimental_option('prefs',{'download.default_directory':download_dir,'download.prompt_for_download':False,'download.directory_upgrade':True})
 d=webdriver.Chrome(options=options); d.set_script_timeout(30)
 w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,)); results=[]; images=[]
 d.execute_cdp_cmd('Emulation.setTouchEmulationEnabled',{'enabled':True})
 d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
+d.execute_cdp_cmd('Browser.grantPermissions',{'origin':'http://127.0.0.1:5173','permissions':['clipboardReadWrite']})
 def wait(css): return w.until(lambda _: next((x for x in d.find_elements(By.CSS_SELECTOR,css) if x.is_displayed()),False))
 def click(text):
  def locate(_):
@@ -30,7 +34,7 @@ def tab(name):
 def tap(css):
  x=wait(css); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',x); d.execute_async_script('const done=arguments[0];requestAnimationFrame(()=>requestAnimationFrame(done));'); x.click()
 def capture(name):
- time.sleep(.3); p=out/(name+'.png'); d.save_screenshot(str(p)); images.append(p.name)
+ time.sleep(.3); p=out/(name+'.png'); d.execute_script("const s=document.createElement('style');s.id='qa-secret-redaction';s.textContent='[data-sensitive-recovery-code]{visibility:hidden!important}#recovery-code-confirmation{-webkit-text-security:disc!important;color:transparent!important;text-shadow:0 0 8px #25312a!important}';document.head.appendChild(s)"); d.save_screenshot(str(p)); d.execute_script("document.getElementById('qa-secret-redaction')?.remove()"); images.append(p.name)
  assert d.execute_script('return document.documentElement.scrollWidth<=innerWidth+1'), 'Horizontal page overflow: '+name
  assert d.execute_script("const a=document.querySelector('.app-brand-name')?.getBoundingClientRect(),b=document.querySelector('.app-profile-button')?.getBoundingClientRect();return !a||!b||a.right<=b.left"), 'Brand overlaps profile control: '+name
  assert d.execute_script("return [...document.querySelectorAll('.app-bottom-nav .nav-item > span')].every(e=>e.scrollWidth<=e.clientWidth+1)"), 'Navigation label overflows its own control: '+name
@@ -50,12 +54,15 @@ def save(label):
 def finish_first_launch(name):
  wait('input[autocomplete="nickname"]').send_keys(name); click('Continue')
  wait('[aria-label="Protect your LifeOS space"]'); click('Continue with secure unlock')
- wait('[aria-label="Set up your recovery kit"]'); click('Create and save recovery kit')
- kit=wait('[aria-label="Complete private recovery kit"]')
- code=kit.get_attribute('value'); assert code and 'recoveryCode' in code
- d.find_element(By.CSS_SELECTOR,'input[type="checkbox"]').click()
- d.find_element(By.CSS_SELECTOR,'[aria-label="Confirm saved recovery code"]').send_keys('A'*43)
- click('Confirm recovery kit and open encrypted storage'); wait('[data-testid="today-dashboard"]')
+ wait('[aria-label="Set up your recovery kit"]'); click('Create and save recovery kit'); wait('[data-testid="copy-recovery-code"]')
+ code=d.find_element(By.CSS_SELECTOR,'[data-sensitive-recovery-code]').text; assert code=='A'*43, 'synthetic code is available in the recovery card'
+ click('Save complete recovery kit'); exported=w.until(lambda _: next(iter(Path(download_dir).glob('*.json')),False)); kit=json.loads(exported.read_text(encoding='utf-8'))
+ assert kit.get('recoveryCode')==code and isinstance(kit.get('envelope'),dict) and kit.get('format')=='lifeos-recovery-kit', 'export contains complete recovery material'; exported.unlink()
+ click(code); copied=w.until(lambda _: d.execute_async_script("const done=arguments[0];navigator.clipboard.readText().then(done).catch(()=>done(''))")); assert copied==code, 'recovery card copies exact code'
+ confirm=wait('[data-testid="recovery-code-confirmation"]'); confirm.send_keys('B'*43); assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
+ confirm.clear(); confirm.send_keys(Keys.CONTROL,'v')
+ w.until(lambda _: d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').is_enabled())
+ click('Continue to LifeOS'); wait('[data-testid="today-dashboard"]')
 def passed(name): results.append({'journey':name,'status':'PASS','environment':'Chrome, real React UI and IndexedDB; synthetic native AES-GCM adapter'})
 try:
  for _ in range(40):
@@ -186,6 +193,10 @@ try:
  click('Explore a savings projection');wait('[aria-label="Starting savings"]') if d.find_elements(By.CSS_SELECTOR,'[aria-label="Starting savings"]') else wait('input[type="number"]');capture('savings-projection-expanded');click('Explore a savings projection')
  results.append({'journey':'Android keyboard, Back, notification delivery/tap, biometric lock and update install','status':'BLOCKED','reason':'Browser evidence does not validate Android native behavior; hosted Android instrumentation is separate.'})
 except Exception as e:
- results.append({'journey':'Current browser journey','status':'FAIL','error':str(e),'trace':traceback.format_exc(),'gestureTrace':d.execute_script('return window.__lifeosGestureTrace||[]'),'visibleControls':[x.text for x in d.find_elements(By.CSS_SELECTOR,'button,summary') if x.is_displayed()]}); d.save_screenshot(str(out/'failure.png')); raise
+ d.execute_script("const s=document.createElement('style');s.id='qa-secret-redaction';s.textContent='[data-sensitive-recovery-code]{visibility:hidden!important}#recovery-code-confirmation{-webkit-text-security:disc!important;color:transparent!important;text-shadow:0 0 8px #25312a!important}';document.head.appendChild(s)")
+ controls=[]
+ for x in d.find_elements(By.CSS_SELECTOR,'button,summary'):
+  if x.is_displayed(): controls.append('[recovery code hidden]' if x.find_elements(By.CSS_SELECTOR,'[data-sensitive-recovery-code]') else x.text)
+ results.append({'journey':'Current browser journey','status':'FAIL','error':str(e),'trace':traceback.format_exc(),'gestureTrace':d.execute_script('return window.__lifeosGestureTrace||[]'),'visibleControls':controls}); d.save_screenshot(str(out/'failure.png')); raise
 finally:
- (out/'results.json').write_text(json.dumps({'sourceCommit':os.getenv('GITHUB_SHA'),'environment':'Hosted Chrome actual React app with test-only synthetic native crypto plugin; no Android or physical-device acceptance claimed','results':results,'screenshots':images},indent=2)); d.quit()
+ (out/'results.json').write_text(json.dumps({'sourceCommit':os.getenv('GITHUB_SHA'),'environment':'Hosted Chrome actual React app with test-only synthetic native crypto plugin; no Android or physical-device acceptance claimed','results':results,'screenshots':images},indent=2)); d.quit(); shutil.rmtree(download_dir,ignore_errors=True)
