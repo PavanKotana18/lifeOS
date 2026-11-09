@@ -32,6 +32,9 @@ def tap(css):
 def capture(name):
  time.sleep(.3); p=out/(name+'.png'); d.save_screenshot(str(p)); images.append(p.name)
  assert d.execute_script('return document.documentElement.scrollWidth<=innerWidth+1'), 'Horizontal page overflow: '+name
+ assert d.execute_script("const a=document.querySelector('.app-brand-name')?.getBoundingClientRect(),b=document.querySelector('.app-profile-button')?.getBoundingClientRect();return !a||!b||a.right<=b.left"), 'Brand overlaps profile control: '+name
+ assert d.execute_script("return [...document.querySelectorAll('.app-bottom-nav .nav-item > span')].every(e=>e.scrollWidth<=e.clientWidth+1)"), 'Navigation label overflows its own control: '+name
+ assert d.execute_script("const e=document.querySelector('.money-period input');return !e||e.getBoundingClientRect().right<=e.parentElement.getBoundingClientRect().right+1"), 'Money period control clipped: '+name
  assert d.execute_script("const n=[...document.querySelectorAll('.ui-tab-screen')].filter(e=>!e.hidden).length;return n===1||(n===0&&!!document.querySelector('[aria-labelledby=first-record-security-title]'))"), 'Overlapping active screens: '+name
 def field(text,value):
  f=wait('form[role="dialog"]')

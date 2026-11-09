@@ -786,3 +786,13 @@ html.dark .text-amber-400 { color: var(--warning); }
 }
 
 .money-quick-actions { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }
+/* Text scaling must reflow inside controls, not hide overflow at the page edge. */
+.app-header-shell > div:first-child { flex: 1; min-width: 0; }
+.app-brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-bottom-nav .nav-item > span { display: block; max-width: 100%; overflow-wrap: anywhere; line-height: 1.3; }
+.money-period { min-width: 0; max-width: 100%; }
+.money-period input { max-width: 100%; min-width: 0; }
+@media (max-width: 420px) {
+  .money-period { flex-wrap: wrap; }
+  .money-period input { flex: 0 1 auto; max-width: 100%; }
+}
