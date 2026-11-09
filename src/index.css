@@ -734,3 +734,47 @@ html.dark .text-rose-400 { color: var(--danger); }
 html.dark .text-amber-200,
 html.dark .text-amber-300,
 html.dark .text-amber-400 { color: var(--warning); }
+
+/* Directed integration: readable content, viewport-safe forms, distinct section weight. */
+.record-form-description { margin: -.25rem 0 1.15rem; max-width: 42ch; color: var(--ink-secondary); font-size: .875rem; line-height: 1.5; }
+.ui-sheet-backdrop { top: var(--sheet-viewport-top, 0px); bottom: auto; height: var(--sheet-viewport-height, 100dvh); }
+.ui-bottom-sheet { max-height: calc(var(--sheet-viewport-height, 100dvh) - max(.75rem, env(safe-area-inset-top))); }
+.ui-bottom-sheet :is(input,select,textarea) { font-size: 1rem; line-height: 1.5; }
+.ui-bottom-sheet label { font-size: .8125rem; line-height: 1.5; }
+.ui-bottom-sheet > div:first-child { align-items: start; }
+.ui-bottom-sheet :is(button:disabled,input:disabled) { cursor: default; opacity: .6; }
+.ui-bottom-sheet[aria-busy="true"] { cursor: progress; }
+.today-heading h2 { font-size: clamp(1.4rem, 4vw, 1.85rem); line-height: 1.25; text-wrap: balance; }
+.today-focus { padding: clamp(1.1rem, 4vw, 1.5rem); border-color: color-mix(in srgb, var(--accent) 30%, var(--stroke)); }
+.today-attention-link { display: flex; min-height: 3rem; align-items: center; justify-content: space-between; gap: .75rem; width: 100%; margin-top: .75rem; border-top: 1px solid var(--stroke); color: var(--danger); font-size: .875rem; font-weight: 600; text-align: left; }
+.today-agenda, .today-habit-summary { border-color: transparent; padding-block: 1rem; box-shadow: none; }
+.today-agenda h3, .today-habit-summary h3 { font-size: 1.125rem; }
+.today-inline-empty { font-size: .875rem; min-height: 2.75rem; }
+.today-task-title { font-size: 1rem; line-height: 1.45; }
+.plan-date-nav-intro { margin-top: .75rem; color: var(--ink-secondary); }
+.plan-hub-task { min-height: 4.5rem; }
+.plan-hub-row-title { font-size: 1rem; line-height: 1.45; }
+.plan-hub-row-meta { line-height: 1.5; }
+.life-rhythm { border-left: .2rem solid var(--accent); padding: .75rem 1rem; background: var(--accent-tint); border-radius: 0 1rem 1rem 0; }
+.life-rhythm-stats { display: flex; flex-wrap: wrap; gap: .75rem 2rem; margin-top: .75rem; }
+.life-rhythm-stats > div { min-width: 0; }
+.life-empty-state { padding-block: .85rem; }
+.life-habit-copy strong, .life-goal-heading strong { font-size: 1rem; line-height: 1.45; }
+.life-goal-meta { flex-wrap: wrap; row-gap: .25rem; }
+.money-home { gap: 1.25rem; }
+.money-action { min-height: 4.25rem; }
+.money-transaction-copy strong { font-size: 1rem; line-height: 1.4; }
+.money-context { padding-block: .75rem; }
+.money-flow-split strong { font-size: clamp(1rem, 3.8vw, 1.3rem); }
+.app-bottom-nav .nav-item { min-height: 3.5rem; font-size: .75rem; }
+@media (max-width: 420px) {
+  .money-home-heading { flex-wrap: wrap; align-items: start; gap: .65rem; }
+  .money-period { display: flex; align-items: center; gap: .75rem; }
+  .money-period input { width: auto; min-width: 0; }
+  .today-heading { flex-wrap: wrap; }
+}
+@media (min-width: 768px) {
+  .money-home { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); align-items: start; }
+  .money-home-heading, .money-quick-actions, .money-activity, .money-tools { grid-column: 1 / -1; }
+  .life-routine-section, .life-goal-section, .plan-task-focus { padding: 1.5rem; }
+}

@@ -193,6 +193,36 @@ export function shouldSuppressPrimaryGestureClick(session: PrimaryGestureSession
   return session.axis === 'horizontal';
 }
 
+export interface PrimaryGestureClickSuppression {
+  pointerId: number;
+  target: Element;
+  expiresAt: number;
+}
+
+export interface PrimaryGestureClickSample {
+  /** Pointer ID is absent on older click events and synthetic keyboard clicks. */
+  pointerId?: number;
+  /** Native pointer clicks have detail > 0; keyboard activation normally has 0. */
+  detail: number;
+  target: Element | null;
+  now: number;
+}
+
+/**
+ * Match suppression to the same control and pointer that completed a drag.
+ * Pointer IDs are reused by browsers, so the ID alone must never swallow a
+ * later tap on a different control.
+ */
+export function matchesPrimaryGestureClickSuppression(
+  suppression: PrimaryGestureClickSuppression,
+  click: PrimaryGestureClickSample,
+): boolean {
+  if (click.now > suppression.expiresAt || click.detail <= 0 || !click.target) return false;
+  const sameControl = suppression.target.contains(click.target) || click.target.contains(suppression.target);
+  if (!sameControl) return false;
+  return click.pointerId === undefined || click.pointerId === suppression.pointerId;
+}
+
 /** Reduced motion skips settle decoration; it never disables the gesture itself. */
 export function shouldAnimatePrimaryGestureSettlement(prefersReducedMotion: boolean): boolean {
   return !prefersReducedMotion;

@@ -1,0 +1,22 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript'),Module=require('node:module');
+let effect;
+const props=new Map(),events=new Map(),viewportEvents=new Map();
+class Element { constructor(){this.isConnected=true;} focus(){document.activeElement=this;} scrollIntoView(){this.scrolled=true;} getClientRects(){return [{}];} }
+global.HTMLElement=Element;
+const opener=new Element(),first=new Element(),last=new Element(),nested=new Element();
+const dialog={contains:e=>e===first||e===last,querySelectorAll:()=>[first,last]};
+global.document={activeElement:opener,querySelector:()=>dialog,documentElement:{style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)}},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)};
+global.window={innerHeight:800,visualViewport:{height:450,offsetTop:30,addEventListener:(k,v)=>viewportEvents.set(k,v),removeEventListener:k=>viewportEvents.delete(k)}};
+const file=process.cwd()+'/src/hooks/useRecordDialog.ts',m=new Module(file,module);
+m.require=name=>name==='react'?{useEffect:fn=>effect=fn,useRef:v=>({current:v})}:require(name);
+m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,file);
+let dismissed=0; m.exports.useRecordDialog(true,()=>dismissed++); const cleanup=effect();
+assert.equal(props.get('--sheet-viewport-height'),'450px');assert.equal(props.get('--sheet-viewport-top'),'30px');
+let prevented=false;document.activeElement=last;events.get('keydown')({key:'Tab',shiftKey:false,preventDefault:()=>prevented=true}); assert.equal(document.activeElement,first);assert.ok(prevented);
+document.activeElement=first;events.get('keydown')({key:'Tab',shiftKey:true,preventDefault:()=>{}});assert.equal(document.activeElement,last);
+events.get('keydown')({key:'Escape',preventDefault:()=>{}});assert.equal(dismissed,1);
+document.activeElement=nested;events.get('keydown')({key:'Escape',preventDefault:()=>{}});assert.equal(dismissed,1,'nested dialog owns Escape');
+document.activeElement=first;window.visualViewport.height=320;viewportEvents.get('resize')();assert.equal(props.get('--sheet-viewport-height'),'320px');assert.ok(first.scrolled);
+cleanup();assert.equal(document.activeElement,opener);assert.equal(events.size,0);assert.equal(viewportEvents.size,0);assert.equal(props.size,0);
+console.log('DIRECTED FORMS: 13 viewport, focus loop, nested-dialog ownership and cleanup assertions passed.');

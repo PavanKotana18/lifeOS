@@ -15,6 +15,16 @@ type Props = {
   onOpenGoals: () => void;
 };
 
+function formatTaskDate(value: string, today: string) {
+  if (value === today) return 'Today';
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  if (date.getFullYear() !== Number(year) || date.getMonth() !== Number(month) - 1 || date.getDate() !== Number(day)) return value;
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date);
+}
+
 export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTask, onToggleTask, onCreateTask, onSelectRange, onOpenGoals }: Props) {
   const allOpenTasks = sortTasksBySchedule(tasks.filter(task => !task.completed));
   const openTasks = allOpenTasks.slice(0, 5);
@@ -29,11 +39,12 @@ export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTa
   const emptyMessage = tasks.length ? 'Everything on your list is complete. Add another whenever you need it.' : 'Start with one thing you want to remember.';
 
   return <section aria-labelledby="plan-title" className="plan-hub">
-    <header className="plan-hub-heading"><p className="type-eyebrow">WHAT NEEDS DOING NEXT?</p><h2 id="plan-title" className="type-page-title">Plan</h2><p className="type-body text-secondary">Your tasks, arranged by when they’re due.</p></header>
+    <header className="plan-hub-heading"><p className="type-eyebrow">YOUR TASKS</p><h2 id="plan-title" className="type-page-title">Plan</h2><p className="type-body text-secondary">See what’s next, then choose one thing to do.</p></header>
 
     <section aria-labelledby="plan-tasks-title" className="plan-hub-section plan-task-focus">
       <div className="plan-hub-section-heading"><div><p className="type-eyebrow">START HERE</p><h3 id="plan-tasks-title" className="type-section-title">Next up</h3>{taskSummary && <p className="type-caption text-secondary" aria-live="polite">{taskSummary}</p>}</div><button type="button" onClick={onCreateTask} className="lifeos-accent-button plan-hub-link"><span aria-hidden="true">+</span> Add task</button></div>
 
+      <div className="plan-date-nav-intro"><span className="type-caption">Go to a date in your planner</span></div>
       <div className="plan-date-nav" role="group" aria-label="Open tasks by date" data-no-tab-swipe>
         <button type="button" onClick={() => onSelectRange('today')}><CalendarDays size={15} aria-hidden="true" />Today</button>
         <button type="button" onClick={() => onSelectRange('tomorrow')}>Tomorrow</button>
@@ -47,14 +58,14 @@ export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTa
             <label className="plan-hub-task-check"><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(task)} aria-label={`Mark ${task.title} complete`} /></label>
             <button type="button" onClick={() => onOpenTask(task)} className="plan-hub-task-open">
               <span className="plan-hub-row-title">{task.title}</span>
-              <span className="plan-hub-row-meta">{status === 'Overdue' ? 'Overdue · ' : ''}{task.dueDate ? task.dueDate === today ? 'Today' : task.dueDate : 'No date'}{task.dueTime ? ` · ${task.dueTime}` : task.dueDate && !task.dueTime ? ' · end of day' : ''}{task.recurring && task.recurring !== 'None' ? ` · ${task.recurring}` : ''}</span>
+              <span className="plan-hub-row-meta">{status === 'Overdue' ? `Overdue · ${formatTaskDate(task.dueDate, today)}` : task.dueDate ? formatTaskDate(task.dueDate, today) : 'No due date'}{task.dueTime ? ` · ${task.dueTime}` : task.dueDate && !task.dueTime ? ' · end of day' : ''}{task.recurring && task.recurring !== 'None' ? ` · Repeats ${task.recurring.toLocaleLowerCase()}` : ''}</span>
               <ChevronRight size={17} aria-hidden="true" />
             </button>
           </li>;
         })}
       </ul> : <div className="plan-hub-empty"><CircleCheck size={19} aria-hidden="true" /><div><strong>{emptyTitle}</strong><span>{emptyMessage}</span></div></div>}
 
-      <button type="button" onClick={onNavigatePlanner} className="plan-hub-all">See all tasks <ChevronRight size={16} aria-hidden="true" /></button>
+      <button type="button" onClick={onNavigatePlanner} className="plan-hub-all">See all tasks in planner <ChevronRight size={16} aria-hidden="true" /></button>
     </section>
 
     <button type="button" onClick={onOpenGoals} className="plan-hub-goals-link"><span><strong>Working toward a longer-term goal?</strong><small>Your goals and milestones are in Life.</small></span><ChevronRight size={17} aria-hidden="true" /></button>

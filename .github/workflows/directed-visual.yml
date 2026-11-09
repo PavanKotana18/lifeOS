@@ -1,0 +1,29 @@
+name: LifeOS directed browser acceptance
+on:
+  push:
+    branches: [feature/lifeos-directed-integration-20261109]
+permissions:
+  contents: read
+jobs:
+  visual:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: python -m pip install selenium==4.38.0
+      - name: Run real rendered app with isolated synthetic native adapter
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/lifeos-vite.log 2>&1 &
+          python tests/browser/acceptance.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LifeOS-directed-visual-evidence-${{ github.sha }}
+          path: test-results/directed-visual/
+          if-no-files-found: error
+          retention-days: 30
