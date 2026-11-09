@@ -185,7 +185,7 @@ async function main() {
       tableName: 'settings',
       table: db.settings,
       codec,
-      bootstrapKeys: new Set(['theme', 'biometricLockEnabled', 'displayName'])
+      bootstrapKeys: new Set(['theme', 'biometricLockEnabled', 'onboardingNameDraft'])
     });
 
     await settings.put({ key: 'theme', value: 'dark' });
@@ -198,8 +198,10 @@ async function main() {
     check(rawCurrency.value === undefined && rawCurrency.__lifeosEncrypted === 1, 'Non-bootstrap setting is encrypted');
     check((await settings.get('currency')).value === 'INR', 'Encrypted settings decrypt correctly');
 
+    await settings.put({ key: 'onboardingNameDraft', value: 'New-user name' });
+    check((await db.settings.get('onboardingNameDraft')).value === 'New-user name', 'Temporary onboarding name draft remains readable before secure setup');
     await settings.put({ key: 'displayName', value: 'New-user name' });
-    check((await db.settings.get('displayName')).value === 'New-user name', 'New-user display name is restart-readable as a bootstrap profile preference');
+    check((await db.settings.get('displayName')).__lifeosEncrypted === 1, 'Authoritative profile name is encrypted instead of retained as bootstrap plaintext');
     const protectedName = await codec.seal('settings', 'displayName', { key: 'displayName', value: 'Existing protected name' });
     await db.settings.put(protectedName);
     await settings.put({ key: 'displayName', value: 'Edited protected name' });

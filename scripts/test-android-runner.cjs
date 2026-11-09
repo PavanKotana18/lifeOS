@@ -32,7 +32,7 @@ for (const [inventory, expectedCount, requiredTest] of [
 assert.match(instrumentationWorkflow, /android-visual:[\s\S]*script: bash scripts\/run-directed-android-visual\.sh/, 'visual job executes one shell so failure evidence is preserved');
 const visualRunner = fs.readFileSync(path.resolve(__dirname, 'run-directed-android-visual.sh'), 'utf8');
 assert.match(visualRunner, /ANDROID_EXPECTED_TESTS=1/, 'the excluded visual case has its own mandatory one-test count');
-assert.match(visualRunner, /DirectedVisualAcceptanceTest#realPackagedScreensFormsAndContentSwipe/, 'the visual runner selects the actual declared case');
+assert.match(visualRunner, /DirectedVisualAcceptanceTest#packagedMandatoryOnboardingScreensAndRestart/, 'the visual runner selects the mandatory onboarding visual case');
 const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/workstream-integration.yml'), 'utf8');
 assert.match(workflow, /test-filter:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
   'API 29 filter must name the fully qualified instrumentation class');

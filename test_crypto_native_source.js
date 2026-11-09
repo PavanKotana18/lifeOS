@@ -179,5 +179,26 @@ assert.match(setup, /remove\(\"initial_setup_pending\"\)/);
 assert.match(setup, /only this explicitly[\s\S]*interrupted first-time setup may safely reuse the alias/);
 assert.match(setup, /recoveryDeferralAllowed\s*=\s*!deferRecovery/, 'Native setup only enables the legacy one-time deferral when it was not persisted atomically');
 assert.equal((source.match(/recoveryDeferralAllowed\s*=\s*!deferRecovery/g) || []).length, 1, 'No other native path may grant setup-time deferral');
+assert.match(keyState, /KEY_AUTH_POLICY/);
+assert.match(keyState, /AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW/);
+assert.match(keyState, /authPolicyValid[\s\S]*?authPolicyHasKeyContext/,
+  'Native metadata rejects unknown or orphaned authentication policies');
+assert.match(setup, /KEY_AUTH_POLICY[\s\S]*?AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW[\s\S]*?initial_setup_pending/,
+  'New supported installations persist the authentication policy before creating a Keystore alias');
+assert.match(setup, /setupPending[\s\S]*?AUTH_POLICY_BIOMETRIC_PER_USE/,
+  'An interrupted pre-policy setup alias keeps its biometric-only mode on retry');
+const keyFactory = section('private SecretKey getOrCreateMasterKey()', 'private boolean isPermanentlyInvalidated');
+assert.match(keyFactory, /setUserAuthenticationParameters\(\s*CREDENTIAL_AUTH_WINDOW_SECONDS,[\s\S]*?AUTH_BIOMETRIC_STRONG\s*\|\s*KeyProperties\.AUTH_DEVICE_CREDENTIAL/,
+  'New API 30+ keys support the system biometric or device credential prompt with time-based authorization');
+assert.match(keyFactory, /setInvalidatedByBiometricEnrollment\(false\)/,
+  'Credential-capable keys survive biometric enrollment changes while the device credential remains available');
+assert.match(source, /CREDENTIAL_AUTH_WINDOW_SECONDS\s*=\s*1/,
+  'Credential authorization window uses the minimum non-zero interval');
+const cryptoAuth = section('private void authenticate(', 'private static final int RECOVERY_KDF_ITERATIONS');
+assert.match(cryptoAuth, /DEVICE_CREDENTIAL/);
+assert.match(cryptoAuth, /credentialPolicy\)\s*prompt\[0\]\.authenticate\(info\)/,
+  'Credential mode uses Android authentication without an unsupported CryptoObject');
+assert.match(cryptoAuth, /prompt\[0\]\.authenticate\(info,\s*new BiometricPrompt\.CryptoObject\(cipher\)\)/,
+  'Existing biometric-only keys preserve their CryptoObject per-use authentication path');
 console.log('PASS: recovery deferral is explicit, one-time, key-bound and represented in native state');
 console.log('PASS: Recovery metadata checks the supported KDF version');

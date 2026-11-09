@@ -22,12 +22,10 @@ export const BOOTSTRAP_SETTING_KEYS = new Set([
   'onboardingCompleted',
   'onboardingStarted',
   'onboardingStep',
-  // Optional first-launch decisions and a deliberately non-secret label only.
-  // Recovery keys, passwords and private records never belong in this preference.
+  // Required first-launch progress and a temporary name draft, needed before
+  // encrypted storage exists. The authoritative profile name is encrypted.
   'onboardingJourney',
-  // Display name is a profile preference needed before private storage setup;
-  // it is not a user record and remains the single source for the greeting.
-  'displayName',
+  'onboardingNameDraft',
   // Notification controls are non-content preferences needed before first unlock.
   'notificationPreferences',
   'notificationsEnabled',

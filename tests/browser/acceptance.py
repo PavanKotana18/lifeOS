@@ -44,23 +44,31 @@ def field(text,value):
  d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',e); e.clear(); e.send_keys(value); return e
 def save(label):
  click(label)
- w.until(lambda _: d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]') or not any(x.is_displayed() for x in d.find_elements(By.CSS_SELECTOR,'form[role="dialog"]')))
- if d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]'):
-  capture('first-save-security'); click('Protect this device and save')
  w.until(lambda _: not any(x.is_displayed() for x in d.find_elements(By.CSS_SELECTOR,'form[role="dialog"]')))
+ assert not d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]'), 'Completed onboarding must not repeat first-record setup'
+ w.until(lambda _: not any(x.is_displayed() for x in d.find_elements(By.CSS_SELECTOR,'form[role="dialog"]')))
+def finish_first_launch(name):
+ wait('input[autocomplete="nickname"]').send_keys(name); click('Continue')
+ wait('[aria-label="Protect your LifeOS space"]'); click('Continue with secure unlock')
+ wait('[aria-label="Set up your recovery kit"]'); click('Create and save recovery kit')
+ kit=wait('[aria-label="Complete private recovery kit"]')
+ code=kit.get_attribute('value'); assert code and 'recoveryCode' in code
+ d.find_element(By.CSS_SELECTOR,'input[type="checkbox"]').click()
+ d.find_element(By.CSS_SELECTOR,'[aria-label="Confirm saved recovery code"]').send_keys('A'*43)
+ click('Confirm recovery kit and open encrypted storage'); wait('[data-testid="today-dashboard"]')
 def passed(name): results.append({'journey':name,'status':'PASS','environment':'Chrome, real React UI and IndexedDB; synthetic native AES-GCM adapter'})
 try:
  for _ in range(40):
   try: d.get('http://127.0.0.1:5173/tests/browser/index.html'); break
   except Exception: time.sleep(.5)
- wait('input[autocomplete="nickname"]');capture('onboarding-welcome');wait('input[autocomplete="nickname"]').send_keys('Acceptance QA'); click('Continue'); click('Not now'); click('Set this up later'); wait('[data-testid="today-dashboard"]'); passed('First launch and onboarding')
+ wait('input[autocomplete="nickname"]');capture('onboarding-welcome');finish_first_launch('Acceptance QA'); passed('Mandatory three-stage onboarding and encrypted recovery setup')
  for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(label+'-empty')
  from selenium.webdriver.support.ui import Select
  # A first-time user may start with Money, before any task provisions storage.
  tab('finance');click('Add expense');capture('expense-first-use');field('Amount','125.50')
  first_category=wait('form[role="dialog"]').find_element(By.XPATH,".//label[normalize-space(text())='Category']/select")
  assert len(first_category.find_elements(By.TAG_NAME,'option'))==1 and not first_category.get_attribute('required')
- click('Save transaction');wait('[aria-labelledby="first-record-security-title"]');capture('first-save-security');click('Protect this device and save')
+ click('Save transaction');assert not d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]'), 'First record after onboarding must not prompt again'
  w.until(lambda _: len(wait('form[role="dialog"]').find_element(By.XPATH,".//label[normalize-space(text())='Category']/select").find_elements(By.TAG_NAME,'option'))>1)
  assert d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done((await m.StorageService.transactions.getAll()).length));")==0
  f=wait('form[role="dialog"]');Select(f.find_element(By.XPATH,".//label[normalize-space(text())='Category']/select")).select_by_index(1);capture('expense-form');save('Save transaction');passed('First expense: explicit protection, loaded categories, no premature posting and successful encrypted save')
@@ -160,19 +168,15 @@ try:
  # A second fresh disposable browser profile verifies account-first setup and draft recovery.
  d.quit();d=webdriver.Chrome(options=options);w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,))
  d.execute_cdp_cmd('Emulation.setTouchEmulationEnabled',{'enabled':True});d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
- d.get('http://127.0.0.1:5173/tests/browser/index.html');wait('input[autocomplete="nickname"]').send_keys('First account QA');click('Continue'); click('Not now'); click('Set this up later');wait('[data-testid="today-dashboard"]')
- money_page('Accounts');click('Add account');field('Account name','QA first account');field('Starting balance','100');click('Save account');wait('[aria-labelledby="first-record-security-title"]');click('Cancel saving')
- restored=wait('form[aria-label="Create account"]');assert restored.find_element(By.XPATH,".//label[contains(.,'Account name')]/input").get_attribute('value')=='QA first account';capture('first-account-cancelled-keeps-draft')
- click('Save account');wait('[aria-labelledby="first-record-security-title"]');click('Protect this device and save');w.until(lambda _: not d.find_elements(By.CSS_SELECTOR,'form[aria-label="Create account"]'));capture('first-account-saved')
+ d.get('http://127.0.0.1:5173/tests/browser/index.html');finish_first_launch('First account QA')
+ money_page('Accounts');click('Add account');field('Account name','QA first account');field('Starting balance','100');click('Save account');w.until(lambda _: not d.find_elements(By.CSS_SELECTOR,'form[aria-label="Create account"]'));assert not d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]');capture('first-account-saved')
  first_account=d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>{const a=await m.StorageService.accounts.getAll();const raw=await m.lifeOSDatabase.financialAccounts.toArray();done({count:a.length,opening:a[0]?.openingBalanceMinor,transactions:(await m.StorageService.transactions.getAll()).length,ciphertext:raw.every(x=>x.__lifeosEncrypted===1&&!x.name)});});")
  assert first_account=={'count':1,'opening':'10000','transactions':0,'ciphertext':True},str(first_account);passed('Account-first secure setup, cancellation draft preservation, encrypted save and opening-balance neutrality')
  # A third isolated first-use profile covers planned bills without posting a transaction.
  d.quit();d=webdriver.Chrome(options=options);d.set_script_timeout(30);w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,))
  d.execute_cdp_cmd('Emulation.setTouchEmulationEnabled',{'enabled':True});d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
- d.get('http://127.0.0.1:5173/tests/browser/index.html');wait('input[autocomplete="nickname"]').send_keys('First bill QA');click('Continue'); click('Not now'); click('Set this up later');wait('[data-testid="today-dashboard"]')
- money_page('Planned bills');tap('[data-testid="money-planning"] section button');field('Name','QA future rent');field('Amount','900');capture('first-planned-bill-form');click('Save plan');wait('[aria-labelledby="first-record-security-title"]');click('Cancel saving')
- assert wait('form[aria-label="Planned commitment"]').find_element(By.XPATH,".//label[contains(.,'Name')]/input").get_attribute('value')=='QA future rent';capture('first-planned-bill-draft-restored')
- click('Save plan');wait('[aria-labelledby="first-record-security-title"]');click('Protect this device and save');w.until(lambda _: not d.find_elements(By.CSS_SELECTOR,'form[aria-label="Planned commitment"]'));capture('planned-bills-populated')
+ d.get('http://127.0.0.1:5173/tests/browser/index.html');finish_first_launch('First bill QA')
+ money_page('Planned bills');tap('[data-testid="money-planning"] section button');field('Name','QA future rent');field('Amount','900');capture('first-planned-bill-form');click('Save plan');w.until(lambda _: not d.find_elements(By.CSS_SELECTOR,'form[aria-label="Planned commitment"]'));assert not d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]');capture('planned-bills-populated')
  planning=d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done({plans:(await m.StorageService.commitments.getAll()).map(x=>({title:x.title,amount:x.amountMinor,status:x.status})),transactions:(await m.StorageService.transactions.getAll()).length}));")
  assert planning=={'plans':[{'title':'QA future rent','amount':'90000','status':'active'}],'transactions':0},str(planning);passed('Planned bill first-save setup preserves cancelled draft and never posts spending')
  # Manual rates remain explicit, dated inputs, not automatically fetched conversions.

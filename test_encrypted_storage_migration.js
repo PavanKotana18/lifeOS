@@ -61,7 +61,9 @@ const tables = [
 
 const bootstrapKeys = [
   'theme', 'biometricLockEnabled', 'onboardingCompleted',
-  'onboardingStarted', 'onboardingStep', 'displayName'
+  'onboardingStarted', 'onboardingStep', 'onboardingJourney',
+  'onboardingNameDraft', 'notificationPreferences', 'notificationsEnabled',
+  'notificationPermissionRequested', 'notificationDefaultsPending'
 ];
 
 async function createFixture(options = {}) {
@@ -86,6 +88,7 @@ async function createFixture(options = {}) {
         key: 'privateSetting',
         value: 'private-value'
       });
+      await database.settings.put({ key: 'displayName', value: 'Legacy Profile Name' });
     } else {
       await database[table].put({
         id: `${table}-001`,
@@ -151,6 +154,10 @@ async function main() {
   const privateSetting = await fixture.database.settings.get('privateSetting');
   check(privateSetting.__lifeosEncrypted === 1, 'Non-bootstrap setting encrypted');
   check(privateSetting.value === undefined, 'Non-bootstrap setting plaintext absent');
+
+  const legacyName = await fixture.database.settings.get('displayName');
+  check(legacyName.__lifeosEncrypted === 1, 'Legacy display name is migrated into encrypted profile storage');
+  check(legacyName.value === undefined, 'Legacy display name plaintext is retired only after ciphertext is written');
 
   for (const key of bootstrapKeys) {
     const row = await fixture.database.settings.get(key);

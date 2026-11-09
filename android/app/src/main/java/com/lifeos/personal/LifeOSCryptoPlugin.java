@@ -49,6 +49,12 @@ public class LifeOSCryptoPlugin extends Plugin {
     private static final int MAX_PLAINTEXT_BYTES = 1024 * 1024;
     private static final int MAX_AAD_BYTES = 4096;
     private static final int MAX_CIPHERTEXT_BYTES = MAX_PLAINTEXT_BYTES + TAG_BYTES;
+    private static final String KEY_AUTH_POLICY = "key_auth_policy_version";
+    // Android 11+ supports device credentials for time-based Keystore auth,
+    // while CryptoObject remains biometric-only. Minimize that auth window.
+    private static final int AUTH_POLICY_BIOMETRIC_PER_USE = 1;
+    private static final int AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW = 2;
+    private static final int CREDENTIAL_AUTH_WINDOW_SECONDS = 1;
 
     private final Object keyLock = new Object();
     private final AtomicBoolean authenticationInProgress = new AtomicBoolean(false);
@@ -93,11 +99,20 @@ public class LifeOSCryptoPlugin extends Plugin {
             .setUserAuthenticationRequired(true)
             .setInvalidatedByBiometricEnrollment(true);
 
+        int authPolicy = getContext().getSharedPreferences(PREFS, 0)
+            .getInt(KEY_AUTH_POLICY, AUTH_POLICY_BIOMETRIC_PER_USE);
         if (Build.VERSION.SDK_INT >= 30) {
-            builder.setUserAuthenticationParameters(
-                0,
-                KeyProperties.AUTH_BIOMETRIC_STRONG
-            );
+            if (authPolicy == AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW) {
+                builder.setUserAuthenticationParameters(
+                    CREDENTIAL_AUTH_WINDOW_SECONDS,
+                    KeyProperties.AUTH_BIOMETRIC_STRONG | KeyProperties.AUTH_DEVICE_CREDENTIAL
+                );
+                // A secure device credential remains available if biometrics
+                // are enrolled or changed after provisioning.
+                builder.setInvalidatedByBiometricEnrollment(false);
+            } else {
+                builder.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG);
+            }
         } else {
             builder.setUserAuthenticationValidityDurationSeconds(-1);
         }
@@ -248,10 +263,18 @@ public class LifeOSCryptoPlugin extends Plugin {
                     call.reject("Biometric cryptographic authentication was cancelled or unavailable");
                 });
                 try {
+                    android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFS, 0);
+                    int authPolicy = prefs.getInt(KEY_AUTH_POLICY, AUTH_POLICY_BIOMETRIC_PER_USE);
+                    boolean credentialPolicy = authPolicy == AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW && Build.VERSION.SDK_INT >= 30;
+                    if (authPolicy != AUTH_POLICY_BIOMETRIC_PER_USE && !credentialPolicy) {
+                        reject.run();
+                        return;
+                    }
+                    int allowedAuthenticators = credentialPolicy
+                        ? BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                        : BiometricManager.Authenticators.BIOMETRIC_STRONG;
                     if (activity.getLifecycle().getCurrentState() == Lifecycle.State.DESTROYED ||
-                        BiometricManager.from(activity).canAuthenticate(
-                            BiometricManager.Authenticators.BIOMETRIC_STRONG
-                        ) != BiometricManager.BIOMETRIC_SUCCESS) {
+                        BiometricManager.from(activity).canAuthenticate(allowedAuthenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
                         reject.run();
                         return;
                     }
@@ -261,11 +284,17 @@ public class LifeOSCryptoPlugin extends Plugin {
                             public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
                                 finish.accept(() -> {
                                     try {
-                                        BiometricPrompt.CryptoObject object = result.getCryptoObject();
-                                        if (object == null || object.getCipher() == null) {
-                                            throw new IllegalStateException("Missing authenticated cipher");
+                                        if (credentialPolicy) {
+                                            // DEVICE_CREDENTIAL cannot authorize a CryptoObject.
+                                            // The Keystore key is time-bound for this policy.
+                                            onSuccess.accept(cipher);
+                                        } else {
+                                            BiometricPrompt.CryptoObject object = result.getCryptoObject();
+                                            if (object == null || object.getCipher() == null) {
+                                                throw new IllegalStateException("Missing authenticated cipher");
+                                            }
+                                            onSuccess.accept(object.getCipher());
                                         }
-                                        onSuccess.accept(object.getCipher());
                                     } catch (Exception error) {
                                         runFailure(onFailure);
                                         call.reject("Cryptographic authentication failed");
@@ -284,15 +313,19 @@ public class LifeOSCryptoPlugin extends Plugin {
                                 });
                             }
                         });
-                    BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+                    BiometricPrompt.PromptInfo.Builder promptBuilder = new BiometricPrompt.PromptInfo.Builder()
                         .setTitle("Unlock LifeOS")
                         .setSubtitle("Authenticate to protect your personal data")
-                        .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                        .setNegativeButtonText("Cancel").build();
+                        .setAllowedAuthenticators(allowedAuthenticators);
+                    if (!credentialPolicy) promptBuilder.setNegativeButtonText("Cancel");
+                    BiometricPrompt.PromptInfo info = promptBuilder.build();
                     AtomicBoolean launched = new AtomicBoolean(false);
                     Runnable launch = () -> {
                         if (terminal.get() || !launched.compareAndSet(false, true)) return;
-                        try { prompt[0].authenticate(info, new BiometricPrompt.CryptoObject(cipher)); }
+                        try {
+                            if (credentialPolicy) prompt[0].authenticate(info);
+                            else prompt[0].authenticate(info, new BiometricPrompt.CryptoObject(cipher));
+                        }
                         catch (Exception error) { reject.run(); }
                     };
                     observer[0] = (owner, event) -> {
@@ -817,6 +850,9 @@ public class LifeOSCryptoPlugin extends Plugin {
             String existingWrapped = existingPrefs.getString("wrapped_key", null);
             String existingIv = existingPrefs.getString("wrapped_iv", null);
             boolean setupPending = existingPrefs.getBoolean("initial_setup_pending", false);
+            int authPolicy = existingPrefs.getInt(KEY_AUTH_POLICY,
+                setupPending ? AUTH_POLICY_BIOMETRIC_PER_USE :
+                    (Build.VERSION.SDK_INT >= 30 ? AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW : AUTH_POLICY_BIOMETRIC_PER_USE));
             boolean recoveryMetadataPresent = existingPrefs.contains("recovery_wrapped") ||
                 existingPrefs.contains("recovery_salt") || existingPrefs.contains("recovery_iv") ||
                 existingPrefs.contains("recovery_version") || existingPrefs.contains("recovery_kdf_iterations") ||
@@ -835,10 +871,20 @@ public class LifeOSCryptoPlugin extends Plugin {
             // Persist intent before creating/using a Keystore alias. If Android
             // cancels authentication or the Activity dies, only this explicitly
             // interrupted first-time setup may safely reuse the alias on retry.
-            if (!setupPending && !existingPrefs.edit().putBoolean("initial_setup_pending", true).commit()) {
+            if (!setupPending && !existingPrefs.edit()
+                    .putBoolean("initial_setup_pending", true)
+                    .putInt(KEY_AUTH_POLICY, authPolicy)
+                    .commit()) {
                 releaseSetupGuard();
                 call.reject("Unable to persist secure setup state");
                 return;
+            }
+
+            // Do not infer a new policy for an alias left by an older build.
+            // A resumable alias without this durable policy marker remains
+            // on its original strong-biometric per-use path.
+            if (setupPending && !existingPrefs.contains(KEY_AUTH_POLICY)) {
+                authPolicy = AUTH_POLICY_BIOMETRIC_PER_USE;
             }
 
             SecretKey masterKey = getOrCreateMasterKey();
@@ -1212,12 +1258,18 @@ public class LifeOSCryptoPlugin extends Plugin {
 
             boolean recoveryDeferred = prefs.getBoolean("recovery_deferred", false);
             boolean initialSetupPending = prefs.getBoolean("initial_setup_pending", false);
+            boolean hasAuthPolicy = prefs.contains(KEY_AUTH_POLICY);
+            int authPolicy = prefs.getInt(KEY_AUTH_POLICY, AUTH_POLICY_BIOMETRIC_PER_USE);
+            boolean authPolicyValid = authPolicy == AUTH_POLICY_BIOMETRIC_PER_USE ||
+                (authPolicy == AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW && Build.VERSION.SDK_INT >= 30);
+            boolean authPolicyHasKeyContext = !hasAuthPolicy || localComplete || recoveryComplete || initialSetupPending;
 
             boolean aliasPresent = keyStore().containsAlias(KEY_ALIAS);
 
             boolean metadataConsistent =
                 (localAbsent || localComplete) &&
                 (recoveryAbsent || recoveryComplete) &&
+                authPolicyValid && authPolicyHasKeyContext &&
                 (!recoveryDeferred || (localComplete && recoveryAbsent)) &&
                 (!initialSetupPending || (localAbsent && recoveryAbsent && !recoveryDeferred));
 

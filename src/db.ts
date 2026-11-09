@@ -360,6 +360,7 @@ export interface IDataStorage {
   settings: {
     get<T>(key: string, defaultValue: T): Promise<T>;
     set(key: string, value: any): Promise<void>;
+    delete(key: string): Promise<void>;
   };
   backup: {
     hasData(): Promise<boolean>;
@@ -1399,6 +1400,9 @@ const rawStorageService: IDataStorage = {
     },
     async set(key: string, value: any): Promise<void> {
       await db.settings.put({ key, value });
+    },
+    async delete(key: string): Promise<void> {
+      await db.settings.delete(key);
     }
   },
   backup: {

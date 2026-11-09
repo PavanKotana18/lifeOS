@@ -186,6 +186,7 @@ export default function App() {
   const [recoveryDeferred, setRecoveryDeferred] = useState(false);
   const safeFirstRunBrowse = useRef(false);
   const firstRecordSetupAuthorized = useRef(false);
+  const onboardingSetupAuthorized = useRef(false);
   const firstRecordSecurityResolver = useRef<((choice: NewUserRecoveryChoice | null) => void) | null>(null);
   const requestFirstRecordSecurity = async (): Promise<NewUserRecoveryChoice | null> => {
     await setSensitiveScreenshotState(true);
@@ -253,6 +254,10 @@ export default function App() {
   const encryptedSession = useRef(createProtectedSessionController(CryptoService, sessionManager, {
     hasEncryptedRecords,
     requestInitialSetup: () => {
+      if (onboardingSetupAuthorized.current) {
+        onboardingSetupAuthorized.current = false;
+        return Promise.resolve(true);
+      }
       if (firstRecordSetupAuthorized.current) {
         firstRecordSetupAuthorized.current = false;
         return Promise.resolve(true);
@@ -1021,7 +1026,7 @@ export default function App() {
       setBiometricVerified(false);
       setRecoveryProvisioned(false);
       setRecoveryDeferred(false);
-      setDisplayName(await StorageService.settings.get<string>('displayName', ''));
+      setDisplayName(await StorageService.settings.get<string>('onboardingNameDraft', ''));
       setOnboardingRequired(!completed);
       setOnboardingComplete(completed);
       setOnboardingStep(0);
@@ -1052,6 +1057,13 @@ export default function App() {
     const storedCurrency = await StorageService.settings.get<UserPreferences['currency']>('currency', 'INR');
     const savedUserPrefs = await StorageService.settings.get<Partial<UserPreferences>>('userPreferences', {});
     setUserPrefs(mergeUserPreferences(savedUserPrefs, storedCurrency));
+    const onboardingNameDraft = await StorageService.settings.get<string>('onboardingNameDraft', '');
+    if (onboardingNameDraft) {
+      // The draft is bootstrap-only. Once the native key is active, promote it
+      // to the encrypted profile setting before exposing the private workspace.
+      await StorageService.settings.set('displayName', onboardingNameDraft);
+      await StorageService.settings.delete('onboardingNameDraft');
+    }
     setDisplayName(await StorageService.settings.get<string>('displayName', ''));
     const savedTodayLayout = normalizeTodayLayout(await StorageService.settings.get<unknown>('todayLayout', DEFAULT_TODAY_LAYOUT));
     todayLayoutRef.current = savedTodayLayout;
@@ -1314,6 +1326,91 @@ export default function App() {
     }
   };
 
+  const saveOnboardingIdentity = async (name: string) => {
+    const normalized = name.trim().slice(0, 48);
+    if (!normalized) throw new Error('Enter your name to continue.');
+    await StorageService.settings.set('onboardingNameDraft', normalized);
+    setDisplayName(normalized);
+  };
+
+  const provisionOnboardingProtection = async (): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const before = await CryptoService.getKeyState();
+      if (!before.metadataConsistent || before.recoveryNeedsRebind) {
+        throw new Error('LifeOS found an existing key that needs recovery. No key was replaced. Open recovery or retry after restoring access.');
+      }
+      await setSensitiveScreenshotState(true);
+      onboardingSetupAuthorized.current = true;
+      await encryptedSession.open({ recoveryChoice: 'later' });
+      const state = await CryptoService.getKeyState();
+      if (!state.metadataConsistent || !state.keyProvisioned || !state.keystoreAliasPresent ||
+          !state.unlocked || !state.recoveryDeferred || state.recoveryProvisioned ||
+          !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
+        throw new Error('LifeOS could not verify encrypted storage. Your records remain locked; please retry.');
+      }
+
+      const draftName = await StorageService.settings.get<string>('onboardingNameDraft', '');
+      if (!draftName.trim()) throw new Error('Your name is missing. Return to the first step and enter it again.');
+      await StorageService.settings.set('displayName', draftName.trim());
+      await StorageService.settings.delete('onboardingNameDraft');
+      setDisplayName(draftName.trim());
+      setRecoveryProvisioned(false);
+      setRecoveryDeferred(true);
+      setBiometricEnabled(true);
+      setBiometricVerified(true);
+      biometricAuthenticated.current = true;
+      setIsLocked(false);
+      safeFirstRunBrowse.current = false;
+      await StorageService.settings.set('biometricLockEnabled', true);
+      await reloadAllData();
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Secure setup did not complete. Your data remains locked; please retry.' };
+    } finally {
+      onboardingSetupAuthorized.current = false;
+    }
+  };
+
+  const confirmOnboardingRecovery = async (label: string): Promise<boolean> => {
+    try {
+      if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated() || !(await CryptoService.isUnlocked())) {
+        await encryptedSession.open();
+      }
+      let state = await CryptoService.getKeyState();
+      if (state.recoveryProvisioned && state.metadataConsistent && !state.recoveryDeferred &&
+          state.keyProvisioned && state.unlocked && isEncryptedStorageActivated()) {
+        setRecoveryProvisioned(true); setRecoveryDeferred(false);
+        return true;
+      }
+      if (!state.metadataConsistent || !state.keyProvisioned || !state.recoveryDeferred || state.recoveryNeedsRebind) {
+        throw new Error('Recovery setup is not ready. Encrypted data remains protected; retry secure setup.');
+      }
+      const prepared = await CryptoService.prepareRecovery();
+      if (!(await requestSecureSetup(prepared))) {
+        await encryptedSession.lock();
+        setBiometricVerified(false); biometricAuthenticated.current = false;
+        // The onboarding gate remains visible. A retry will authenticate and
+        // recreate a temporary kit; no private workspace is opened.
+        setIsLocked(false);
+        return false;
+      }
+      await CryptoService.confirmRecovery();
+      state = await CryptoService.getKeyState();
+      if (!state.metadataConsistent || !state.keyProvisioned || !state.recoveryProvisioned ||
+          state.recoveryDeferred || state.recoveryNeedsRebind || !state.unlocked ||
+          !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
+        throw new Error('The recovery kit was not verified. Your private workspace remains closed.');
+      }
+      setRecoveryProvisioned(true); setRecoveryDeferred(false);
+      // The component stores this optional label in onboardingJourney. It is
+      // metadata only and is never used as a recovery secret.
+      void label;
+      return true;
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'Recovery setup could not be verified. Please retry.');
+    }
+  };
+
   const openRecovery = async () => {
     try {
       await setSensitiveScreenshotState(true);
@@ -1374,6 +1471,18 @@ export default function App() {
   };
 
   const finishOnboarding = async () => {
+    const [state, savedJourney, savedName] = await Promise.all([
+      CryptoService.getKeyState(),
+      StorageService.settings.get<OnboardingJourney>('onboardingJourney', INITIAL_ONBOARDING_JOURNEY),
+      StorageService.settings.get<string>('displayName', '')
+    ]);
+    if (!state.metadataConsistent || !state.keyProvisioned || !state.recoveryProvisioned ||
+        state.recoveryDeferred || state.recoveryNeedsRebind || !state.unlocked ||
+        !sessionManager.isUnlocked() || !isEncryptedStorageActivated() || !savedName.trim() ||
+        normalizeOnboardingJourney(savedJourney).protection !== 'enabled' ||
+        normalizeOnboardingJourney(savedJourney).recovery !== 'confirmed') {
+      throw new Error('LifeOS has not verified every security step yet. Your private workspace remains closed.');
+    }
     await StorageService.settings.set('onboardingCompleted', true);
     await StorageService.settings.set('onboardingStarted', false);
     await StorageService.settings.set('onboardingStep', 0);
@@ -2119,8 +2228,9 @@ export default function App() {
     initialName={displayName}
     initialJourney={onboardingJourney}
     onSaveJourney={async journey => { const safe = normalizeOnboardingJourney(journey); await StorageService.settings.set('onboardingJourney', safe); setOnboardingJourney(safe); }}
-    onEnableProtection={handleEnableBiometric}
-    onSaveIdentity={updateDisplayName}
+    onProvisionProtection={provisionOnboardingProtection}
+    onConfirmRecovery={confirmOnboardingRecovery}
+    onSaveIdentity={saveOnboardingIdentity}
     onFinish={finishOnboarding}
   />;
 

@@ -72,36 +72,43 @@ public class DirectedVisualAcceptanceTest {
         finally { image[0].recycle(); }
         captures.put(name+"-android-view.png");
     }
-    private void optionalOnboarding() throws Exception {
-        until("!!document.querySelector('[aria-label=\"Set up app protection\"]')");
-        captureProtectedSyntheticOnboarding("protection");
-        scenario.recreate();WebViewTestSupport.awaitReactRoot(scenario);until("!!document.querySelector('[aria-label=\"Set up app protection\"]')");
+    private void mandatoryOnboardingVisuals() throws Exception {
+        until("!!document.querySelector('input[autocomplete=nickname]')");
+        captureProtectedSyntheticOnboarding("onboarding-name");
+        js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android synthetic owner');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+        click("Continue");
+        until("!!document.querySelector('[aria-label=\"Protect your LifeOS space\"]')");
+        assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
+        assertEquals("false",js("!![...document.querySelectorAll('button')].some(b=>b.innerText.includes('Not now'))"));
+        captureProtectedSyntheticOnboarding("onboarding-protection");
+        scenario.recreate();WebViewTestSupport.awaitReactRoot(scenario);
+        until("!!document.querySelector('[aria-label=\"Protect your LifeOS space\"]')");
         for(int zoom:new int[]{130,200}) {
             scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(zoom));
             until("document.documentElement.scrollWidth<=innerWidth+1");
-            captureProtectedSyntheticOnboarding("protection-text-"+zoom);
+            captureProtectedSyntheticOnboarding("onboarding-protection-text-"+zoom);
         }
         scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(100));
-        JSONObject availability=new JSONObject(WebViewTestSupport.evaluateAsync(scenario,"window.Capacitor.Plugins.BiometricAuth.isAvailable()"));
-        if(!availability.getBoolean("isAvailable")) { click("Set up protection");until("!!document.querySelector('[role=alert]')");captureProtectedSyntheticOnboarding("protection-unavailable"); }
-        click("Not now");until("!!document.querySelector('[aria-label=\"Name your recovery setup\"]')");
-        captureProtectedSyntheticOnboarding("recovery-name");
-        openKeyboard("input[placeholder=\"My personal space\"]", "document.activeElement?.placeholder==='My personal space'");
-        assertTrue("Recovery name must open the actual Android keyboard",keyboardVisible());
-        until("document.querySelector('.initial-setup').scrollHeight>=document.querySelector('.initial-setup').clientHeight");
-        until("(()=>{const r=document.activeElement.getBoundingClientRect();return r.top>=0&&r.bottom<=(visualViewport?.height||innerHeight)+(visualViewport?.offsetTop||0)+1})()");
-        captureProtectedSyntheticOnboarding("recovery-name-keyboard-open");
+        // Render the recovery screen for visual QA only by advancing disposable
+        // bootstrap progress. No native key is provisioned and the app remains
+        // gated; this does not simulate authentication or recovery success.
+        WebViewTestSupport.evaluateAsync(scenario,"new Promise((resolve,reject)=>import('/src/db.ts').then(async m=>{await m.StorageService.settings.set('onboardingJourney',{version:1,stage:'recovery',protection:'enabled',recovery:'pending',recoveryName:''});resolve(true);}).catch(reject))");
+        scenario.recreate();WebViewTestSupport.awaitReactRoot(scenario);
+        until("!!document.querySelector('[aria-label=\"Set up your recovery kit\"]')");
+        assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
+        assertEquals("false",js("!!document.querySelector('[aria-label=\"Complete private recovery kit\"]')"));
+        captureProtectedSyntheticOnboarding("onboarding-recovery");
+        openKeyboard("input[placeholder=\"My LifeOS recovery\"]", "document.activeElement?.placeholder==='My LifeOS recovery'");
+        assertTrue("Optional recovery label should open the Android keyboard",keyboardVisible());
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         long deadline=SystemClock.elapsedRealtime()+10000;while(keyboardVisible()&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(50);
-        assertFalse("Keyboard Back must not discard onboarding",keyboardVisible());
-        for(int zoom:new int[]{130,200}) {
-            scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(zoom));
-            until("document.documentElement.scrollWidth<=innerWidth+1");
-            captureProtectedSyntheticOnboarding("recovery-name-text-"+zoom);
-        }
-        scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(100));
-        js("(()=>{const e=document.querySelector('input[placeholder=\"My personal space\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android synthetic space');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
-        click("Continue");
+        assertFalse("Keyboard Back must not discard the recovery stage",keyboardVisible());
+        captureProtectedSyntheticOnboarding("onboarding-recovery-keyboard-dismissed");
+        JSONObject report=new JSONObject();
+        report.put("environment","Real packaged React UI on hosted Android emulator; native authentication/recovery not invoked");
+        report.put("screenshots",captures);report.put("privateWrites",0);
+        report.put("scope","Visual screenshots of name, protection, and recovery stages only. Recovery secret screen was never opened. Activity FLAG_SECURE remained set.");
+        try(FileOutputStream file=new FileOutputStream(new File(output,"onboarding-visual-evidence.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
     }
     private void captureFailureBeforeTeardown(Throwable failure) {
         // Never clear FLAG_SECURE. Android may intentionally redact the app;
@@ -290,28 +297,21 @@ public class DirectedVisualAcceptanceTest {
         swipeFromContent(".money-tools summary","dashboard",false,"end");
         swipeFromContent(".today-focus h3","finance",true,"center");
     }
-    @Test public void realPackagedScreensFormsAndContentSwipe() throws Exception {
+    @Test public void packagedMandatoryOnboardingScreensAndRestart() throws Exception {
         output=new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalFilesDir(null),"LifeOS-directed-visual");
         assertTrue(output.isDirectory()||output.mkdirs());
         try(ActivityScenario<MainActivity> launched=ActivityScenario.launch(MainActivity.class)) {
-            scenario=launched; try { WebViewTestSupport.awaitReactRoot(scenario);
-            until("!!document.querySelector('input[autocomplete=nickname]')");
-            js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android QA');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()");
-            click("Continue");optionalOnboarding();until("!!document.querySelector('[data-testid=today-dashboard]')");
-            denyOptionalNotificationPrompt();until("!document.querySelector('.lifeos-launch-reveal')");
-            scenario.recreate();WebViewTestSupport.awaitReactRoot(scenario);until("!!document.querySelector('[data-testid=today-dashboard]')");
-            assertEquals("false",js("!!document.querySelector('.initial-setup')"));
-            JSONObject saved=new JSONObject(WebViewTestSupport.evaluateAsync(scenario,"new Promise((resolve,reject)=>{const q=indexedDB.open('LifeOS_Database');q.onsuccess=()=>{const db=q.result;const r=db.transaction('settings').objectStore('settings').get('onboardingJourney');r.onsuccess=()=>{resolve(r.result.value);db.close();};r.onerror=()=>reject(r.error);};q.onerror=()=>reject(q.error);})"));
-            assertEquals("Android synthetic space",saved.getString("recoveryName"));assertEquals("skipped",saved.getString("protection"));
-            until("!document.querySelector('.lifeos-launch-reveal')");capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
-            click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");try { openNumericKeyboard(); } catch(Exception | AssertionError failure) { try { capture("keyboard-error-before-activity-close"); } catch(Exception | AssertionError diagnostic) { failure.addSuppressed(diagnostic); } throw failure; }typeAmountThroughNumericIme();capture("expense-numeric-keyboard");click("Cancel");until("!!document.querySelector('[role=alertdialog]')");click("Keep editing");until("document.querySelector('input[inputmode=decimal]')?.value==='1.25'");click("Cancel");click("Discard changes");until("!document.querySelector('[aria-labelledby=record-form-title]')");
-            cancelFirstAccountThroughAndroidBack();tab("plan");capture("plan-empty");click("Add task");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("task-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
-            tab("life");capture("life-empty");click("Add a habit");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("habit-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
-            click("Add a goal");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("goal-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
-            captureAndroidFontScaling();click("Open profile and settings");until("!!document.querySelector('[data-testid=profile-settings-home]')");capture("profile");
-            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("numericInput","Actual numeric IME typed 1.25 into React state; Keep editing retained it; Discard changes removed only this unsaved draft");report.put("fontScaling","Actual WebView textZoom 130 and 200; system-font mapping covered separately; global emulator settings unchanged");report.put("androidBack","PASS: first account setup cancelled by native Back; draft retained; key remained unprovisioned and locked");report.put("onboardingCapture","Test-only actual WebView bitmaps on unprovisioned synthetic onboarding; system screenshots remain FLAG_SECURE protected. Recovery field used actual Android IME; 130/200 text zoom captured. Native biometric enrollment/success remains manual");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from upper header, heading, clipped summary card, ordinary button and lower scroll content; no accidental dialogs");
-            try(FileOutputStream file=new FileOutputStream(new File(output,"environment.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
+            scenario=launched;
+            try {
+                WebViewTestSupport.awaitReactRoot(scenario);
+                mandatoryOnboardingVisuals();
+                assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
+                assertEquals("true",js("!!document.querySelector('[aria-label=\"Set up your recovery kit\"]')"));
+                JSONObject key=new JSONObject(WebViewTestSupport.evaluateAsync(scenario,"window.Capacitor.Plugins.LifeOSCrypto.getKeyState()"));
+                assertFalse("Visual-only screenshots must not provision a key",key.getBoolean("keyProvisioned"));
+                scenario.onActivity(a->assertTrue("Onboarding remains screenshot protected",(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)!=0));
             } catch(Exception | AssertionError failure) { captureFailureBeforeTeardown(failure); throw failure; }
         }
     }
+
 }
