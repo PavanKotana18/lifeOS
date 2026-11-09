@@ -796,3 +796,14 @@ html.dark .text-amber-400 { color: var(--warning); }
   .money-period { flex-wrap: wrap; }
   .money-period input { flex: 0 1 auto; max-width: 100%; }
 }
+.app-header-shell { container-name: app-header; container-type: inline-size; }
+.app-bottom-nav { display: block; container-name: primary-navigation; container-type: inline-size; }
+.app-nav-items { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* Font-relative queries adapt to available room, including increased text size. */
+@container primary-navigation (max-width: 15em) {
+  .app-nav-items { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .app-bottom-nav .nav-item { flex-direction: row; min-height: 2.25rem; gap: .5rem; }
+}
+@container app-header (max-width: 15em) {
+  .lifeos-mark { display: none; }
+}
