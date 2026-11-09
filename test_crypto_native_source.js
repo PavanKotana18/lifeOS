@@ -187,6 +187,10 @@ assert.match(setup, /KEY_AUTH_POLICY[\s\S]*?AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW
   'New supported installations persist the authentication policy before creating a Keystore alias');
 assert.match(setup, /setupPending[\s\S]*?AUTH_POLICY_BIOMETRIC_PER_USE/,
   'An interrupted pre-policy setup alias keeps its biometric-only mode on retry');
+assert.match(setup, /CipherFactory cipherFactory[\s\S]*?credentialPolicy \? null : cipherFactory\.create\(\)[\s\S]*?authenticate\(call, cipher, cipherFactory/,
+  'Credential-window setup defers Cipher initialization until after system authentication');
+assert.match(setup, /setupOperation[\s\S]*?logKeystoreFailure\(setupOperation, e\)[\s\S]*?getClass\(\)\.getSimpleName\(\)/,
+  'Synchronous setup errors expose only sanitized operation and exception type');
 const keyFactory = section('private SecretKey getOrCreateMasterKey()', 'private boolean isPermanentlyInvalidated');
 assert.match(keyFactory, /setUserAuthenticationParameters\(\s*CREDENTIAL_AUTH_WINDOW_SECONDS,[\s\S]*?AUTH_BIOMETRIC_STRONG\s*\|\s*KeyProperties\.AUTH_DEVICE_CREDENTIAL/,
   'New API 30+ keys support the system biometric or device credential prompt with time-based authorization');
@@ -198,6 +202,12 @@ const cryptoAuth = section('private void authenticate(', 'private static final i
 assert.match(cryptoAuth, /DEVICE_CREDENTIAL/);
 assert.match(cryptoAuth, /credentialPolicy\)\s*prompt\[0\]\.authenticate\(info\)/,
   'Credential mode uses Android authentication without an unsupported CryptoObject');
+assert.match(cryptoAuth, /credentialCipherFactory\.create\(\)/,
+  'Credential mode creates a fresh authenticated cipher only after the prompt succeeds');
+assert(cryptoAuth.indexOf('credentialCipherFactory.create()') > cryptoAuth.indexOf('onAuthenticationSucceeded'),
+  'Credential-key Cipher initialization must occur inside the successful authentication callback');
+assert.match(cryptoAuth, /logKeystoreFailure\("post-authentication-cryptographic-operation"/,
+  'Post-authentication failures log sanitized native phase and stack information');
 assert.match(cryptoAuth, /prompt\[0\]\.authenticate\(info,\s*new BiometricPrompt\.CryptoObject\(cipher\)\)/,
   'Existing biometric-only keys preserve their CryptoObject per-use authentication path');
 console.log('PASS: recovery deferral is explicit, one-time, key-bound and represented in native state');

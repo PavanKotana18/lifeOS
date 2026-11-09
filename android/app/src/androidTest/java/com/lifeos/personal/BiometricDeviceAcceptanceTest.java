@@ -18,7 +18,8 @@ import static org.junit.Assert.*;
 import static org.junit.Assume.assumeTrue;
 
 /** OPT-IN actual prompts + Keystore on a fresh dedicated AVD. No forced success,
- * key extraction/deletion, enrollment bypass, recovery activation or alias reset. */
+ * key extraction/deletion, enrollment bypass, recovery activation or alias reset.
+ * The operator must cancel the first setup prompt, then accept the retry prompt. */
 @RunWith(AndroidJUnit4.class)
 public class BiometricDeviceAcceptanceTest {
     private static class Call extends PluginCall {
@@ -38,6 +39,10 @@ public class BiometricDeviceAcceptanceTest {
         LifeOSCryptoPlugin[] p={null};scenario.onActivity(activity->{try { p[0]=(LifeOSCryptoPlugin)activity.getBridge().getPlugin("LifeOSCrypto").load(); } catch(Exception e){throw new AssertionError("Real plugin loading failed",e);} });assertNotNull(p[0]);return p[0];
     }
     private static Call call(String name,Consumer<Call> invoke) { Call c=new Call(name);invoke.accept(c);return c; }
+    private static boolean hasLifeOsAlias() throws Exception {
+        java.security.KeyStore store=java.security.KeyStore.getInstance("AndroidKeyStore");store.load(null);
+        return store.containsAlias("lifeos_database_master_v1");
+    }
     private static void locked(LifeOSCryptoPlugin p) throws Exception { Call c=call("isUnlocked",p::isUnlocked);c.await();assertFalse(c.response.optBoolean("unlocked",true)); }
     private static void unlocked(LifeOSCryptoPlugin p) throws Exception { Call c=call("isUnlocked",p::isUnlocked);c.await();assertTrue(c.response.optBoolean("unlocked",false)); }
     @Test public void actualSetupCancelConcurrentResumeRecreateAndUnlock() throws Exception {
@@ -46,10 +51,21 @@ public class BiometricDeviceAcceptanceTest {
         // Refuse any existing wrapper; this test never deletes or replaces keys.
         android.content.SharedPreferences prefs=InstrumentationRegistry.getInstrumentation().getTargetContext().getSharedPreferences("lifeos_crypto_v1",0);
         assertFalse("Requires fresh disposable profile",prefs.contains("wrapped_key"));assertFalse(prefs.contains("wrapped_iv"));
+        assertFalse("Refusing to overwrite an existing Keystore alias",hasLifeOsAlias());
         try(ActivityScenario<MainActivity> scenario=ActivityScenario.launch(MainActivity.class)) {
             LifeOSCryptoPlugin p=plugin(scenario);locked(p);
             try {
-                call("setup",p::setup).assertSuccess();unlocked(p); // Human/emulator must ACCEPT strong biometric.
+                Call cancelledSetup=call("setup",p::setup); // Human must CANCEL this first-time prompt.
+                cancelledSetup.await();
+                assertTrue("Cancelled provisioning must report a non-success result",
+                    cancelledSetup.error!=null || !cancelledSetup.response.optBoolean("success"));
+                assertTrue("Cancelled fresh setup must retain its resumable intent marker",
+                    prefs.getBoolean("initial_setup_pending",false));
+                assertFalse("Cancelled setup must not persist a database-key wrapper",prefs.contains("wrapped_key"));
+                assertTrue("Interrupted setup keeps its original alias for safe retry",hasLifeOsAlias());
+                locked(p);
+                call("setup",p::setup).assertSuccess();unlocked(p); // Human must ACCEPT retry; existing alias is resumed.
+                assertTrue("Retry must preserve the same Keystore alias",hasLifeOsAlias());
                 call("lock",p::lock).assertSuccess();locked(p);
                 Call cancelled=call("unlock",p::unlock); // Human must CANCEL this prompt.
                 Call concurrent=call("unlock",p::unlock);concurrent.await();assertNotNull(concurrent.error);locked(p);
