@@ -117,11 +117,7 @@ public class DirectedVisualAcceptanceTest {
         MotionEvent e=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
         e=MotionEvent.obtain(down,SystemClock.uptimeMillis()+40,MotionEvent.ACTION_UP,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
         until("document.activeElement?.inputMode==='decimal'");
-        scenario.onActivity(a -> {
-            android.view.inputmethod.EditorInfo editor=new android.view.inputmethod.EditorInfo();
-            a.getBridge().getWebView().onCreateInputConnection(editor);
-            try { keyboardDiagnostics.put("nativeInputType",editor.inputType); } catch(org.json.JSONException cause) { throw new AssertionError(cause); }
-        });
+        scenario.onActivity(a -> assertFalse("Field-aware WebView input must not be replaced by a generic capture connection",a.getBridge().getConfig().isInputCaptured()));
         long end=SystemClock.elapsedRealtime()+10000;final boolean[] visible={false};
         while(SystemClock.elapsedRealtime()<end) {
             scenario.onActivity(a->{WindowInsets insets=a.getWindow().getDecorView().getRootWindowInsets();visible[0]=insets!=null&&insets.isVisible(WindowInsets.Type.ime());});
@@ -131,6 +127,30 @@ public class DirectedVisualAcceptanceTest {
         capture("numeric-keyboard-failure-in-app");
         try(FileOutputStream file=new FileOutputStream(new File(output,"keyboard-diagnostics.json"))) {file.write(keyboardDiagnostics.toString(2).getBytes("UTF-8"));}
         fail("Native tap on amount did not produce a visible numeric Android keyboard: "+keyboardDiagnostics);
+    }
+    private void tapImeKey(String key) throws Exception {
+        UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        long deadline=SystemClock.elapsedRealtime()+10000;
+        while(SystemClock.elapsedRealtime()<deadline) {
+            for(AccessibilityWindowInfo window:auto.getWindows()) {
+                if(window.getType()!=AccessibilityWindowInfo.TYPE_INPUT_METHOD) continue;
+                java.util.ArrayDeque<AccessibilityNodeInfo> nodes=new java.util.ArrayDeque<>();AccessibilityNodeInfo root=window.getRoot();if(root!=null)nodes.add(root);
+                while(!nodes.isEmpty()) {
+                    AccessibilityNodeInfo node=nodes.remove();String text=String.valueOf(node.getText()),description=String.valueOf(node.getContentDescription());
+                    if(key.equals(text)||key.equals(description)||(".".equals(key)&&description.toLowerCase(java.util.Locale.ROOT).contains("decimal"))) {
+                        if(node.isEnabled()&&node.performAction(AccessibilityNodeInfo.ACTION_CLICK))return;
+                    }
+                    for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i);if(child!=null)nodes.add(child);}
+                }
+            }
+            Thread.sleep(50);
+        }
+        fail("Actual Android numeric key was unavailable: "+key);
+    }
+    private void typeAmountThroughNumericIme() throws Exception {
+        tapImeKey("1");until("document.querySelector('input[inputmode=decimal]')?.value==='1'");
+        tapImeKey(".");tapImeKey("2");until("document.querySelector('input[inputmode=decimal]')?.value==='1.2'");
+        tapImeKey("5");until("document.querySelector('input[inputmode=decimal]')?.value==='1.25'");
     }
     private boolean numericKeyboardVisible(UiAutomation auto) {
         for(AccessibilityWindowInfo window:auto.getWindows()) {
@@ -217,12 +237,12 @@ public class DirectedVisualAcceptanceTest {
             js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android QA');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()");
             click("Open LifeOS");until("!!document.querySelector('[data-testid=today-dashboard]')");
             denyOptionalNotificationPrompt();until("!document.querySelector('.lifeos-launch-reveal')");capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
-            click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");try { openNumericKeyboard(); } catch(Exception | AssertionError failure) { try { capture("keyboard-error-before-activity-close"); } catch(Exception | AssertionError diagnostic) { failure.addSuppressed(diagnostic); } throw failure; }capture("expense-numeric-keyboard");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
+            click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");try { openNumericKeyboard(); } catch(Exception | AssertionError failure) { try { capture("keyboard-error-before-activity-close"); } catch(Exception | AssertionError diagnostic) { failure.addSuppressed(diagnostic); } throw failure; }typeAmountThroughNumericIme();capture("expense-numeric-keyboard");click("Cancel");until("!!document.querySelector('[role=alertdialog]')");click("Keep editing");until("document.querySelector('input[inputmode=decimal]')?.value==='1.25'");click("Cancel");click("Discard changes");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             cancelFirstAccountThroughAndroidBack();tab("plan");capture("plan-empty");click("Add task");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("task-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("life");capture("life-empty");click("Add a habit");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("habit-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Add a goal");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("goal-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             captureAndroidFontScaling();click("Open profile and settings");until("!!document.querySelector('[data-testid=profile-settings-home]')");capture("profile");
-            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("fontScaling","Actual WebView textZoom 130 and 200; system-font mapping covered separately; global emulator settings unchanged");report.put("androidBack","PASS: first account setup cancelled by native Back; draft retained; key remained unprovisioned and locked");report.put("onboardingCapture","BLOCKED: native onboarding remains protected by the application screenshot policy");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
+            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("numericInput","Actual numeric IME typed 1.25 into React state; Keep editing retained it; Discard changes removed only this unsaved draft");report.put("fontScaling","Actual WebView textZoom 130 and 200; system-font mapping covered separately; global emulator settings unchanged");report.put("androidBack","PASS: first account setup cancelled by native Back; draft retained; key remained unprovisioned and locked");report.put("onboardingCapture","BLOCKED: native onboarding remains protected by the application screenshot policy");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
             try(FileOutputStream file=new FileOutputStream(new File(output,"environment.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
             } catch(Exception | AssertionError failure) { captureFailureBeforeTeardown(failure); throw failure; }
         }

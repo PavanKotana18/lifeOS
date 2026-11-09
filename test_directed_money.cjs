@@ -116,3 +116,8 @@ assert.match(accountsSource, /openingBalanceMinor = decimalToMinorUnits\(account
 assert.match(accountsSource, /fromAmountMinor = decimalToMinorUnits\(transferDraft\.fromAmount/);
 assert.match(homeSource, /formatMinorUnits\(BigInt\(account\.balanceMinor\), account\.currencyCode\)/);
 console.log('DIRECTED MONEY: dashboard hierarchy, account clarity, readable amounts, optional accounts, transfer guidance and unchanged accounting callback paths passed.');
+
+for(const [currency,min] of [['JPY','1'],['USD','0.01'],['KWD','0.001']]) {
+ const rendered=renderToStaticMarkup(React.createElement(MoneyAccounts,{accounts:accounts.map(x=>({...x,currencyCode:currency})),transactions:[],transfers:[],currencyCode:currency,confirmAction:async()=>false,onCreateAccount:asyncNoop,onUpdateAccount:asyncNoop,onDeleteAccount:asyncNoop,onCreateTransfer:asyncNoop,onUpdateTransfer:asyncNoop,onReverseTransfer:asyncNoop,onDeleteTransfer:asyncNoop,transferDraft:controlledTransferDraft,onTransferDraftChange:noop}));
+ assert.ok(rendered.includes(`min="${min}" step="any" inputMode="decimal"`),`${currency} transfer minimum uses an actual minor unit`);
+}

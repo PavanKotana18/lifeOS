@@ -35,3 +35,5 @@ height=176;resized();assert.equal(props.get('--bottom-navigation-height'),'176px
 height=120;windowEvents.get('resize')();assert.equal(props.get('--bottom-navigation-height'),'120px');
 attach(null);assert.equal(props.has('--bottom-navigation-height'),false);assert.ok(disconnected);assert.equal(windowEvents.size,0);
 console.log('DIRECTED NAV INSET: 7 actual-size, font reflow, resize and detach assertions passed.');
+
+assert.match(fs.readFileSync('capacitor.config.ts','utf8'), /captureInput:\s*false/, 'Android must retain WebView field-aware InputConnection for numeric/password/composing text');
