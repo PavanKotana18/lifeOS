@@ -1,6 +1,8 @@
 package com.lifeos.personal;
 
 import android.app.UiAutomation;
+import android.accessibilityservice.AccessibilityServiceInfo;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.graphics.Bitmap;
 import android.os.SystemClock;
 import android.view.MotionEvent;
@@ -47,6 +49,33 @@ public class DirectedVisualAcceptanceTest {
         finally { image.recycle(); }
         captures.put(name+".png");
     }
+    private void denyOptionalNotificationPrompt() throws Exception {
+        UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        AccessibilityServiceInfo info=auto.getServiceInfo();
+        info.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+        auto.setServiceInfo(info);
+        boolean denied=false; long end=SystemClock.elapsedRealtime()+30000;
+        while(SystemClock.elapsedRealtime()<end) {
+            AccessibilityNodeInfo root=auto.getRootInActiveWindow();
+            if(root!=null) {
+                for(AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByViewId("com.android.permissioncontroller:id/permission_deny_button")) {
+                    if(node.isEnabled() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { denied=true; break; }
+                }
+            }
+            if(denied) break;
+            Thread.sleep(100);
+        }
+        assertTrue("Fresh emulator notification prompt could not be denied through Android UI",denied);
+        // The real Activity owns resuming and clearing protection for a safe screen.
+        end=SystemClock.elapsedRealtime()+15000;
+        final boolean[] safe={false};
+        while(SystemClock.elapsedRealtime()<end) {
+            scenario.onActivity(a->safe[0]=(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)==0);
+            if(safe[0]) return;
+            Thread.sleep(100);
+        }
+        fail("Activity did not return to a safe, capturable first-use screen after permission denial");
+    }
     private void swipeFromTodayText() throws Exception {
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector('.today-focus h3').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
         final int[] position={0,0,0};
@@ -67,13 +96,13 @@ public class DirectedVisualAcceptanceTest {
             until("!!document.querySelector('input[autocomplete=nickname]')");
             js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android QA');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()");
             click("Open LifeOS");until("!!document.querySelector('[data-testid=today-dashboard]')");
-            until("!document.querySelector('.lifeos-launch-reveal')");capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
+            denyOptionalNotificationPrompt();until("!document.querySelector('.lifeos-launch-reveal')");capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
             click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("plan");capture("plan-empty");click("Add task");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("task-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("life");capture("life-empty");click("Add a habit");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("habit-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Add a goal");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("goal-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Open profile and settings");until("!!document.querySelector('[data-testid=profile-settings-home]')");capture("profile");
-            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
+            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
             try(FileOutputStream file=new FileOutputStream(new File(output,"environment.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
         }
     }
