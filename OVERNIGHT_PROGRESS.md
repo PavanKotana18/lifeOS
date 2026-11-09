@@ -551,3 +551,10 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Root cause:** The test created an empty install first, which now correctly persists initial onboarding progress, then converted that same fixture into an existing user. The check for absence of progress was invalid; the actual compatibility requirement is to keep the completed user's workspace open and preserve the profile.
 - **Correction:** Removed only the invalid absence assertion. The test still verifies the completed installation opens Today and retains the encrypted profile name. No product behavior or security assertion was weakened.
 - **Validation:** Python syntax compilation and diff checks passed. Browser and Android checks for the updated test-only commit remain pending.
+
+## PR #36 mandatory onboarding and first-record browser alignment — 2026-11-09
+
+- **Exact-head evidence:** Browser workflow `42641402178` passed the complete three-stage onboarding scenario, including cancellation/retry, recovery confirmation, restart, legacy state and existing-user access. Its broader product acceptance then failed because it still expected categories to load only after the first-record prompt.
+- **Root cause:** That old test modeled pre-onboarding encryption. Mandatory setup now has already enabled encrypted storage and loaded categories before Today, so the first transaction form correctly contains categories immediately.
+- **Correction:** Browser acceptance now selects a loaded category and saves the first expense directly, asserting no redundant first-record security prompt and one encrypted transaction. It no longer expects a deferred category load or a second save action.
+- **Validation:** Python syntax compilation and whitespace checks passed. This is an acceptance-test expectation update to match the new mandatory secure setup; hosted browser, Android and APK verification are pending.
