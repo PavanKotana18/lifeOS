@@ -179,7 +179,9 @@ export function resolvePrimaryGestureEnd(
   if (pointerId !== session.pointerId || session.axis !== 'horizontal') return null;
   return resolvePrimarySwipe(currentTab, {
     deltaX: x - session.startX,
-    deltaY: y - session.startY,
+    // Axis ownership was already decided while moving. Vertical drift after
+    // horizontal lock must not reclassify an owned drag at release.
+    deltaY: 0,
     durationMs: endedAt - session.startedAt,
     startedAtSystemEdge: false,
     startedInHorizontalControl: false,

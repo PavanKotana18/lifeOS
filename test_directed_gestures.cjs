@@ -58,3 +58,13 @@ assert.equal(shouldCancelPrimaryCaptureLoss(false, false), true,
   'a child/browser capture loss without active owner capture cancels the gesture');
 
 console.log('DIRECTED GESTURES: ordinary-control ownership, axis lock, vertical scrolling, click safety, and capture-transfer handling passed.');
+
+for (const y of [80, 360, 700]) {
+ const start = beginPrimaryGesture({pointerId:12,x:250,y,at:1,viewportWidth:390});
+ const locked = updatePrimaryGesture(start,12,225,y+2).session;
+ assert.equal(locked.axis,'horizontal');
+ assert.equal(resolvePrimaryGestureEnd('dashboard',locked,12,130,y+80,260,true),'finance', 'horizontal ownership survives later finger drift at top/middle/bottom');
+ const scroll = updatePrimaryGesture(start,12,248,y+30).session;
+ assert.equal(resolvePrimaryGestureEnd('dashboard',scroll,12,130,y+80,260,true),null, 'vertical scroll never turns into navigation at release');
+}
+console.log('GESTURE PRECISION: top/middle/bottom ownership and post-lock drift passed; distance/velocity thresholds unchanged.');

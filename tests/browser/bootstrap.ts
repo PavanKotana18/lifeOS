@@ -41,4 +41,16 @@ registerPlugin('LifeOSCrypto', { web: () => ({
     return { plaintext: new TextDecoder().decode(data) };
   },
 }) });
+// Explicit test-entry adapter, absent from production builds. Native acceptance
+// uses the real plugin; these scenarios cover deterministic cancellation/success.
+const authScenario = new URLSearchParams(location.search).get('onboarding-auth');
+if (authScenario) {
+  const { BiometricService } = await import('../../src/services/biometricService');
+  BiometricService.isAvailable = async () => ({ isAvailable: authScenario !== 'unavailable', biometricsSupported: authScenario !== 'unavailable', code: authScenario === 'unavailable' ? 'NO_HARDWARE' : 'SUCCESS' });
+  BiometricService.authenticate = async () => {
+    const host = window as Window & { qaAuthCalls?: number };
+    host.qaAuthCalls = (host.qaAuthCalls || 0) + 1;
+    return { success: authScenario === 'success', message: 'Authentication cancelled. You can try again or choose Not now.' };
+  };
+}
 await import('../../src/main');

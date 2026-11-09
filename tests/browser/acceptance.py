@@ -53,7 +53,7 @@ try:
  for _ in range(40):
   try: d.get('http://127.0.0.1:5173/tests/browser/index.html'); break
   except Exception: time.sleep(.5)
- wait('input[autocomplete="nickname"]');capture('onboarding-welcome');wait('input[autocomplete="nickname"]').send_keys('Acceptance QA'); click('Open LifeOS'); wait('[data-testid="today-dashboard"]'); passed('First launch and onboarding')
+ wait('input[autocomplete="nickname"]');capture('onboarding-welcome');wait('input[autocomplete="nickname"]').send_keys('Acceptance QA'); click('Continue'); click('Not now'); click('Set this up later'); wait('[data-testid="today-dashboard"]'); passed('First launch and onboarding')
  for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(label+'-empty')
  from selenium.webdriver.support.ui import Select
  # A first-time user may start with Money, before any task provisions storage.
@@ -99,8 +99,9 @@ try:
  backup=d.execute_async_script("const done=arguments[0]; Promise.all([import('/src/db.ts'),import('/src/services/backupCryptoService.ts')]).then(async([m,b])=>{const original=await m.StorageService.backup.exportData();const encrypted=await b.encryptBackup(original,'QA isolated backup passphrase 2026');const decoded=await b.decryptBackup(encrypted,'QA isolated backup passphrase 2026');m.validateBackupTables(JSON.parse(decoded).tables);let rejected=false;try{await b.decryptBackup(encrypted,'wrong QA passphrase 2026')}catch{rejected=true;} await m.StorageService.backup.importData(decoded,{replaceExisting:true});done({same:decoded===original,rejected,accounts:(await m.StorageService.accounts.getAll()).length});}).catch(e=>done({error:String(e)}));")
  assert backup=={'same':True,'rejected':True,'accounts':2},str(backup); passed('Encrypted backup roundtrip, wrong-passphrase rejection and isolated restore using production services')
  # CDP touch uses the browser's actual pointer arbitration and implicit capture.
- def swipe(css,dx,dy=0,ending='touchEnd',mid=None):
-  e=wait(css); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',e)
+ def swipe(css,dx,dy=0,ending='touchEnd',mid=None,align='center'):
+  e=wait(css); d.execute_script('arguments[0].scrollIntoView({block:arguments[1],behavior:"instant"})',e,align)
+  if align=='end': d.execute_script('window.scrollBy({top:(document.querySelector(".app-bottom-nav")?.getBoundingClientRect().height||0)+16,behavior:"instant"})')
   point=d.execute_script('const r=arguments[0].getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}',e); x=point['x'];y=point['y']
   # Keep endpoints inside the logical viewport without changing production thresholds.
   dx=max(20-x,min(dx,d.execute_script('return innerWidth')-20-x))
@@ -120,6 +121,18 @@ try:
  swipe('.plan-hub-empty',120); w.until(lambda _: wait('[data-tab="finance"]').get_attribute('aria-current')=='page')
  swipe('.money-action-expense',120); w.until(lambda _: wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page');assert not d.find_elements(By.CSS_SELECTOR,'form[role="dialog"]')
  passed('Card, row and ordinary-button touch swipes across all four tabs; no accidental button activation')
+ # Actual pointer arbitration across upper header, clipped cards, controls and lower content.
+ for css,align in [('.app-brand-name','start'),('.money-cashflow','center'),('.money-action-income','center'),('.money-tools summary','end')]:
+  tab('finance');swipe(css,120,align=align);w.until(lambda _: wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page')
+  assert not d.find_elements(By.CSS_SELECTOR,'form[role="dialog"]')
+ passed('Upper header, clipped summary, ordinary action button and lower scroll content initiate real touch navigation')
+ tab('finance');swipe('.money-cashflow',-120,ending='touchCancel');assert wait('[data-tab="finance"]').get_attribute('aria-current')=='page'
+ for _ in range(3):
+  swipe('.money-action-income',120);w.until(lambda _:wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page')
+  swipe('.today-focus h3',-120);w.until(lambda _:wait('[data-tab="finance"]').get_attribute('aria-current')=='page')
+ passed('Rapid alternating button/card swipes and cancellation leave one active screen with no accidental form activation')
+ tab('dashboard')
+
  swipe('.today-focus h3',-15);assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page'
  swipe('.today-focus h3',-90,ending='touchCancel');assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';assert not d.find_elements(By.CSS_SELECTOR,'[data-gesture-dragging]')
  passed('Short swipe returns and cancelled swipe clears ownership')
@@ -147,7 +160,7 @@ try:
  # A second fresh disposable browser profile verifies account-first setup and draft recovery.
  d.quit();d=webdriver.Chrome(options=options);w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,))
  d.execute_cdp_cmd('Emulation.setTouchEmulationEnabled',{'enabled':True});d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
- d.get('http://127.0.0.1:5173/tests/browser/index.html');wait('input[autocomplete="nickname"]').send_keys('First account QA');click('Open LifeOS');wait('[data-testid="today-dashboard"]')
+ d.get('http://127.0.0.1:5173/tests/browser/index.html');wait('input[autocomplete="nickname"]').send_keys('First account QA');click('Continue'); click('Not now'); click('Set this up later');wait('[data-testid="today-dashboard"]')
  money_page('Accounts');click('Add account');field('Account name','QA first account');field('Starting balance','100');click('Save account');wait('[aria-labelledby="first-record-security-title"]');click('Cancel saving')
  restored=wait('form[aria-label="Create account"]');assert restored.find_element(By.XPATH,".//label[contains(.,'Account name')]/input").get_attribute('value')=='QA first account';capture('first-account-cancelled-keeps-draft')
  click('Save account');wait('[aria-labelledby="first-record-security-title"]');click('Protect this device and save');w.until(lambda _: not d.find_elements(By.CSS_SELECTOR,'form[aria-label="Create account"]'));capture('first-account-saved')
@@ -156,7 +169,7 @@ try:
  # A third isolated first-use profile covers planned bills without posting a transaction.
  d.quit();d=webdriver.Chrome(options=options);d.set_script_timeout(30);w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,))
  d.execute_cdp_cmd('Emulation.setTouchEmulationEnabled',{'enabled':True});d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
- d.get('http://127.0.0.1:5173/tests/browser/index.html');wait('input[autocomplete="nickname"]').send_keys('First bill QA');click('Open LifeOS');wait('[data-testid="today-dashboard"]')
+ d.get('http://127.0.0.1:5173/tests/browser/index.html');wait('input[autocomplete="nickname"]').send_keys('First bill QA');click('Continue'); click('Not now'); click('Set this up later');wait('[data-testid="today-dashboard"]')
  money_page('Planned bills');tap('[data-testid="money-planning"] section button');field('Name','QA future rent');field('Amount','900');capture('first-planned-bill-form');click('Save plan');wait('[aria-labelledby="first-record-security-title"]');click('Cancel saving')
  assert wait('form[aria-label="Planned commitment"]').find_element(By.XPATH,".//label[contains(.,'Name')]/input").get_attribute('value')=='QA future rent';capture('first-planned-bill-draft-restored')
  click('Save plan');wait('[aria-labelledby="first-record-security-title"]');click('Protect this device and save');w.until(lambda _: not d.find_elements(By.CSS_SELECTOR,'form[aria-label="Planned commitment"]'));capture('planned-bills-populated')

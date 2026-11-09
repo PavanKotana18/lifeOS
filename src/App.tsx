@@ -47,6 +47,7 @@ import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
+import { INITIAL_ONBOARDING_JOURNEY, normalizeOnboardingJourney, type OnboardingJourney } from './services/onboardingJourney';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
@@ -138,7 +139,7 @@ export default function App() {
   const swipeSuppressed = useRef(false);
   const swipeOriginAction = useRef<HTMLElement | null>(null);
   const swipeClickSuppression = useRef<{ pointerId: number; target: HTMLElement; expiresAt: number } | null>(null);
-  const appMainElement = useRef<HTMLElement | null>(null);
+  const gestureSurfaceElement = useRef<HTMLDivElement | null>(null);
   const gestureEventHandlers = useRef({
     move: (_event: PointerEvent) => {},
     up: (_event: PointerEvent) => {},
@@ -177,6 +178,7 @@ export default function App() {
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingJourney, setOnboardingJourney] = useState<OnboardingJourney>(INITIAL_ONBOARDING_JOURNEY);
   const [startupError, setStartupError] = useState('');
   const [appReady, setAppReady] = useState(false);
   const [firstRecordSecurityOpen, setFirstRecordSecurityOpen] = useState(false);
@@ -425,13 +427,14 @@ export default function App() {
       if (window.getSelection()?.isCollapsed === false) cancelPrimaryGesture('text-selection');
     };
     document.addEventListener('selectionchange', cancelForSelection);
-    window.addEventListener('contextmenu', cancelForSelection);
+    const cancelForContextMenu = () => cancelPrimaryGesture('context-menu');
+    window.addEventListener('contextmenu', cancelForContextMenu);
     window.addEventListener('resize', cancelForEnvironmentChange, { passive: true });
     window.addEventListener('blur', cancelForBlur);
     document.addEventListener('visibilitychange', cancelForBackground);
     return () => {
       document.removeEventListener('selectionchange', cancelForSelection);
-      window.removeEventListener('contextmenu', cancelForSelection);
+      window.removeEventListener('contextmenu', cancelForContextMenu);
       window.removeEventListener('resize', cancelForEnvironmentChange);
       window.removeEventListener('blur', cancelForBlur);
       document.removeEventListener('visibilitychange', cancelForBackground);
@@ -513,7 +516,7 @@ export default function App() {
     if (update.session.axis === 'horizontal' && start.axis !== 'horizontal') {
       // Capture only after horizontal intent is clear. A normal button tap and
       // browser-owned vertical scroll keep their native pointer/click lifecycle.
-      try { appMainElement.current?.setPointerCapture(event.pointerId); } catch { /* Window tracking remains active if capture is unavailable. */ }
+      try { gestureSurfaceElement.current?.setPointerCapture(event.pointerId); } catch { /* Window tracking remains active if capture is unavailable. */ }
     }
     if (!update.accepted || swipeMoveFrame.current !== null) return;
     const screen = document.getElementById(`screen-${activeTabRef.current}`);
@@ -572,7 +575,7 @@ export default function App() {
     // Touch starts with implicit capture on the child. Transferring ownership
     // to main emits loss on that child before main's gotpointercapture event.
     // Only a real loss of our owner should cancel the horizontal gesture.
-    const owner = appMainElement.current;
+    const owner = gestureSurfaceElement.current;
     if (!shouldCancelPrimaryCaptureLoss(event.target === owner, owner?.hasPointerCapture(event.pointerId) === true)) return;
     endPointerTracking(event.pointerId);
     const start = swipePointer.current;
@@ -608,7 +611,7 @@ export default function App() {
     const onAdditionalPointerDown = (event: PointerEvent) => {
       const session = swipePointer.current;
       const target = event.target;
-      if (!session || event.pointerId === session.pointerId || !target || appMainElement.current?.contains(target as Node)) return;
+      if (!session || event.pointerId === session.pointerId || !target || gestureSurfaceElement.current?.contains(target as Node)) return;
       activeTouchPointers.current.add(event.pointerId);
       swipeSuppressed.current = true;
       cancelPrimaryGesture('multiple-pointers', event.pointerId);
@@ -723,7 +726,8 @@ export default function App() {
         // A pristine first install may browse without private storage. Returning
         // from Android settings must not turn that safe browse into auth setup.
         if (safeFirstRunBrowse.current && !isEncryptedStorageActivated()) {
-          setIsLocked(false);
+          const optionalLock = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
+          setIsLocked(optionalLock);
           setBiometricVerified(false);
           void refreshNotificationDiagnostics();
           await confirmScreenshotResume();
@@ -998,6 +1002,7 @@ export default function App() {
     // Only bootstrap-safe markers are read before encryption is active.
     const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
     const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
+    setOnboardingJourney(normalizeOnboardingJourney(await StorageService.settings.get('onboardingJourney', null)));
     let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
 
     const nativeState = await CryptoService.getKeyState();
@@ -1012,7 +1017,7 @@ export default function App() {
       // without private storage; the first private write resumes setup.
       safeFirstRunBrowse.current = true;
       startupComplete.current = true;
-      setIsLocked(false);
+      setIsLocked(lockSetting);
       setBiometricVerified(false);
       setRecoveryProvisioned(false);
       setRecoveryDeferred(false);
@@ -1517,6 +1522,14 @@ export default function App() {
     const attempt = (async () => {
       try {
         await setSensitiveScreenshotState(true);
+        if (safeFirstRunBrowse.current && !isEncryptedStorageActivated()) {
+          // Optional app protection never provisions or admits private storage.
+          const result = await BiometricService.authenticate('Unlock LifeOS', 'Use your phone’s secure unlock');
+          if (!result.success) throw new Error(result.message || 'Authentication was not completed.');
+          biometricAuthenticated.current = true;
+          setBiometricVerified(true); setIsLocked(false); setBiometricMessage('');
+          return true;
+        }
         await encryptedSession.open();
         if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Authentication expired after app lock.');
         biometricAuthenticated.current = true;
@@ -2104,6 +2117,9 @@ export default function App() {
 
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
+    initialJourney={onboardingJourney}
+    onSaveJourney={async journey => { const safe = normalizeOnboardingJourney(journey); await StorageService.settings.set('onboardingJourney', safe); setOnboardingJourney(safe); }}
+    onEnableProtection={handleEnableBiometric}
     onSaveIdentity={updateDisplayName}
     onFinish={finishOnboarding}
   />;
@@ -2133,7 +2149,7 @@ export default function App() {
   }
 
   return (
-    <div className="lifeos-page app-shell">
+    <div ref={gestureSurfaceElement} className="lifeos-page app-shell" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       {/* Top Mobile Header */}
       <header className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
@@ -2157,7 +2173,7 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main ref={appMainElement} className="app-main" onPointerDown={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
+      <main className="app-main">
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
@@ -2701,6 +2717,7 @@ export default function App() {
               <p className="text-xs text-secondary">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
+              {onboardingJourney.recoveryName && <p className="text-xs text-secondary">Recovery name: <strong>{onboardingJourney.recoveryName}</strong>. This label cannot restore data without your separate recovery kit.</p>}
               {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
             </section></ProfileSubpage>}
 

@@ -815,3 +815,39 @@ html.dark .text-amber-400 { color: var(--warning); }
 /* Focused controls scroll clear of the real sticky action bar, including large text. */
 .ui-bottom-sheet { scroll-padding-bottom: calc(var(--sheet-actions-height, 5rem) + 1rem); }
 .ui-bottom-sheet :is(input,select,textarea,button) { scroll-margin-bottom: max(.75rem, env(safe-area-inset-bottom)); }
+
+/* Chromium stops touch-action intersection at the FIRST scroll container,
+   including overflow:hidden card wrappers. Carry ownership to each eligible
+   surface before pointerdown, rather than changing it after browser cancellation.
+   Gesture-owning widgets and their complete subtree retain native arbitration. */
+.app-shell, .app-shell :where(*) { touch-action: pan-y pinch-zoom; }
+.app-shell :where([data-no-tab-swipe], [data-swipe-exclude], [data-gesture-owner="native"], [role="dialog"], [aria-modal="true"], .ui-bottom-sheet, [data-horizontal-scroll], .overflow-x-auto, .overflow-x-scroll, .recharts-wrapper, [data-chart], canvas, [role="slider"], input, textarea, select, [contenteditable="true"]),
+.app-shell :where([data-no-tab-swipe], [data-swipe-exclude], [data-gesture-owner="native"], [role="dialog"], [aria-modal="true"], .ui-bottom-sheet, [data-horizontal-scroll], .overflow-x-auto, .overflow-x-scroll, .recharts-wrapper, [data-chart], [role="slider"], [contenteditable="true"]) * { touch-action: auto; }
+
+.initial-setup { position: fixed; inset: 0; z-index: 70; overflow-y: auto; min-height: 0; padding: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); }
+.initial-setup-inner { width: min(100%, 28rem); min-height: 100%; margin-inline: auto; display: flex; flex-direction: column; gap: clamp(1.4rem, 4dvh, 2.5rem); }
+.initial-setup-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.initial-setup-count { color: var(--ink-secondary); font-size: .85rem; white-space: nowrap; }
+.initial-setup-progress { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .65rem; padding: 0; list-style: none; font-size: .75rem; color: var(--ink-secondary); }
+.initial-setup-progress li { display: flex; align-items: center; gap: .4rem; }
+.initial-setup-progress li > span { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border: 1px solid var(--stroke); border-radius: 50%; }
+.initial-setup-progress [aria-current], .initial-setup-progress [data-complete="true"] { color: var(--accent); font-weight: 600; }
+.initial-setup-progress [aria-current] > span { background: var(--accent); color: var(--accent-foreground); border-color: transparent; }
+.initial-setup-content { margin-block: auto; }
+.initial-setup-illustration { position: relative; display: grid; place-items: center; width: clamp(5.5rem, 20vw, 7.5rem); aspect-ratio: 1; margin-bottom: 1.75rem; border-radius: 2rem; background: var(--surface-raised); color: var(--accent); border: 1px solid var(--stroke); }
+.initial-setup-illustration > svg { width: 64%; height: 64%; }
+.initial-setup-illustration > span { position: absolute; right: -.45rem; bottom: -.4rem; padding: .5rem; border-radius: 50%; background: var(--page); border: 1px solid var(--stroke); }
+.initial-setup-eyebrow { color: var(--accent); font-size: .75rem; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; margin-bottom: .7rem; }
+.initial-setup-content h1 { font-size: clamp(1.8rem, 6vw, 2.3rem); line-height: 1.15; letter-spacing: -.035em; font-weight: 600; text-wrap: balance; }
+.initial-setup-description { color: var(--ink-secondary); font-size: 1rem; line-height: 1.65; margin-top: 1rem; }
+.initial-setup-content form, .initial-setup-actions { margin-top: 1.6rem; }
+.initial-setup-content label { display: block; font-size: .9rem; font-weight: 550; }
+.initial-setup-content input { display: block; width: 100%; min-height: 3.25rem; padding: .85rem 1rem; margin-top: .6rem; font-size: 1rem; }
+.initial-setup-content button { display: flex; align-items: center; justify-content: center; gap: .75rem; width: 100%; min-height: 3.1rem; padding: .8rem 1rem; border-radius: 1rem; font-size: .95rem; font-weight: 600; margin-top: 1rem; }
+.initial-setup-content button:disabled { opacity: .5; }
+.initial-setup-secondary { color: var(--ink-secondary); background: transparent; }
+.initial-setup-note, .initial-setup-footer { color: var(--ink-secondary); font-size: .8rem; line-height: 1.6; }
+.initial-setup-note { margin-top: .85rem; }
+.initial-setup-footer { text-align: center; padding-top: .75rem; }
+.initial-setup-error { color: var(--danger); font-size: .9rem; line-height: 1.5; margin-top: 1rem; }
+.initial-setup :focus-visible { outline: 2px solid var(--focus-color); outline-offset: 4px; }

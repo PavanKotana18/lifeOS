@@ -16,7 +16,7 @@ const render = (element) => renderToStaticMarkup(element);
 const fsSource = fs.readFileSync('src/App.tsx', 'utf8');
 const styles = fs.readFileSync('src/index.css', 'utf8');
 const lockedStart = fsSource.indexOf('  // If App is Biometrically Locked');
-const shellStart = fsSource.indexOf('  return (\n    <div className="lifeos-page app-shell"', lockedStart);
+const shellStart = fsSource.indexOf('className="lifeos-page app-shell"', lockedStart);
 const shell = fsSource.slice(lockedStart, shellStart);
 const startupStart = fsSource.indexOf('  if (!appReady) return');
 const onboardingStart = fsSource.indexOf('  if (onboardingRequired', startupStart);
