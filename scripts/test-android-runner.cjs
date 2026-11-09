@@ -16,7 +16,7 @@ const declaredTests = fs.readdirSync(pathToAndroidTests)
     return [...source.matchAll(/@Test\s+(?:public\s+)?void\s+(\w+)\s*\(/g)]
       .map(match => `com.lifeos.personal.${file.slice(0, -5)}#${match[1]}`);
   });
-assert.equal(declaredTests.length, 21, 'Android test inventory changed; update the hosted expected counts deliberately');
+assert.equal(declaredTests.length, 22, 'Android test inventory changed; update the hosted expected counts deliberately');
 for (const [inventory, expectedCount, requiredTest] of [
   ['instrumentation-exclusions-api29.txt', 14, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
   ['instrumentation-exclusions-api34-35.txt', 19, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
@@ -29,6 +29,7 @@ for (const [inventory, expectedCount, requiredTest] of [
   assert.ok(declaredTests.includes(requiredTest), `${inventory} required test is not declared`);
   assert.ok(!exclusions.includes(requiredTest), `${inventory} excludes its own required test`);
 }
+assert.match(instrumentationWorkflow, /android-visual:[\s\S]*ANDROID_EXPECTED_TESTS=1/, 'the visual test excluded from general matrices must run as its own mandatory one-test job');
 const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/workstream-integration.yml'), 'utf8');
 assert.match(workflow, /test-filter:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
   'API 29 filter must name the fully qualified instrumentation class');

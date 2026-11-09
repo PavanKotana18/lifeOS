@@ -21,7 +21,7 @@ def click(text):
    normalized=' '.join(x.text.split()).lstrip('+ ')
    if x.is_displayed() and x.is_enabled() and (normalized==text or normalized.startswith(text+' ') or x.get_attribute('aria-label')==text): found.append(x)
   return found[-1] if found else False
- x=w.until(locate); d.execute_script('arguments[0].scrollIntoView({block:"center"})',x); x.click(); return x
+ x=w.until(locate); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',x); x.click(); return x
 def tab(name):
  x=wait('[data-tab="'+name+'"]'); x.click(); w.until(lambda _: x.get_attribute('aria-current')=='page'); time.sleep(.3)
 def capture(name):
@@ -31,7 +31,7 @@ def capture(name):
 def field(text,value):
  f=wait('form[role="dialog"]')
  e=f.find_element(By.XPATH,".//label[contains(.,'"+text+"')]//*[self::input or self::textarea]")
- e.clear(); e.send_keys(value); return e
+ d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',e); e.clear(); e.send_keys(value); return e
 def save(label):
  click(label)
  w.until(lambda _: d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]') or not any(x.is_displayed() for x in d.find_elements(By.CSS_SELECTOR,'form[role="dialog"]')))
@@ -59,7 +59,7 @@ try:
  assert state.get('tasks')==1 and state.get('transactions')==2 and state.get('encrypted'), str(state); passed('Created records persisted as ciphertext in real IndexedDB')
  # Exercise financial setup through the UI after the initial populated-state captures.
  def money_page(section):
-  tab('finance'); wait('.money-tools summary').click(); click(section)
+  tab('finance'); summary=wait('.money-tools summary'); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',summary); summary.click(); click(section)
  money_page('Accounts')
  for name,amount in [('QA bank','10000'),('QA cash','500')]:
   click('Add account'); capture('account-form-'+name.replace(' ','-')); field('Account name',name); field('Starting balance',amount); save('Save account')
