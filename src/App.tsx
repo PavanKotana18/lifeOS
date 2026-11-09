@@ -41,7 +41,7 @@ import ReminderStatusSummary from './components/ReminderStatusSummary';
 import { useRecordDialog } from './hooks/useRecordDialog';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
-import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
+import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
 import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
@@ -552,6 +552,11 @@ export default function App() {
   };
 
   const handleContentLostPointerCapture = (event: PointerEvent) => {
+    // Touch starts with implicit capture on the child. Transferring ownership
+    // to main emits loss on that child before main's gotpointercapture event.
+    // Only a real loss of our owner should cancel the horizontal gesture.
+    const owner = appMainElement.current;
+    if (!shouldCancelPrimaryCaptureLoss(event.target === owner, owner?.hasPointerCapture(event.pointerId) === true)) return;
     endPointerTracking(event.pointerId);
     const start = swipePointer.current;
     if (start?.pointerId === event.pointerId) {

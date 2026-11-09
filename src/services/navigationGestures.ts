@@ -223,6 +223,18 @@ export function matchesPrimaryGestureClickSuppression(
   return click.pointerId === undefined || click.pointerId === suppression.pointerId;
 }
 
+/**
+ * A child can emit a bubbling lostpointercapture when capture is transferred
+ * to the gesture owner. Ignore only that ownership-transfer event; loss at the
+ * owner itself, or loss without the owner's active capture, must cancel.
+ */
+export function shouldCancelPrimaryCaptureLoss(
+  eventTargetIsOwner: boolean,
+  ownerHasCapture: boolean,
+): boolean {
+  return eventTargetIsOwner || !ownerHasCapture;
+}
+
 /** Reduced motion skips settle decoration; it never disables the gesture itself. */
 export function shouldAnimatePrimaryGestureSettlement(prefersReducedMotion: boolean): boolean {
   return !prefersReducedMotion;

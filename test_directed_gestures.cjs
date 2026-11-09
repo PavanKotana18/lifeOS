@@ -8,6 +8,7 @@ const {
   shouldStartPrimaryGesture,
   shouldSuppressPrimaryGestureClick,
   matchesPrimaryGestureClickSuppression,
+  shouldCancelPrimaryCaptureLoss,
 } = require('./src/services/navigationGestures.ts');
 
 const context = (targetKind) => ({ enabled: true, pointerType: 'touch', targetKind });
@@ -49,4 +50,11 @@ for (const targetKind of ['text-entry', 'native-picker', 'slider', 'chart', 'hor
   assert.equal(shouldStartPrimaryGesture(context(targetKind)), false, `${targetKind} retains gesture ownership`);
 }
 
-console.log('DIRECTED GESTURES: ordinary-control ownership, axis lock, vertical scrolling, tap preservation, and pointer-ID reuse protection passed.');
+assert.equal(shouldCancelPrimaryCaptureLoss(false, true), false,
+  'a child lost-capture event is ignored when capture has transferred to the main gesture owner');
+assert.equal(shouldCancelPrimaryCaptureLoss(true, false), true,
+  'loss reported by the owner itself cancels the active gesture');
+assert.equal(shouldCancelPrimaryCaptureLoss(false, false), true,
+  'a child/browser capture loss without active owner capture cancels the gesture');
+
+console.log('DIRECTED GESTURES: ordinary-control ownership, axis lock, vertical scrolling, click safety, and capture-transfer handling passed.');
