@@ -3,11 +3,12 @@ import json, time, traceback, os
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.support.ui import WebDriverWait
 out=Path('test-results/directed-visual/onboarding');out.mkdir(parents=True,exist_ok=True)
 options=webdriver.ChromeOptions()
 for arg in ['--headless=new','--no-sandbox','--disable-dev-shm-usage']:options.add_argument(arg)
-d=webdriver.Chrome(options=options);d.set_script_timeout(25);w=WebDriverWait(d,25);results=[];screens=[]
+d=webdriver.Chrome(options=options);d.set_script_timeout(25);w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,));results=[];screens=[]
 d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
 base='http://127.0.0.1:5173/tests/browser/index.html'
 def find(css):return w.until(lambda _:next((e for e in d.find_elements(By.CSS_SELECTOR,css) if e.is_displayed()),False))

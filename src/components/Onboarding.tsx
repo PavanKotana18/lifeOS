@@ -78,7 +78,7 @@ export default function Onboarding({ initialName, initialJourney = INITIAL_ONBOA
         </form>}
         {message && <p role="alert" className="initial-setup-error">{message}</p>}
       </section>
-      <footer className="initial-setup-footer">Your records stay on your device. Private saves still require secure encrypted storage.</footer>
+      <footer className="initial-setup-footer">Your records stay on your device. Private records are always encrypted.</footer>
     </div>
   </main>;
 }

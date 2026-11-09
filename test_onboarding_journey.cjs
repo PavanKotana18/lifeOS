@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+require('./scripts/register-ts-test-loader.cjs');
 const h = require('./tests/wp0/production-harness.cjs');
 const { normalizeOnboardingJourney, INITIAL_ONBOARDING_JOURNEY } = require('./src/services/onboardingJourney.ts');
 let passed=0;
