@@ -49,3 +49,7 @@ assert.match(source, /if \(!saving && event\.target === event\.currentTarget\)/,
 assert.match(source, /decimalToMinorUnits\(commitment\.amount, commitment\.currency\)/, 'the existing minor-unit conversion remains in use');
 assert.match(source, /baseCurrencyCode: rate\.base, quoteCurrencyCode: rate\.quote, rate: rate\.value\.trim\(\), effectiveDate: rate\.date/);
 console.log('DIRECTED MONEY PLANNING: externally controlled drafts, saving guards, retained payload semantics, and rendered dirty drafts passed.');
+
+const appSource = fs.readFileSync('src/App.tsx', 'utf8');
+assert.ok(appSource.indexOf('<MoneyPlanning draftState=') < appSource.indexOf('Explore a savings projection'), 'Bills and explicit rates appear before optional scenarios');
+assert.match(appSource, /activeTab === 'finance' && projectionExpanded && <Suspense/, 'Projection loads only after its disclosure is expanded on Money');

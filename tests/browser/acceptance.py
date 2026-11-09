@@ -28,14 +28,16 @@ def tab(name):
  if name=='finance' and not d.find_elements(By.CSS_SELECTOR,'[data-testid=money-home]'):
   x.click(); wait('[data-testid=money-home]')
 def tap(css):
- x=wait(css); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',x); x.click()
+ x=wait(css); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',x); d.execute_async_script('const done=arguments[0];requestAnimationFrame(()=>requestAnimationFrame(done));'); x.click()
 def capture(name):
  time.sleep(.3); p=out/(name+'.png'); d.save_screenshot(str(p)); images.append(p.name)
  assert d.execute_script('return document.documentElement.scrollWidth<=innerWidth+1'), 'Horizontal page overflow: '+name
  assert d.execute_script("const a=document.querySelector('.app-brand-name')?.getBoundingClientRect(),b=document.querySelector('.app-profile-button')?.getBoundingClientRect();return !a||!b||a.right<=b.left"), 'Brand overlaps profile control: '+name
  assert d.execute_script("return [...document.querySelectorAll('.app-bottom-nav .nav-item > span')].every(e=>e.scrollWidth<=e.clientWidth+1)"), 'Navigation label overflows its own control: '+name
+ assert d.execute_script("const n=document.querySelector('.app-bottom-nav'),s=document.querySelector('.app-shell');return !n||!s||parseFloat(getComputedStyle(s).paddingBottom)>=n.getBoundingClientRect().height"), 'Content does not reserve navigation height: '+name
  assert d.execute_script("const e=document.querySelector('.money-period input');return !e||e.getBoundingClientRect().right<=e.parentElement.getBoundingClientRect().right+1"), 'Money period control clipped: '+name
  assert d.execute_script("const n=[...document.querySelectorAll('.ui-tab-screen')].filter(e=>!e.hidden).length;return n===1||(n===0&&!!document.querySelector('[aria-labelledby=first-record-security-title],main.onboarding-root'))"), 'Overlapping active screens: '+name
+ assert d.execute_script("const forms=[...document.querySelectorAll('form[role=dialog]')].filter(e=>e.getClientRects().length);return !forms.length||!!document.querySelector('[role=alertdialog]')||forms.some(e=>e.contains(document.activeElement))"), 'Visible form did not receive focus: '+name
 def field(text,value):
  f=wait('form[role="dialog"]')
  e=f.find_element(By.XPATH,".//label[contains(.,'"+text+"')]//*[self::input or self::textarea]")
@@ -123,6 +125,11 @@ try:
  passed('Short swipe returns and cancelled swipe clears ownership')
  d.execute_script('window.scrollTo({top:0,behavior:"instant"})');swipe('.today-focus',0,-110);assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';assert d.execute_script('return scrollY>0');passed('Vertical touch scroll remains independent of tab navigation')
  d.execute_cdp_cmd('Emulation.setEmulatedMedia',{'features':[{'name':'prefers-reduced-motion','value':'reduce'}]});swipe('.today-focus h3',-120);w.until(lambda _: wait('[data-tab="finance"]').get_attribute('aria-current')=='page');capture('reduced-motion-navigation');d.execute_cdp_cmd('Emulation.setEmulatedMedia',{'features':[]});passed('Reduced motion retains immediate touch navigation')
+ # Reserved system edges do not become a hidden tab-navigation zone.
+ tab('dashboard');heading=wait('.today-focus h3');d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',heading);y=d.execute_script('return arguments[0].getBoundingClientRect().top+10',heading);right=d.execute_script('return innerWidth-1')
+ d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':right,'y':y}]});d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':right-120,'y':y}]});d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]});assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';passed('Reserved browser edge leaves tab navigation unchanged; actual Android insets tested separately')
+ d.execute_script('const r=document.createRange();r.selectNodeContents(arguments[0]);const s=getSelection();s.removeAllRanges();s.addRange(r)',heading);swipe('.today-focus h3',-120);assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';d.execute_script('getSelection().removeAllRanges()');passed('Selected text retains ownership instead of becoming a tab swipe')
+ d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':150,'y':y,'id':1},{'x':240,'y':y,'id':2}]});d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':70,'y':y,'id':1},{'x':160,'y':y,'id':2}]});d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]});assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';assert not d.find_elements(By.CSS_SELECTOR,'[data-gesture-dragging]');passed('Multitouch cancels primary navigation without a stuck drag')
  (out/'gesture-trace.json').write_text(json.dumps(d.execute_script('return window.__lifeosGestureTrace||[]'),indent=2))
  click('Open profile and settings'); capture('profile');
  for section in ['Preferences','Notifications','Privacy & security','Data & backup','About LifeOS']:
@@ -159,6 +166,7 @@ try:
  buttons=d.find_elements(By.CSS_SELECTOR,'[data-testid="money-planning"] section button');d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',buttons[-1]);buttons[-1].click();field('Quote units','83.25');capture('manual-rate-form');save('Save rate');capture('manual-rate-saved')
  rates=d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done((await m.StorageService.exchangeRates.getAll()).map(x=>({base:x.baseCurrencyCode,quote:x.quoteCurrencyCode,rate:x.rate}))));")
  assert rates==[{'base':'USD','quote':'INR','rate':'83.25'}],str(rates);passed('Explicit manual exchange rate saved with unchanged decimal precision')
+ click('Explore a savings projection');wait('[aria-label="Starting savings"]') if d.find_elements(By.CSS_SELECTOR,'[aria-label="Starting savings"]') else wait('input[type="number"]');capture('savings-projection-expanded');click('Explore a savings projection')
  results.append({'journey':'Android keyboard, Back, notification delivery/tap, biometric lock and update install','status':'BLOCKED','reason':'Browser evidence does not validate Android native behavior; hosted Android instrumentation is separate.'})
 except Exception as e:
  results.append({'journey':'Current browser journey','status':'FAIL','error':str(e),'trace':traceback.format_exc(),'gestureTrace':d.execute_script('return window.__lifeosGestureTrace||[]'),'visibleControls':[x.text for x in d.find_elements(By.CSS_SELECTOR,'button,summary') if x.is_displayed()]}); d.save_screenshot(str(out/'failure.png')); raise

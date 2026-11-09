@@ -81,11 +81,15 @@ public class LocalNotificationBridgeAcceptanceTest {
             NotificationStorage storage = new NotificationStorage(context);
             boolean visible = false;
             long deliveryDeadline = android.os.SystemClock.elapsedRealtime() + 20_000L;
-            while (android.os.SystemClock.elapsedRealtime() < deliveryDeadline && !visible) {
+            while (android.os.SystemClock.elapsedRealtime() < deliveryDeadline) {
                 for (StatusBarNotification active : manager.getActiveNotifications()) {
                     if (active.getId() == id) { visible = true; break; }
                 }
-                if (!visible) Thread.sleep(250L);
+                // notify() publishes through the system service before the receiver
+                // retires its one-shot pending row. Wait for both observable
+                // postconditions; apply() updates this process in memory immediately.
+                if (visible && !storage.getSavedNotificationIds().contains(String.valueOf(id))) break;
+                Thread.sleep(50L);
             }
             try {
                 assertTrue("Native AlarmManager receiver must post the synthetic reminder after app backgrounding; exact-alarm state=" + queued.optString("exact"), visible);

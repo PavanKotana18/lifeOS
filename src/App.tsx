@@ -39,6 +39,7 @@ import ProfilePreferences from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
 import { useRecordDialog } from './hooks/useRecordDialog';
+import { useBottomNavigationInset } from './hooks/useBottomNavigationInset';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
@@ -296,12 +297,14 @@ export default function App() {
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [savingsContributions, setSavingsContributions] = useState<SavingsContribution[]>([]);
   const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>([]);
+  const bottomNavigationRef = useBottomNavigationInset();
   const [accountFormDraft, setAccountFormDraft] = useState<AccountDraft | null>(null);
   const [accountFormDirty, setAccountFormDirty] = useState(false);
   const [transferFormDraft, setTransferFormDraft] = useState<TransferDraft | null>(null);
   const [transferFormDirty, setTransferFormDirty] = useState(false);
   const [planningDrafts, setPlanningDrafts] = useState<MoneyPlanningDraftState>({ commitment: null, rate: null, commitmentDirty: false, rateDirty: false });
   const [financeWriteBusy, setFinanceWriteBusy] = useState(false);
+  const [projectionExpanded, setProjectionExpanded] = useState(false);
   const financeWriteOperation = useRef(false);
   const [accountTransfers, setAccountTransfers] = useState<AccountTransfer[]>([]);
   const [manualExchangeRates, setManualExchangeRates] = useState<ManualExchangeRate[]>([]);
@@ -418,10 +421,17 @@ export default function App() {
       activeTouchPointers.current.clear();
       swipeSuppressed.current = false;
     };
+    const cancelForSelection = () => {
+      if (window.getSelection()?.isCollapsed === false) cancelPrimaryGesture('text-selection');
+    };
+    document.addEventListener('selectionchange', cancelForSelection);
+    window.addEventListener('contextmenu', cancelForSelection);
     window.addEventListener('resize', cancelForEnvironmentChange, { passive: true });
     window.addEventListener('blur', cancelForBlur);
     document.addEventListener('visibilitychange', cancelForBackground);
     return () => {
+      document.removeEventListener('selectionchange', cancelForSelection);
+      window.removeEventListener('contextmenu', cancelForSelection);
       window.removeEventListener('resize', cancelForEnvironmentChange);
       window.removeEventListener('blur', cancelForBlur);
       document.removeEventListener('visibilitychange', cancelForBackground);
@@ -469,7 +479,7 @@ export default function App() {
     const leftGutter = Math.max(16, leftSafeArea, nativeGestureInsets.current?.left || 0);
     const rightGutter = Math.max(16, rightSafeArea, nativeGestureInsets.current?.right || 0);
     const systemEdge = event.clientX <= leftGutter || event.clientX >= window.innerWidth - rightGutter;
-    const targetKind: PrimaryGestureTargetKind = textEntry ? 'text-entry'
+    const targetKind: PrimaryGestureTargetKind = textEntry || window.getSelection()?.isCollapsed === false ? 'text-entry'
       : nativePicker ? 'native-picker'
         : hardExcluded || horizontallyScrollable ? 'horizontal-control'
           : interactive ? 'ordinary-interactive' : 'content';
@@ -940,7 +950,11 @@ export default function App() {
     else setPlanningDrafts({ commitment: null, rate: null, commitmentDirty: false, rateDirty: false });
   };
   const financeDialogOpen = activeTab === 'finance' && (financeSubtab === 'accounts' ? Boolean(accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && Boolean(planningDrafts.commitment || planningDrafts.rate));
-  useRecordDialog(Boolean(createKind || financeDialogOpen) && !isLocked, () => { if (createKind) requestCloseForm(); else void requestCloseFinanceDraft(); });
+  const recordDialogId = createKind ? 'record-dialog' : financeSubtab === 'accounts'
+    ? (transferFormDraft ? 'money-transfer-dialog' : 'money-account-dialog')
+    : planningDrafts.commitment ? 'money-commitment-dialog' : 'money-rate-dialog';
+  useRecordDialog(Boolean(createKind || financeDialogOpen) && !isLocked && !firstRecordSecurityOpen && secureSetup === null,
+    () => { if (createKind) requestCloseForm(); else void requestCloseFinanceDraft(); }, recordDialogId);
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
     if (next === financeSubtab) return;
@@ -2347,7 +2361,7 @@ export default function App() {
             {financeSubtab !== 'overview' && <div className="money-page-toolbar">
               <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
               <div className="money-destination-control"><label className="sr-only" htmlFor="money-destination">Money section</label><select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)}>
-                {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Financial planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
+                {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
               </select><ChevronDown size={16} aria-hidden="true" /></div>
             </div>}
 
@@ -2517,13 +2531,13 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5">{activeTab === 'finance' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}<MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+            {financeSubtab === 'planning' && <div className="space-y-5"><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
               onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
               onDeleteCommitment={async id => { await StorageService.commitments.delete(id); await reloadAllData(); }}
               onAddRate={async input => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.add(input)); }}
               onUpdateRate={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.update(id, input)); }}
-              onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /></div>}
+              onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /><details className="lifeos-panel rounded-2xl border p-4" onToggle={event => setProjectionExpanded(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer font-semibold">Explore a savings projection</summary><p className="mt-2 text-sm text-secondary">Compare savings scenarios using your own assumptions. This does not change your accounts or planned bills.</p>{activeTab === 'finance' && projectionExpanded && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}</details></div>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
               <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-secondary">Based on transactions saved on this device</p></div><label className="text-[10px] text-secondary">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="lifeos-input mt-1 block min-h-11 rounded-lg px-2 py-2 text-xs" /></label></div>
@@ -2852,7 +2866,7 @@ export default function App() {
 
       {createKind && (
         <div className="ui-sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+          <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
@@ -2940,7 +2954,7 @@ export default function App() {
       )}
 
       {/* Floating Bottom Nav */}
-      <nav aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
+      <nav ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
         <div className="app-nav-items">
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, life: Leaf })[icon];

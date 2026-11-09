@@ -135,7 +135,7 @@ body {
 .ui-toast { top: calc(env(safe-area-inset-top) + 0.75rem); }
 
 /* Only the current screen paints. An opaque page surface prevents ghost text. */
-.app-shell { min-height: 100vh; min-height: 100dvh; padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+.app-shell { min-height: 100vh; min-height: 100dvh; padding-bottom: calc(var(--bottom-navigation-height, calc(5rem + env(safe-area-inset-bottom))) + .75rem); }
 .app-header-shell { width: min(100%, var(--page-measure)); margin-inline: auto; padding-top: calc(env(safe-area-inset-top) + 0.55rem); }
 .app-brand-name { font-size: clamp(1.05rem, 1rem + 0.3vw, 1.2rem); font-weight: 650; letter-spacing: -.035em; }
 .app-content-width { width: min(100%, var(--content-measure)); margin-inline: auto; }
@@ -807,3 +807,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 @container app-header (max-width: 15em) {
   .lifeos-mark { display: none; }
 }
+/* The destination select fills its wrapper; do not apply the toolbar's old 64% cap twice. */
+.money-page-toolbar { flex-wrap: wrap; }
+.money-destination-control { flex: 0 1 15rem; max-width: 100%; min-width: 0; }
+.money-destination-control select { max-width: none; min-width: 0; }

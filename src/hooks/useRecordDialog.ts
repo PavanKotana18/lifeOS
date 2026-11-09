@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 /** Keeps the record sheet inside the available viewport and returns focus to its opener. */
-export function useRecordDialog(open: boolean, dismiss: () => void) {
+export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: string) {
   const dismissRef = useRef(dismiss);
   const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   dismissRef.current = dismiss;
@@ -17,7 +17,7 @@ export function useRecordDialog(open: boolean, dismiss: () => void) {
   useEffect(() => {
     if (!open) return;
     const opener = openerRef.current;
-    const findDialog = () => [...document.querySelectorAll<HTMLElement>('form[role="dialog"]')].find(element => element.getClientRects().length > 0);
+    const findDialog = () => { const element = document.getElementById(dialogId); return element?.getClientRects().length ? element : null; };
     const dialog = findDialog();
     if (!dialog) return;
     const viewport = window.visualViewport;
@@ -39,6 +39,9 @@ export function useRecordDialog(open: boolean, dismiss: () => void) {
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     };
+    if (!dialog.contains(document.activeElement)) {
+      dialog.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled)')?.focus({ preventScroll: true });
+    }
     updateViewport();
     viewport?.addEventListener('resize', updateViewport);
     viewport?.addEventListener('scroll', updateViewport);
@@ -51,5 +54,5 @@ export function useRecordDialog(open: boolean, dismiss: () => void) {
       document.documentElement.style.removeProperty('--sheet-viewport-top');
       if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
-  }, [open]);
+  }, [open, dialogId]);
 }
