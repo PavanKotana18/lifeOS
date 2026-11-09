@@ -4,6 +4,10 @@ const h=require('./tests/wp0/production-harness.cjs');
 require('./scripts/register-ts-test-loader.cjs');
 const {buildTransactionUpdate}=require('./src/services/userPreferences.ts');
 (async()=>{const f=await h.fixture();try {
+ const save=h.appFunction('saveNewRecord'), operation={current:false}, messages=[];
+ let setups=0, writes=0;
+ await h.bind(save,{...h.noopSetters(save),createKind:'transaction',createOperation:operation,createDraft:{amount:'125.50',category:''},ensurePrivateStorageBeforeWrite:async()=>{setups++;},showToast:m=>messages.push(m),StorageService:{transactions:{add:async()=>{writes++;}}}})({preventDefault(){}});
+ assert.equal(setups,1);assert.equal(writes,0);assert.equal(operation.current,false);assert.match(messages[0],/Choose a category/);
  await f.activate();
  for (const type of ['expense','income']) {
   const category=await f.StorageService.categories.add({name:'QA '+type,type,color:'#507060'});
@@ -16,5 +20,5 @@ const {buildTransactionUpdate}=require('./src/services/userPreferences.ts');
  const explicit=buildTransactionUpdate({type:'expense',amount:'1',currencyCode:'JPY',category:'Food',description:'User merchant',dateTime:'2026-11-09T10:00',paymentMethod:'Cash'});
  assert.equal(explicit.description,'User merchant');assert.equal(explicit.amountMinor,'1');
  await assert.rejects(f.StorageService.transactions.add({...explicit,category:'',description:''}),/required/);
- console.log('DIRECTED QUICK ENTRY: 13 assertions passed; optional descriptions persist as encrypted category labels, explicit text and financial precision preserved, invalid records still rejected.');
+ console.log('DIRECTED QUICK ENTRY: 17 assertions passed; optional descriptions persist as encrypted category labels, explicit text and financial precision preserved, invalid records still rejected.');
 }finally{await f.dispose();}})().catch(e=>{console.error(e);process.exitCode=1});

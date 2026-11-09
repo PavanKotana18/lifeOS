@@ -53,11 +53,17 @@ try:
   except Exception: time.sleep(.5)
  wait('input[autocomplete="nickname"]');capture('onboarding-welcome');wait('input[autocomplete="nickname"]').send_keys('Acceptance QA'); click('Open LifeOS'); wait('[data-testid="today-dashboard"]'); passed('First launch and onboarding')
  for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(label+'-empty')
- tab('plan'); click('Add task'); capture('task-form'); click('More task details'); capture('task-advanced-form'); click('More task details'); field('Task title','QA morning walk'); save('Save task'); wait('.plan-hub-task'); passed('Create task through UI and first-save encryption gate')
- tab('finance'); click('Add expense'); capture('expense-form'); field('Amount','125.50')
  from selenium.webdriver.support.ui import Select
- f=wait('form[role="dialog"]'); s=f.find_element(By.XPATH,".//label[normalize-space(text())='Category']/select"); Select(s).select_by_index(1)
- save('Save transaction'); passed('Create expense through UI')
+ # A first-time user may start with Money, before any task provisions storage.
+ tab('finance');click('Add expense');capture('expense-first-use');field('Amount','125.50')
+ first_category=wait('form[role="dialog"]').find_element(By.XPATH,".//label[normalize-space(text())='Category']/select")
+ assert len(first_category.find_elements(By.TAG_NAME,'option'))==1 and not first_category.get_attribute('required')
+ click('Save transaction');wait('[aria-labelledby="first-record-security-title"]');capture('first-save-security');click('Protect this device and save')
+ w.until(lambda _: len(wait('form[role="dialog"]').find_element(By.XPATH,".//label[normalize-space(text())='Category']/select").find_elements(By.TAG_NAME,'option'))>1)
+ assert d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done((await m.StorageService.transactions.getAll()).length));")==0
+ f=wait('form[role="dialog"]');Select(f.find_element(By.XPATH,".//label[normalize-space(text())='Category']/select")).select_by_index(1);capture('expense-form');save('Save transaction');passed('First expense: explicit protection, loaded categories, no premature posting and successful encrypted save')
+ tab('plan'); click('Add task'); capture('task-form'); click('More task details'); capture('task-advanced-form'); click('More task details'); field('Task title','QA morning walk'); save('Save task'); wait('.plan-hub-task'); passed('Create task through UI')
+ tab('finance')
  click('Add income'); capture('income-form'); field('Amount','2000'); f=wait('form[role="dialog"]'); Select(f.find_element(By.XPATH,".//label[normalize-space(text())='Category']/select")).select_by_index(1); save('Save transaction'); passed('Create income through UI')
  tab('life'); click('Add a habit'); capture('habit-form'); field('Habit name','QA read ten pages'); save('Save habit'); click('Complete QA read ten pages for today'); passed('Create habit and check in through UI')
  click('Add a goal'); capture('goal-form'); field('Goal title','QA reading goal'); field('Target','12'); save('Save goal'); passed('Create goal through UI')
