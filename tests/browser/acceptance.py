@@ -137,6 +137,28 @@ try:
  for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(label+'-200-percent-text')
  d.execute_script("document.documentElement.style.fontSize=''")
  passed('Responsive layouts at compact, tablet and landscape browser window sizes')
+ # A second fresh disposable browser profile verifies account-first setup and draft recovery.
+ d.quit();d=webdriver.Chrome(options=options);w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,))
+ d.execute_cdp_cmd('Emulation.setTouchEmulationEnabled',{'enabled':True});d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
+ d.get('http://127.0.0.1:5173/tests/browser/index.html');wait('input[autocomplete="nickname"]').send_keys('First account QA');click('Open LifeOS');wait('[data-testid="today-dashboard"]')
+ money_page('Accounts');click('Add account');field('Account name','QA first account');field('Starting balance','100');click('Save account');wait('[aria-labelledby="first-record-security-title"]');click('Cancel saving')
+ restored=wait('form[aria-label="Create account"]');assert restored.find_element(By.XPATH,".//label[contains(.,'Account name')]/input").get_attribute('value')=='QA first account';capture('first-account-cancelled-keeps-draft')
+ click('Save account');wait('[aria-labelledby="first-record-security-title"]');click('Protect this device and save');w.until(lambda _: not d.find_elements(By.CSS_SELECTOR,'form[aria-label="Create account"]'));capture('first-account-saved')
+ first_account=d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>{const a=await m.StorageService.accounts.getAll();const raw=await m.lifeOSDatabase.financialAccounts.toArray();done({count:a.length,opening:a[0]?.openingBalanceMinor,transactions:(await m.StorageService.transactions.getAll()).length,ciphertext:raw.every(x=>x.__lifeosEncrypted===1&&!x.name)});});")
+ assert first_account=={'count':1,'opening':'10000','transactions':0,'ciphertext':True},str(first_account);passed('Account-first secure setup, cancellation draft preservation, encrypted save and opening-balance neutrality')
+ # A third isolated first-use profile covers planned bills without posting a transaction.
+ d.quit();d=webdriver.Chrome(options=options);d.set_script_timeout(30);w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,))
+ d.execute_cdp_cmd('Emulation.setTouchEmulationEnabled',{'enabled':True});d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
+ d.get('http://127.0.0.1:5173/tests/browser/index.html');wait('input[autocomplete="nickname"]').send_keys('First bill QA');click('Open LifeOS');wait('[data-testid="today-dashboard"]')
+ money_page('Planned bills');tap('[data-testid="money-planning"] section button');field('Name','QA future rent');field('Amount','900');capture('first-planned-bill-form');click('Save plan');wait('[aria-labelledby="first-record-security-title"]');click('Cancel saving')
+ assert wait('form[aria-label="Planned commitment"]').find_element(By.XPATH,".//label[contains(.,'Name')]/input").get_attribute('value')=='QA future rent';capture('first-planned-bill-draft-restored')
+ click('Save plan');wait('[aria-labelledby="first-record-security-title"]');click('Protect this device and save');w.until(lambda _: not d.find_elements(By.CSS_SELECTOR,'form[aria-label="Planned commitment"]'));capture('planned-bills-populated')
+ planning=d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done({plans:(await m.StorageService.commitments.getAll()).map(x=>({title:x.title,amount:x.amountMinor,status:x.status})),transactions:(await m.StorageService.transactions.getAll()).length}));")
+ assert planning=={'plans':[{'title':'QA future rent','amount':'90000','status':'active'}],'transactions':0},str(planning);passed('Planned bill first-save setup preserves cancelled draft and never posts spending')
+ # Manual rates remain explicit, dated inputs, not automatically fetched conversions.
+ buttons=d.find_elements(By.CSS_SELECTOR,'[data-testid="money-planning"] section button');d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',buttons[-1]);buttons[-1].click();field('Quote units','83.25');capture('manual-rate-form');save('Save rate');capture('manual-rate-saved')
+ rates=d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done((await m.StorageService.exchangeRates.getAll()).map(x=>({base:x.baseCurrencyCode,quote:x.quoteCurrencyCode,rate:x.rate}))));")
+ assert rates==[{'base':'USD','quote':'INR','rate':'83.25'}],str(rates);passed('Explicit manual exchange rate saved with unchanged decimal precision')
  results.append({'journey':'Android keyboard, Back, notification delivery/tap, biometric lock and update install','status':'BLOCKED','reason':'Browser evidence does not validate Android native behavior; hosted Android instrumentation is separate.'})
 except Exception as e:
  results.append({'journey':'Current browser journey','status':'FAIL','error':str(e),'trace':traceback.format_exc(),'gestureTrace':d.execute_script('return window.__lifeosGestureTrace||[]'),'visibleControls':[x.text for x in d.find_elements(By.CSS_SELECTOR,'button,summary') if x.is_displayed()]}); d.save_screenshot(str(out/'failure.png')); raise

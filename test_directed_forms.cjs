@@ -5,8 +5,8 @@ const props=new Map(),events=new Map(),viewportEvents=new Map();
 class Element { constructor(){this.isConnected=true;} focus(){document.activeElement=this;} scrollIntoView(){this.scrolled=true;} getClientRects(){return [{}];} }
 global.HTMLElement=Element;
 const opener=new Element(),first=new Element(),last=new Element(),nested=new Element();
-const dialog={contains:e=>e===first||e===last,querySelectorAll:()=>[first,last]};
-global.document={activeElement:opener,querySelector:()=>dialog,documentElement:{style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)}},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)};
+const dialog={contains:e=>e===first||e===last,querySelectorAll:()=>[first,last],getClientRects:()=>[{}]};
+global.document={activeElement:opener,querySelector:()=>dialog,querySelectorAll:()=>[{getClientRects:()=>[]},dialog],documentElement:{style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)}},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)};
 global.window={innerHeight:800,visualViewport:{height:450,offsetTop:30,addEventListener:(k,v)=>viewportEvents.set(k,v),removeEventListener:k=>viewportEvents.delete(k)}};
 const file=process.cwd()+'/src/hooks/useRecordDialog.ts',m=new Module(file,module);
 m.require=name=>name==='react'?{useEffect:fn=>effect=fn,useRef:v=>({current:v})}:require(name);
@@ -18,6 +18,6 @@ document.activeElement=first;events.get('keydown')({key:'Tab',shiftKey:true,prev
 events.get('keydown')({key:'Escape',preventDefault:()=>{}});assert.equal(dismissed,1);
 document.activeElement=nested;events.get('keydown')({key:'Escape',preventDefault:()=>{}});assert.equal(dismissed,1,'nested dialog owns Escape');
 document.activeElement=first;window.visualViewport.height=320;viewportEvents.get('resize')();assert.equal(props.get('--sheet-viewport-height'),'320px');assert.ok(first.scrolled);
-const remountedFirst=new Element(),remountedLast=new Element();document.querySelector=()=>({contains:e=>e===remountedFirst||e===remountedLast,querySelectorAll:()=>[remountedFirst,remountedLast]});document.activeElement=remountedLast;events.get('keydown')({key:'Tab',shiftKey:false,preventDefault:()=>{}});assert.equal(document.activeElement,remountedFirst,'focus trap follows a form remounted after contextual security');
+const remountedFirst=new Element(),remountedLast=new Element();document.querySelectorAll=()=>[{contains:e=>e===remountedFirst||e===remountedLast,querySelectorAll:()=>[remountedFirst,remountedLast],getClientRects:()=>[{}]}];document.activeElement=remountedLast;events.get('keydown')({key:'Tab',shiftKey:false,preventDefault:()=>{}});assert.equal(document.activeElement,remountedFirst,'focus trap follows a form remounted after contextual security');
 cleanup();assert.equal(document.activeElement,opener);assert.equal(events.size,0);assert.equal(viewportEvents.size,0);assert.equal(props.size,0);
 console.log('DIRECTED FORMS: 14 viewport, focus loop, nested-dialog ownership and cleanup assertions passed.');

@@ -9,7 +9,7 @@ export function useRecordDialog(open: boolean, dismiss: () => void) {
     if (open) return;
     const rememberFocus = () => {
       const target = document.activeElement;
-      if (target instanceof HTMLElement && !target.closest('[role="dialog"]')) openerRef.current = target;
+      if (target instanceof HTMLElement && !target.closest('[role="dialog"],[role="alertdialog"]')) openerRef.current = target;
     };
     document.addEventListener('focusin', rememberFocus);
     return () => document.removeEventListener('focusin', rememberFocus);
@@ -17,19 +17,20 @@ export function useRecordDialog(open: boolean, dismiss: () => void) {
   useEffect(() => {
     if (!open) return;
     const opener = openerRef.current;
-    const dialog = document.querySelector<HTMLElement>('[aria-labelledby="record-form-title"]');
+    const findDialog = () => [...document.querySelectorAll<HTMLElement>('form[role="dialog"]')].find(element => element.getClientRects().length > 0);
+    const dialog = findDialog();
     if (!dialog) return;
     const viewport = window.visualViewport;
     const updateViewport = () => {
       document.documentElement.style.setProperty('--sheet-viewport-height', `${viewport?.height ?? window.innerHeight}px`);
       document.documentElement.style.setProperty('--sheet-viewport-top', `${viewport?.offsetTop ?? 0}px`);
       const focused = document.activeElement;
-      const currentDialog = document.querySelector<HTMLElement>('[aria-labelledby="record-form-title"]');
+      const currentDialog = findDialog();
       if (focused instanceof HTMLElement && currentDialog?.contains(focused)) focused.scrollIntoView({ block: 'nearest' });
     };
     const keydown = (event: KeyboardEvent) => {
       // Nested confirmations and native security dialogs own their own focus.
-      const currentDialog = document.querySelector<HTMLElement>('[aria-labelledby="record-form-title"]');
+      const currentDialog = findDialog();
       if (!currentDialog?.contains(document.activeElement)) return;
       if (event.key === 'Escape') { event.preventDefault(); dismissRef.current(); }
       if (event.key !== 'Tab') return;

@@ -29,8 +29,8 @@ import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodayS
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
-import MoneyAccounts from './components/MoneyAccounts';
-import MoneyPlanning from './components/MoneyPlanning';
+import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
+import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
@@ -296,6 +296,13 @@ export default function App() {
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [savingsContributions, setSavingsContributions] = useState<SavingsContribution[]>([]);
   const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>([]);
+  const [accountFormDraft, setAccountFormDraft] = useState<AccountDraft | null>(null);
+  const [accountFormDirty, setAccountFormDirty] = useState(false);
+  const [transferFormDraft, setTransferFormDraft] = useState<TransferDraft | null>(null);
+  const [transferFormDirty, setTransferFormDirty] = useState(false);
+  const [planningDrafts, setPlanningDrafts] = useState<MoneyPlanningDraftState>({ commitment: null, rate: null, commitmentDirty: false, rateDirty: false });
+  const [financeWriteBusy, setFinanceWriteBusy] = useState(false);
+  const financeWriteOperation = useRef(false);
   const [accountTransfers, setAccountTransfers] = useState<AccountTransfer[]>([]);
   const [manualExchangeRates, setManualExchangeRates] = useState<ManualExchangeRate[]>([]);
   const [plannedCommitments, setPlannedCommitments] = useState<PlannedCommitment[]>([]);
@@ -346,8 +353,8 @@ export default function App() {
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
   const [editingSavingsGoalId, setEditingSavingsGoalId] = useState<string | null>(null);
 
-  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation });
-  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation };
+  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts });
+  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts };
 
   const navigateTo = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
@@ -470,7 +477,7 @@ export default function App() {
       enabled: userPrefs.swipeNavigationEnabled,
       pointerType: event.pointerType,
       settingsScreen: activeTab === 'settings',
-      modalOpen: Boolean(createKind || modalContent),
+      modalOpen: Boolean(createKind || modalContent || (activeTab === 'finance' && (financeSubtab === 'accounts' ? (accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && (planningDrafts.commitment || planningDrafts.rate)))),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
       targetKind,
@@ -617,6 +624,11 @@ export default function App() {
 
   const navigateBack = () => {
     const state = backState.current;
+    if (confirmationResolver.current) { settleConfirmation(false); return; }
+    if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(false).catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
+    if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
+      void requestCloseFinanceDraft(); return;
+    }
     const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileSection !== 'home') }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
     if (action === 'exit-app') { void CapacitorApp.exitApp(); return; }
@@ -916,7 +928,19 @@ export default function App() {
     void confirmAction({ title: 'Discard unsaved changes?', message: 'Your edits have not been saved.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', destructive: true }).then(confirmed => { if (confirmed) close(); });
   };
 
-  useRecordDialog(Boolean(createKind) && !isLocked, requestCloseForm);
+  const requestCloseFinanceDraft = async () => {
+    if (financeWriteOperation.current) return;
+    const state = backState.current;
+    const account = state.financeSubtab === 'accounts' && state.accountFormDraft;
+    const transfer = state.financeSubtab === 'accounts' && state.transferFormDraft;
+    const dirty = account ? state.accountFormDirty : transfer ? state.transferFormDirty : state.planningDrafts.commitment ? state.planningDrafts.commitmentDirty : state.planningDrafts.rateDirty;
+    if (dirty && !(await confirmAction({ title: 'Discard unsaved changes?', message: 'Your edits have not been saved.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', destructive: true }))) return;
+    if (account) { setAccountFormDraft(null); setAccountFormDirty(false); }
+    else if (transfer) { setTransferFormDraft(null); setTransferFormDirty(false); }
+    else setPlanningDrafts({ commitment: null, rate: null, commitmentDirty: false, rateDirty: false });
+  };
+  const financeDialogOpen = activeTab === 'finance' && (financeSubtab === 'accounts' ? Boolean(accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && Boolean(planningDrafts.commitment || planningDrafts.rate));
+  useRecordDialog(Boolean(createKind || financeDialogOpen) && !isLocked, () => { if (createKind) requestCloseForm(); else void requestCloseFinanceDraft(); });
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
     if (next === financeSubtab) return;
@@ -1724,6 +1748,20 @@ export default function App() {
     await reloadAllData();
   };
 
+  const runPreparedFinanceWrite = async (write: () => Promise<unknown>) => {
+    if (financeWriteOperation.current) throw new Error('A financial record is already being saved.');
+    financeWriteOperation.current = true;
+    setFinanceWriteBusy(true);
+    try {
+      await ensurePrivateStorageBeforeWrite();
+      await write();
+      await reloadAllData();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'This record could not be saved.', 'danger');
+      throw error;
+    } finally { financeWriteOperation.current = false; setFinanceWriteBusy(false); }
+  };
+
   const saveNewRecord = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!createKind || createOperation.current) return;
@@ -2308,7 +2346,6 @@ export default function App() {
           <div className="money-page space-y-5">
             {financeSubtab !== 'overview' && <div className="money-page-toolbar">
               <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
-              <label className="sr-only" htmlFor="money-destination">Money section</label>
               <div className="money-destination-control"><label className="sr-only" htmlFor="money-destination">Money section</label><select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)}>
                 {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Financial planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
               </select><ChevronDown size={16} aria-hidden="true" /></div>
@@ -2357,13 +2394,14 @@ export default function App() {
             )}
 
             {financeSubtab === 'accounts' && <MoneyAccounts accounts={financialAccounts} transactions={transactions} transfers={accountTransfers} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
+              accountDraft={accountFormDraft} onAccountDraftChange={setAccountFormDraft} accountDirty={accountFormDirty} onAccountDirtyChange={setAccountFormDirty} accountSaving={financeWriteBusy} transferDraft={transferFormDraft} onTransferDraftChange={setTransferFormDraft} transferDirty={transferFormDirty} onTransferDirtyChange={setTransferFormDirty}
               autoOpenTransfer={openMoneyTransferOnAccounts} onTransferRequestHandled={() => setOpenMoneyTransferOnAccounts(false)}
               confirmAction={confirmAction}
-              onCreateAccount={async input => { await StorageService.accounts.add(input); await reloadAllData(); }}
-              onUpdateAccount={async (id, input) => { await StorageService.accounts.update(id, input); await reloadAllData(); }}
+              onCreateAccount={async input => { await runPreparedFinanceWrite(() => StorageService.accounts.add(input)); }}
+              onUpdateAccount={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.accounts.update(id, input)); }}
               onDeleteAccount={async id => { await StorageService.accounts.delete(id); await reloadAllData(); }}
-              onCreateTransfer={async input => { await StorageService.accounts.addTransfer(input); await reloadAllData(); }}
-              onUpdateTransfer={async (id, input) => { await StorageService.accounts.updateTransfer(id, input); await reloadAllData(); }}
+              onCreateTransfer={async input => { await runPreparedFinanceWrite(() => StorageService.accounts.addTransfer(input)); }}
+              onUpdateTransfer={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.accounts.updateTransfer(id, input)); }}
               onReverseTransfer={async (id, date) => { await StorageService.accounts.reverseTransfer(id, date); await reloadAllData(); }}
               onDeleteTransfer={async id => { await StorageService.accounts.deleteTransfer(id); await reloadAllData(); }} />}
 
@@ -2479,12 +2517,12 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5">{activeTab === 'finance' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}<MoneyPlanning commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
-              onAddCommitment={async input => { await StorageService.commitments.add(input); await reloadAllData(); }}
-              onUpdateCommitment={async (id, input) => { await StorageService.commitments.update(id, input); await reloadAllData(); }}
+            {financeSubtab === 'planning' && <div className="space-y-5">{activeTab === 'finance' && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}<MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+              onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
+              onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
               onDeleteCommitment={async id => { await StorageService.commitments.delete(id); await reloadAllData(); }}
-              onAddRate={async input => { await StorageService.exchangeRates.add(input); await reloadAllData(); }}
-              onUpdateRate={async (id, input) => { await StorageService.exchangeRates.update(id, input); await reloadAllData(); }}
+              onAddRate={async input => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.add(input)); }}
+              onUpdateRate={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.update(id, input)); }}
               onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /></div>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">

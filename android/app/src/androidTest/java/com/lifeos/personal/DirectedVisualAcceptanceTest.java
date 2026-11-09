@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.WindowInsets;
+import android.view.KeyEvent;
 import android.view.WindowManager;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -93,6 +94,32 @@ public class DirectedVisualAcceptanceTest {
         }
         fail("Native tap on amount did not open Android's keyboard");
     }
+    private boolean keyboardVisible() {
+        final boolean[] visible={false};
+        scenario.onActivity(a->{WindowInsets insets=a.getWindow().getDecorView().getRootWindowInsets();visible[0]=insets!=null&&insets.isVisible(WindowInsets.Type.ime());});
+        return visible[0];
+    }
+    private void cancelFirstAccountThroughAndroidBack() throws Exception {
+        tab("finance");
+        js("document.querySelector('.money-tools summary').click()");click("Accounts");
+        until("!!document.querySelector('[data-testid=money-accounts]')");click("Add account");
+        until("!!document.querySelector('form[aria-label=\"Create account\"]')");
+        js("(()=>{const e=document.querySelector('form[aria-label=\"Create account\"] input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'QA retained account draft');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+        click("Save account");until("!!document.querySelector('[aria-labelledby=first-record-security-title]')");
+        if(keyboardVisible()) {
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+            long end=SystemClock.elapsedRealtime()+5000;
+            while(keyboardVisible()&&SystemClock.elapsedRealtime()<end) Thread.sleep(100);
+        }
+        if("true".equals(js("!!document.querySelector('[aria-labelledby=first-record-security-title]')"))) InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        until("document.querySelector('form[aria-label=\"Create account\"] input')?.value==='QA retained account draft'");
+        until("document.querySelector('form[aria-label=\"Create account\"]')?.getAttribute('aria-busy')!=='true'");
+        JSONObject state=new JSONObject(WebViewTestSupport.evaluateAsync(scenario,"window.Capacitor.Plugins.LifeOSCrypto.getKeyState()"));
+        assertFalse("Cancelling first-save setup must not provision a private key",state.getBoolean("keyProvisioned"));
+        assertFalse("Cancelling first-save setup must not unlock a native key",state.getBoolean("unlocked"));
+        capture("account-draft-after-android-back");click("Cancel");until("!!document.querySelector('[role=alertdialog]')");capture("account-unsaved-confirmation");click("Discard changes");until("!document.querySelector('form[aria-label=\"Create account\"]')");
+        until("!!document.querySelector('[data-testid=account-empty-state]')");
+    }
     private void swipeFromTodayText() throws Exception {
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector('.today-focus h3').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
         final int[] position={0,0,0};
@@ -115,11 +142,11 @@ public class DirectedVisualAcceptanceTest {
             click("Open LifeOS");until("!!document.querySelector('[data-testid=today-dashboard]')");
             denyOptionalNotificationPrompt();until("!document.querySelector('.lifeos-launch-reveal')");capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
             click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");openNumericKeyboard();capture("expense-numeric-keyboard");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
-            tab("plan");capture("plan-empty");click("Add task");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("task-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
+            cancelFirstAccountThroughAndroidBack();tab("plan");capture("plan-empty");click("Add task");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("task-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("life");capture("life-empty");click("Add a habit");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("habit-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Add a goal");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("goal-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Open profile and settings");until("!!document.querySelector('[data-testid=profile-settings-home]')");capture("profile");
-            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("onboardingCapture","BLOCKED: native onboarding remains protected by the application screenshot policy");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
+            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("androidBack","PASS: first account setup cancelled by native Back; draft retained; key remained unprovisioned and locked");report.put("onboardingCapture","BLOCKED: native onboarding remains protected by the application screenshot policy");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
             try(FileOutputStream file=new FileOutputStream(new File(output,"environment.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
         }
     }

@@ -75,6 +75,38 @@ const emptyAccounts = renderToStaticMarkup(React.createElement(MoneyAccounts, {
 assert.match(emptyAccounts, /Account tracking is optional[\s\S]*record income and spending without an account/);
 assert.equal((emptyAccounts.match(/>Add account<\/button>/g) || []).length, 1, 'account creation has one clear first-use action');
 assert.match(emptyAccounts, /aria-describedby="account-transfer-help"[\s\S]*Add two active accounts to move money between them/);
+const controlledDraft = { name: 'Rainy day fund', type: 'bank', currencyCode: 'USD', opening: '125.50', description: 'Buffer', isActive: true };
+const controlledBusyForm = renderToStaticMarkup(React.createElement(MoneyAccounts, {
+  accounts: [], transactions: [], transfers: [], currencyCode: 'USD', confirmAction: async () => false,
+  onCreateAccount: asyncNoop, onUpdateAccount: asyncNoop, onDeleteAccount: asyncNoop,
+  onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
+  accountDraft: controlledDraft, onAccountDraftChange: noop, accountDirty: true, onAccountDirtyChange: noop, accountSaving: true,
+}));
+assert.match(controlledBusyForm, /aria-busy="true" aria-label="Create account"/);
+assert.match(controlledBusyForm, /value="Rainy day fund"/);
+assert.match(controlledBusyForm, /value="125\.50"/);
+assert.match(controlledBusyForm, /disabled=""[^>]*>Cancel<\/button>/, 'Cancel is disabled while the guarded account save is active');
+assert.match(controlledBusyForm, /disabled=""[^>]*>Saving…<\/button>/, 'Save is disabled and reports its in-progress state');
+assert.match(accountsSource, /accountDraftIsControlled \? props\.accountDraft \?\? null : localAccountDraft/);
+assert.match(accountsSource, /if \(accountDraftIsControlled\) props\.onAccountDraftChange\?\.\(draft\)/, 'account form updates flow to App state when controlled');
+assert.match(accountsSource, /accountDirtyIsControlled \? props\.accountDirty \?\? false : localAccountDirty/);
+const controlledTransferDraft = { from: 'acct-cash', to: 'acct-card', fromAmount: '35.00', toAmount: '35.00', rate: '', date: '2026-11-08', notes: 'Payment' };
+const controlledTransferBusyForm = renderToStaticMarkup(React.createElement(MoneyAccounts, {
+  accounts, transactions: [], transfers: [], currencyCode: 'USD', confirmAction: async () => false,
+  onCreateAccount: asyncNoop, onUpdateAccount: asyncNoop, onDeleteAccount: asyncNoop,
+  onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
+  transferDraft: controlledTransferDraft, onTransferDraftChange: noop, transferDirty: true, onTransferDirtyChange: noop, accountSaving: true,
+}));
+assert.match(controlledTransferBusyForm, /aria-busy="true" aria-label="Record transfer"/);
+assert.match(controlledTransferBusyForm, /value="35\.00"/);
+assert.match(controlledTransferBusyForm, /value="Payment"/);
+assert.match(controlledTransferBusyForm, /disabled=""[^>]*>Cancel<\/button>/, 'transfer Cancel is disabled during secure saving');
+assert.match(controlledTransferBusyForm, /disabled=""[^>]*>Saving…<\/button>/, 'transfer Save is disabled and announces its in-progress state');
+assert.match(accountsSource, /transferDraftIsControlled \? props\.transferDraft \?\? null : localTransferDraft/);
+assert.match(accountsSource, /if \(transferDraftIsControlled\) props\.onTransferDraftChange\?\.\(draft\)/, 'transfer draft updates flow to App state when controlled');
+assert.match(accountsSource, /transferDirtyIsControlled \? props\.transferDirty \?\? false : localTransferDirty/);
+assert.match(accountsSource, /if \(!transferDraft \|\| accountSaving\) return/, 'transfer submission is guarded while a secure save is active');
+assert.match(accountsSource, /const closeTransferDraft = async \(\) => \{\s*if \(accountSaving\) return;/, 'transfer dismissal is guarded while a secure save is active');
 
 assert.match(accountsSource, /A transfer moves money between accounts\. It does not count as income or spending\./);
 assert.match(accountsSource, /Amount sent \([\s\S]*?\)\s*<input[^>]*inputMode="decimal"/);
