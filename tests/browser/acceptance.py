@@ -53,7 +53,7 @@ try:
   except Exception: time.sleep(.5)
  wait('input[autocomplete="nickname"]').send_keys('Acceptance QA'); click('Open LifeOS'); wait('[data-testid="today-dashboard"]'); passed('First launch and onboarding')
  for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(label+'-empty')
- tab('plan'); click('Add task'); capture('task-form'); field('Task title','QA morning walk'); save('Save task'); wait('.plan-hub-task'); passed('Create task through UI and first-save encryption gate')
+ tab('plan'); click('Add task'); capture('task-form'); click('More task details'); capture('task-advanced-form'); click('More task details'); field('Task title','QA morning walk'); save('Save task'); wait('.plan-hub-task'); passed('Create task through UI and first-save encryption gate')
  tab('finance'); click('Add expense'); capture('expense-form'); field('Amount','125.50')
  from selenium.webdriver.support.ui import Select
  f=wait('form[role="dialog"]'); s=f.find_element(By.XPATH,".//label[normalize-space(text())='Category']/select"); Select(s).select_by_index(1)
@@ -80,11 +80,14 @@ try:
   if name=='All transactions': tab('finance'); click(name)
   else: money_page(name)
   capture(name.lower().replace(' ','-'))
- tab('plan'); click('QA morning walk'); capture('task-details'); click('Edit task'); field('Task title','QA morning walk updated'); save('Save task'); click('Complete task'); capture('task-completed'); passed('View, edit and complete task through UI')
+ tab('plan'); click('QA morning walk'); capture('task-details'); click('Calendar'); capture('calendar-populated'); click('Calendar'); click('Edit task'); field('Task title','QA morning walk updated'); save('Save task'); click('Complete task'); capture('task-completed'); passed('View, edit and complete task through UI')
  click('Back to agenda'); click('Delete'); capture('task-delete-confirmation'); click('Delete task'); passed('Delete task through confirmation')
  tab('finance'); tap('[aria-label*="expense"][class*="money-transaction-row"]'); field('Merchant or description','QA lunch updated'); save('Save transaction'); tap('[aria-label^="Edit QA lunch updated"]'); capture('transaction-details-edit'); click('Delete transaction'); capture('transaction-delete-confirmation'); click('Delete transaction'); passed('Edit and delete expense through UI')
  tab('life'); click('All goals and milestones'); click('QA reading goal'); field('Goal title','QA reading goal updated'); save('Save goal'); click('Milestone'); capture('milestone-form'); field('Milestone title','QA first book'); save('Save milestone'); capture('goal-milestone'); passed('Edit goal and add milestone through UI')
- tab('dashboard'); click('Customize'); capture('today-customization'); toggles=d.find_elements(By.CSS_SELECTOR,'#today-customization input:not(:disabled)'); toggles[-1].click(); click('Customize'); passed('Customize Today through saved section visibility control')
+ click('Complete'); complete_filter=d.find_element(By.XPATH,"//button[normalize-space()='completed']");d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',complete_filter);complete_filter.click();wait('#screen-goals');capture('goal-completed');passed('Complete goal and find it through Completed filter')
+ tab('life');click('View all habits');click('QA read ten pages');field('Habit name','QA read ten pages updated');save('Save habit');capture('habit-edited');passed('Edit habit while preserving existing check-in')
+
+ tab('dashboard'); click('Customize'); capture('today-customization'); toggles=d.find_elements(By.CSS_SELECTOR,'#today-customization input:not(:disabled)'); toggles[-1].click(); click('Customize'); passed('Customize Today through saved section visibility control'); today_layout=d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done(await m.StorageService.settings.get('todayLayout',null)));")
  backup=d.execute_async_script("const done=arguments[0]; Promise.all([import('/src/db.ts'),import('/src/services/backupCryptoService.ts')]).then(async([m,b])=>{const original=await m.StorageService.backup.exportData();const encrypted=await b.encryptBackup(original,'QA isolated backup passphrase 2026');const decoded=await b.decryptBackup(encrypted,'QA isolated backup passphrase 2026');m.validateBackupTables(JSON.parse(decoded).tables);let rejected=false;try{await b.decryptBackup(encrypted,'wrong QA passphrase 2026')}catch{rejected=true;} await m.StorageService.backup.importData(decoded,{replaceExisting:true});done({same:decoded===original,rejected,accounts:(await m.StorageService.accounts.getAll()).length});}).catch(e=>done({error:String(e)}));")
  assert backup=={'same':True,'rejected':True,'accounts':2},str(backup); passed('Encrypted backup roundtrip, wrong-passphrase rejection and isolated restore using production services')
  # CDP touch uses the browser's actual pointer arbitration and implicit capture.
@@ -119,6 +122,7 @@ try:
  for section in ['Preferences','Notifications','Privacy & security','Data & backup','About LifeOS']:
   click(section); capture('settings-'+section.lower().replace(' ','-').replace('&','and')); click('Profile')
  click('Appearance'); capture('appearance'); click('Dark'); capture('appearance-dark'); d.refresh(); wait('[data-testid="today-dashboard"]'); assert d.execute_script('return document.documentElement.classList.contains("dark")'); passed('Theme and encrypted records survive page restart using synthetic native key')
+ assert d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done(await m.StorageService.settings.get('todayLayout',null)));")==today_layout;passed('Today section customization persists after restart')
  for width,height in [(320,780),(768,900),(1024,768)]:
   d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':True})
   for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(f'{label}-{width}x{height}')
