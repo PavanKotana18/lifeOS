@@ -1,6 +1,7 @@
 package com.lifeos.personal;
 
 import android.util.Base64;
+import android.os.SystemClock;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
@@ -95,6 +96,9 @@ public class CryptoAcceptanceTest {
             assertEquals("synthetic-iv",get("pendingRecoveryIv"));
             assertEquals("synthetic-wrapped",get("pendingRecoveryWrapped"));
         } finally { RecoveryExportActivityGuard.end(token); }
+        // The picker callback can be delayed after Activity stop. Exercise the
+        // actual expiry boundary instead of treating marker release as expiry.
+        set("recoveryPickerPreserveUntil", SystemClock.elapsedRealtime() - 1L);
         plugin.handleOnStop();
         assertNull("outside the picker window the volatile envelope is cleared",get("pendingRecoverySalt"));
     }

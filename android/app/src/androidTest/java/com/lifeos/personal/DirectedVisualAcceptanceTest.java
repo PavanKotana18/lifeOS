@@ -169,6 +169,8 @@ public class DirectedVisualAcceptanceTest {
         while(keyboardVisible() && SystemClock.elapsedRealtime()<hideDeadline) Thread.sleep(50);
         assertFalse("Previous text keyboard did not dismiss",keyboardVisible());
         WebViewTestSupport.evaluateAsync(scenario,"new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))");
+        String selectorLiteral=JSONObject.quote(selector);
+        WebViewTestSupport.evaluateAsync(scenario,"new Promise(resolve=>{const field=document.querySelector("+selectorLiteral+");if(!field){resolve(false);return;}field.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true)));})");
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector("+JSONObject.quote(selector)+").getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
         final int[] xy={0,0,0};
         scenario.onActivity(a->{int[] o=new int[2];a.getBridge().getWebView().getLocationOnScreen(o);xy[0]=o[0];xy[1]=o[1];xy[2]=a.getBridge().getWebView().getWidth();});
