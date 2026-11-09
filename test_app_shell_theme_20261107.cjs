@@ -84,4 +84,4 @@ const backup = render(React.createElement(BackupPassphraseDialog, { purpose: 'ex
 assert.match(backup, /role="dialog" aria-modal="true"/);
 assert.match(backup, /minLength="12"/);
 assert.match(backup, /lifeos-input/);
-console.log('APP SHELL THEME: 23 source and production-render security/accessibility checks passed with synthetic recovery data.');
+console.log('APP SHELL AND RECOVERY SCREEN: source, render, export, and clipboard safety assertions passed with synthetic recovery data.');
