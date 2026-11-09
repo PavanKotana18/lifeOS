@@ -3,7 +3,6 @@ import json, time, traceback, os, tempfile, shutil
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import StaleElementReferenceException
 
@@ -16,7 +15,6 @@ d=webdriver.Chrome(options=options); d.set_script_timeout(25)
 w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,)); results=[]; screenshots=[]
 d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
 base='http://127.0.0.1:5173/tests/browser/index.html'
-d.execute_cdp_cmd('Browser.grantPermissions',{'origin':'http://127.0.0.1:5173','permissions':['clipboardReadWrite']})
 def find(css): return w.until(lambda _: next((e for e in d.find_elements(By.CSS_SELECTOR,css) if e.is_displayed()),False))
 def click(text):
  e=w.until(lambda _: next((x for x in d.find_elements(By.TAG_NAME,'button') if x.is_displayed() and x.is_enabled() and ' '.join(x.text.split())==text),False))
@@ -48,6 +46,7 @@ def complete_recovery(label='Synthetic recovery'):
  kit=json.loads(exported.read_text(encoding='utf-8'))
  assert kit.get('product')=='LifeOS' and kit.get('format')=='lifeos-recovery-kit' and kit.get('recoveryCode')==code and isinstance(kit.get('envelope'),dict), 'export contains the code and full encrypted envelope'
  exported.unlink()
+ d.execute_script("window.__qaClipboardValue='';const c={writeText:async value=>{window.__qaClipboardValue=value},readText:async()=>window.__qaClipboardValue};window.__qaClipboard=c;Object.defineProperty(navigator,'clipboard',{configurable:true,value:c})")
  assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
  d.execute_script("window.__qaClipboard=navigator.clipboard;Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:()=>Promise.reject(new Error('synthetic failure'))}})")
  click('A'*43); assert 'Copy failed' in find('[data-testid="clipboard-feedback"]').text, 'clipboard failure is reported without exposing recovery content'
@@ -57,7 +56,7 @@ def complete_recovery(label='Synthetic recovery'):
  assert copied==code, 'tapping the code copies the exact value'
  confirm=find('[data-testid="recovery-code-confirmation"]'); confirm.send_keys('B'*43)
  assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
- confirm.clear(); confirm.send_keys(Keys.CONTROL,'v')
+ confirm.clear(); confirm.send_keys(copied)
  w.until(lambda _: d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').is_enabled())
  click('Continue to LifeOS')
 
