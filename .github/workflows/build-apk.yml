@@ -118,10 +118,10 @@ jobs:
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: "8.2.1"
+      - name: Install checksum-verified pinned Gradle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/setup-pinned-gradle.sh
 
       - name: Install Node Dependencies
         run: npm ci

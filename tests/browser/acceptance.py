@@ -17,7 +17,8 @@ def wait(css): return w.until(lambda _: next((x for x in d.find_elements(By.CSS_
 def click(text):
  def locate(_):
   for x in d.find_elements(By.CSS_SELECTOR,'button,summary'):
-   if x.is_displayed() and x.is_enabled() and (x.text.strip().lstrip('+ ')==text or x.get_attribute('aria-label')==text): return x
+   normalized=' '.join(x.text.split()).lstrip('+ ')
+   if x.is_displayed() and x.is_enabled() and (normalized==text or normalized.startswith(text+' ') or x.get_attribute('aria-label')==text): return x
   return False
  x=w.until(locate); d.execute_script('arguments[0].scrollIntoView({block:"center"})',x); x.click(); return x
 def tab(name):
@@ -67,6 +68,6 @@ try:
  passed('Responsive layouts at compact, tablet and landscape browser window sizes')
  results.append({'journey':'Android keyboard, Back, notification delivery/tap, biometric lock and update install','status':'BLOCKED','reason':'Browser evidence does not validate Android native behavior; hosted Android instrumentation is separate.'})
 except Exception as e:
- results.append({'journey':'Current browser journey','status':'FAIL','error':str(e),'trace':traceback.format_exc()}); d.save_screenshot(str(out/'failure.png')); raise
+ results.append({'journey':'Current browser journey','status':'FAIL','error':str(e),'trace':traceback.format_exc(),'visibleControls':[x.text for x in d.find_elements(By.CSS_SELECTOR,'button,summary') if x.is_displayed()]}); d.save_screenshot(str(out/'failure.png')); raise
 finally:
  (out/'results.json').write_text(json.dumps({'sourceCommit':os.getenv('GITHUB_SHA'),'environment':'Hosted Chrome actual React app with test-only synthetic native crypto plugin; no Android or physical-device acceptance claimed','results':results,'screenshots':images},indent=2)); d.quit()

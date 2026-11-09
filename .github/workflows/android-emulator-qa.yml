@@ -60,9 +60,10 @@ jobs:
           yes | "$SDKMANAGER" --licenses >/dev/null
           set -o pipefail
           "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-      - uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: "8.2.1"
+      - name: Install checksum-verified pinned Gradle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/setup-pinned-gradle.sh
       - name: Require and configure persistent debug signing
         env:
           KEYSTORE_BASE64: ${{ secrets.LIFEOS_DEBUG_KEYSTORE_BASE64 }}
