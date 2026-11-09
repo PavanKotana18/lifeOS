@@ -29,7 +29,10 @@ for (const [inventory, expectedCount, requiredTest] of [
   assert.ok(declaredTests.includes(requiredTest), `${inventory} required test is not declared`);
   assert.ok(!exclusions.includes(requiredTest), `${inventory} excludes its own required test`);
 }
-assert.match(instrumentationWorkflow, /android-visual:[\s\S]*ANDROID_EXPECTED_TESTS=1/, 'the visual test excluded from general matrices must run as its own mandatory one-test job');
+assert.match(instrumentationWorkflow, /android-visual:[\s\S]*script: bash scripts\/run-directed-android-visual\.sh/, 'visual job executes one shell so failure evidence is preserved');
+const visualRunner = fs.readFileSync(path.resolve(__dirname, 'run-directed-android-visual.sh'), 'utf8');
+assert.match(visualRunner, /ANDROID_EXPECTED_TESTS=1/, 'the excluded visual case has its own mandatory one-test count');
+assert.match(visualRunner, /DirectedVisualAcceptanceTest#realPackagedScreensFormsAndContentSwipe/, 'the visual runner selects the actual declared case');
 const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/workstream-integration.yml'), 'utf8');
 assert.match(workflow, /test-filter:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
   'API 29 filter must name the fully qualified instrumentation class');
@@ -85,6 +88,21 @@ else if(a.includes('shell am instrument')) {
       assert.match(fs.readFileSync(path.join(out, 'app-memory-info.txt'), 'utf8'), /synthetic process memory information/);
     }
     console.log(`PASS: Android runner ${mode} contract (simulated ADB only)`);
+  }
+  for (const mode of ['pass','crash','physical']) {
+    const directory=path.join(root,'visual-'+mode);fs.mkdirSync(path.join(directory,'scripts'),{recursive:true});
+    fs.writeFileSync(path.join(directory,'scripts/run-android-instrumentation.sh'), `#!/usr/bin/env bash
+mkdir -p qa-visual-evidence
+if [[ "$QA_STUB_MODE" != physical ]]; then echo synthetic > qa-visual-evidence/device-profile.txt; fi
+if [[ "$QA_STUB_MODE" == crash ]]; then exit 17; fi
+exit 0
+`);
+    const commands=path.join(directory,'commands.txt');
+    const result=spawnSync('bash',[path.resolve(__dirname,'run-directed-android-visual.sh')],{cwd:directory,encoding:'utf8',timeout:30000,env:{...process.env,PATH:bin+path.delimiter+process.env.PATH,QA_STUB_MODE:mode,QA_COMMAND_LOG:commands}});
+    assert.ifError(result.error);assert.equal(result.status,mode==='pass'?0:mode==='crash'?17:1);
+    const log=fs.existsSync(commands)?fs.readFileSync(commands,'utf8'):'';
+    assert.equal(log.includes(' pull '),mode!=='physical','only a freshly admitted emulator may export visual captures, including failed assertions');
+    console.log(`PASS: Visual runner ${mode} evidence and exit status (simulated ADB only)`);
   }
 } finally {
   // Remove only the disposable directory this test created, never repository/device data.

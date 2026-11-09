@@ -99,6 +99,11 @@ public class DirectedVisualAcceptanceTest {
         MotionEvent e=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
         e=MotionEvent.obtain(down,SystemClock.uptimeMillis()+40,MotionEvent.ACTION_UP,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
         until("document.activeElement?.inputMode==='decimal'");
+        scenario.onActivity(a -> {
+            android.view.inputmethod.EditorInfo editor=new android.view.inputmethod.EditorInfo();
+            a.getBridge().getWebView().onCreateInputConnection(editor);
+            try { keyboardDiagnostics.put("nativeInputType",editor.inputType); } catch(org.json.JSONException cause) { throw new AssertionError(cause); }
+        });
         long end=SystemClock.elapsedRealtime()+10000;final boolean[] visible={false};
         while(SystemClock.elapsedRealtime()<end) {
             scenario.onActivity(a->{WindowInsets insets=a.getWindow().getDecorView().getRootWindowInsets();visible[0]=insets!=null&&insets.isVisible(WindowInsets.Type.ime());});
