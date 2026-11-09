@@ -90,9 +90,13 @@ public class DirectedVisualAcceptanceTest {
         }
         scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(100));
         // Render the recovery screen for visual QA only by advancing disposable
-        // bootstrap progress. No native key is provisioned and the app remains
-        // gated; this does not simulate authentication or recovery success.
-        WebViewTestSupport.evaluateAsync(scenario,"new Promise((resolve,reject)=>import('/src/db.ts').then(async m=>{await m.StorageService.settings.set('onboardingJourney',{version:1,stage:'recovery',protection:'enabled',recovery:'pending',recoveryName:''});resolve(true);}).catch(reject))");
+        // bootstrap progress through IndexedDB. evaluateJavascript executes
+        // injected code without a module base URL, so importing /src/db.ts
+        // here fails in a packaged WebView. No native key is provisioned and
+        // the app remains gated; this does not simulate authentication or
+        // recovery success.
+        WebViewTestSupport.evaluateAsync(scenario,
+            "new Promise((resolve,reject)=>{const r=indexedDB.open('LifeOS_Database');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;let tx;try{tx=db.transaction('settings','readwrite');tx.objectStore('settings').put({key:'onboardingJourney',value:{version:1,stage:'recovery',protection:'enabled',recovery:'pending',recoveryName:''}});}catch(e){db.close();reject(e);return;}tx.oncomplete=()=>{db.close();resolve(true);};tx.onerror=()=>{db.close();reject(tx.error);};tx.onabort=()=>{db.close();reject(tx.error||new Error('Bootstrap progress transaction aborted'));};};})");
         scenario.recreate();WebViewTestSupport.awaitReactRoot(scenario);
         until("!!document.querySelector('[aria-label=\"Set up your recovery kit\"]')");
         assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));

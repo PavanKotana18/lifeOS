@@ -558,3 +558,10 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Root cause:** That old test modeled pre-onboarding encryption. Mandatory setup now has already enabled encrypted storage and loaded categories before Today, so the first transaction form correctly contains categories immediately.
 - **Correction:** Browser acceptance now selects a loaded category and saves the first expense directly, asserting no redundant first-record security prompt and one encrypted transaction. It no longer expects a deferred category load or a second save action.
 - **Validation:** Python syntax compilation and whitespace checks passed. This is an acceptance-test expectation update to match the new mandatory secure setup; hosted browser, Android and APK verification are pending.
+
+## PR #36 Android visual instrumentation fixture correction — 2026-11-09
+
+- **Exact-head evidence:** Android QA run `42641902231` completed the API 29 recovery preflight and APK compilation, but its Android visual test failed at `DirectedVisualAcceptanceTest.java:95`. The WebView rejected `import('/src/db.ts')` because Java-injected JavaScript has no module base URL (`about:blank`).
+- **Root cause:** The visual test tried to import a Vite TypeScript source module from a packaged Android WebView solely to set non-secret bootstrap progress for rendering the Recovery Kit screen. That import works in the browser harness but not in the native injected-script context.
+- **Correction:** The visual fixture now writes only the disposable `onboardingJourney` bootstrap row through the page's IndexedDB API, then recreates the Activity. It does not provision a native key, authenticate, confirm recovery, open a recovery secret, or expose secret content.
+- **Validation:** The Java change passes `git diff --check`; the hosted Android instrumentation workflow is being rerun. Browser acceptance on `f5ad3bb1eb0574e3ddcb624d5fa894b42df5bad1` passed. Android emulator visual acceptance is not yet verified.
