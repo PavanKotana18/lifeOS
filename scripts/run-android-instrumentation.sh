@@ -21,6 +21,7 @@ capture_evidence() {
   if [[ "$SAFE_EMULATOR" != true ]]; then exit "$result"; fi
   timeout 8s adb -s "$SERIAL" shell dumpsys webviewupdate > "$OUT/webview-provider.txt" 2>&1
   timeout 15s adb -s "$SERIAL" logcat -b all -d -v threadtime '*:E' > "$OUT/logcat-errors.txt" 2>&1
+  timeout 10s adb -s "$SERIAL" logcat -b all -d -v threadtime ActivityManager:I lmkd:I AndroidRuntime:E '*:S' > "$OUT/platform-process-lifecycle.txt" 2>&1
   if [[ "$result" -ne 0 ]]; then
     {
       printf 'serial=%s\n' "$SERIAL"
@@ -63,6 +64,10 @@ SAFE_EMULATOR=true
   adb -s "$SERIAL" shell wm density
 } > "$OUT/device-profile.txt"
 
+# sys.boot_completed alone does not mean Pixel Launcher has finished drawing.
+# Exercise HOME before LifeOS owns any font-provider dependency or permission UI.
+# Keep failures visible; never dismiss ANR dialogs or force-stop platform services.
+timeout 45s adb -s "$SERIAL" shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME > "$OUT/launcher-readiness.txt" 2>&1
 timeout 120s adb -s "$SERIAL" install "$APP_APK"
 timeout 120s adb -s "$SERIAL" install "$TEST_APK"
 adb -s "$SERIAL" shell pm path com.lifeos.personal
