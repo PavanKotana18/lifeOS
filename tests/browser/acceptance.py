@@ -25,6 +25,10 @@ def click(text):
  x=w.until(locate); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',x); x.click(); return x
 def tab(name):
  x=wait('[data-tab="'+name+'"]'); x.click(); w.until(lambda _: x.get_attribute('aria-current')=='page'); time.sleep(.3)
+ if name=='finance' and not d.find_elements(By.CSS_SELECTOR,'[data-testid=money-home]'):
+  x.click(); wait('[data-testid=money-home]')
+def tap(css):
+ x=wait(css); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',x); x.click()
 def capture(name):
  time.sleep(.3); p=out/(name+'.png'); d.save_screenshot(str(p)); images.append(p.name)
  assert d.execute_script('return document.documentElement.scrollWidth<=innerWidth+1'), 'Horizontal page overflow: '+name
@@ -75,7 +79,7 @@ try:
   capture(name.lower().replace(' ','-'))
  tab('plan'); click('QA morning walk'); capture('task-details'); click('Edit task'); field('Task title','QA morning walk updated'); save('Save task'); click('Complete task'); capture('task-completed'); passed('View, edit and complete task through UI')
  click('Back to agenda'); click('Delete'); capture('task-delete-confirmation'); click('Delete task'); passed('Delete task through confirmation')
- tab('finance'); wait('[aria-label*="expense"][class*="money-transaction-row"]').click(); field('Merchant or description','QA lunch updated'); save('Save transaction'); wait('[aria-label^="Edit QA lunch updated"]').click(); capture('transaction-details-edit'); click('Delete transaction'); capture('transaction-delete-confirmation'); click('Delete transaction'); passed('Edit and delete expense through UI')
+ tab('finance'); tap('[aria-label*="expense"][class*="money-transaction-row"]'); field('Merchant or description','QA lunch updated'); save('Save transaction'); tap('[aria-label^="Edit QA lunch updated"]'); capture('transaction-details-edit'); click('Delete transaction'); capture('transaction-delete-confirmation'); click('Delete transaction'); passed('Edit and delete expense through UI')
  tab('life'); click('All goals and milestones'); click('QA reading goal'); field('Goal title','QA reading goal updated'); save('Save goal'); click('Milestone'); capture('milestone-form'); field('Milestone title','QA first book'); save('Save milestone'); capture('goal-milestone'); passed('Edit goal and add milestone through UI')
  tab('dashboard'); click('Customize'); capture('today-customization'); toggles=d.find_elements(By.CSS_SELECTOR,'#today-customization input:not(:disabled)'); toggles[-1].click(); click('Customize'); passed('Customize Today through saved section visibility control')
  backup=d.execute_async_script("const done=arguments[0]; Promise.all([import('/src/db.ts'),import('/src/services/backupCryptoService.ts')]).then(async([m,b])=>{const original=await m.StorageService.backup.exportData();const encrypted=await b.encryptBackup(original,'QA isolated backup passphrase 2026');const decoded=await b.decryptBackup(encrypted,'QA isolated backup passphrase 2026');m.validateBackupTables(JSON.parse(decoded).tables);let rejected=false;try{await b.decryptBackup(encrypted,'wrong QA passphrase 2026')}catch{rejected=true;} await m.StorageService.backup.importData(decoded,{replaceExisting:true});done({same:decoded===original,rejected,accounts:(await m.StorageService.accounts.getAll()).length});}).catch(e=>done({error:String(e)}));")
