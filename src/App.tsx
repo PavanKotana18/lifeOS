@@ -1770,6 +1770,7 @@ export default function App() {
       await ensurePrivateStorageBeforeWrite();
       await write();
       await reloadAllData();
+      showToast('Financial record saved.', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'This record could not be saved.', 'danger');
       throw error;
