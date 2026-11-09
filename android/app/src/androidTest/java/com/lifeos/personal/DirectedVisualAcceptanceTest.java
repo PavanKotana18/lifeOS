@@ -3,6 +3,9 @@ package com.lifeos.personal;
 import android.app.UiAutomation;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.os.SystemClock;
 import android.view.MotionEvent;
@@ -54,7 +57,7 @@ public class DirectedVisualAcceptanceTest {
     private void denyOptionalNotificationPrompt() throws Exception {
         UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();
         AccessibilityServiceInfo info=auto.getServiceInfo();
-        info.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
+        info.flags |= AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         auto.setServiceInfo(info);
         boolean denied=false; long end=SystemClock.elapsedRealtime()+30000;
         while(SystemClock.elapsedRealtime()<end) {
@@ -79,6 +82,13 @@ public class DirectedVisualAcceptanceTest {
         fail("Activity did not return to a safe, capturable first-use screen after permission denial");
     }
     private void openNumericKeyboard() throws Exception {
+        // Earlier navigation uses JS to activate app controls. End that old IME
+        // session, then open the amount with an actual trusted touchscreen tap.
+        js("document.activeElement?.blur()");
+        scenario.onActivity(a -> ((InputMethodManager)a.getSystemService(Context.INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(a.getBridge().getWebView().getWindowToken(),0));
+        long hideDeadline=SystemClock.elapsedRealtime()+10000;
+        while(keyboardVisible() && SystemClock.elapsedRealtime()<hideDeadline) Thread.sleep(50);
+        assertFalse("Previous text keyboard did not dismiss",keyboardVisible());
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector('input[inputmode=decimal]').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
         final int[] xy={0,0,0};
         scenario.onActivity(a->{int[] o=new int[2];a.getBridge().getWebView().getLocationOnScreen(o);xy[0]=o[0];xy[1]=o[1];xy[2]=a.getBridge().getWebView().getWidth();});
@@ -89,10 +99,27 @@ public class DirectedVisualAcceptanceTest {
         long end=SystemClock.elapsedRealtime()+10000;final boolean[] visible={false};
         while(SystemClock.elapsedRealtime()<end) {
             scenario.onActivity(a->{WindowInsets insets=a.getWindow().getDecorView().getRootWindowInsets();visible[0]=insets!=null&&insets.isVisible(WindowInsets.Type.ime());});
-            if(visible[0]) { until("document.activeElement?.inputMode==='decimal'"); return; }
+            if(visible[0] && numericKeyboardVisible(auto)) { until("document.activeElement?.inputMode==='decimal'"); return; }
             Thread.sleep(100);
         }
-        fail("Native tap on amount did not open Android's keyboard");
+        fail("Native tap on amount did not produce a visible numeric Android keyboard");
+    }
+    private boolean numericKeyboardVisible(UiAutomation auto) {
+        for(AccessibilityWindowInfo window:auto.getWindows()) {
+            if(window.getType()!=AccessibilityWindowInfo.TYPE_INPUT_METHOD) continue;
+            java.util.ArrayDeque<AccessibilityNodeInfo> nodes=new java.util.ArrayDeque<>();
+            AccessibilityNodeInfo root=window.getRoot();if(root==null) continue;nodes.add(root);
+            int digits=0;boolean alphabetic=false;
+            while(!nodes.isEmpty()) {
+                AccessibilityNodeInfo node=nodes.remove();
+                String text=String.valueOf(node.getText()).trim(), description=String.valueOf(node.getContentDescription()).trim();
+                if(text.matches("[0-9]")||description.matches("[0-9]")) digits++;
+                if(text.matches("[a-zA-Z]")||description.matches("[a-zA-Z]")) alphabetic=true;
+                for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i);if(child!=null)nodes.add(child);}
+            }
+            if(digits>=8 && !alphabetic) return true;
+        }
+        return false;
     }
     private boolean keyboardVisible() {
         final boolean[] visible={false};
