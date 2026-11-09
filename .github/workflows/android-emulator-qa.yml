@@ -445,3 +445,38 @@ jobs:
           path: qa-emulator-evidence/**
           if-no-files-found: warn
           retention-days: 7
+
+  android-visual:
+    needs: build-test-apks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/download-artifact@v4
+        with:
+          name: lifeos-android-test-apks
+          path: android-apks
+      - run: bash scripts/enable-github-runner-kvm.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 3072M
+          heap-size: 512M
+          emulator-boot-timeout: 300
+          disable-animations: false
+          script: |
+            ANDROID_TEST_FILTER='com.lifeos.personal.DirectedVisualAcceptanceTest#realPackagedScreensFormsAndContentSwipe' ANDROID_REQUIRED_TEST='DirectedVisualAcceptanceTest#realPackagedScreensFormsAndContentSwipe' ANDROID_EXPECTED_TESTS=1 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-visual-evidence
+            adb pull /sdcard/Android/data/com.lifeos.personal/files/LifeOS-directed-visual qa-visual-evidence/screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: LifeOS-directed-android-visual-${{ github.sha }}
+          path: qa-visual-evidence/**
+          if-no-files-found: error
+          retention-days: 30
