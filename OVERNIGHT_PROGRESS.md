@@ -529,3 +529,10 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Correction:** Added authenticated, transactional settings deletion to the encrypted facade and a production-facade regression assertion. This preserves ciphertext/session boundaries and retires the temporary name draft only once encrypted storage is active.
 - **Validation:** The focused encrypted facade suite passed 18/18, onboarding journey checks passed, TypeScript passed, and `git diff --check` passed. The full suite/build/Sentinel and exact-head browser/Android workflows are being rerun after this correction.
 - **Next:** Commit this correction, push to the same PR #36 branch, and inspect the next browser and Android artifacts. Physical-device auth/recovery remains unverified.
+
+## PR #36 browser existing-user fixture correction — 2026-11-09
+
+- **Exact-head evidence:** Browser workflow `42639881321` passed name persistence, cancellation/retry, encrypted profile promotion, recovery confirmation and completed-install restart. It then failed a later legacy-state check.
+- **Root cause:** That check mutated the same completed encrypted user to `onboardingCompleted=false` and expected onboarding again. Production correctly skipped onboarding because existing private data was present; the test contradicted the existing-user compatibility requirement.
+- **Correction:** The legacy optional `skipped` choices are now tested on a fresh empty installation. The separate completed-user scenario remains and asserts existing users do not re-enter onboarding.
+- **Validation:** Python syntax compilation and `git diff --check` passed. New exact-head browser/Android workflows are pending after this test-only correction.

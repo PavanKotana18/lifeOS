@@ -65,10 +65,10 @@ try:
  # Complete install restart is not routed through onboarding again.
  d.refresh(); find('[data-testid=today-dashboard]'); assert store('onboardingCompleted') is True; assert store('displayName')=='Synthetic retry'; passed('Restart after completion preserves profile and does not repeat onboarding')
 
- # Older optional choices never satisfy the new mandatory journey when incomplete.
- d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>{await m.StorageService.settings.set('onboardingCompleted',false);await m.StorageService.settings.set('onboardingJourney',{version:1,stage:'recovery',protection:'skipped',recovery:'skipped'});done(true);});")
+ # Older optional choices never satisfy the new mandatory journey on an empty installation.
+ fresh(); d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>{await m.StorageService.settings.set('onboardingJourney',{version:1,stage:'recovery',protection:'skipped',recovery:'skipped'});done(true);});")
  d.refresh(); find('[aria-label="Protect your LifeOS space"]'); j=store('onboardingJourney'); assert j['protection']=='pending' and j['recovery']=='pending'
- assert not d.find_elements(By.CSS_SELECTOR,'[data-testid=today-dashboard]'); passed('Legacy skipped values cannot bypass mandatory security steps')
+ assert not d.find_elements(By.CSS_SELECTOR,'[data-testid=today-dashboard]'); passed('Legacy optional skips cannot bypass mandatory steps for a fresh empty installation')
 
  # Existing completed installations are grandfathered and not forced through the new flow.
  fresh('success'); d.execute_async_script("const done=arguments[0];Promise.all([import('/src/services/cryptoService.ts'),import('/src/db.ts')]).then(async([c,m])=>{await c.CryptoService.setup({deferRecovery:true});await c.CryptoService.deferRecovery();m.sessionManager.unlock();await m.activateEncryptedStorage();await m.StorageService.settings.set('displayName','Existing encrypted owner');await m.StorageService.settings.set('onboardingCompleted',true);done(true);}).catch(e=>done({error:String(e)}));")
