@@ -148,13 +148,14 @@ public class DirectedVisualAcceptanceTest {
         until("!!document.querySelector('[data-testid=account-empty-state]')");
     }
     private void captureAndroidFontScaling() throws Exception {
-        android.content.res.Configuration original=new android.content.res.Configuration();
-        scenario.onActivity(a -> original.setTo(a.getResources().getConfiguration()));
+        final int[] originalZoom={100};
+        scenario.onActivity(a -> originalZoom[0]=a.getBridge().getWebView().getSettings().getTextZoom());
         try {
             for(float fontScale:new float[]{1.3f,2f}) {
                 // Exercise the installed app's actual WebView text zoom and
-                // configuration callback without changing any user's settings.
-                scenario.onActivity(a -> { android.content.res.Configuration config=new android.content.res.Configuration(a.getResources().getConfiguration());config.fontScale=fontScale;a.onConfigurationChanged(config); });
+                // layout path without changing global device settings. The
+                // system-font-to-zoom mapping has its own native regression.
+                scenario.onActivity(a -> a.getBridge().getWebView().getSettings().setTextZoom(Math.round(fontScale*100)));
                 final int[] zoom={0};scenario.onActivity(a -> zoom[0]=a.getBridge().getWebView().getSettings().getTextZoom());
                 assertEquals(Math.round(fontScale*100),zoom[0]);
                 for(String destination:new String[]{"dashboard","finance","plan","life"}) {
@@ -163,7 +164,7 @@ public class DirectedVisualAcceptanceTest {
                     capture(destination+"-android-text-"+Math.round(fontScale*100));
                 }
             }
-        } finally { scenario.onActivity(a -> a.onConfigurationChanged(original)); }
+        } finally { scenario.onActivity(a -> a.getBridge().getWebView().getSettings().setTextZoom(originalZoom[0])); }
     }
     private void swipeFromTodayText() throws Exception {
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector('.today-focus h3').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
@@ -191,7 +192,7 @@ public class DirectedVisualAcceptanceTest {
             tab("life");capture("life-empty");click("Add a habit");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("habit-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Add a goal");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("goal-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             captureAndroidFontScaling();click("Open profile and settings");until("!!document.querySelector('[data-testid=profile-settings-home]')");capture("profile");
-            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("fontScaling","Actual WebView textZoom 130 and 200 via Activity configuration callback; global emulator settings unchanged");report.put("androidBack","PASS: first account setup cancelled by native Back; draft retained; key remained unprovisioned and locked");report.put("onboardingCapture","BLOCKED: native onboarding remains protected by the application screenshot policy");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
+            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("fontScaling","Actual WebView textZoom 130 and 200; system-font mapping covered separately; global emulator settings unchanged");report.put("androidBack","PASS: first account setup cancelled by native Back; draft retained; key remained unprovisioned and locked");report.put("onboardingCapture","BLOCKED: native onboarding remains protected by the application screenshot policy");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
             try(FileOutputStream file=new FileOutputStream(new File(output,"environment.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
         }
     }
