@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, ShieldCheck } from 'lucide-react';
 import { exportBackupFile } from '../services/backupExportService';
 import { clearRecoveryCodeFromClipboard, copyRecoveryCode } from '../services/sensitiveClipboardService';
+import { matchesRecoveryCode } from '../services/recoveryCodeConfirmation';
 import type { PreparedRecovery } from '../services/cryptoService.ts';
 
 /** Recovery secrets live only in this mounted dialog and native pending state. */
-export default function SecureSetupDialog({ prepared, onDecision }: {
+export default function SecureSetupDialog({ prepared, onDecision, onRecoveryExportStart, recoveryExportResumeReady = true, onRetryRecoveryExportResume }: {
   prepared?: PreparedRecovery;
   onDecision(accepted: boolean): void;
+  onRecoveryExportStart?: () => () => void;
+  recoveryExportResumeReady?: boolean;
+  onRetryRecoveryExportResume?: () => void;
 }) {
   const [code, setCode] = useState('');
   const [kitExportState, setKitExportState] = useState<'none' | 'saved' | 'started'>('none');
@@ -15,12 +19,33 @@ export default function SecureSetupDialog({ prepared, onDecision }: {
   const [copyBusy, setCopyBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const exactMatch = Boolean(prepared && code === prepared.recoveryCode);
-  const kitExported = kitExportState !== 'none';
+  const exactMatch = Boolean(prepared && matchesRecoveryCode(code, prepared.recoveryCode));
+  // Only the native file provider's completed write is proof of an exported kit.
+  // A browser download click is merely an initiation and cannot be confirmed.
+  const kitExported = kitExportState === 'saved';
 
   useEffect(() => () => {
     if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
   }, []);
+
+  const finish = (accepted: boolean) => {
+    const secret = prepared?.recoveryCode;
+    setCode('');
+    setFeedback('');
+    if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+    if (secret) void clearRecoveryCodeFromClipboard(secret);
+    onDecision(accepted);
+  };
+
+  if (prepared && !recoveryExportResumeReady) return <main className="lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6">
+    <section role="dialog" aria-modal="true" aria-labelledby="secure-setup-locked-title" className="lifeos-panel mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 rounded-3xl border p-5 shadow-xl sm:p-6">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-tint)] text-[var(--accent)]" aria-hidden="true"><ShieldCheck size={24} strokeWidth={1.8} /></div>
+      <h1 id="secure-setup-locked-title" className="text-center text-2xl font-semibold">Unlock to continue</h1>
+      <p className="text-center text-sm leading-6 text-secondary">{exportBusy ? 'Opening Android’s secure save picker. Your recovery code is hidden while the file is saved.' : 'LifeOS locked your recovery setup while Android’s file picker was open. Your code stays hidden until secure unlock succeeds.'}</p>
+      {!exportBusy && onRetryRecoveryExportResume && <button type="button" onClick={onRetryRecoveryExportResume} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Unlock and continue</button>}
+      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">Cancel and keep data locked</button>
+    </section>
+  </main>;
 
   const announce = (message: string) => {
     if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
@@ -34,6 +59,7 @@ export default function SecureSetupDialog({ prepared, onDecision }: {
     if (!prepared || exportBusy) return;
     setExportBusy(true);
     announce('');
+    const releaseExportActivity = onRecoveryExportStart?.();
     try {
       const file = {
         product: 'LifeOS',
@@ -45,7 +71,8 @@ export default function SecureSetupDialog({ prepared, onDecision }: {
       const result = await exportBackupFile({
         contents: JSON.stringify(file),
         fileName: `lifeos-recovery-kit-${new Date().toISOString().slice(0, 10)}.json`,
-        mimeType: 'application/json'
+        mimeType: 'application/json',
+        preservePendingRecovery: true
       });
       if (result.status === 'cancelled') {
         announce('Save cancelled. Save the complete kit to continue.');
@@ -53,13 +80,14 @@ export default function SecureSetupDialog({ prepared, onDecision }: {
         setKitExportState('saved');
         announce('Android confirmed the file save. LifeOS cannot verify its location.');
       } else {
-        setKitExportState('started');
-        announce('Download started. Check it finished; LifeOS cannot verify the saved file.');
+        setKitExportState(current => current === 'saved' ? current : 'started');
+        announce('Download started, but LifeOS cannot confirm it finished. Save the kit with Android’s file picker to continue.');
       }
     } catch {
       // Export errors can come from the file provider. Never log recovery material.
       announce('Could not save the recovery kit. Try again or choose another location.');
     } finally {
+      releaseExportActivity?.();
       setExportBusy(false);
     }
   };
@@ -76,14 +104,6 @@ export default function SecureSetupDialog({ prepared, onDecision }: {
     } finally {
       setCopyBusy(false);
     }
-  };
-
-  const finish = async (accepted: boolean) => {
-    const secret = prepared?.recoveryCode;
-    setCode('');
-    announce('');
-    if (secret) void clearRecoveryCodeFromClipboard(secret);
-    onDecision(accepted);
   };
 
   return <main className="lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6">
@@ -118,23 +138,26 @@ export default function SecureSetupDialog({ prepared, onDecision }: {
             onChange={event => {
               const next = event.currentTarget.value;
               setCode(next);
-              if (prepared && next === prepared.recoveryCode) void clearRecoveryCodeFromClipboard(prepared.recoveryCode);
+              if (prepared && matchesRecoveryCode(next, prepared.recoveryCode)) void clearRecoveryCodeFromClipboard(prepared.recoveryCode);
             }}
             autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} inputMode="text" enterKeyHint="done"
             aria-describedby={code && !exactMatch ? 'recovery-code-mismatch' : undefined}
             className="lifeos-input min-h-12 w-full rounded-2xl px-4 py-3 font-mono text-sm tracking-wide" />
         </label>
         {code && !exactMatch && <p id="recovery-code-mismatch" role="status" className="text-xs text-[var(--danger)]">That code does not match. Check it and try again.</p>}
-        {kitExported && <p role="status" className="rounded-xl bg-[var(--accent-tint)] px-3 py-2 text-xs leading-5 text-secondary">{kitExportState === 'saved' ? 'Android confirmed the complete kit file was saved. Keep it in a safe place separate from this device when possible.' : 'The download was started. Check that the complete kit file finished downloading and store it somewhere safe.'}</p>}
+        {exactMatch && <p role="status" className="text-xs font-medium text-[var(--accent)]">Recovery code confirmed.</p>}
+        {kitExportState === 'saved' && <p role="status" className="rounded-xl bg-[var(--accent-tint)] px-3 py-2 text-xs leading-5 text-secondary">Android confirmed the complete kit file was saved. Keep it in a safe place separate from this device when possible.</p>}
+        {kitExportState === 'started' && !kitExported && <p role="status" className="rounded-xl bg-[var(--accent-tint)] px-3 py-2 text-xs leading-5 text-secondary">A browser download was started, but LifeOS cannot confirm it finished. Save the kit with Android’s file picker to continue.</p>}
+        {!recoveryExportResumeReady && <div role="status" className="space-y-2 rounded-xl bg-[var(--accent-tint)] px-3 py-2 text-xs leading-5 text-secondary"><p>Unlock LifeOS to continue recovery setup.</p>{onRetryRecoveryExportResume && <button type="button" onClick={onRetryRecoveryExportResume} className="lifeos-input min-h-10 rounded-xl px-3 font-semibold">Unlock and continue</button>}</div>}
         <p className="text-xs leading-5 text-secondary">Copying or pasting only confirms the code. It does not prove the exported kit is stored safely.</p>
         <p data-testid="clipboard-feedback" role="status" aria-live="polite" className="min-h-5 text-center text-sm font-medium text-[var(--accent)]">{feedback}</p>
-        <button type="button" data-testid="continue-to-lifeos" disabled={!kitExported || !exactMatch} onClick={() => void finish(true)}
+        <button type="button" data-testid="continue-to-lifeos" disabled={!kitExported || !exactMatch || !recoveryExportResumeReady} onClick={() => void finish(true)}
           className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-40">Continue to LifeOS</button>
       </> : <>
         <p className="text-sm leading-6 text-secondary">LifeOS encrypts your records on this device using an Android Keystore key protected by strong biometrics. Continue to authenticate and create your private recovery kit. Existing local records will be verified before encrypted copies replace them.</p>
         <button type="button" onClick={() => void finish(true)} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Set up secure storage</button>
       </>}
-      <button type="button" onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3">Cancel and keep data locked</button>
+      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">Cancel and keep data locked</button>
     </section>
   </main>;
 }

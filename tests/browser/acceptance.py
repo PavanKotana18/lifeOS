@@ -54,12 +54,12 @@ def finish_first_launch(name):
  wait('[aria-label="Protect your LifeOS space"]'); click('Continue with secure unlock')
  wait('[aria-label="Set up your recovery kit"]'); click('Create and save recovery kit'); wait('[data-testid="copy-recovery-code"]')
  code=d.find_element(By.CSS_SELECTOR,'[data-sensitive-recovery-code]').text; assert code=='A'*43, 'synthetic code is available in the recovery card'
- click('Save complete recovery kit'); exported=w.until(lambda _: next(iter(Path(download_dir).glob('*.json')),False)); kit=json.loads(exported.read_text(encoding='utf-8'))
- assert kit.get('recoveryCode')==code and isinstance(kit.get('envelope'),dict) and kit.get('format')=='lifeos-recovery-kit', 'export contains complete recovery material'; exported.unlink()
+ click('Save complete recovery kit')
+ assert w.until(lambda _: d.execute_script('return window.__qaRecoveryKitSaved===true')), 'synthetic native file provider confirmed a complete recovery kit save'
  d.execute_script("window.__qaClipboardValue='';const c={writeText:async value=>{window.__qaClipboardValue=value},readText:async()=>window.__qaClipboardValue};Object.defineProperty(navigator,'clipboard',{configurable:true,value:c})")
  click(code); copied=w.until(lambda _: d.execute_async_script("const done=arguments[0];navigator.clipboard.readText().then(done).catch(()=>done(''))")); assert copied==code, 'recovery card copies exact code'
  confirm=wait('[data-testid="recovery-code-confirmation"]'); confirm.send_keys('B'*43); assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
- confirm.clear(); confirm.send_keys(copied)
+ confirm.clear(); confirm.send_keys(copied[:14]+' '+copied[14:])
  w.until(lambda _: d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').is_enabled())
  click('Continue to LifeOS'); wait('[data-testid="today-dashboard"]')
 def passed(name): results.append({'journey':name,'status':'PASS','environment':'Chrome, real React UI and IndexedDB; synthetic native AES-GCM adapter'})

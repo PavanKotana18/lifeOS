@@ -42,11 +42,17 @@ def complete_recovery(label='Synthetic recovery'):
  click('Create and save recovery kit'); find('[data-testid="copy-recovery-code"]')
  code=d.find_element(By.CSS_SELECTOR,'[data-sensitive-recovery-code]').text
  assert code=='A'*43, 'recovery setup can be resumed after the transient code is cleared on restart'
+ calls=d.execute_script('return window.__qaRecoveryExportCalls||0')
+ d.execute_script("window.__qaRecoveryExportMode='failed';const b=document.querySelector('[data-testid=save-complete-recovery-kit]');b.click();b.click()")
+ w.until(lambda _: 'Could not save the recovery kit' in d.find_element(By.CSS_SELECTOR,'[data-testid="clipboard-feedback"]').text)
+ assert d.execute_script('return window.__qaRecoveryExportCalls')==calls+1, 'rapid taps start only one file-save operation'
+ assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
+ d.execute_script("window.__qaRecoveryExportMode='cancelled'")
+ click('Save complete recovery kit'); assert 'Save cancelled' in find('[role=status]').text
+ assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
+ d.execute_script("window.__qaRecoveryExportMode='saved'")
  click('Save complete recovery kit')
- exported=w.until(lambda _: next(iter(Path(download_dir).glob('*.json')),False))
- kit=json.loads(exported.read_text(encoding='utf-8'))
- assert kit.get('product')=='LifeOS' and kit.get('format')=='lifeos-recovery-kit' and kit.get('recoveryCode')==code and isinstance(kit.get('envelope'),dict), 'export contains the code and full encrypted envelope'
- exported.unlink()
+ assert w.until(lambda _: d.execute_script('return window.__qaRecoveryKitSaved===true')), 'synthetic native file provider confirmed the complete code and envelope were passed to save'
  d.execute_script("window.__qaClipboardValue='';const c={writeText:async value=>{window.__qaClipboardValue=value},readText:async()=>window.__qaClipboardValue};window.__qaClipboard=c;Object.defineProperty(navigator,'clipboard',{configurable:true,value:c})")
  assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
  d.execute_script("window.__qaClipboard=navigator.clipboard;Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:()=>Promise.reject(new Error('synthetic failure'))}})")
@@ -57,7 +63,7 @@ def complete_recovery(label='Synthetic recovery'):
  assert copied==code, 'tapping the code copies the exact value'
  confirm=find('[data-testid="recovery-code-confirmation"]'); confirm.send_keys('B'*43)
  assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
- confirm.clear(); confirm.send_keys(copied)
+ confirm.clear(); confirm.send_keys(copied[:14]+' '+copied[14:])
  w.until(lambda _: d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').is_enabled())
  click('Continue to LifeOS')
 

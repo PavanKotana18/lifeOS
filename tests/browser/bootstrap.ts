@@ -2,6 +2,24 @@
  * This entry is never imported by src or included in the production APK build.
  * Disposable browser profiles only; no Android authentication acceptance is claimed. */
 import { registerPlugin } from '@capacitor/core';
+import { installDevelopmentRecoveryExportAdapter } from '../../src/services/backupExportService';
+
+const qaHost = window as Window & { __qaRecoveryKitSaved?: boolean; __qaRecoveryExportMode?: 'saved' | 'cancelled' | 'failed'; __qaRecoveryExportCalls?: number };
+installDevelopmentRecoveryExportAdapter(async options => {
+  qaHost.__qaRecoveryExportCalls = (qaHost.__qaRecoveryExportCalls || 0) + 1;
+  if (qaHost.__qaRecoveryExportMode === 'failed') throw new Error('Synthetic provider failure.');
+  if (qaHost.__qaRecoveryExportMode === 'cancelled') return { status: 'cancelled' };
+  const kit = JSON.parse(options.contents) as { product?: string; format?: string; version?: number; recoveryCode?: string; envelope?: unknown };
+  const complete = options.fileName.startsWith('lifeos-recovery-kit-')
+    && options.mimeType === 'application/json'
+    && kit.product === 'LifeOS' && kit.format === 'lifeos-recovery-kit' && kit.version === 1
+    && typeof kit.recoveryCode === 'string' && /^[A-Za-z0-9_-]{43}$/.test(kit.recoveryCode)
+    && Boolean(kit.envelope && typeof kit.envelope === 'object');
+  if (!complete) throw new Error('Synthetic save adapter rejected an incomplete recovery kit.');
+  // Retain only a boolean in the test page; never persist or report recovery material.
+  qaHost.__qaRecoveryKitSaved = true;
+  return { status: 'saved', bytesWritten: new TextEncoder().encode(options.contents).byteLength };
+});
 const db = await new Promise<IDBDatabase>((resolve, reject) => {
   const request = indexedDB.open('LifeOS-browser-qa-native', 1);
   request.onupgradeneeded = () => request.result.createObjectStore('fixture');

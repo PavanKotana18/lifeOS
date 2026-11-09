@@ -368,7 +368,7 @@ jobs:
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M
-            expected-tests: 14
+            expected-tests: 17
             required-test: CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning
             exclusion-file: android/qa/instrumentation-exclusions-api29.txt
           - id: standard-api34
@@ -376,7 +376,7 @@ jobs:
             profile: pixel_6
             ram-size: 4096M
             heap-size: 512M
-            expected-tests: 19
+            expected-tests: 22
             required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
           - id: large-api35
@@ -384,7 +384,7 @@ jobs:
             profile: pixel_7_pro
             ram-size: 4096M
             heap-size: 512M
-            expected-tests: 19
+            expected-tests: 22
             required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
     steps:

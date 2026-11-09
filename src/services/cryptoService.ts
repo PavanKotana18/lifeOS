@@ -55,6 +55,7 @@ interface NativeCryptoPlugin {
   setup(options?: { deferRecovery?: boolean }): Promise<CryptoOperationResult>;
   unlock(): Promise<CryptoOperationResult>;
   lock(): Promise<{ success: boolean }>;
+  cancelPendingRecovery(): Promise<{ success: boolean }>;
   getKeyState(): Promise<CryptoKeyState>;
   isUnlocked(): Promise<{ unlocked: boolean }>;
   encrypt(options: {
@@ -242,6 +243,12 @@ export const CryptoService = Object.freeze({
     assertNativeCryptoAvailable();
     const result = await nativeCrypto.lock();
     if (!result.success) throw new Error('Native encryption lock failed.');
+  },
+
+  async cancelPendingRecovery(): Promise<void> {
+    assertNativeCryptoAvailable();
+    const result = await nativeCrypto.cancelPendingRecovery();
+    if (result?.success !== true) throw new Error('Unconfirmed recovery setup could not be cleared.');
   },
 
   async getKeyState(): Promise<CryptoKeyState> {

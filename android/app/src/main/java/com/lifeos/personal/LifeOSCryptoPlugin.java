@@ -1,6 +1,7 @@
 package com.lifeos.personal;
 
 import android.os.Build;
+import android.os.SystemClock;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
@@ -73,6 +74,7 @@ public class LifeOSCryptoPlugin extends Plugin {
     private String pendingRecoveryIv;
     private String pendingRecoveryWrapped;
     private long lockGeneration;
+    private long recoveryPickerPreserveUntil;
 
     /** Logs only the operation, exception class, and stack frames; never exception messages or payloads. */
     private void logKeystoreFailure(String operation, Throwable error) {
@@ -1066,6 +1068,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                     dataKey = recovered.clone();
                     recoveryNeedsRebind = false;
                     recoveryKeyVerified = false;
+                    recoveryPickerPreserveUntil = 0L;
 
                     JSObject response = new JSObject();
                     response.put("success", true);
@@ -1233,7 +1236,7 @@ public class LifeOSCryptoPlugin extends Plugin {
             lockGeneration++;
             clearDataKey();
             recoveryDeferralAllowed = false;
-            clearPendingRecovery();
+            if (!isRecoveryExportRetentionActive()) clearPendingRecovery();
         } finally {
             cryptoLock.writeLock().unlock();
         }
@@ -1390,10 +1393,48 @@ public class LifeOSCryptoPlugin extends Plugin {
         try {
             lockGeneration++;
             clearDataKey();
-            clearPendingRecovery();
+            // The Storage Access Framework briefly stops this Activity while a
+            // complete recovery kit is being saved. Keep only its encrypted,
+            // volatile envelope for that bounded picker round trip; never keep
+            // the unlocked data key or persist the recovery secret.
+            if (RecoveryExportActivityGuard.isActive()) {
+                recoveryPickerPreserveUntil = SystemClock.elapsedRealtime() + 5 * 60 * 1000L;
+            }
+            if (!isRecoveryExportRetentionActive()) clearPendingRecovery();
         } finally {
             cryptoLock.writeLock().unlock();
         }
         super.handleOnStop();
+    }
+
+    private boolean isRecoveryExportRetentionActive() {
+        if (RecoveryExportActivityGuard.isActive()) return true;
+        if (recoveryPickerPreserveUntil == 0L) return false;
+        if (SystemClock.elapsedRealtime() >= recoveryPickerPreserveUntil) {
+            recoveryPickerPreserveUntil = 0L;
+            return false;
+        }
+        return true;
+    }
+
+    @PluginMethod
+    public void cancelPendingRecovery(PluginCall call) {
+        cryptoLock.writeLock().lock();
+        try {
+            android.content.SharedPreferences prefs = getContext().getSharedPreferences(PREFS, 0);
+            if (prefs.contains("recovery_wrapped") || prefs.contains("recovery_salt") || prefs.contains("recovery_iv")) {
+                call.reject("A confirmed recovery kit cannot be discarded.");
+                return;
+            }
+            clearPendingRecovery();
+            recoveryPickerPreserveUntil = 0L;
+            JSObject response = new JSObject();
+            response.put("success", true);
+            call.resolve(response);
+        } catch (Exception error) {
+            call.reject("Pending recovery setup could not be cleared.");
+        } finally {
+            cryptoLock.writeLock().unlock();
+        }
     }
 }

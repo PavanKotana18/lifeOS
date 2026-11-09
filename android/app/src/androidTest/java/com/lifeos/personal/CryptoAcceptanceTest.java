@@ -35,7 +35,7 @@ public class CryptoAcceptanceTest {
     private static String b64(byte[] value) { return Base64.encodeToString(value,Base64.NO_WRAP); }
     private static JSObject args(String aad) { JSObject a=new JSObject(); a.put("plaintext","synthetic record");a.put("aad",aad); return a; }
     private void locked() { Call c=new Call("isUnlocked",new JSObject());plugin.isUnlocked(c);assertEquals(1,c.settlements);assertFalse(c.response.optBoolean("unlocked",true)); }
-    @After public void wipeSyntheticMemory() { Call c=new Call("lock",new JSObject());plugin.lock(c); }
+    @After public void wipeSyntheticMemory() { RecoveryExportActivityGuard.endCurrent(); Call c=new Call("lock",new JSObject());plugin.lock(c); }
 
     @Test public void newInstanceStartsLockedWithoutProvisioning() { locked(); }
     @Test public void actualAesGcmRoundtripRejectsChangedAad() throws Exception {
@@ -83,6 +83,40 @@ public class CryptoAcceptanceTest {
         Call badProof=new Call("verifyRecoveryRecord",proof);plugin.verifyRecoveryRecord(badProof);assertNotNull(badProof.error);assertFalse((Boolean)get("recoveryKeyVerified"));
         proof.put("aad","fixture-record");Call verified=new Call("verifyRecoveryRecord",proof);plugin.verifyRecoveryRecord(verified);assertNull(verified.error);assertEquals(1,verified.response.length());assertTrue(verified.response.optBoolean("verified"));locked();
         Call normal=new Call("encrypt",args("fixture-record"));plugin.encrypt(normal);assertNotNull(normal.error); // Proof is not an unlock or rebind.
+    }
+    @Test public void savePickerPreservesOnlyPendingEnvelopeAndStillWipesUnlockedKey() throws Exception {
+        set("dataKey",key()); set("pendingRecoverySalt","synthetic-salt");
+        set("pendingRecoveryIv","synthetic-iv"); set("pendingRecoveryWrapped","synthetic-wrapped");
+        long token=RecoveryExportActivityGuard.begin();
+        try {
+            plugin.handleOnStop();
+            assertNull("backgrounding must still clear the live data key",get("dataKey"));
+            assertEquals("synthetic-salt",get("pendingRecoverySalt"));
+            assertEquals("synthetic-iv",get("pendingRecoveryIv"));
+            assertEquals("synthetic-wrapped",get("pendingRecoveryWrapped"));
+        } finally { RecoveryExportActivityGuard.end(token); }
+        plugin.handleOnStop();
+        assertNull("outside the picker window the volatile envelope is cleared",get("pendingRecoverySalt"));
+    }
+    @Test public void securityLockWipesDataKeyButPreservesPickerEnvelopeOnlyInsideGuard() throws Exception {
+        set("dataKey",key()); set("pendingRecoverySalt","synthetic-salt");
+        set("pendingRecoveryIv","synthetic-iv"); set("pendingRecoveryWrapped","synthetic-wrapped");
+        long token=RecoveryExportActivityGuard.begin();
+        try {
+            Call lockDuringPicker=new Call("lock",new JSObject()); plugin.lock(lockDuringPicker);
+            assertNull(get("dataKey")); assertEquals("synthetic-salt",get("pendingRecoverySalt"));
+        } finally { RecoveryExportActivityGuard.end(token); }
+        Call normalLock=new Call("lock",new JSObject()); plugin.lock(normalLock);
+        assertNull("ordinary background locks clear the volatile recovery envelope",get("pendingRecoverySalt"));
+    }
+    @Test public void recoveryExportGuardExpiresAndIgnoresStaleCallbacks() {
+        long first=RecoveryExportActivityGuard.begin(1000L);
+        assertTrue(RecoveryExportActivityGuard.isActive(1001L));
+        long second=RecoveryExportActivityGuard.begin(2000L);
+        RecoveryExportActivityGuard.end(first);
+        assertTrue("old picker callback cannot clear a newer save",RecoveryExportActivityGuard.isActive(2001L));
+        assertFalse("picker marker expires after the bounded lifecycle window",RecoveryExportActivityGuard.isActive(302001L));
+        RecoveryExportActivityGuard.end(second);
     }
     @Test public void malformedRecoveryPreservesExistingSyntheticKey() throws Exception {
         byte[] original=key();set("dataKey",original);Call c=new Call("recoverWithSecret",new JSObject());plugin.recoverWithSecret(c);assertNotNull(c.error);assertSame(original,get("dataKey"));assertArrayEquals(key(),original);

@@ -6,7 +6,8 @@ import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
 import { CryptoService, type PreparedRecovery } from './services/cryptoService.ts';
-import { createProtectedSessionController, type NewUserRecoveryChoice } from './services/cryptoSessionCoordinator';
+import { createProtectedSessionController, unlockEncryptedSession, type NewUserRecoveryChoice } from './services/cryptoSessionCoordinator';
+import { RecoveryExportLifecycle } from './services/recoveryExportLifecycle';
 import { encryptBackup, MAX_BACKUP_FILE_BYTES } from './services/backupCryptoService';
 import { decodeBackupForRestore } from './services/backupImportService';
 import BackupPassphraseDialog from './components/BackupPassphraseDialog';
@@ -211,6 +212,20 @@ export default function App() {
   const recoveryController = useRef(createRecoveryController(CryptoService, sessionManager, getRecoveryChallenge)).current;
   const [secureSetup, setSecureSetup] = useState<{ prepared?: PreparedRecovery } | null>(null);
   const secureSetupResolver = useRef<((accepted: boolean) => void) | null>(null);
+  const recoveryExportLifecycle = useRef(new RecoveryExportLifecycle()).current;
+  const recoveryExportResumeInFlight = useRef(false);
+  const recoveryExportLockDrain = useRef<Promise<void> | null>(null);
+  const recoveryExportReturnPending = useRef(false);
+  const [recoveryExportResumeReady, setRecoveryExportResumeReady] = useState(true);
+  const beginRecoveryExportActivity = () => {
+    recoveryExportReturnPending.current = false;
+    setRecoveryExportResumeReady(false);
+    const lease = recoveryExportLifecycle.begin();
+    return () => {
+      lease.release();
+      if (!recoveryExportReturnPending.current) setRecoveryExportResumeReady(true);
+    };
+  };
   const requestSecureSetup = async (prepared?: PreparedRecovery): Promise<boolean> => {
     await setSensitiveScreenshotState(true);
     if (secureSetupResolver.current) return Promise.reject(new Error('Secure setup is already open.'));
@@ -268,6 +283,67 @@ export default function App() {
     activateStorage: activateEncryptedStorage,
     isStorageActive: isEncryptedStorageActivated,
   })).current;
+
+  const resumeRecoveryAfterPicker = async (): Promise<boolean> => {
+    const leaseId = recoveryExportLifecycle.pendingResume();
+    if (leaseId === null) {
+      if (recoveryExportReturnPending.current && secureSetupResolver.current) {
+        // The bounded picker window expired. Safely return to the recovery step
+        // so the user can authenticate and prepare a fresh kit.
+        recoveryExportReturnPending.current = false;
+        secureSetupResolver.current(false);
+        sessionManager.lock();
+        await CryptoService.lock().catch(() => undefined);
+        setBiometricVerified(false);
+        biometricAuthenticated.current = false;
+        await confirmScreenshotResume().catch(() => undefined);
+        setActivityResumeGuard(false);
+        setRecoveryExportResumeReady(true);
+      }
+      return false;
+    }
+    if (recoveryExportResumeInFlight.current) return false;
+    recoveryExportResumeInFlight.current = true;
+    setRecoveryExportResumeReady(false);
+    setBiometricAuthActive(true);
+    try {
+      await recoveryExportLockDrain.current?.catch(() => undefined);
+      const before = await CryptoService.getKeyState();
+      if (!before.metadataConsistent || !before.keyProvisioned || !before.keystoreAliasPresent ||
+          before.recoveryNeedsRebind || before.recoveryProvisioned || !before.recoveryDeferred) {
+        throw new Error('Recovery setup state changed while LifeOS was backgrounded. Encrypted data remains protected; restart this step to retry.');
+      }
+      await unlockEncryptedSession(CryptoService, sessionManager);
+      const after = await CryptoService.getKeyState();
+      if (!after.metadataConsistent || !after.keyProvisioned || !after.keystoreAliasPresent ||
+          after.recoveryNeedsRebind || !after.unlocked || !(await CryptoService.isUnlocked()) ||
+          !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
+        throw new Error('LifeOS could not verify secure access after returning from the save picker. Your data remains locked.');
+      }
+      setBiometricMessage('');
+      setBiometricVerified(true);
+      setIsLocked(false);
+      biometricAuthenticated.current = true;
+      await confirmScreenshotResume();
+      recoveryExportLifecycle.completeResume(leaseId);
+      recoveryExportReturnPending.current = false;
+      setActivityResumeGuard(false);
+      setRecoveryExportResumeReady(true);
+      return true;
+    } catch (error) {
+      sessionManager.lock();
+      await CryptoService.lock().catch(() => undefined);
+      setIsLocked(true);
+      setBiometricVerified(false);
+      biometricAuthenticated.current = false;
+      setBiometricMessage(error instanceof Error ? error.message : 'Unlock was not completed. Recovery setup remains safely paused.');
+      setRecoveryExportResumeReady(false);
+      return false;
+    } finally {
+      recoveryExportResumeInFlight.current = false;
+      setBiometricAuthActive(false);
+    }
+  };
 
   const sensitiveScreenshot = activityResumeGuard || isSensitiveScreenshotState({
     appReady,
@@ -709,18 +785,32 @@ export default function App() {
       if (!state.isActive) {
         setActivityResumeGuard(true);
         backupPassphraseResolver.current?.(null);
-        secureSetupResolver.current?.(false);
+        const recoveryPicker = secureSetupResolver.current
+          ? recoveryExportLifecycle.markInactive()
+          : null;
+        if (recoveryPicker === null) secureSetupResolver.current?.(false);
+        else {
+          recoveryExportReturnPending.current = true;
+          setRecoveryExportResumeReady(false);
+        }
         setIsLocked(true);
         setBiometricVerified(false);
         biometricAuthenticated.current = false;
         authCoordinator.resetForBackground();
         // Close native admission even during setup, not only after migration.
-        try { await encryptedSession.lock(); }
+        const lockOperation = encryptedSession.lock();
+        if (recoveryPicker !== null) recoveryExportLockDrain.current = lockOperation;
+        try { await lockOperation; }
         catch { setBiometricMessage('The native key could not be locked. Access remains blocked.'); }
         return;
       }
       if (resumeInProgress) return;
       resumeInProgress = true;
+      if (secureSetupResolver.current && recoveryExportReturnPending.current) {
+        try { await resumeRecoveryAfterPicker(); }
+        finally { resumeInProgress = false; }
+        return;
+      }
       setBiometricAuthActive(true);
       try {
         // Wait for any previous background operation drain before reopening.
@@ -2218,7 +2308,21 @@ export default function App() {
     [transactions, financeMonth]
   );
 
-  if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared} onDecision={accepted => secureSetupResolver.current?.(accepted)} />;
+  if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared}
+    onRecoveryExportStart={beginRecoveryExportActivity}
+    recoveryExportResumeReady={recoveryExportResumeReady}
+    onRetryRecoveryExportResume={() => { void resumeRecoveryAfterPicker(); }}
+    onDecision={accepted => {
+      if (!accepted && recoveryExportReturnPending.current) {
+        recoveryExportReturnPending.current = false;
+        void CryptoService.cancelPendingRecovery()
+          .catch(() => undefined)
+          .finally(async () => {
+            try { await confirmScreenshotResume(); setActivityResumeGuard(false); } catch { /* Keep screenshots blocked if resume validation fails. */ }
+            secureSetupResolver.current?.(false);
+          });
+      } else secureSetupResolver.current?.(accepted);
+    }} />;
 
   if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit).then(async () => { setRecoveryOpen(false); setStartupError(''); await initApp(); }); }} onClose={() => setRecoveryOpen(false)} />;
 
