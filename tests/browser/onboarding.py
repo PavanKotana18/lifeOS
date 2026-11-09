@@ -38,6 +38,7 @@ def complete_recovery(label='Synthetic recovery'):
  assert not d.find_elements(By.CSS_SELECTOR,'textarea,[type="checkbox"]'), 'recovery JSON textarea and saved-kit checkbox are removed'
  d.refresh(); find('[aria-label="Set up your recovery kit"]')
  assert not d.find_elements(By.CSS_SELECTOR,'[data-sensitive-recovery-code]'), 'restart clears the transient recovery code from the screen'
+ find('input[placeholder="My LifeOS recovery"]').send_keys(label)
  click('Create and save recovery kit'); find('[data-testid="copy-recovery-code"]')
  code=d.find_element(By.CSS_SELECTOR,'[data-sensitive-recovery-code]').text
  assert code=='A'*43, 'recovery setup can be resumed after the transient code is cleared on restart'
