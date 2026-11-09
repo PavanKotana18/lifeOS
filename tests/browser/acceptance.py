@@ -35,7 +35,7 @@ def capture(name):
  assert d.execute_script("const a=document.querySelector('.app-brand-name')?.getBoundingClientRect(),b=document.querySelector('.app-profile-button')?.getBoundingClientRect();return !a||!b||a.right<=b.left"), 'Brand overlaps profile control: '+name
  assert d.execute_script("return [...document.querySelectorAll('.app-bottom-nav .nav-item > span')].every(e=>e.scrollWidth<=e.clientWidth+1)"), 'Navigation label overflows its own control: '+name
  assert d.execute_script("const e=document.querySelector('.money-period input');return !e||e.getBoundingClientRect().right<=e.parentElement.getBoundingClientRect().right+1"), 'Money period control clipped: '+name
- assert d.execute_script("const n=[...document.querySelectorAll('.ui-tab-screen')].filter(e=>!e.hidden).length;return n===1||(n===0&&!!document.querySelector('[aria-labelledby=first-record-security-title]'))"), 'Overlapping active screens: '+name
+ assert d.execute_script("const n=[...document.querySelectorAll('.ui-tab-screen')].filter(e=>!e.hidden).length;return n===1||(n===0&&!!document.querySelector('[aria-labelledby=first-record-security-title],main.onboarding-root'))"), 'Overlapping active screens: '+name
 def field(text,value):
  f=wait('form[role="dialog"]')
  e=f.find_element(By.XPATH,".//label[contains(.,'"+text+"')]//*[self::input or self::textarea]")
@@ -51,7 +51,7 @@ try:
  for _ in range(40):
   try: d.get('http://127.0.0.1:5173/tests/browser/index.html'); break
   except Exception: time.sleep(.5)
- wait('input[autocomplete="nickname"]').send_keys('Acceptance QA'); click('Open LifeOS'); wait('[data-testid="today-dashboard"]'); passed('First launch and onboarding')
+ wait('input[autocomplete="nickname"]');capture('onboarding-welcome');wait('input[autocomplete="nickname"]').send_keys('Acceptance QA'); click('Open LifeOS'); wait('[data-testid="today-dashboard"]'); passed('First launch and onboarding')
  for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(label+'-empty')
  tab('plan'); click('Add task'); capture('task-form'); click('More task details'); capture('task-advanced-form'); click('More task details'); field('Task title','QA morning walk'); save('Save task'); wait('.plan-hub-task'); passed('Create task through UI and first-save encryption gate')
  tab('finance'); click('Add expense'); capture('expense-form'); field('Amount','125.50')

@@ -6,6 +6,7 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.graphics.Bitmap;
 import android.os.SystemClock;
 import android.view.MotionEvent;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -76,6 +77,22 @@ public class DirectedVisualAcceptanceTest {
         }
         fail("Activity did not return to a safe, capturable first-use screen after permission denial");
     }
+    private void openNumericKeyboard() throws Exception {
+        JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector('input[inputmode=decimal]').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
+        final int[] xy={0,0,0};
+        scenario.onActivity(a->{int[] o=new int[2];a.getBridge().getWebView().getLocationOnScreen(o);xy[0]=o[0];xy[1]=o[1];xy[2]=a.getBridge().getWebView().getWidth();});
+        float scale=xy[2]/(float)p.getDouble(2),x=xy[0]+(float)p.getDouble(0)*scale,y=xy[1]+(float)p.getDouble(1)*scale;
+        UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();long down=SystemClock.uptimeMillis();
+        MotionEvent e=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
+        e=MotionEvent.obtain(down,SystemClock.uptimeMillis()+40,MotionEvent.ACTION_UP,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
+        long end=SystemClock.elapsedRealtime()+10000;final boolean[] visible={false};
+        while(SystemClock.elapsedRealtime()<end) {
+            scenario.onActivity(a->{WindowInsets insets=a.getWindow().getDecorView().getRootWindowInsets();visible[0]=insets!=null&&insets.isVisible(WindowInsets.Type.ime());});
+            if(visible[0]) { until("document.activeElement?.inputMode==='decimal'"); return; }
+            Thread.sleep(100);
+        }
+        fail("Native tap on amount did not open Android's keyboard");
+    }
     private void swipeFromTodayText() throws Exception {
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector('.today-focus h3').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
         final int[] position={0,0,0};
@@ -97,12 +114,12 @@ public class DirectedVisualAcceptanceTest {
             js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android QA');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()");
             click("Open LifeOS");until("!!document.querySelector('[data-testid=today-dashboard]')");
             denyOptionalNotificationPrompt();until("!document.querySelector('.lifeos-launch-reveal')");capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
-            click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
+            click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");openNumericKeyboard();capture("expense-numeric-keyboard");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("plan");capture("plan-empty");click("Add task");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("task-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("life");capture("life-empty");click("Add a habit");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("habit-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Add a goal");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("goal-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Open profile and settings");until("!!document.querySelector('[data-testid=profile-settings-home]')");capture("profile");
-            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
+            JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("onboardingCapture","BLOCKED: native onboarding remains protected by the application screenshot policy");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
             try(FileOutputStream file=new FileOutputStream(new File(output,"environment.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
         }
     }
