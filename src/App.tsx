@@ -1007,7 +1007,9 @@ export default function App() {
     // Only bootstrap-safe markers are read before encryption is active.
     const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
     const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
-    setOnboardingJourney(normalizeOnboardingJourney(await StorageService.settings.get('onboardingJourney', null)));
+    const storedOnboardingJourney = await StorageService.settings.get<unknown>('onboardingJourney', null);
+    const normalizedJourney = normalizeOnboardingJourney(storedOnboardingJourney);
+    setOnboardingJourney(normalizedJourney);
     let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
 
     const nativeState = await CryptoService.getKeyState();
@@ -1018,6 +1020,11 @@ export default function App() {
       (!nativeState.keystoreAliasPresent || nativeState.initialSetupPending === true) &&
       !nativeState.unlocked && !nativeState.recoveryNeedsRebind && !hasCiphertext && !hasExistingPrivateRows;
     if (safeFirstRunState) {
+      if (!completed && JSON.stringify(storedOnboardingJourney) !== JSON.stringify(normalizedJourney)) {
+        // Persist removal of legacy optional skip values so restart resumes the
+        // same required stage instead of repeatedly interpreting stale choices.
+        await StorageService.settings.set('onboardingJourney', normalizedJourney);
+      }
       // Empty installs and explicitly interrupted initial setup may browse
       // without private storage; the first private write resumes setup.
       safeFirstRunBrowse.current = true;

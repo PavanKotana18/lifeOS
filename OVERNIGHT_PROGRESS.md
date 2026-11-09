@@ -536,3 +536,11 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Root cause:** That check mutated the same completed encrypted user to `onboardingCompleted=false` and expected onboarding again. Production correctly skipped onboarding because existing private data was present; the test contradicted the existing-user compatibility requirement.
 - **Correction:** The legacy optional `skipped` choices are now tested on a fresh empty installation. The separate completed-user scenario remains and asserts existing users do not re-enter onboarding.
 - **Validation:** Python syntax compilation and `git diff --check` passed. New exact-head browser/Android workflows are pending after this test-only correction.
+
+
+## PR #36 onboarding progress normalization — 2026-11-09
+
+- **Exact-head evidence:** Browser run `42640274802` passed all setup and restart checks through recovery confirmation, then exposed a persisted legacy `skipped` marker remaining in the test store. Production rendered the required protection screen, but did not save its normalized journey until the user advanced.
+- **Correction:** During safe first-run startup, incomplete installations now persist normalized mandatory progress whenever saved progress contains old optional values or invalid fields. Existing data-bearing and completed installations are not modified or routed back through onboarding. The browser legacy-state case now starts from a genuinely fresh empty profile.
+- **Validation:** Focused journey assertions, TypeScript and diff checks passed. Full checks and the new exact-head browser/Android workflows are pending after this correction.
+- **Full local verification after journey persistence change:** `npm test` exited 0; six Sentinel suites passed; `npx tsc --noEmit`, `npm run build`, the onboarding journey test, and `git diff --check` passed. Build still reports the existing large JavaScript chunk warning. Browser and Android CI are being rerun for the latest commit; no Android SDK or device is available in Termux.

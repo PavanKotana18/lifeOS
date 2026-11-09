@@ -8,7 +8,7 @@ Recovery is no longer a label-only choice. The recovery stage calls the existing
 
 The first hosted browser run exposed a real production gap: the encrypted settings facade had no authenticated `delete` operation, so retiring the bootstrap name draft failed after native setup and blocked progression. The facade now deletes settings through its existing encrypted transaction coordinator; a regression test verifies the operation.
 
-Existing completed installations are not routed back into onboarding. Existing encrypted keys, records, and recovery metadata are not replaced. Plaintext legacy profile names are included in the established authenticated migration, which verifies encrypted copies before retiring source rows.
+Existing completed installations are not routed back into onboarding. On an empty interrupted setup, legacy optional `skipped` values are normalized and persisted to the current required step. Existing encrypted keys, records, and recovery metadata are not replaced. Plaintext legacy profile names are included in the established authenticated migration, which verifies encrypted copies before retiring source rows.
 
 ## Keystore authentication compatibility
 

@@ -23,6 +23,7 @@ assert.match(app, /state\.recoveryProvisioned[\s\S]*?isEncryptedStorageActivated
 const protectionSetup = app.slice(app.indexOf('const provisionOnboardingProtection'), app.indexOf('const confirmOnboardingRecovery'));
 assert.doesNotMatch(protectionSetup, /setSensitiveScreenshotState\(false\)/, 'onboarding remains screenshot-protected through recovery until the workspace opens');
 assert.match(app, /onboardingNameDraft[\s\S]*?settings\.set\('displayName'[\s\S]*?settings\.delete\('onboardingNameDraft'\)/, 'temporary name is promoted to encrypted profile storage and removed from bootstrap storage');
+assert.match(app, /safeFirstRunState\)\s*\{[\s\S]*?settings\.set\('onboardingJourney', normalizedJourney\)/, 'an incomplete empty installation persists normalized mandatory progress before restart');
 assert.match(app, /if \(isEncryptedStorageActivated\(\) && sessionManager\.isUnlocked\(\)\) return;/, 'a successfully protected new user bypasses the legacy first-record prompt');
 assert.doesNotMatch(onboarding, /Not now|Set this up later/);
 assert.match(onboarding, /Your space\. Just yours\./);
