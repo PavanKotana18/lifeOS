@@ -520,3 +520,12 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Verification:** `npm test` exited 0; all six Sentinel suites passed; `npx tsc --noEmit` passed; `npm run build` passed with the existing large JavaScript chunk warning; onboarding/native source tests and `git diff --check` passed. Browser automation could not run locally because Selenium/Chrome are not installed. Termux has Java and ADB but no Android SDK; Android compile/instrumentation are pending hosted CI. No physical-device evidence was produced.
 - **Previous CI diagnosis:** For the old commit, Android visual failed because its stale test expected the dashboard without the new mandatory setup. API 34 instrumentation passed 9 tests then the runner process crashed during the task-notification bridge test after an emulator graphics-context error; the harness correctly reported 9/19 instead of accepting partial execution. This second failure remains unresolved pending the exact-new-commit run.
 - **Next:** Review and publish the focused PR #36 changes, then inspect the exact-head browser and Android CI reports/artifacts. Keep device authentication, recovery, and existing-user upgrade acceptance explicitly pending until exercised on Android.
+
+
+## PR #36 browser acceptance correction — 2026-11-09
+
+- **Exact-head evidence:** Browser workflow `42638696009` failed after name persistence and cancelled-auth tests passed. The saved failure screenshot showed App Protection still displayed with `StorageService.settings.delete is not a function` after secure setup; no recovery code was visible.
+- **Root cause:** The app contract and raw Dexie service provided settings deletion, but the encrypted storage facade did not implement it. After provisioning, onboarding could not delete the temporary bootstrap name draft, so the flow stayed at App Protection.
+- **Correction:** Added authenticated, transactional settings deletion to the encrypted facade and a production-facade regression assertion. This preserves ciphertext/session boundaries and retires the temporary name draft only once encrypted storage is active.
+- **Validation:** The focused encrypted facade suite passed 18/18, onboarding journey checks passed, TypeScript passed, and `git diff --check` passed. The full suite/build/Sentinel and exact-head browser/Android workflows are being rerun after this correction.
+- **Next:** Commit this correction, push to the same PR #36 branch, and inspect the next browser and Android artifacts. Physical-device auth/recovery remains unverified.

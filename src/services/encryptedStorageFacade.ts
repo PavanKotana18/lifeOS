@@ -842,6 +842,11 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           ctx.put('settings', { key, value });
         }),
+
+      delete: async (key: string) =>
+        coordinator.run(async ctx => {
+          ctx.delete('settings', key);
+        }),
     },
 
     backup: {

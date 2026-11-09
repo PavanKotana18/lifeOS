@@ -416,6 +416,9 @@ async function rejects(fn, pattern) {
       { enabled: true, count: 3 }
     );
     assert.equal(await storage.settings.get('missingSetting', 'fallback'), 'fallback');
+    await storage.settings.delete('testSetting');
+    assert.equal(await storage.settings.get('testSetting', null), null,
+      'Encrypted profile settings support deletion through an authenticated transaction');
   });
 
   await test('backup import refuses existing data without replaceExisting', async () => {

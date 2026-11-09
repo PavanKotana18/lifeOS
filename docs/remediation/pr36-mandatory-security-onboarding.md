@@ -6,6 +6,8 @@ New installations must finish name, secure device-protected key setup, and real 
 
 Recovery is no longer a label-only choice. The recovery stage calls the existing native `prepareRecovery` / `confirmRecovery` path and opens the protected recovery-kit dialog. It requires the user to confirm the generated code. Cancelling leaves onboarding incomplete and the workspace gated. The optional label is metadata only.
 
+The first hosted browser run exposed a real production gap: the encrypted settings facade had no authenticated `delete` operation, so retiring the bootstrap name draft failed after native setup and blocked progression. The facade now deletes settings through its existing encrypted transaction coordinator; a regression test verifies the operation.
+
 Existing completed installations are not routed back into onboarding. Existing encrypted keys, records, and recovery metadata are not replaced. Plaintext legacy profile names are included in the established authenticated migration, which verifies encrypted copies before retiring source rows.
 
 ## Keystore authentication compatibility
@@ -16,7 +18,7 @@ This policy has native-source regression checks, but actual biometric/device-cre
 
 ## Verification status
 
-- Node regression suite and all six Sentinel suites passed; TypeScript and production build passed. The build retains the existing large-JavaScript-chunk warning.
+- After the facade deletion fix, `npm test` exited 0, all six Sentinel suites passed, TypeScript passed, the encrypted facade and onboarding focused regressions passed, and the production build passed with the existing large-JavaScript-chunk warning.
 - Android native compilation and hosted instrumentation are pending the exact-new-commit CI run. This Termux environment has no Android SDK.
 - Emulator visual coverage is limited to non-secret onboarding screens. The recovery-code dialog is never rendered or captured by the visual test; Activity screenshot protection stays enabled.
 - Physical-device onboarding and existing-user upgrade acceptance remain required. Tests use synthetic data and do not capture recovery codes.
