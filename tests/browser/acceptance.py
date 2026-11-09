@@ -88,7 +88,7 @@ try:
  tab('dashboard'); e=wait('.today-focus h3'); r=e.rect; x=r['x']+r['width']/2; y=r['y']-d.execute_script('return scrollY')+r['height']/2
  for kind,px in [('touchStart',x),('touchMove',x-30),('touchMove',x-65),('touchMove',max(20,x-130))]:
   d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':kind,'touchPoints':[{'x':px,'y':y}]}); time.sleep(.04)
- d.save_screenshot(str(out/'swipe-mid-drag.png')); images.append('swipe-mid-drag.png')
+ d.save_screenshot(str(out/'swipe-mid-drag.png')); images.append('swipe-mid-drag.png'); (out/'gesture-trace.json').write_text(json.dumps(d.execute_script('return window.__lifeosGestureTrace||[]'),indent=2))
  d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]}); w.until(lambda _: wait('[data-tab="finance"]').get_attribute('aria-current')=='page'); capture('swipe-completed'); passed('Native browser touch swipe from ordinary heading')
  click('Open profile and settings'); capture('profile');
  for section in ['Preferences','Notifications','Privacy & security','Data & backup','About LifeOS']:
@@ -104,6 +104,6 @@ try:
  passed('Responsive layouts at compact, tablet and landscape browser window sizes')
  results.append({'journey':'Android keyboard, Back, notification delivery/tap, biometric lock and update install','status':'BLOCKED','reason':'Browser evidence does not validate Android native behavior; hosted Android instrumentation is separate.'})
 except Exception as e:
- results.append({'journey':'Current browser journey','status':'FAIL','error':str(e),'trace':traceback.format_exc(),'visibleControls':[x.text for x in d.find_elements(By.CSS_SELECTOR,'button,summary') if x.is_displayed()]}); d.save_screenshot(str(out/'failure.png')); raise
+ results.append({'journey':'Current browser journey','status':'FAIL','error':str(e),'trace':traceback.format_exc(),'gestureTrace':d.execute_script('return window.__lifeosGestureTrace||[]'),'visibleControls':[x.text for x in d.find_elements(By.CSS_SELECTOR,'button,summary') if x.is_displayed()]}); d.save_screenshot(str(out/'failure.png')); raise
 finally:
  (out/'results.json').write_text(json.dumps({'sourceCommit':os.getenv('GITHUB_SHA'),'environment':'Hosted Chrome actual React app with test-only synthetic native crypto plugin; no Android or physical-device acceptance claimed','results':results,'screenshots':images},indent=2)); d.quit()
