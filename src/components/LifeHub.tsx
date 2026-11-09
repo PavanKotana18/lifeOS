@@ -1,55 +1,70 @@
-import { ArrowRight, Check, Heart, Lightbulb, Target } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, Lightbulb, Plus } from 'lucide-react';
 
+type HabitItem = { id: string; name: string; completedToday: boolean; currentStreak: number };
+type GoalItem = { id: string; title: string; progress: number; current: string; target: string; targetDate: string; completedMilestones: number; milestoneCount: number };
 type Props = {
+  habits: HabitItem[];
+  goals: GoalItem[];
   completedRoutines: number;
   routinesDue: number;
   weeklyCompleted: number;
   weeklyTotal: number;
-  activeGoals: number;
+  onCheckIn: (habit: HabitItem) => void;
+  onCreateHabit: () => void;
+  onCreateGoal: () => void;
   onHabits: () => void;
   onGoals: () => void;
   onInsights: () => void;
 };
 
-export default function LifeHub({ completedRoutines, routinesDue, weeklyCompleted, weeklyTotal, activeGoals, onHabits, onGoals, onInsights }: Props) {
+export default function LifeHub({ habits, goals, completedRoutines, routinesDue, weeklyCompleted, weeklyTotal, onCheckIn, onCreateHabit, onCreateGoal, onHabits, onGoals, onInsights }: Props) {
+  const hasRoutineSummary = routinesDue > 0 || weeklyTotal > 0;
   return <section className="life-hub" aria-labelledby="life-hub-title" data-testid="life-hub">
     <header className="life-hub-heading">
       <p className="type-eyebrow">YOUR LIFE</p>
       <h2 id="life-hub-title" className="type-page-title">Life</h2>
-      <p className="type-body text-secondary">Small routines and meaningful goals, in one calm place.</p>
+      <p className="type-body text-secondary">Habits are things you repeat. Goals are outcomes you build toward.</p>
     </header>
 
-    <section className="life-rhythm" aria-labelledby="life-rhythm-title">
+    {hasRoutineSummary && <section className="life-rhythm" aria-labelledby="life-rhythm-title">
       <div className="life-rhythm-copy">
-        <span className="life-rhythm-icon" aria-hidden="true"><Heart size={19} strokeWidth={1.8} /></span>
-        <div>
-          <h3 id="life-rhythm-title" className="type-section-title">Your rhythm</h3>
-          <p className="type-caption text-secondary">Progress from what you’ve recorded</p>
-        </div>
+        <span className="life-rhythm-icon" aria-hidden="true"><Check size={19} /></span>
+        <div><p className="type-eyebrow">A GENTLE CHECK-IN</p><h3 id="life-rhythm-title" className="type-section-title">Your routine, at a glance</h3></div>
       </div>
-      <div className="life-rhythm-stats">
-        <div><span className="type-caption text-secondary">Today</span><strong className="type-metric">{completedRoutines}<span> / {routinesDue}</span></strong><span className="type-caption text-secondary">routines checked</span></div>
-        {weeklyTotal > 0 && <div><span className="type-caption text-secondary">This week</span><strong className="type-metric">{weeklyCompleted}<span> / {weeklyTotal}</span></strong><span className="type-caption text-secondary">weekly check-ins</span></div>}
-        <div><span className="type-caption text-secondary">In motion</span><strong className="type-metric">{activeGoals}</strong><span className="type-caption text-secondary">active goals</span></div>
+      <dl className="life-rhythm-stats" aria-label="Routine progress">
+        {routinesDue > 0 && <div><dt className="type-caption text-secondary">Today</dt><dd className="text-sm font-semibold tabular-nums">{completedRoutines} of {routinesDue} check-ins</dd></div>}
+        {weeklyTotal > 0 && <div><dt className="type-caption text-secondary">This week</dt><dd className="text-sm font-semibold tabular-nums">{weeklyCompleted} of {weeklyTotal} routines</dd></div>}
+      </dl>
+    </section>}
+
+    <section className="life-routine-section" aria-labelledby="life-routines-title">
+      <div className="life-section-heading">
+        <div><p className="type-eyebrow">DAILY ROUTINES</p><h3 id="life-routines-title" className="type-section-title">Habits</h3><p className="type-caption text-secondary">Small actions you can check in on each day.</p></div>
+        <button type="button" onClick={onCreateHabit} className="life-add-button" aria-label="Add a habit"><Plus size={17} aria-hidden="true" /><span>Add</span></button>
       </div>
+      {habits.length ? <ul className="life-habit-list" aria-label="Your habits">{habits.slice(0, 4).map(habit => <li key={habit.id} className="life-habit-row">
+        <button type="button" onClick={() => onCheckIn(habit)} aria-pressed={habit.completedToday} aria-label={`${habit.completedToday ? 'Mark' : 'Complete'} ${habit.name} ${habit.completedToday ? 'incomplete' : 'for today'}`} className={`life-habit-check${habit.completedToday ? ' is-complete' : ''}`}><Check size={17} aria-hidden="true" /></button>
+        <span className="life-habit-copy"><strong className={habit.completedToday ? 'is-complete' : ''}>{habit.name}</strong><small>{habit.currentStreak ? `${habit.currentStreak} day streak` : 'Start with one check-in'}</small></span>
+      </li>)}</ul> : <div className="life-empty-state"><p>No routines yet.</p><span>Start with one small habit you would like to repeat. Use Add above to create it.</span></div>}
+      <button type="button" onClick={onHabits} className="life-section-more">View all habits <ArrowRight size={15} aria-hidden="true" /></button>
     </section>
 
-    <nav className="life-destination-list" aria-label="Life modules">
-      <button type="button" onClick={onHabits} className="life-destination-row">
-        <span className="life-destination-icon" aria-hidden="true"><Check size={19} /></span>
-        <span className="life-destination-copy"><strong>Habits</strong><span>{routinesDue ? `${completedRoutines} of ${routinesDue} checked today` : 'Your routines and consistency'}</span></span>
-        <ArrowRight size={18} aria-hidden="true" />
-      </button>
-      <button type="button" onClick={onGoals} className="life-destination-row">
-        <span className="life-destination-icon" aria-hidden="true"><Target size={19} /></span>
-        <span className="life-destination-copy"><strong>Goals</strong><span>{activeGoals ? `${activeGoals} active ${activeGoals === 1 ? 'goal' : 'goals'}` : 'Milestones and personal progress'}</span></span>
-        <ArrowRight size={18} aria-hidden="true" />
-      </button>
-      <button type="button" onClick={onInsights} className="life-destination-row">
-        <span className="life-destination-icon" aria-hidden="true"><Lightbulb size={19} /></span>
-        <span className="life-destination-copy"><strong>Insights</strong><span>Patterns from your saved records</span></span>
-        <ArrowRight size={18} aria-hidden="true" />
-      </button>
-    </nav>
+    <section className="life-goal-section" aria-labelledby="life-goals-title">
+      <div className="life-section-heading">
+        <div><p className="type-eyebrow">LONGER-TERM OUTCOMES</p><h3 id="life-goals-title" className="type-section-title">Goals</h3><p className="type-caption text-secondary">A result you want to reach, one step at a time.</p></div>
+        <button type="button" onClick={onCreateGoal} className="life-add-button" aria-label="Add a goal"><Plus size={17} aria-hidden="true" /><span>Add</span></button>
+      </div>
+      {goals.length ? <ul className="life-goal-list" aria-label="Goals in progress">{goals.slice(0, 3).map(goal => <li key={goal.id}>
+        <button type="button" onClick={onGoals} className="life-goal-card">
+          <span className="life-goal-heading"><strong>{goal.title}</strong><span>{goal.progress}%</span></span>
+          <span className="life-goal-track" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={goal.progress}><span style={{ width: `${goal.progress}%` }} /></span>
+          <span className="life-goal-meta"><span>{goal.current} of {goal.target}</span><span>{goal.milestoneCount ? `${goal.completedMilestones} of ${goal.milestoneCount} milestones` : 'No milestones yet'}</span></span>
+          <span className="life-goal-date">Target · {goal.targetDate}</span>
+        </button>
+      </li>)}</ul> : <div className="life-empty-state"><p>No goals yet.</p><span>Add a longer-term outcome whenever you’re ready.</span></div>}
+      <button type="button" onClick={onGoals} className="life-section-more">All goals and milestones <ArrowRight size={15} aria-hidden="true" /></button>
+    </section>
+
+    <button type="button" onClick={onInsights} className="life-insights-link"><Lightbulb size={17} aria-hidden="true" /><span><strong>Life insights</strong><small>Patterns from the records you’ve saved</small></span><ChevronRight size={17} aria-hidden="true" /></button>
   </section>;
 }

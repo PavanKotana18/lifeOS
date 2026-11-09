@@ -27,8 +27,8 @@ async function test(name, run) {
     assert.equal(await f.StorageService.settings.get('theme','system'),'light');
     await f.StorageService.settings.set('visualTheme','soft-ivory-sage');
     assert.equal(await f.StorageService.settings.get('visualTheme',''),'soft-ivory-sage');
-    await f.StorageService.settings.set('displayName','Synthetic profile');
-    assert.equal(await f.StorageService.settings.get('displayName',''),'Synthetic profile');
+    await f.StorageService.settings.set('onboardingNameDraft','Synthetic profile');
+    assert.equal(await f.StorageService.settings.get('onboardingNameDraft',''),'Synthetic profile');
   });
   await test('Actual startup activates encrypted storage before private hydration',async f=>{
     const init=h.appFunction('initApp');
@@ -37,7 +37,7 @@ async function test(name, run) {
     assert.equal(f.sessionManager.isUnlocked(),true);
     await f.StorageService.settings.set('displayName','synthetic');
     const row=await f.lifeOSDatabase.settings.get('displayName');
-    assert.equal(row.__lifeosEncrypted,undefined);assert.equal(row.value,'synthetic');
+    assert.equal(row.__lifeosEncrypted,1);assert.equal(row.value,undefined);
   });
   await test('Missing recovery protection blocks migration without changing legacy records',async f=>{
     const row={id:'synthetic-category',name:'Synthetic',type:'expense'};

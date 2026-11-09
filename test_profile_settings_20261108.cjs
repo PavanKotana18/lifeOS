@@ -23,7 +23,7 @@ for (const section of ['appearance', 'preferences', 'notifications', 'privacy', 
 }
 assert.match(profile, /Your information stays on this device/);
 assert.match(profile, /aria-label="Profile settings"/);
-assert.match(settings, /onBack=\{\(\) => setProfileSection\('home'\)\}/);
+assert.match(settings, /onBack=\{\(\) => navigateProfileSection\('home'\)\}/);
 assert.match(preferences, /onClick=\{\(\) => onChange\('swipeNavigationEnabled', !preferences\.swipeNavigationEnabled\)\}/);
 assert.match(settings, /Export encrypted backup/);
 assert.match(preferences, /Currency for financial records/);

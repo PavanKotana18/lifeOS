@@ -1,9 +1,11 @@
 package com.lifeos.personal;
 
 import android.os.Build;
+import android.os.SystemClock;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.biometric.BiometricManager;
@@ -39,6 +41,8 @@ import javax.crypto.spec.SecretKeySpec;
 @CapacitorPlugin(name = "LifeOSCrypto")
 public class LifeOSCryptoPlugin extends Plugin {
 
+    private interface CipherFactory { Cipher create() throws Exception; }
+
     private static final String KEY_ALIAS = "lifeos_database_master_v1";
     private static final String PREFS = "lifeos_crypto_v1";
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
@@ -49,6 +53,12 @@ public class LifeOSCryptoPlugin extends Plugin {
     private static final int MAX_PLAINTEXT_BYTES = 1024 * 1024;
     private static final int MAX_AAD_BYTES = 4096;
     private static final int MAX_CIPHERTEXT_BYTES = MAX_PLAINTEXT_BYTES + TAG_BYTES;
+    private static final String KEY_AUTH_POLICY = "key_auth_policy_version";
+    // Android 11+ supports device credentials for time-based Keystore auth,
+    // while CryptoObject remains biometric-only. Minimize that auth window.
+    private static final int AUTH_POLICY_BIOMETRIC_PER_USE = 1;
+    private static final int AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW = 2;
+    private static final int CREDENTIAL_AUTH_WINDOW_SECONDS = 1;
 
     private final Object keyLock = new Object();
     private final AtomicBoolean authenticationInProgress = new AtomicBoolean(false);
@@ -64,6 +74,20 @@ public class LifeOSCryptoPlugin extends Plugin {
     private String pendingRecoveryIv;
     private String pendingRecoveryWrapped;
     private long lockGeneration;
+    private long recoveryPickerPreserveUntil;
+
+    /** Logs only the operation, exception class, and stack frames; never exception messages or payloads. */
+    private void logKeystoreFailure(String operation, Throwable error) {
+        Throwable current = error;
+        int causes = 0;
+        while (current != null && causes++ < 4) {
+            Log.e("LifeOSCrypto", "Secure setup operation=" + operation + " exception=" + current.getClass().getName());
+            for (StackTraceElement frame : current.getStackTrace()) {
+                Log.e("LifeOSCrypto", "  at " + frame.toString());
+            }
+            current = current.getCause();
+        }
+    }
 
     private KeyStore keyStore() throws Exception {
         KeyStore store = KeyStore.getInstance("AndroidKeyStore");
@@ -93,17 +117,32 @@ public class LifeOSCryptoPlugin extends Plugin {
             .setUserAuthenticationRequired(true)
             .setInvalidatedByBiometricEnrollment(true);
 
+        int authPolicy = getContext().getSharedPreferences(PREFS, 0)
+            .getInt(KEY_AUTH_POLICY, AUTH_POLICY_BIOMETRIC_PER_USE);
         if (Build.VERSION.SDK_INT >= 30) {
-            builder.setUserAuthenticationParameters(
-                0,
-                KeyProperties.AUTH_BIOMETRIC_STRONG
-            );
+            if (authPolicy == AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW) {
+                builder.setUserAuthenticationParameters(
+                    CREDENTIAL_AUTH_WINDOW_SECONDS,
+                    KeyProperties.AUTH_BIOMETRIC_STRONG | KeyProperties.AUTH_DEVICE_CREDENTIAL
+                );
+                // A secure device credential remains available if biometrics
+                // are enrolled or changed after provisioning.
+                builder.setInvalidatedByBiometricEnrollment(false);
+            } else {
+                builder.setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG);
+            }
         } else {
             builder.setUserAuthenticationValidityDurationSeconds(-1);
         }
 
         generator.init(builder.build());
         return generator.generateKey();
+    }
+
+    private boolean usesCredentialWindowPolicy() {
+        return Build.VERSION.SDK_INT >= 30 && getContext()
+            .getSharedPreferences(PREFS, 0)
+            .getInt(KEY_AUTH_POLICY, AUTH_POLICY_BIOMETRIC_PER_USE) == AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW;
     }
 
 
@@ -217,7 +256,8 @@ public class LifeOSCryptoPlugin extends Plugin {
     }
 
     private void authenticate(
-        PluginCall call, Cipher cipher, Consumer<Cipher> onSuccess, Runnable onFailure
+        PluginCall call, Cipher cipher, CipherFactory credentialCipherFactory,
+        Consumer<Cipher> onSuccess, Runnable onFailure
     ) {
         if (!authenticationInProgress.compareAndSet(false, true)) {
             runFailure(onFailure);
@@ -248,10 +288,18 @@ public class LifeOSCryptoPlugin extends Plugin {
                     call.reject("Biometric cryptographic authentication was cancelled or unavailable");
                 });
                 try {
+                    android.content.SharedPreferences prefs = activity.getSharedPreferences(PREFS, 0);
+                    int authPolicy = prefs.getInt(KEY_AUTH_POLICY, AUTH_POLICY_BIOMETRIC_PER_USE);
+                    boolean credentialPolicy = authPolicy == AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW && Build.VERSION.SDK_INT >= 30;
+                    if (authPolicy != AUTH_POLICY_BIOMETRIC_PER_USE && !credentialPolicy) {
+                        reject.run();
+                        return;
+                    }
+                    int allowedAuthenticators = credentialPolicy
+                        ? BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL
+                        : BiometricManager.Authenticators.BIOMETRIC_STRONG;
                     if (activity.getLifecycle().getCurrentState() == Lifecycle.State.DESTROYED ||
-                        BiometricManager.from(activity).canAuthenticate(
-                            BiometricManager.Authenticators.BIOMETRIC_STRONG
-                        ) != BiometricManager.BIOMETRIC_SUCCESS) {
+                        BiometricManager.from(activity).canAuthenticate(allowedAuthenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
                         reject.run();
                         return;
                     }
@@ -261,14 +309,23 @@ public class LifeOSCryptoPlugin extends Plugin {
                             public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
                                 finish.accept(() -> {
                                     try {
-                                        BiometricPrompt.CryptoObject object = result.getCryptoObject();
-                                        if (object == null || object.getCipher() == null) {
-                                            throw new IllegalStateException("Missing authenticated cipher");
+                                        if (credentialPolicy) {
+                                            // DEVICE_CREDENTIAL cannot authorize a CryptoObject.
+                                            // Initialize a fresh operation only after authentication;
+                                            // before the prompt a time-bound key throws UserNotAuthenticatedException.
+                                            if (credentialCipherFactory == null) throw new IllegalStateException("Missing post-authentication cipher factory");
+                                            onSuccess.accept(credentialCipherFactory.create());
+                                        } else {
+                                            BiometricPrompt.CryptoObject object = result.getCryptoObject();
+                                            if (object == null || object.getCipher() == null) {
+                                                throw new IllegalStateException("Missing authenticated cipher");
+                                            }
+                                            onSuccess.accept(object.getCipher());
                                         }
-                                        onSuccess.accept(object.getCipher());
                                     } catch (Exception error) {
+                                        logKeystoreFailure("post-authentication-cryptographic-operation", error);
                                         runFailure(onFailure);
-                                        call.reject("Cryptographic authentication failed");
+                                        call.reject("The protected cryptographic operation could not finish after authentication (" + error.getClass().getSimpleName() + "). Your data remains protected; retry.");
                                     }
                                 });
                             }
@@ -284,15 +341,19 @@ public class LifeOSCryptoPlugin extends Plugin {
                                 });
                             }
                         });
-                    BiometricPrompt.PromptInfo info = new BiometricPrompt.PromptInfo.Builder()
+                    BiometricPrompt.PromptInfo.Builder promptBuilder = new BiometricPrompt.PromptInfo.Builder()
                         .setTitle("Unlock LifeOS")
                         .setSubtitle("Authenticate to protect your personal data")
-                        .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                        .setNegativeButtonText("Cancel").build();
+                        .setAllowedAuthenticators(allowedAuthenticators);
+                    if (!credentialPolicy) promptBuilder.setNegativeButtonText("Cancel");
+                    BiometricPrompt.PromptInfo info = promptBuilder.build();
                     AtomicBoolean launched = new AtomicBoolean(false);
                     Runnable launch = () -> {
                         if (terminal.get() || !launched.compareAndSet(false, true)) return;
-                        try { prompt[0].authenticate(info, new BiometricPrompt.CryptoObject(cipher)); }
+                        try {
+                            if (credentialPolicy) prompt[0].authenticate(info);
+                            else prompt[0].authenticate(info, new BiometricPrompt.CryptoObject(cipher));
+                        }
                         catch (Exception error) { reject.run(); }
                     };
                     observer[0] = (owner, event) -> {
@@ -727,12 +788,17 @@ public class LifeOSCryptoPlugin extends Plugin {
 
         try {
             SecretKey masterKey = getOrCreateMasterKeyForRecovery();
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, masterKey);
+            CipherFactory cipherFactory = () -> {
+                Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+                cipher.init(Cipher.ENCRYPT_MODE, masterKey);
+                return cipher;
+            };
+            boolean credentialPolicy = usesCredentialWindowPolicy();
+            Cipher cipher = credentialPolicy ? null : cipherFactory.create();
 
             final byte[] keyCopy = key.clone();
 
-            authenticate(call, cipher, authorizedCipher -> {
+            authenticate(call, cipher, cipherFactory, authorizedCipher -> {
                 byte[] wrapped = null;
                 byte[] iv = null;
 
@@ -810,6 +876,7 @@ public class LifeOSCryptoPlugin extends Plugin {
             setupInProgress = true;
         }
 
+        String setupOperation = "reading-setup-state";
         try {
             android.content.SharedPreferences existingPrefs =
                 getContext().getSharedPreferences(PREFS, 0);
@@ -817,10 +884,14 @@ public class LifeOSCryptoPlugin extends Plugin {
             String existingWrapped = existingPrefs.getString("wrapped_key", null);
             String existingIv = existingPrefs.getString("wrapped_iv", null);
             boolean setupPending = existingPrefs.getBoolean("initial_setup_pending", false);
+            int authPolicy = existingPrefs.getInt(KEY_AUTH_POLICY,
+                setupPending ? AUTH_POLICY_BIOMETRIC_PER_USE :
+                    (Build.VERSION.SDK_INT >= 30 ? AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW : AUTH_POLICY_BIOMETRIC_PER_USE));
             boolean recoveryMetadataPresent = existingPrefs.contains("recovery_wrapped") ||
                 existingPrefs.contains("recovery_salt") || existingPrefs.contains("recovery_iv") ||
                 existingPrefs.contains("recovery_version") || existingPrefs.contains("recovery_kdf_iterations") ||
                 existingPrefs.getBoolean("recovery_deferred", false);
+            setupOperation = "checking-keystore-alias";
             boolean aliasPresent = keyStore().containsAlias(KEY_ALIAS);
 
             if (existingWrapped != null || existingIv != null || existingPrefs.contains("key_version") ||
@@ -835,21 +906,40 @@ public class LifeOSCryptoPlugin extends Plugin {
             // Persist intent before creating/using a Keystore alias. If Android
             // cancels authentication or the Activity dies, only this explicitly
             // interrupted first-time setup may safely reuse the alias on retry.
-            if (!setupPending && !existingPrefs.edit().putBoolean("initial_setup_pending", true).commit()) {
+            if (!setupPending && !existingPrefs.edit()
+                    .putBoolean("initial_setup_pending", true)
+                    .putInt(KEY_AUTH_POLICY, authPolicy)
+                    .commit()) {
                 releaseSetupGuard();
                 call.reject("Unable to persist secure setup state");
                 return;
             }
 
-            SecretKey masterKey = getOrCreateMasterKey();
+            // Do not infer a new policy for an alias left by an older build.
+            // A resumable alias without this durable policy marker remains
+            // on its original strong-biometric per-use path.
+            if (setupPending && !existingPrefs.contains(KEY_AUTH_POLICY)) {
+                authPolicy = AUTH_POLICY_BIOMETRIC_PER_USE;
+            }
 
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(Cipher.ENCRYPT_MODE, masterKey);
+            setupOperation = "creating-or-reusing-keystore-key";
+            SecretKey masterKey = getOrCreateMasterKey();
+            CipherFactory cipherFactory = () -> {
+                Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+                cipher.init(Cipher.ENCRYPT_MODE, masterKey);
+                return cipher;
+            };
+            boolean credentialPolicy = usesCredentialWindowPolicy();
+            setupOperation = credentialPolicy ? "awaiting-secure-device-authentication" : "initializing-biometric-cipher";
+            // Time-bound biometric/device-credential keys cannot initialize a
+            // Cipher before authentication. Per-use biometric keys must be
+            // initialized first and passed as a CryptoObject.
+            Cipher cipher = credentialPolicy ? null : cipherFactory.create();
 
             byte[] generatedKey = new byte[32];
             new SecureRandom().nextBytes(generatedKey);
 
-            authenticate(call, cipher, authorizedCipher -> {
+            authenticate(call, cipher, cipherFactory, authorizedCipher -> {
                 byte[] wrapped = null;
                 byte[] iv = null;
                 cryptoLock.writeLock().lock();
@@ -905,7 +995,8 @@ public class LifeOSCryptoPlugin extends Plugin {
 
         } catch (Exception e) {
             releaseSetupGuard();
-            call.reject("Unable to initialize Android Keystore");
+            logKeystoreFailure(setupOperation, e);
+            call.reject("Secure setup failed during " + setupOperation + " (" + e.getClass().getSimpleName() + "). Existing data was not changed; you can retry.");
         }
     }
 
@@ -950,14 +1041,15 @@ public class LifeOSCryptoPlugin extends Plugin {
                 throw new IllegalStateException("Database master key is unavailable");
             }
 
-            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                masterKey,
-                new GCMParameterSpec(TAG_SIZE, iv)
-            );
+            CipherFactory cipherFactory = () -> {
+                Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+                cipher.init(Cipher.DECRYPT_MODE, masterKey, new GCMParameterSpec(TAG_SIZE, iv));
+                return cipher;
+            };
+            boolean credentialPolicy = usesCredentialWindowPolicy();
+            Cipher cipher = credentialPolicy ? null : cipherFactory.create();
 
-            authenticate(call, cipher, authorizedCipher -> {
+            authenticate(call, cipher, cipherFactory, authorizedCipher -> {
                 byte[] recovered = null;
                 cryptoLock.writeLock().lock();
 
@@ -976,6 +1068,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                     dataKey = recovered.clone();
                     recoveryNeedsRebind = false;
                     recoveryKeyVerified = false;
+                    recoveryPickerPreserveUntil = 0L;
 
                     JSObject response = new JSObject();
                     response.put("success", true);
@@ -1143,7 +1236,7 @@ public class LifeOSCryptoPlugin extends Plugin {
             lockGeneration++;
             clearDataKey();
             recoveryDeferralAllowed = false;
-            clearPendingRecovery();
+            if (!isRecoveryExportRetentionActive()) clearPendingRecovery();
         } finally {
             cryptoLock.writeLock().unlock();
         }
@@ -1212,12 +1305,18 @@ public class LifeOSCryptoPlugin extends Plugin {
 
             boolean recoveryDeferred = prefs.getBoolean("recovery_deferred", false);
             boolean initialSetupPending = prefs.getBoolean("initial_setup_pending", false);
+            boolean hasAuthPolicy = prefs.contains(KEY_AUTH_POLICY);
+            int authPolicy = prefs.getInt(KEY_AUTH_POLICY, AUTH_POLICY_BIOMETRIC_PER_USE);
+            boolean authPolicyValid = authPolicy == AUTH_POLICY_BIOMETRIC_PER_USE ||
+                (authPolicy == AUTH_POLICY_DEVICE_CREDENTIAL_WINDOW && Build.VERSION.SDK_INT >= 30);
+            boolean authPolicyHasKeyContext = !hasAuthPolicy || localComplete || recoveryComplete || initialSetupPending;
 
             boolean aliasPresent = keyStore().containsAlias(KEY_ALIAS);
 
             boolean metadataConsistent =
                 (localAbsent || localComplete) &&
                 (recoveryAbsent || recoveryComplete) &&
+                authPolicyValid && authPolicyHasKeyContext &&
                 (!recoveryDeferred || (localComplete && recoveryAbsent)) &&
                 (!initialSetupPending || (localAbsent && recoveryAbsent && !recoveryDeferred));
 
@@ -1294,10 +1393,48 @@ public class LifeOSCryptoPlugin extends Plugin {
         try {
             lockGeneration++;
             clearDataKey();
-            clearPendingRecovery();
+            // The Storage Access Framework briefly stops this Activity while a
+            // complete recovery kit is being saved. Keep only its encrypted,
+            // volatile envelope for that bounded picker round trip; never keep
+            // the unlocked data key or persist the recovery secret.
+            if (RecoveryExportActivityGuard.isActive()) {
+                recoveryPickerPreserveUntil = SystemClock.elapsedRealtime() + 5 * 60 * 1000L;
+            }
+            if (!isRecoveryExportRetentionActive()) clearPendingRecovery();
         } finally {
             cryptoLock.writeLock().unlock();
         }
         super.handleOnStop();
+    }
+
+    private boolean isRecoveryExportRetentionActive() {
+        if (RecoveryExportActivityGuard.isActive()) return true;
+        if (recoveryPickerPreserveUntil == 0L) return false;
+        if (SystemClock.elapsedRealtime() >= recoveryPickerPreserveUntil) {
+            recoveryPickerPreserveUntil = 0L;
+            return false;
+        }
+        return true;
+    }
+
+    @PluginMethod
+    public void cancelPendingRecovery(PluginCall call) {
+        cryptoLock.writeLock().lock();
+        try {
+            android.content.SharedPreferences prefs = getContext().getSharedPreferences(PREFS, 0);
+            if (prefs.contains("recovery_wrapped") || prefs.contains("recovery_salt") || prefs.contains("recovery_iv")) {
+                call.reject("A confirmed recovery kit cannot be discarded.");
+                return;
+            }
+            clearPendingRecovery();
+            recoveryPickerPreserveUntil = 0L;
+            JSObject response = new JSObject();
+            response.put("success", true);
+            call.resolve(response);
+        } catch (Exception error) {
+            call.reject("Pending recovery setup could not be cleared.");
+        } finally {
+            cryptoLock.writeLock().unlock();
+        }
     }
 }

@@ -7,7 +7,8 @@ const config: CapacitorConfig = {
   loggingBehavior: 'none',
   android: {
     allowMixedContent: false,
-    captureInput: true,
+    // Keep WebView's field-aware IME connection (numeric, password and composition).
+    captureInput: false,
     webContentsDebuggingEnabled: false
   },
   server: {

@@ -10,3 +10,11 @@ declare const __LIFEOS_BUILD_INFO__: {
     app: string;
   };
 };
+
+interface ImportMetaEnv {
+  readonly DEV: boolean;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}

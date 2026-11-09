@@ -1,11 +1,13 @@
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { CalendarDays, ChevronLeft, ChevronRight, Home, Leaf, Moon, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
 import { CryptoService, type PreparedRecovery } from './services/cryptoService.ts';
-import { createProtectedSessionController, type NewUserRecoveryChoice } from './services/cryptoSessionCoordinator';
+import { createProtectedSessionController, unlockEncryptedSession, type NewUserRecoveryChoice } from './services/cryptoSessionCoordinator';
+import { RecoveryExportLifecycle } from './services/recoveryExportLifecycle';
 import { encryptBackup, MAX_BACKUP_FILE_BYTES } from './services/backupCryptoService';
 import { decodeBackupForRestore } from './services/backupImportService';
 import BackupPassphraseDialog from './components/BackupPassphraseDialog';
@@ -28,18 +30,25 @@ import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodayS
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
-import MoneyAccounts from './components/MoneyAccounts';
-import MoneyPlanning from './components/MoneyPlanning';
+import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
+import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
+import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
 import { ProfileHome, ProfileSubpage, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences from './components/ProfilePreferences';
+import RetainedScreen from './components/RetainedScreen';
+import ReminderStatusSummary from './components/ReminderStatusSummary';
+import { useRecordDialog } from './hooks/useRecordDialog';
+import { useBottomNavigationInset } from './hooks/useBottomNavigationInset';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
-import { resolvePrimarySwipe } from './services/navigationGestures';
+import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
+import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
 import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
+import { INITIAL_ONBOARDING_JOURNEY, normalizeOnboardingJourney, type OnboardingJourney } from './services/onboardingJourney';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
@@ -48,11 +57,12 @@ const LifeHub = React.lazy(() => import('./components/LifeHub'));
 const PlanHub = React.lazy(() => import('./components/PlanHub'));
 const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
 
+const RuntimeInfo = registerPlugin<{ getSystemGestureInsets: () => Promise<{ left: number; right: number }> }>('LifeOSRuntimeInfo');
+
 function ScreenLoading({ label }: { label: string }) {
-  return <div className="lifeos-panel rounded-2xl border p-6 text-center text-sm text-secondary" role="status" aria-live="polite">{label}</div>;
+  return <div className="ui-loading-state p-6 text-center text-sm" role="status" aria-live="polite">{label}</div>;
 }
 
-const tabSubtitle: Record<MainTab, string> = { dashboard: "Here's your day at a glance.", finance: 'Your recorded cash flow and recent activity.', life: 'Routines, goals and personal progress.', plan: 'Tasks, schedules and what comes next.', insights: 'Progress from the records you have saved.', habits: 'Your habits, thoughtfully organized.', goals: 'Your goals, thoughtfully organized.', planner: 'Your planner, thoughtfully organized.', settings: 'Your profile and preferences.' };
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
 const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -86,6 +96,32 @@ export default function App() {
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const activeTabRef = useRef<MainTab>('dashboard');
+  const [tabTransition, setTabTransition] = useState<{ id: number; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right' } | null>(null);
+  const tabTransitionSequence = useRef(0);
+  const activeTransitionId = useRef<number | null>(null);
+  const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
+    const previous = activeTabRef.current;
+    const outgoing = document.getElementById(`screen-${previous}`);
+    outgoing?.removeAttribute('data-gesture-dragging');
+    outgoing?.style.removeProperty('--gesture-x');
+    swipeSettleAnimation.current?.cancel();
+    swipeSettleAnimation.current = null;
+    swipePointer.current = null;
+    swipeOriginAction.current = null;
+    activeTabRef.current = tab;
+    if (previous === tab) { setActiveTab(tab); return; }
+    const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      activeTransitionId.current = null;
+      setTabTransition(null);
+      setActiveTab(tab);
+      return;
+    }
+    const id = ++tabTransitionSequence.current;
+    activeTransitionId.current = id;
+    setTabTransition({ id, to: tab, phase: 'prepare', direction });
+    setActiveTab(tab);
+  };
   const navigationHistory = useRef<MainTab[]>([]);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [todayLayout, setTodayLayout] = useState<TodayLayout>(DEFAULT_TODAY_LAYOUT);
@@ -99,7 +135,21 @@ export default function App() {
   const pendingNotificationActionId = useRef<number | null>(null);
   const handledNotificationIds = useRef(new Set<number>());
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
-  const swipePointer = useRef<{ id: number; x: number; y: number; startedAt: number; interactive: boolean; systemEdge: boolean; horizontalControl: boolean } | null>(null);
+  const swipePointer = useRef<PrimaryGestureSession | null>(null);
+  const activeTouchPointers = useRef(new Set<number>());
+  const swipeSuppressed = useRef(false);
+  const swipeOriginAction = useRef<HTMLElement | null>(null);
+  const swipeClickSuppression = useRef<{ pointerId: number; target: HTMLElement; expiresAt: number } | null>(null);
+  const gestureSurfaceElement = useRef<HTMLDivElement | null>(null);
+  const gestureEventHandlers = useRef({
+    move: (_event: PointerEvent) => {},
+    up: (_event: PointerEvent) => {},
+    cancel: (_event: PointerEvent) => {},
+    lost: (_event: PointerEvent) => {},
+  });
+  const nativeGestureInsets = useRef<{ left: number; right: number } | null>(null);
+  const swipeMoveFrame = useRef<number | null>(null);
+  const swipeSettleAnimation = useRef<Animation | null>(null);
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
@@ -129,6 +179,7 @@ export default function App() {
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
+  const [onboardingJourney, setOnboardingJourney] = useState<OnboardingJourney>(INITIAL_ONBOARDING_JOURNEY);
   const [startupError, setStartupError] = useState('');
   const [appReady, setAppReady] = useState(false);
   const [firstRecordSecurityOpen, setFirstRecordSecurityOpen] = useState(false);
@@ -136,6 +187,7 @@ export default function App() {
   const [recoveryDeferred, setRecoveryDeferred] = useState(false);
   const safeFirstRunBrowse = useRef(false);
   const firstRecordSetupAuthorized = useRef(false);
+  const onboardingSetupAuthorized = useRef(false);
   const firstRecordSecurityResolver = useRef<((choice: NewUserRecoveryChoice | null) => void) | null>(null);
   const requestFirstRecordSecurity = async (): Promise<NewUserRecoveryChoice | null> => {
     await setSensitiveScreenshotState(true);
@@ -160,6 +212,20 @@ export default function App() {
   const recoveryController = useRef(createRecoveryController(CryptoService, sessionManager, getRecoveryChallenge)).current;
   const [secureSetup, setSecureSetup] = useState<{ prepared?: PreparedRecovery } | null>(null);
   const secureSetupResolver = useRef<((accepted: boolean) => void) | null>(null);
+  const recoveryExportLifecycle = useRef(new RecoveryExportLifecycle()).current;
+  const recoveryExportResumeInFlight = useRef(false);
+  const recoveryExportLockDrain = useRef<Promise<void> | null>(null);
+  const recoveryExportReturnPending = useRef(false);
+  const [recoveryExportResumeReady, setRecoveryExportResumeReady] = useState(true);
+  const beginRecoveryExportActivity = () => {
+    recoveryExportReturnPending.current = false;
+    setRecoveryExportResumeReady(false);
+    const lease = recoveryExportLifecycle.begin();
+    return () => {
+      lease.release();
+      if (!recoveryExportReturnPending.current) setRecoveryExportResumeReady(true);
+    };
+  };
   const requestSecureSetup = async (prepared?: PreparedRecovery): Promise<boolean> => {
     await setSensitiveScreenshotState(true);
     if (secureSetupResolver.current) return Promise.reject(new Error('Secure setup is already open.'));
@@ -203,6 +269,10 @@ export default function App() {
   const encryptedSession = useRef(createProtectedSessionController(CryptoService, sessionManager, {
     hasEncryptedRecords,
     requestInitialSetup: () => {
+      if (onboardingSetupAuthorized.current) {
+        onboardingSetupAuthorized.current = false;
+        return Promise.resolve(true);
+      }
       if (firstRecordSetupAuthorized.current) {
         firstRecordSetupAuthorized.current = false;
         return Promise.resolve(true);
@@ -213,6 +283,67 @@ export default function App() {
     activateStorage: activateEncryptedStorage,
     isStorageActive: isEncryptedStorageActivated,
   })).current;
+
+  const resumeRecoveryAfterPicker = async (): Promise<boolean> => {
+    const leaseId = recoveryExportLifecycle.pendingResume();
+    if (leaseId === null) {
+      if (recoveryExportReturnPending.current && secureSetupResolver.current) {
+        // The bounded picker window expired. Safely return to the recovery step
+        // so the user can authenticate and prepare a fresh kit.
+        recoveryExportReturnPending.current = false;
+        secureSetupResolver.current(false);
+        sessionManager.lock();
+        await CryptoService.lock().catch(() => undefined);
+        setBiometricVerified(false);
+        biometricAuthenticated.current = false;
+        await confirmScreenshotResume().catch(() => undefined);
+        setActivityResumeGuard(false);
+        setRecoveryExportResumeReady(true);
+      }
+      return false;
+    }
+    if (recoveryExportResumeInFlight.current) return false;
+    recoveryExportResumeInFlight.current = true;
+    setRecoveryExportResumeReady(false);
+    setBiometricAuthActive(true);
+    try {
+      await recoveryExportLockDrain.current?.catch(() => undefined);
+      const before = await CryptoService.getKeyState();
+      if (!before.metadataConsistent || !before.keyProvisioned || !before.keystoreAliasPresent ||
+          before.recoveryNeedsRebind || before.recoveryProvisioned || !before.recoveryDeferred) {
+        throw new Error('Recovery setup state changed while LifeOS was backgrounded. Encrypted data remains protected; restart this step to retry.');
+      }
+      await unlockEncryptedSession(CryptoService, sessionManager);
+      const after = await CryptoService.getKeyState();
+      if (!after.metadataConsistent || !after.keyProvisioned || !after.keystoreAliasPresent ||
+          after.recoveryNeedsRebind || !after.unlocked || !(await CryptoService.isUnlocked()) ||
+          !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
+        throw new Error('LifeOS could not verify secure access after returning from the save picker. Your data remains locked.');
+      }
+      setBiometricMessage('');
+      setBiometricVerified(true);
+      setIsLocked(false);
+      biometricAuthenticated.current = true;
+      await confirmScreenshotResume();
+      recoveryExportLifecycle.completeResume(leaseId);
+      recoveryExportReturnPending.current = false;
+      setActivityResumeGuard(false);
+      setRecoveryExportResumeReady(true);
+      return true;
+    } catch (error) {
+      sessionManager.lock();
+      await CryptoService.lock().catch(() => undefined);
+      setIsLocked(true);
+      setBiometricVerified(false);
+      biometricAuthenticated.current = false;
+      setBiometricMessage(error instanceof Error ? error.message : 'Unlock was not completed. Recovery setup remains safely paused.');
+      setRecoveryExportResumeReady(false);
+      return false;
+    } finally {
+      recoveryExportResumeInFlight.current = false;
+      setBiometricAuthActive(false);
+    }
+  };
 
   const sensitiveScreenshot = activityResumeGuard || isSensitiveScreenshotState({
     appReady,
@@ -249,6 +380,15 @@ export default function App() {
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [savingsContributions, setSavingsContributions] = useState<SavingsContribution[]>([]);
   const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>([]);
+  const bottomNavigationRef = useBottomNavigationInset();
+  const [accountFormDraft, setAccountFormDraft] = useState<AccountDraft | null>(null);
+  const [accountFormDirty, setAccountFormDirty] = useState(false);
+  const [transferFormDraft, setTransferFormDraft] = useState<TransferDraft | null>(null);
+  const [transferFormDirty, setTransferFormDirty] = useState(false);
+  const [planningDrafts, setPlanningDrafts] = useState<MoneyPlanningDraftState>({ commitment: null, rate: null, commitmentDirty: false, rateDirty: false });
+  const [financeWriteBusy, setFinanceWriteBusy] = useState(false);
+  const [projectionExpanded, setProjectionExpanded] = useState(false);
+  const financeWriteOperation = useRef(false);
   const [accountTransfers, setAccountTransfers] = useState<AccountTransfer[]>([]);
   const [manualExchangeRates, setManualExchangeRates] = useState<ManualExchangeRate[]>([]);
   const [plannedCommitments, setPlannedCommitments] = useState<PlannedCommitment[]>([]);
@@ -260,6 +400,7 @@ export default function App() {
 
   // Subtab & Filter States
   const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
+  const [openMoneyTransferOnAccounts, setOpenMoneyTransferOnAccounts] = useState(false);
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
   const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
@@ -284,6 +425,10 @@ export default function App() {
   // UI Toast & Modal State
   const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'danger' } | null>(null);
   const [modalContent, setModalContent] = useState<React.ReactNode | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationOptions | null>(null);
+  const confirmationResolver = useRef<((confirmed: boolean) => void) | null>(null);
+  const [createFormDirty, setCreateFormDirty] = useState(false);
+  const [recordSaving, setRecordSaving] = useState(false);
   const [createKind, setCreateKind] = useState<'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress' | null>(null);
   const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
   const [transactionDetailsOpen, setTransactionDetailsOpen] = useState(false);
@@ -294,26 +439,110 @@ export default function App() {
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
   const [editingSavingsGoalId, setEditingSavingsGoalId] = useState<string | null>(null);
 
-  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation });
-  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation };
+  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts });
+  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts };
 
-  const navigateTo = (tab: MainTab) => {
+  const navigateTo = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
     if (previous === tab) return;
-    if (tab === 'settings') setProfileSection('home');
+    scrollPositions.current[activeScreenKey] = window.scrollY;
+    if (tab === 'settings') navigateProfileSection('home');
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
-    activeTabRef.current = tab;
     setShowExitConfirmation(false);
-    setActiveTab(tab);
+    transitionToTab(tab, direction);
   };
 
-  const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+  const clearGestureDrag = (animateBack: boolean) => {
+    const screen = document.getElementById(`screen-${activeTabRef.current}`);
+    if (!screen?.hasAttribute('data-gesture-dragging')) return;
+    const transform = getComputedStyle(screen).transform;
+    screen.removeAttribute('data-gesture-dragging');
+    screen.style.removeProperty('--gesture-x');
+    if (!animateBack || !shouldAnimatePrimaryGestureSettlement(window.matchMedia('(prefers-reduced-motion: reduce)').matches) || typeof screen.animate !== 'function') return;
+    const animation = screen.animate([{ transform }, { transform: 'none' }], { duration: 110, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    swipeSettleAnimation.current = animation;
+    void animation.finished.catch(() => undefined).finally(() => {
+      if (swipeSettleAnimation.current === animation) swipeSettleAnimation.current = null;
+    });
+  };
+
+  const cancelPrimaryGesture = (reason: string, pointerId = swipePointer.current?.pointerId ?? -1) => {
+    const session = swipePointer.current;
+    if (session) recordGestureTrace({ event: 'interrupted', pointerId, deltaX: 0, deltaY: 0, state: session.axis, reason }, import.meta.env.DEV);
     swipePointer.current = null;
-    if (!userPrefs.swipeNavigationEnabled || event.pointerType === 'mouse' || activeTab === 'settings' || createKind || modalContent) return;
+    swipeOriginAction.current = null;
+    if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
+    clearGestureDrag(false);
+  };
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let active = true;
+    void RuntimeInfo.getSystemGestureInsets().then(insets => {
+      if (active && Number.isFinite(insets.left) && Number.isFinite(insets.right) && insets.left >= 0 && insets.right >= 0) {
+        nativeGestureInsets.current = { left: insets.left, right: insets.right };
+      }
+    }).catch(() => { /* CSS safe-area values and a conservative fallback remain available. */ });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const cancelForEnvironmentChange = () => {
+      cancelPrimaryGesture('window-resized');
+      activeTouchPointers.current.clear();
+      swipeSuppressed.current = false;
+    };
+    const cancelForBackground = () => {
+      if (document.visibilityState !== 'visible') {
+        cancelPrimaryGesture('document-hidden');
+        activeTouchPointers.current.clear();
+        swipeSuppressed.current = false;
+      }
+    };
+    const cancelForBlur = () => {
+      cancelPrimaryGesture('window-blurred');
+      activeTouchPointers.current.clear();
+      swipeSuppressed.current = false;
+    };
+    const cancelForSelection = () => {
+      if (window.getSelection()?.isCollapsed === false) cancelPrimaryGesture('text-selection');
+    };
+    document.addEventListener('selectionchange', cancelForSelection);
+    const cancelForContextMenu = () => cancelPrimaryGesture('context-menu');
+    window.addEventListener('contextmenu', cancelForContextMenu);
+    window.addEventListener('resize', cancelForEnvironmentChange, { passive: true });
+    window.addEventListener('blur', cancelForBlur);
+    document.addEventListener('visibilitychange', cancelForBackground);
+    return () => {
+      document.removeEventListener('selectionchange', cancelForSelection);
+      window.removeEventListener('contextmenu', cancelForContextMenu);
+      window.removeEventListener('resize', cancelForEnvironmentChange);
+      window.removeEventListener('blur', cancelForBlur);
+      document.removeEventListener('visibilitychange', cancelForBackground);
+    };
+  }, []);
+
+  const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    // A new contact is a new interaction, even if WebView reuses its pointer ID.
+    swipeClickSuppression.current = null;
+    activeTouchPointers.current.add(event.pointerId);
+    if (activeTouchPointers.current.size > 1) {
+      swipeSuppressed.current = true;
+      cancelPrimaryGesture('multiple-pointers', event.pointerId);
+      recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'suppressed', reason: 'multiple-pointers' }, import.meta.env.DEV);
+      return;
+    }
+    if (swipeSuppressed.current) return;
+    swipeSettleAnimation.current?.cancel();
+    swipeSettleAnimation.current = null;
+    swipePointer.current = null;
+
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    const interactive = Boolean(target.closest('button,a,input,textarea,select,[contenteditable="true"],[role="button"],[role="switch"],[role="dialog"],[data-no-tab-swipe]'));
-    const horizontalControl = Boolean(target.closest('[data-horizontal-scroll],.recharts-wrapper,svg,canvas,[role="slider"]'));
+    const hardExcluded = target.closest('[data-no-tab-swipe],[data-swipe-exclude],[data-gesture-owner="native"],[role="dialog"],[aria-modal="true"],.ui-bottom-sheet,[data-horizontal-scroll],.recharts-wrapper,[data-chart],canvas,[role="slider"],input[type="range"]');
+    const textEntry = target.closest('textarea,select,[contenteditable="true"],[role="textbox"],input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"])');
+    const nativePicker = target.closest('[data-native-picker],input[type="date"],input[type="time"],input[type="month"],input[type="file"],input[type="color"]');
+    const interactive = target.closest('button,a,label,summary,input[type="button"],input[type="submit"],input[type="reset"],input[type="checkbox"],input[type="radio"],[role="button"],[role="switch"],[role="checkbox"],[role="tab"]');
     let ancestor: HTMLElement | null = target as HTMLElement;
     let horizontallyScrollable = false;
     while (ancestor && ancestor !== event.currentTarget) {
@@ -324,28 +553,176 @@ export default function App() {
       }
       ancestor = ancestor.parentElement;
     }
-    swipePointer.current = {
-      id: event.pointerId, x: event.clientX, y: event.clientY, startedAt: Date.now(),
-      interactive, systemEdge: event.clientX <= 24 || event.clientX >= window.innerWidth - 24,
-      horizontalControl: horizontalControl || horizontallyScrollable,
+    const probe = event.currentTarget.ownerDocument.querySelector<HTMLElement>('.lifeos-safe-area-probe');
+    const cssInsets = probe ? getComputedStyle(probe) : null;
+    const leftSafeArea = Number.parseFloat(cssInsets?.paddingLeft || '0') || 0;
+    const rightSafeArea = Number.parseFloat(cssInsets?.paddingRight || '0') || 0;
+    // Android supplies the actual system gesture insets; CSS safe areas cover
+    // browsers that expose them. The small fallback is a shared logical-pixel
+    // minimum, not a device-specific screen coordinate.
+    const leftGutter = Math.max(16, leftSafeArea, nativeGestureInsets.current?.left || 0);
+    const rightGutter = Math.max(16, rightSafeArea, nativeGestureInsets.current?.right || 0);
+    const systemEdge = event.clientX <= leftGutter || event.clientX >= window.innerWidth - rightGutter;
+    const targetKind: PrimaryGestureTargetKind = textEntry || window.getSelection()?.isCollapsed === false ? 'text-entry'
+      : nativePicker ? 'native-picker'
+        : hardExcluded || horizontallyScrollable ? 'horizontal-control'
+          : interactive ? 'ordinary-interactive' : 'content';
+    const context = {
+      enabled: userPrefs.swipeNavigationEnabled,
+      pointerType: event.pointerType,
+      settingsScreen: activeTab === 'settings',
+      modalOpen: Boolean(createKind || modalContent || (activeTab === 'finance' && (financeSubtab === 'accounts' ? (accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && (planningDrafts.commitment || planningDrafts.rate)))),
+      multiplePointers: activeTouchPointers.current.size > 1,
+      systemEdge,
+      targetKind,
     };
+    const blockReason = primaryGestureStartBlockReason(context);
+    if (blockReason) {
+      recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'idle', reason: blockReason }, import.meta.env.DEV);
+      return;
+    }
+    swipeOriginAction.current = interactive instanceof HTMLElement ? interactive : null;
+    swipePointer.current = beginPrimaryGesture({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, at: performance.now(), viewportWidth: window.innerWidth });
+    recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'pending' }, import.meta.env.DEV);
   };
 
-  const handleContentPointerUp = (event: React.PointerEvent<HTMLElement>) => {
+  const handleContentPointerMove = (event: PointerEvent) => {
     const start = swipePointer.current;
-    swipePointer.current = null;
-    if (!start || start.id !== event.pointerId) return;
-    const target = resolvePrimarySwipe(activeTab, {
-      deltaX: event.clientX - start.x, deltaY: event.clientY - start.y,
-      durationMs: Date.now() - start.startedAt, startedOnInteractive: start.interactive,
-      startedAtSystemEdge: start.systemEdge, startedInHorizontalControl: start.horizontalControl,
-      enabled: userPrefs.swipeNavigationEnabled,
+    if (!start || start.pointerId !== event.pointerId) return;
+    if (start.viewportWidth !== window.innerWidth) { cancelPrimaryGesture('viewport-changed', event.pointerId); return; }
+    const update = updatePrimaryGesture(start, event.pointerId, event.clientX, event.clientY);
+    swipePointer.current = update.session;
+    recordGestureTrace({ event: 'pointermove', pointerId: event.pointerId, deltaX: update.deltaX, deltaY: update.deltaY, state: update.session.axis }, import.meta.env.DEV);
+    if (update.session.axis === 'vertical') { clearGestureDrag(false); return; }
+    if (update.session.axis === 'horizontal' && start.axis !== 'horizontal') {
+      // Capture only after horizontal intent is clear. A normal button tap and
+      // browser-owned vertical scroll keep their native pointer/click lifecycle.
+      try { gestureSurfaceElement.current?.setPointerCapture(event.pointerId); } catch { /* Window tracking remains active if capture is unavailable. */ }
+    }
+    if (!update.accepted || swipeMoveFrame.current !== null) return;
+    const screen = document.getElementById(`screen-${activeTabRef.current}`);
+    if (!screen) return;
+    swipeMoveFrame.current = window.requestAnimationFrame(() => {
+      swipeMoveFrame.current = null;
+      if (swipePointer.current?.pointerId !== start.pointerId || swipePointer.current.axis !== 'horizontal') return;
+      screen.setAttribute('data-gesture-dragging', 'true');
+      screen.style.setProperty('--gesture-x', `${swipePointer.current.latestOffsetX}px`);
     });
-    if (target) navigateTo(target);
   };
+
+  const endPointerTracking = (pointerId: number) => {
+    activeTouchPointers.current.delete(pointerId);
+    if (activeTouchPointers.current.size === 0) swipeSuppressed.current = false;
+  };
+
+  const handleContentPointerUp = (event: PointerEvent) => {
+    const start = swipePointer.current;
+    endPointerTracking(event.pointerId);
+    if (swipeSuppressed.current) return;
+    if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
+    if (!start || start.pointerId !== event.pointerId) return;
+    const target = resolvePrimaryGestureEnd(activeTabRef.current, start, event.pointerId, event.clientX, event.clientY, performance.now(), userPrefs.swipeNavigationEnabled);
+    const deltaX = event.clientX - start.startX;
+    const deltaY = event.clientY - start.startY;
+    recordGestureTrace({ event: 'pointerup', pointerId: event.pointerId, deltaX, deltaY, state: start.axis, decision: target || 'settle-back' }, import.meta.env.DEV);
+    swipePointer.current = null;
+    if (target) {
+      const originAction = swipeOriginAction.current;
+      if (shouldSuppressPrimaryGestureClick(start) && originAction) {
+        swipeClickSuppression.current = { pointerId: event.pointerId, target: originAction, expiresAt: performance.now() + 500 };
+      }
+      swipeOriginAction.current = null;
+      navigateTo(target, deltaX < 0 ? 'left' : 'right');
+    } else {
+      if (shouldSuppressPrimaryGestureClick(start) && swipeOriginAction.current) {
+        swipeClickSuppression.current = { pointerId: event.pointerId, target: swipeOriginAction.current, expiresAt: performance.now() + 500 };
+      }
+      swipeOriginAction.current = null;
+      clearGestureDrag(true);
+    }
+  };
+
+  const handleContentPointerCancel = (event: PointerEvent) => {
+    endPointerTracking(event.pointerId);
+    const start = swipePointer.current;
+    if (start?.pointerId === event.pointerId) {
+      recordGestureTrace({ event: 'pointercancel', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: start.axis, reason: 'browser-cancelled' }, import.meta.env.DEV);
+      swipeOriginAction.current = null;
+      cancelPrimaryGesture('browser-cancelled', event.pointerId);
+    }
+  };
+
+  const handleContentLostPointerCapture = (event: PointerEvent) => {
+    // Touch starts with implicit capture on the child. Transferring ownership
+    // to main emits loss on that child before main's gotpointercapture event.
+    // Only a real loss of our owner should cancel the horizontal gesture.
+    const owner = gestureSurfaceElement.current;
+    if (!shouldCancelPrimaryCaptureLoss(event.target === owner, owner?.hasPointerCapture(event.pointerId) === true)) return;
+    endPointerTracking(event.pointerId);
+    const start = swipePointer.current;
+    if (start?.pointerId === event.pointerId) {
+      recordGestureTrace({ event: 'lostpointercapture', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: start.axis, reason: 'capture-lost' }, import.meta.env.DEV);
+      swipeOriginAction.current = null;
+      cancelPrimaryGesture('capture-lost', event.pointerId);
+    }
+  };
+
+  const handleContentClickCapture = (event: React.MouseEvent<HTMLElement>) => {
+    const suppression = swipeClickSuppression.current;
+    if (!suppression) return;
+    if (performance.now() > suppression.expiresAt) { swipeClickSuppression.current = null; return; }
+    const hasPointerId = 'pointerId' in event.nativeEvent;
+    const nativePointerId = hasPointerId ? Number((event.nativeEvent as PointerEvent).pointerId) : -1;
+    const clicked = event.target instanceof Element ? event.target : null;
+    if (matchesPrimaryGestureClickSuppression(suppression, { pointerId: hasPointerId ? nativePointerId : undefined, target: clicked, detail: event.detail, now: performance.now() })) {
+      event.preventDefault();
+      event.stopPropagation();
+      swipeClickSuppression.current = null;
+    }
+  };
+
+  gestureEventHandlers.current = {
+    move: handleContentPointerMove,
+    up: handleContentPointerUp,
+    cancel: handleContentPointerCancel,
+    lost: handleContentLostPointerCapture,
+  };
+
+  useEffect(() => {
+    const onAdditionalPointerDown = (event: PointerEvent) => {
+      const session = swipePointer.current;
+      const target = event.target;
+      if (!session || event.pointerId === session.pointerId || !target || gestureSurfaceElement.current?.contains(target as Node)) return;
+      activeTouchPointers.current.add(event.pointerId);
+      swipeSuppressed.current = true;
+      cancelPrimaryGesture('multiple-pointers', event.pointerId);
+      recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'suppressed', reason: 'multiple-pointers' }, import.meta.env.DEV);
+    };
+    const onMove = (event: PointerEvent) => gestureEventHandlers.current.move(event);
+    const onUp = (event: PointerEvent) => gestureEventHandlers.current.up(event);
+    const onCancel = (event: PointerEvent) => gestureEventHandlers.current.cancel(event);
+    const onLost = (event: PointerEvent) => gestureEventHandlers.current.lost(event);
+    window.addEventListener('pointerdown', onAdditionalPointerDown, true);
+    window.addEventListener('pointermove', onMove, { capture: true, passive: true });
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
+    window.addEventListener('lostpointercapture', onLost, true);
+    return () => {
+      window.removeEventListener('pointerdown', onAdditionalPointerDown, true);
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+      window.removeEventListener('lostpointercapture', onLost, true);
+    };
+  }, []);
 
   const navigateBack = () => {
     const state = backState.current;
+    if (confirmationResolver.current) { settleConfirmation(false); return; }
+    if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(false).catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
+    if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
+      void requestCloseFinanceDraft(); return;
+    }
     const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileSection !== 'home') }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
     if (action === 'exit-app') { void CapacitorApp.exitApp(); return; }
@@ -360,20 +737,20 @@ export default function App() {
       }
       if (state.activeTab === 'habits') setHabitsSubtab('checklist');
       if (state.activeTab === 'goals') setGoalsSubtab('active');
-      if (state.activeTab === 'settings') setProfileSection('home');
+      if (state.activeTab === 'settings') navigateProfileSection('home');
       return;
     }
     const history = popTabHistory(navigationHistory.current, 'dashboard');
     navigationHistory.current = history.history;
     const previous = history.next;
     if (action === 'previous-tab' && previous) {
-      activeTabRef.current = previous;
-      setActiveTab(previous);
+      rememberActiveScroll();
+      transitionToTab(previous);
       return;
     }
     if (action === 'home') {
-      activeTabRef.current = 'dashboard';
-      setActiveTab('dashboard');
+      rememberActiveScroll();
+      transitionToTab('dashboard');
       return;
     }
     setShowExitConfirmation(true);
@@ -408,18 +785,32 @@ export default function App() {
       if (!state.isActive) {
         setActivityResumeGuard(true);
         backupPassphraseResolver.current?.(null);
-        secureSetupResolver.current?.(false);
+        const recoveryPicker = secureSetupResolver.current
+          ? recoveryExportLifecycle.markInactive()
+          : null;
+        if (recoveryPicker === null) secureSetupResolver.current?.(false);
+        else {
+          recoveryExportReturnPending.current = true;
+          setRecoveryExportResumeReady(false);
+        }
         setIsLocked(true);
         setBiometricVerified(false);
         biometricAuthenticated.current = false;
         authCoordinator.resetForBackground();
         // Close native admission even during setup, not only after migration.
-        try { await encryptedSession.lock(); }
+        const lockOperation = encryptedSession.lock();
+        if (recoveryPicker !== null) recoveryExportLockDrain.current = lockOperation;
+        try { await lockOperation; }
         catch { setBiometricMessage('The native key could not be locked. Access remains blocked.'); }
         return;
       }
       if (resumeInProgress) return;
       resumeInProgress = true;
+      if (secureSetupResolver.current && recoveryExportReturnPending.current) {
+        try { await resumeRecoveryAfterPicker(); }
+        finally { resumeInProgress = false; }
+        return;
+      }
       setBiometricAuthActive(true);
       try {
         // Wait for any previous background operation drain before reopening.
@@ -430,7 +821,8 @@ export default function App() {
         // A pristine first install may browse without private storage. Returning
         // from Android settings must not turn that safe browse into auth setup.
         if (safeFirstRunBrowse.current && !isEncryptedStorageActivated()) {
-          setIsLocked(false);
+          const optionalLock = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
+          setIsLocked(optionalLock);
           setBiometricVerified(false);
           void refreshNotificationDiagnostics();
           await confirmScreenshotResume();
@@ -517,19 +909,108 @@ export default function App() {
     return () => window.clearTimeout(toRest);
   }, [appReady, isLocked, onboardingRequired, onboardingComplete]);
 
+  const activeScreenKey = screenScrollKey({
+    tab: activeTab,
+    financeSubtab,
+    profileSection,
+    goalsSubtab,
+    habitsSubtab,
+  });
+
+  const rememberActiveScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
+  const navigateProfileSection = (section: ProfileSection) => {
+    rememberActiveScroll();
+    setProfileSection(section);
+  };
+
+  useEffect(() => {
+    const rememberScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
+    window.addEventListener('scroll', rememberScroll, { passive: true });
+    return () => window.removeEventListener('scroll', rememberScroll);
+  }, [activeScreenKey]);
+
   useLayoutEffect(() => {
     const root = document.documentElement;
     const previous = root.style.scrollBehavior;
     root.style.scrollBehavior = 'auto';
-    window.scrollTo(0, scrollPositions.current[activeTab] || 0);
+    window.scrollTo(0, scrollPositions.current[activeScreenKey] || 0);
     root.style.scrollBehavior = previous;
-    return () => { scrollPositions.current[activeTab] = window.scrollY; };
-  }, [activeTab]);
+  }, [activeScreenKey]);
+
+  const finishTabTransition = (id: number) => {
+    if (activeTransitionId.current !== id) return;
+    activeTransitionId.current = null;
+    setTabTransition(current => current?.id === id ? null : current);
+  };
+
+  useEffect(() => {
+    if (!tabTransition) return;
+    const { id, phase } = tabTransition;
+    if (phase === 'prepare') {
+      // Commit the new opaque screen once before starting its short entrance.
+      const frame = window.requestAnimationFrame(() => {
+        setTabTransition(current => current?.id === id ? { ...current, phase: 'running' } : current);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 260);
+    const fallback = window.setTimeout(() => finishTabTransition(id), duration + 120);
+    return () => window.clearTimeout(fallback);
+  }, [tabTransition]);
+
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const settleImmediately = () => {
+      if (!preference.matches) return;
+      activeTransitionId.current = null;
+      setTabTransition(null);
+    };
+    preference.addEventListener?.('change', settleImmediately);
+    return () => preference.removeEventListener?.('change', settleImmediately);
+  }, []);
+
+  useEffect(() => {
+    if (!isLocked) return;
+    cancelPrimaryGesture('app-locked');
+    activeTouchPointers.current.clear();
+    swipeSuppressed.current = false;
+    swipeClickSuppression.current = null;
+    activeTransitionId.current = null;
+    setTabTransition(null);
+  }, [isLocked]);
+
+  const transitionPropsFor = (screen: MainTab) => {
+    if (!tabTransition || tabTransition.to !== screen || activeTab !== screen) return {};
+    return {
+      transitionPhase: tabTransition.phase,
+      transitionDirection: tabTransition.direction,
+      onTransitionEnd: (event: React.TransitionEvent<HTMLDivElement>) => {
+        if (event.target === event.currentTarget && event.propertyName === 'transform') finishTabTransition(tabTransition.id);
+      },
+    };
+  };
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3200);
   };
+
+  const confirmAction = (options: ConfirmationOptions): Promise<boolean> => new Promise(resolve => {
+    confirmationResolver.current?.(false);
+    confirmationResolver.current = resolve;
+    setConfirmation(options);
+  });
+
+  const settleConfirmation = (confirmed: boolean) => {
+    const resolve = confirmationResolver.current;
+    confirmationResolver.current = null;
+    setConfirmation(null);
+    resolve?.(confirmed);
+  };
+
+  useEffect(() => {
+    if (isLocked && confirmation) settleConfirmation(false);
+  }, [isLocked, confirmation]);
 
   const persistTodayLayout = (next: TodayLayout) => {
     const normalized = normalizeTodayLayout(next);
@@ -547,13 +1028,36 @@ export default function App() {
   });
 
   const requestCloseForm = () => {
+    if (createOperation.current) return;
     if (!backState.current.createKind) return;
-    if (!window.confirm('Close this form? Any unsaved changes will be lost.')) return;
-    setCreateKind(null); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null);
+    const close = () => {
+      setCreateKind(null); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null); setCreateFormDirty(false);
+    };
+    if (!createFormDirty) { close(); return; }
+    void confirmAction({ title: 'Discard unsaved changes?', message: 'Your edits have not been saved.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', destructive: true }).then(confirmed => { if (confirmed) close(); });
   };
+
+  const requestCloseFinanceDraft = async () => {
+    if (financeWriteOperation.current) return;
+    const state = backState.current;
+    const account = state.financeSubtab === 'accounts' && state.accountFormDraft;
+    const transfer = state.financeSubtab === 'accounts' && state.transferFormDraft;
+    const dirty = account ? state.accountFormDirty : transfer ? state.transferFormDirty : state.planningDrafts.commitment ? state.planningDrafts.commitmentDirty : state.planningDrafts.rateDirty;
+    if (dirty && !(await confirmAction({ title: 'Discard unsaved changes?', message: 'Your edits have not been saved.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', destructive: true }))) return;
+    if (account) { setAccountFormDraft(null); setAccountFormDirty(false); }
+    else if (transfer) { setTransferFormDraft(null); setTransferFormDirty(false); }
+    else setPlanningDrafts({ commitment: null, rate: null, commitmentDirty: false, rateDirty: false });
+  };
+  const financeDialogOpen = activeTab === 'finance' && (financeSubtab === 'accounts' ? Boolean(accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && Boolean(planningDrafts.commitment || planningDrafts.rate));
+  const recordDialogId = createKind ? 'record-dialog' : financeSubtab === 'accounts'
+    ? (transferFormDraft ? 'money-transfer-dialog' : 'money-account-dialog')
+    : planningDrafts.commitment ? 'money-commitment-dialog' : 'money-rate-dialog';
+  useRecordDialog(Boolean(createKind || financeDialogOpen) && !isLocked && !firstRecordSecurityOpen && secureSetup === null,
+    () => { if (createKind) requestCloseForm(); else void requestCloseFinanceDraft(); }, recordDialogId);
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
     if (next === financeSubtab) return;
+    rememberActiveScroll();
     financeSubtabHistory.current = pushTabHistory(financeSubtabHistory.current, financeSubtab, next);
     setFinanceSubtab(next);
   };
@@ -593,6 +1097,9 @@ export default function App() {
     // Only bootstrap-safe markers are read before encryption is active.
     const completed = await StorageService.settings.get<boolean>('onboardingCompleted', false);
     const started = await StorageService.settings.get<boolean>('onboardingStarted', false);
+    const storedOnboardingJourney = await StorageService.settings.get<unknown>('onboardingJourney', null);
+    const normalizedJourney = normalizeOnboardingJourney(storedOnboardingJourney);
+    setOnboardingJourney(normalizedJourney);
     let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
 
     const nativeState = await CryptoService.getKeyState();
@@ -603,15 +1110,20 @@ export default function App() {
       (!nativeState.keystoreAliasPresent || nativeState.initialSetupPending === true) &&
       !nativeState.unlocked && !nativeState.recoveryNeedsRebind && !hasCiphertext && !hasExistingPrivateRows;
     if (safeFirstRunState) {
+      if (!completed && JSON.stringify(storedOnboardingJourney) !== JSON.stringify(normalizedJourney)) {
+        // Persist removal of legacy optional skip values so restart resumes the
+        // same required stage instead of repeatedly interpreting stale choices.
+        await StorageService.settings.set('onboardingJourney', normalizedJourney);
+      }
       // Empty installs and explicitly interrupted initial setup may browse
       // without private storage; the first private write resumes setup.
       safeFirstRunBrowse.current = true;
       startupComplete.current = true;
-      setIsLocked(false);
+      setIsLocked(lockSetting);
       setBiometricVerified(false);
       setRecoveryProvisioned(false);
       setRecoveryDeferred(false);
-      setDisplayName(await StorageService.settings.get<string>('displayName', ''));
+      setDisplayName(await StorageService.settings.get<string>('onboardingNameDraft', ''));
       setOnboardingRequired(!completed);
       setOnboardingComplete(completed);
       setOnboardingStep(0);
@@ -642,6 +1154,13 @@ export default function App() {
     const storedCurrency = await StorageService.settings.get<UserPreferences['currency']>('currency', 'INR');
     const savedUserPrefs = await StorageService.settings.get<Partial<UserPreferences>>('userPreferences', {});
     setUserPrefs(mergeUserPreferences(savedUserPrefs, storedCurrency));
+    const onboardingNameDraft = await StorageService.settings.get<string>('onboardingNameDraft', '');
+    if (onboardingNameDraft) {
+      // The draft is bootstrap-only. Once the native key is active, promote it
+      // to the encrypted profile setting before exposing the private workspace.
+      await StorageService.settings.set('displayName', onboardingNameDraft);
+      await StorageService.settings.delete('onboardingNameDraft');
+    }
     setDisplayName(await StorageService.settings.get<string>('displayName', ''));
     const savedTodayLayout = normalizeTodayLayout(await StorageService.settings.get<unknown>('todayLayout', DEFAULT_TODAY_LAYOUT));
     todayLayoutRef.current = savedTodayLayout;
@@ -904,6 +1423,91 @@ export default function App() {
     }
   };
 
+  const saveOnboardingIdentity = async (name: string) => {
+    const normalized = name.trim().slice(0, 48);
+    if (!normalized) throw new Error('Enter your name to continue.');
+    await StorageService.settings.set('onboardingNameDraft', normalized);
+    setDisplayName(normalized);
+  };
+
+  const provisionOnboardingProtection = async (): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const before = await CryptoService.getKeyState();
+      if (!before.metadataConsistent || before.recoveryNeedsRebind) {
+        throw new Error('LifeOS found an existing key that needs recovery. No key was replaced. Open recovery or retry after restoring access.');
+      }
+      await setSensitiveScreenshotState(true);
+      onboardingSetupAuthorized.current = true;
+      await encryptedSession.open({ recoveryChoice: 'later' });
+      const state = await CryptoService.getKeyState();
+      if (!state.metadataConsistent || !state.keyProvisioned || !state.keystoreAliasPresent ||
+          !state.unlocked || !state.recoveryDeferred || state.recoveryProvisioned ||
+          !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
+        throw new Error('LifeOS could not verify encrypted storage. Your records remain locked; please retry.');
+      }
+
+      const draftName = await StorageService.settings.get<string>('onboardingNameDraft', '');
+      if (!draftName.trim()) throw new Error('Your name is missing. Return to the first step and enter it again.');
+      await StorageService.settings.set('displayName', draftName.trim());
+      await StorageService.settings.delete('onboardingNameDraft');
+      setDisplayName(draftName.trim());
+      setRecoveryProvisioned(false);
+      setRecoveryDeferred(true);
+      setBiometricEnabled(true);
+      setBiometricVerified(true);
+      biometricAuthenticated.current = true;
+      setIsLocked(false);
+      safeFirstRunBrowse.current = false;
+      await StorageService.settings.set('biometricLockEnabled', true);
+      await reloadAllData();
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Secure setup did not complete. Your data remains locked; please retry.' };
+    } finally {
+      onboardingSetupAuthorized.current = false;
+    }
+  };
+
+  const confirmOnboardingRecovery = async (label: string): Promise<boolean> => {
+    try {
+      if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated() || !(await CryptoService.isUnlocked())) {
+        await encryptedSession.open();
+      }
+      let state = await CryptoService.getKeyState();
+      if (state.recoveryProvisioned && state.metadataConsistent && !state.recoveryDeferred &&
+          state.keyProvisioned && state.unlocked && isEncryptedStorageActivated()) {
+        setRecoveryProvisioned(true); setRecoveryDeferred(false);
+        return true;
+      }
+      if (!state.metadataConsistent || !state.keyProvisioned || !state.recoveryDeferred || state.recoveryNeedsRebind) {
+        throw new Error('Recovery setup is not ready. Encrypted data remains protected; retry secure setup.');
+      }
+      const prepared = await CryptoService.prepareRecovery();
+      if (!(await requestSecureSetup(prepared))) {
+        await encryptedSession.lock();
+        setBiometricVerified(false); biometricAuthenticated.current = false;
+        // The onboarding gate remains visible. A retry will authenticate and
+        // recreate a temporary kit; no private workspace is opened.
+        setIsLocked(false);
+        return false;
+      }
+      await CryptoService.confirmRecovery();
+      state = await CryptoService.getKeyState();
+      if (!state.metadataConsistent || !state.keyProvisioned || !state.recoveryProvisioned ||
+          state.recoveryDeferred || state.recoveryNeedsRebind || !state.unlocked ||
+          !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
+        throw new Error('The recovery kit was not verified. Your private workspace remains closed.');
+      }
+      setRecoveryProvisioned(true); setRecoveryDeferred(false);
+      // The component stores this optional label in onboardingJourney. It is
+      // metadata only and is never used as a recovery secret.
+      void label;
+      return true;
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'Recovery setup could not be verified. Please retry.');
+    }
+  };
+
   const openRecovery = async () => {
     try {
       await setSensitiveScreenshotState(true);
@@ -964,11 +1568,23 @@ export default function App() {
   };
 
   const finishOnboarding = async () => {
+    const [state, savedJourney, savedName] = await Promise.all([
+      CryptoService.getKeyState(),
+      StorageService.settings.get<OnboardingJourney>('onboardingJourney', INITIAL_ONBOARDING_JOURNEY),
+      StorageService.settings.get<string>('displayName', '')
+    ]);
+    if (!state.metadataConsistent || !state.keyProvisioned || !state.recoveryProvisioned ||
+        state.recoveryDeferred || state.recoveryNeedsRebind || !state.unlocked ||
+        !sessionManager.isUnlocked() || !isEncryptedStorageActivated() || !savedName.trim() ||
+        normalizeOnboardingJourney(savedJourney).protection !== 'enabled' ||
+        normalizeOnboardingJourney(savedJourney).recovery !== 'confirmed') {
+      throw new Error('LifeOS has not verified every security step yet. Your private workspace remains closed.');
+    }
     await StorageService.settings.set('onboardingCompleted', true);
     await StorageService.settings.set('onboardingStarted', false);
     await StorageService.settings.set('onboardingStep', 0);
     setOnboardingStep(0);
-    setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; activeTabRef.current = 'dashboard'; setActiveTab('dashboard');
+    setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; transitionToTab('dashboard');
     // Let React commit Today and ensure the Android Activity is foregrounded
     // before invoking the native permission API. Denial never blocks entry.
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -998,8 +1614,8 @@ export default function App() {
     if (!taskId || isLocked || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
     pendingNotificationTaskId.current = null;
     const task = (await StorageService.tasks.getAll()).find(item => item.id === taskId);
-    activeTabRef.current = 'planner';
-    setActiveTab('planner');
+    rememberActiveScroll();
+    transitionToTab('planner');
     if (!task) {
       setPlannerDetailTaskId(null);
       showToast('That reminder no longer has an available task.', 'info');
@@ -1049,7 +1665,7 @@ export default function App() {
       window.setTimeout(() => handledNotificationIds.current.delete(id), 10_000);
       if (extra.kind === 'test') {
         navigateTo('settings');
-        setProfileSection('notifications');
+        navigateProfileSection('notifications');
         void NotificationService.acknowledgeInitialTapAction(id);
         return;
       }
@@ -1086,12 +1702,12 @@ export default function App() {
       if (file.size > MAX_BACKUP_FILE_BYTES) throw new Error('Backup file exceeds the supported size.');
       const text = await decodeBackupForRestore(await file.text(), {
         requestPassphrase: () => requestBackupPassphrase('import'),
-        confirmLegacy: () => window.confirm('Import this legacy unencrypted backup? It will be validated. New exports are encrypted.'),
+        confirmLegacy: () => confirmAction({ title: 'Import a legacy backup?', message: 'This older backup is not encrypted. LifeOS will validate it before restoring. New exports are encrypted.', confirmLabel: 'Validate and continue', cancelLabel: 'Cancel' }),
         validateTables: validateBackupTables,
       });
       if (text === null) return;
       const hasRecords = await StorageService.backup.hasData();
-      if (hasRecords && !window.confirm('This backup will replace the existing LifeOS data on this device. Export a backup first if you need a copy. Continue?')) return;
+      if (hasRecords && !(await confirmAction({ title: 'Replace existing LifeOS data?', message: 'Restoring this backup replaces the records currently on this device. Export a backup first if you may need a copy.', confirmLabel: 'Replace and restore', cancelLabel: 'Keep current data', destructive: true }))) return;
       await StorageService.backup.importData(text, { replaceExisting: hasRecords });
       restored = true;
       const records = await reloadAllData();
@@ -1112,6 +1728,14 @@ export default function App() {
     const attempt = (async () => {
       try {
         await setSensitiveScreenshotState(true);
+        if (safeFirstRunBrowse.current && !isEncryptedStorageActivated()) {
+          // Optional app protection never provisions or admits private storage.
+          const result = await BiometricService.authenticate('Unlock LifeOS', 'Use your phone’s secure unlock');
+          if (!result.success) throw new Error(result.message || 'Authentication was not completed.');
+          biometricAuthenticated.current = true;
+          setBiometricVerified(true); setIsLocked(false); setBiometricMessage('');
+          return true;
+        }
         await encryptedSession.open();
         if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Authentication expired after app lock.');
         biometricAuthenticated.current = true;
@@ -1239,6 +1863,7 @@ export default function App() {
   const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string) => {
     const now = new Date();
     const today = formatLocalDate(now);
+    setCreateFormDirty(false);
     setCreateDraft({
       title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
@@ -1256,6 +1881,7 @@ export default function App() {
   };
 
   const openEditTransaction = (transaction: Transaction) => {
+    setCreateFormDirty(false);
     setCreateDraft({
       title: transaction.description || '', amount: String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
@@ -1268,11 +1894,13 @@ export default function App() {
   };
 
   const openEditSavingsGoal = (goal: SavingsGoal) => {
+    setCreateFormDirty(false);
     setCreateDraft({ title: goal.title, target: String(goal.targetAmount), current: String(goal.currentAmount), category: goal.category || '', date: goal.targetDate });
     setEditingSavingsGoalId(goal.id); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setCreateKind('savings');
   };
 
   const openEditContribution = (contribution: SavingsContribution) => {
+    setCreateFormDirty(false);
     setCreateDraft({ goalId: contribution.goalId, amount: String(contribution.amount), date: contribution.date, notes: contribution.notes || '' });
     setEditingContributionId(contribution.id);
     setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null);
@@ -1285,6 +1913,7 @@ export default function App() {
   };
 
   const openEditGoal = (goal: Goal) => {
+    setCreateFormDirty(false);
     const oldUnit = goal.unit || '';
     const selectedUnit = ['km', 'mi', 'mile', 'miles'].includes(oldUnit) ? userPrefs.distance
       : ['L', 'l', 'mL', 'US gal', 'Imp gal'].includes(oldUnit) ? userPrefs.volume
@@ -1296,6 +1925,7 @@ export default function App() {
   };
 
   const openEditTask = (task: Task) => {
+    setCreateFormDirty(false);
     setCreateDraft({
       title: task.title, description: task.description || task.notes || '', date: task.dueDate,
       time: task.dueTime || '', reminderAt: task.reminderAt ? formatLocalDateTime(new Date(task.reminderAt)) : '',
@@ -1306,12 +1936,14 @@ export default function App() {
   };
 
   const openGoalProgressForm = (goal: Goal) => {
+    setCreateFormDirty(false);
     setCreateDraft({ goalId: goal.id, current: String(goal.currentValue) });
     setEditingTaskId(null);
     setCreateKind('goal-progress');
   };
 
   const openEditHabit = (habit: Habit) => {
+    setCreateFormDirty(false);
     setCreateDraft({ title: habit.name, description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
     setEditingHabitId(habit.id);
     setEditingTaskId(null);
@@ -1349,15 +1981,38 @@ export default function App() {
     await reloadAllData();
   };
 
+  const runPreparedFinanceWrite = async (write: () => Promise<unknown>) => {
+    if (financeWriteOperation.current) throw new Error('A financial record is already being saved.');
+    financeWriteOperation.current = true;
+    setFinanceWriteBusy(true);
+    try {
+      await ensurePrivateStorageBeforeWrite();
+      await write();
+      await reloadAllData();
+      showToast('Financial record saved.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'This record could not be saved.', 'danger');
+      throw error;
+    } finally { financeWriteOperation.current = false; setFinanceWriteBusy(false); }
+  };
+
   const saveNewRecord = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!createKind || createOperation.current) return;
     createOperation.current = true;
+    setRecordSaving(true);
     let committed = false;
     const value = (key: string) => (createDraft[key] || '').trim();
     let reminderCouldNotEnable = false;
     try {
       await ensurePrivateStorageBeforeWrite();
+      // A fresh user may begin with Money. Categories are private and are only
+      // loaded after explicit secure provisioning; never post an unclassified
+      // transaction merely to get through that first-use step.
+      if (createKind === 'transaction' && !value('category')) {
+        showToast('Choose a category to finish saving your transaction.', 'info');
+        return;
+      }
       if (createKind === 'task' && value('reminderAt') && (!notificationsEnabled || !notificationPreferences.taskReminders)) {
         const permission = await askNotificationPermission();
         if (permission.granted) {
@@ -1455,6 +2110,7 @@ export default function App() {
       // A resolved storage write is committed. Close before fallible refresh work.
       committed = true;
       setCreateKind(null);
+      setCreateFormDirty(false);
       setEditingTaskId(null); setEditingHabitId(null);
       setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null);
       const records = await reloadAllData();
@@ -1467,10 +2123,10 @@ export default function App() {
       const wasEditingGoal = editingGoalId;
       const wasEditingContribution = editingContributionId;
       const reminderSyncFailed = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable && !schedulesUpdated;
-      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and run Diagnose reminder.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable || reminderSyncFailed ? 'danger' : 'success');
+      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable || reminderSyncFailed ? 'danger' : 'success');
     } catch (error) {
       showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
-    } finally { createOperation.current = false; }
+    } finally { createOperation.current = false; setRecordSaving(false); }
   };
 
   const accountBalances = useMemo(() => calculateAccountBalances(financialAccounts, transactions, accountTransfers), [financialAccounts, transactions, accountTransfers]);
@@ -1580,6 +2236,7 @@ export default function App() {
   }, [transactions, budgets, financeMonth, userPrefs.currency]);
 
   const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange, categories, userPrefs.currency), [transactions, budgets, financeMonth, financeAnalyticsRange, categories, userPrefs.currency]);
+  const hasFinanceChartData = financeAnalytics.periodRows.some(row => row.hasRecords) || financeAnalytics.categories.length > 0;
 
   // Habit Streak Calculation Helper
   const getHabitStreaks = (habitId: string, targetDate: string) => {
@@ -1592,6 +2249,14 @@ export default function App() {
     () => getTodayOverview(tasks, habits, habitLogs, todayKey),
     [tasks, habits, habitLogs, todayKey]
   );
+  const lifeHubHabits = useMemo(() => habits.map(habit => {
+    const stats = getHabitStreaks(habit.id, todayKey);
+    return { id: habit.id, name: habit.name, completedToday: stats.completedToday, currentStreak: stats.currentStreak };
+  }), [habits, habitLogs, todayKey]);
+  const lifeHubGoals = useMemo(() => goals.filter(goal => goal.status === 'In Progress').map(goal => {
+    const goalMilestones = milestones.filter(milestone => milestone.goalId === goal.id);
+    return { id: goal.id, title: goal.title, progress: getGoalProgress(goal.currentValue, goal.targetValue), current: displayGoalMeasure(goal.currentValue, goal.unit), target: displayGoalMeasure(goal.targetValue, goal.unit), targetDate: formatDate(goal.targetDate), completedMilestones: goalMilestones.filter(milestone => milestone.completed).length, milestoneCount: goalMilestones.length };
+  }), [goals, milestones, userPrefs.dateFormat, userPrefs.distance, userPrefs.volume, userPrefs.speed]);
   const tomorrowDate = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 1);
   const tomorrowKey = formatLocalDate(tomorrowDate);
   const calendarDays = useMemo(() => getMonthCalendarDays(plannerDisplayedMonth.getFullYear(), plannerDisplayedMonth.getMonth(), userPrefs.firstDayOfWeek === 'monday'), [plannerDisplayedMonth, userPrefs.firstDayOfWeek]);
@@ -1615,7 +2280,7 @@ export default function App() {
     const statusMatch = dateScope || plannerFilter === 'all' ? true : status.toLowerCase() === plannerFilter;
     const dateMatch = plannerFilter === 'today' ? task.dueDate === todayKey
       : plannerFilter === 'tomorrow' ? task.dueDate === tomorrowKey
-        : plannerFilter === 'upcoming' ? task.dueDate > tomorrowKey && task.dueDate <= formatLocalDate(new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 7))
+        : plannerFilter === 'upcoming' ? task.dueDate > todayKey && task.dueDate <= formatLocalDate(new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 7))
           : task.dueDate === plannerSelectedDate;
     const query = plannerSearch.trim().toLowerCase();
     const searchMatch = !query || `${task.title} ${task.description || ''} ${task.notes || ''} ${task.category || ''}`.toLowerCase().includes(query);
@@ -1643,7 +2308,21 @@ export default function App() {
     [transactions, financeMonth]
   );
 
-  if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared} onDecision={accepted => secureSetupResolver.current?.(accepted)} />;
+  if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared}
+    onRecoveryExportStart={beginRecoveryExportActivity}
+    recoveryExportResumeReady={recoveryExportResumeReady}
+    onRetryRecoveryExportResume={() => { void resumeRecoveryAfterPicker(); }}
+    onDecision={accepted => {
+      if (!accepted && recoveryExportReturnPending.current) {
+        recoveryExportReturnPending.current = false;
+        void CryptoService.cancelPendingRecovery()
+          .catch(() => undefined)
+          .finally(async () => {
+            try { await confirmScreenshotResume(); setActivityResumeGuard(false); } catch { /* Keep screenshots blocked if resume validation fails. */ }
+            secureSetupResolver.current?.(false);
+          });
+      } else secureSetupResolver.current?.(accepted);
+    }} />;
 
   if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit).then(async () => { setRecoveryOpen(false); setStartupError(''); await initApp(); }); }} onClose={() => setRecoveryOpen(false)} />;
 
@@ -1658,7 +2337,11 @@ export default function App() {
 
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
-    onSaveIdentity={updateDisplayName}
+    initialJourney={onboardingJourney}
+    onSaveJourney={async journey => { const safe = normalizeOnboardingJourney(journey); await StorageService.settings.set('onboardingJourney', safe); setOnboardingJourney(safe); }}
+    onProvisionProtection={provisionOnboardingProtection}
+    onConfirmRecovery={confirmOnboardingRecovery}
+    onSaveIdentity={saveOnboardingIdentity}
     onFinish={finishOnboarding}
   />;
 
@@ -1687,17 +2370,15 @@ export default function App() {
   }
 
   return (
-    <div className="lifeos-page min-h-screen" style={{ paddingBottom: 'calc(6.25rem + env(safe-area-inset-bottom))' }}>
+    <div ref={gestureSurfaceElement} className="lifeos-page app-shell" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
+      <span className="lifeos-safe-area-probe" aria-hidden="true" />
       {/* Top Mobile Header */}
-      <header className="app-header sticky top-0 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 px-4 py-3 sm:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.5rem)' }}>
+      <header className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
             <BrandMark className="h-8 w-8" />
           </div>
-          <div className="min-w-0">
-            <h1 className="header-greeting text-[clamp(1.05rem,4.2vw,1.35rem)] font-semibold leading-tight tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h1>
-            <p className="mt-0.5 truncate text-xs text-secondary">{tabSubtitle[activeTab]}</p>
-          </div>
+          <h1 className="app-brand-name">LifeOS</h1>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
@@ -1705,7 +2386,7 @@ export default function App() {
       </header>
 
       {!isOnline && (
-        <div role="status" aria-live="polite" className="mx-auto max-w-md px-4 pt-2">
+        <div role="status" aria-live="polite" className="app-content-width px-4 pt-2">
           <div className="lifeos-warning lifeos-panel rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'var(--warning)' }}>
             Offline — LifeOS records remain stored on this device. Internet-dependent services may be unavailable.
           </div>
@@ -1713,14 +2394,14 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className="max-w-md mx-auto p-4 space-y-4" onPointerDown={handleContentPointerDown} onPointerUp={handleContentPointerUp} onPointerCancel={() => { swipePointer.current = null; }}>
+      <main className="app-main">
+        <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
-        <div key={activeTab} id={`view-${activeTab}`} className="tab-transition">
-        {activeTab === 'dashboard' && (
-          <div className="today-sections">
-            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><h2 className="text-lg font-semibold tracking-tight">Today</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
+        <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
+          <div className="today-sections" data-testid="today-dashboard">
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
-            {todayCustomizationOpen && <section id="today-customization" aria-labelledby="today-customization-title" className="lifeos-panel rounded-2xl border p-4" style={{ order: 1 }}>
+            {todayCustomizationOpen && <section id="today-customization" aria-labelledby="today-customization-title" className="today-customization lifeos-panel rounded-2xl border p-4" style={{ order: 1 }}>
               <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order.</p></div>
               <ul className="today-customization-list">{todayLayout.order.map((id, index) => <li key={id}>
                 <label className="today-section-toggle"><input type="checkbox" checked={!todayLayout.hidden.includes(id)} disabled={id === 'focus'} onChange={event => persistTodayLayout(setTodaySectionVisible(todayLayoutRef.current, id, event.target.checked))} /><span>{TODAY_SECTION_LABELS[id]}</span></label>
@@ -1729,34 +2410,31 @@ export default function App() {
               <button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="mt-3 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button>
             </section>}
 
-            {/* Today at a glance: separate counts keep task and routine progress understandable. */}
-            <section className="lifeos-panel space-y-3 rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">At a glance</p>
-                <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s focus</h3>
+            {/* Keep the first panel focused: one useful progress cue and fast ways to act. */}
+            <section className="today-focus lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">YOUR DAY</p>
+                  <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s priorities</h3>
+                  {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><span className="font-medium">Tasks due today</span> · <strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> complete</p>
+                    : <p className="mt-1 text-sm text-secondary">Choose one thing to make time for today.</p>}
+                </div>
+                <div className="today-quick-actions" aria-label="Quick add">
+                  <button type="button" onClick={() => openCreateForm('task')} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">+ Task</button>
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <button onClick={() => navigateTo('planner')} className="lifeos-raised min-h-16 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" aria-label={`Open Planner: ${todayOverview.tasksCompleted} of ${todayOverview.tasksDue} tasks due today complete`}>
-                  <span className="block text-xs text-secondary">Tasks due today</span>
-                  <span className="mt-1 block text-base font-semibold tabular-nums">{todayOverview.tasksCompleted} <span className="text-sm font-normal text-secondary">of {todayOverview.tasksDue} complete</span></span>
-                </button>
-                <button onClick={() => navigateTo('habits')} className="lifeos-raised min-h-16 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" aria-label={`Open Habits: ${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} routines complete today`}>
-                  <span className="block text-xs text-secondary">Routines today</span>
-                  <span className="mt-1 block text-base font-semibold tabular-nums">{todayOverview.routinesCompleted} <span className="text-sm font-normal text-secondary">of {todayOverview.routinesDue} checked</span></span>
-                </button>
-              </div>
-              {todayOverview.weeklyRoutinesTotal > 0 && <p className="text-xs text-secondary">Weekly routines · {todayOverview.weeklyRoutinesCompleted} of {todayOverview.weeklyRoutinesTotal} checked this week</p>}
-              {todayOverview.tasksDue === 0 && todayOverview.routinesDue === 0 && todayOverview.weeklyRoutinesTotal === 0 && <p className="text-sm text-secondary">Nothing scheduled for today yet. Add a task or routine when you’re ready.</p>}
+              {todayOverview.tasksDue > 0 && <div className="today-focus-progress mt-3" role="progressbar" aria-label="Today’s tasks complete" aria-valuemin={0} aria-valuemax={todayOverview.tasksDue} aria-valuenow={todayOverview.tasksCompleted}><span style={{ width: `${Math.min(100, (todayOverview.tasksCompleted / todayOverview.tasksDue) * 100)}%` }} /></div>}
+              {tasks.some(task => getTaskStatus(task, clockNow) === 'Overdue') && <button type="button" className="today-attention-link" onClick={() => { setPlannerFilter('overdue'); navigateTo('planner'); }}>Review overdue tasks <ChevronRight size={16} aria-hidden="true" /></button>}
             </section>
 
             {/* Active Goals Summary */}
-            <section className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('goals')}>
+            <section className="today-section-goals lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('goals')}>
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-[10px] font-bold uppercase tracking-wider lifeos-accent-text">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress').length} active goals</h3></div>
                 <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all →</button>
               </div>
               {goals.filter(goal => goal.status === 'In Progress').length === 0 ? (
-                <div className="lifeos-raised rounded-xl px-3 py-4 text-center text-xs text-secondary"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
+                <div className="today-inline-empty"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
               ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => {
                 const progress = goalProgress(goal);
                 return <button key={goal.id} onClick={() => navigateTo('goals')} className="lifeos-raised block min-h-11 w-full rounded-xl p-3 text-left">
@@ -1768,9 +2446,9 @@ export default function App() {
             </section>
 
             {/* Financial Overview Card */}
-            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
+            <div className="today-money-summary today-section-money lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold">Monthly Finance ({financeMonth})</h3>
+                <h3 className="text-sm font-semibold">Money this month</h3>
                 <button onClick={() => navigateTo('finance')} className="min-h-11 text-xs lifeos-accent-text font-semibold">Details &rarr;</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
@@ -1790,13 +2468,13 @@ export default function App() {
             </div>
 
             {/* Today's Habits Summary */}
-            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('habits')}>
+            <div className="today-habit-summary lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('habits')}>
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold">Habits Today</h3>
-                <button onClick={() => navigateTo('habits')} className="text-xs lifeos-accent-text font-semibold">Manage</button>
+                <div><p className="type-eyebrow">DAILY ROUTINES</p><h3 className="text-sm font-semibold">Habits today</h3><p className="type-caption text-secondary">{todayOverview.routinesDue ? `${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} checked` : 'Check in at your own pace.'}</p></div>
+                <div className="today-habit-actions"><button type="button" onClick={() => openCreateForm('habit')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Add habit</button><button type="button" onClick={() => navigateTo('habits')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">All habits</button></div>
               </div>
               {habits.length === 0 ? (
-                <div className="lifeos-raised rounded-xl py-6 text-center text-xs text-secondary"><p>No habits configured yet.</p><button onClick={() => openCreateForm('habit')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Create a habit</button></div>
+                <div className="today-inline-empty"><p>No habits to check in yet. Add one when you’re ready.</p></div>
               ) : (
                 <div className="space-y-2">
                   {habits.slice(0, 4).map(h => {
@@ -1828,26 +2506,25 @@ export default function App() {
             </div>
 
             {/* Future dated tasks are separate from today's agenda. */}
-            <section className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
+            <section className="today-upcoming-section lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
-              {dashboardUpcomingTasks.length === 0 ? <div className="lifeos-raised rounded-xl px-3 py-4 text-center text-xs text-secondary"><p>No upcoming tasks yet.</p><button type="button" onClick={() => openCreateForm('task')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Add a task</button></div> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
+              {dashboardUpcomingTasks.length === 0 ? <p className="today-inline-empty">No upcoming tasks. Add a date to a task to plan ahead.</p> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
             </section>
 
             {/* Pending Tasks */}
-            <div className="lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('agenda')}>
+            <section className="today-agenda lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('agenda')} aria-labelledby="today-agenda-title">
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold">Today's Agenda</h3>
-                <button onClick={() => navigateTo('planner')} className="text-xs lifeos-accent-text font-semibold">All Tasks</button>
+                <div><p className="type-eyebrow">DUE TODAY</p><h3 id="today-agenda-title" className="text-sm font-semibold">Your tasks</h3></div>
+                <button onClick={() => navigateTo('planner')} className="min-h-11 rounded-lg px-2 text-xs lifeos-accent-text font-semibold">Open Plan</button>
               </div>
               {dashboardTasks.length === 0 ? (
-                <div className="lifeos-raised rounded-xl py-6 text-center text-xs text-secondary"><p>No tasks due today. You're all caught up!</p><button onClick={() => openCreateForm('task')} className="mt-2 min-h-11 font-semibold lifeos-accent-text">Add a task</button></div>
+                <div className="today-inline-empty"><p>No tasks due today. Your day is open.</p></div>
               ) : (
                 <div className="space-y-2">
                   {dashboardTasks.map(t => {
                     const status = getTaskStatus(t, clockNow);
-                    return <div key={t.id} className="lifeos-panel flex items-center justify-between rounded-xl border p-3" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : 'var(--stroke)' }}>
-                      <div className="flex items-center gap-3">
-                        <label className="flex min-h-11 min-w-11 items-center justify-center">
+                    return <div key={t.id} className={`today-task-row ui-interactive-row${status === 'Overdue' ? ' is-overdue' : ''}`}>
+                        <label className="today-task-check" aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}>
                           <input
                             type="checkbox"
                             aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}
@@ -1863,36 +2540,43 @@ export default function App() {
                             style={{ accentColor: 'var(--accent)' }}
                           />
                         </label>
-                        <div>
-                          <p className="text-sm font-medium">{t.title}</p>
-                          <p className="text-[10px] text-secondary">{formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ''}</p>
-                          <div className="mt-1 flex flex-wrap gap-1"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${t.priority === 'Urgent' ? 'lifeos-tint text-[var(--danger)]' : t.priority === 'High' ? 'lifeos-tint text-[var(--warning)]' : 'lifeos-raised text-secondary'}`}>{t.priority}</span><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${status === 'Overdue' ? 'lifeos-tint text-[var(--danger)]' : status === 'Completed' ? 'lifeos-tint text-[var(--success)]' : 'lifeos-raised text-secondary'}`}>{status}</span></div>
-                        </div>
-                      </div>
+                        <button type="button" onClick={() => { setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
+                          <span className={`today-task-title${t.completed ? ' is-complete' : ''}`}>{t.title}</span>
+                          <span className="today-task-meta">{t.dueTime ? formatClockTime(t.dueTime) : 'Due today'} · {status} · {t.priority} priority</span>
+                        </button>
                     </div>
                   })}
                 </div>
               )}
-            </div>
+            </section>
           </div>
-        )}
+        )} />
 
         {/* VIEW 2: FINANCE */}
-        {activeTab === 'life' && <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+        <RetainedScreen active={activeTab === 'life'} id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+          habits={lifeHubHabits}
+          goals={lifeHubGoals}
           routinesDue={todayOverview.routinesDue}
           completedRoutines={todayOverview.routinesCompleted}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
           weeklyTotal={todayOverview.weeklyRoutinesTotal}
-          activeGoals={goals.filter(goal => goal.status === 'In Progress').length}
+          onCheckIn={habit => { const original = habits.find(item => item.id === habit.id); if (original) void handleHabitCompletion(original.id, original.name, todayKey, habit.completedToday); }}
+          onCreateHabit={() => openCreateForm('habit')}
+          onCreateGoal={() => openCreateForm('goal')}
           onHabits={() => { setHabitsSubtab('checklist'); navigateTo('habits'); }}
           onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
           onInsights={() => navigateTo('insights')}
-        /></Suspense>}
+        /></Suspense>} />
 
-        {activeTab === 'plan' && <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} goals={goals} today={todayKey}
-          onNavigate={navigateTo} onCreateTask={() => openCreateForm('task')} /></Suspense>}
+        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} today={todayKey} now={clockNow}
+          onNavigatePlanner={() => navigateTo('planner')}
+          onOpenTask={task => { setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }}
+          onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
+          onCreateTask={() => openCreateForm('task')}
+          onSelectRange={range => { setPlannerFilter(range); if (range === 'today') setPlannerSelectedDate(todayKey); if (range === 'tomorrow') setPlannerSelectedDate(tomorrowKey); navigateTo('planner'); }}
+          onOpenGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }} /></Suspense>} />
 
-        {activeTab === 'insights' && <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
+        <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
           month={financeMonth}
           income={financeMetrics.totalIncome}
           expenses={financeMetrics.totalExpenses}
@@ -1908,16 +2592,15 @@ export default function App() {
           onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
           onHabits={() => { setHabitsSubtab('weekly'); navigateTo('habits'); }}
           onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
-        /></Suspense>}
+        /></Suspense>} />
 
-        {activeTab === 'finance' && (
+        <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
           <div className="money-page space-y-5">
             {financeSubtab !== 'overview' && <div className="money-page-toolbar">
               <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
-              <label className="sr-only" htmlFor="money-destination">Money section</label>
-              <select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)} className="lifeos-input min-h-11 rounded-xl px-3 text-sm font-semibold">
-                {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Financial planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
-              </select>
+              <div className="money-destination-control"><label className="sr-only" htmlFor="money-destination">Money section</label><select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)}>
+                {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
+              </select><ChevronDown size={16} aria-hidden="true" /></div>
             </div>}
 
             {/* Money home: recorded cash flow, never an inferred account balance. */}
@@ -1942,6 +2625,7 @@ export default function App() {
                   openCreateForm('transaction');
                   setCreateDraft(current => ({ ...current, type: 'income', category: categories.find(category => category.type === 'income')?.name || '' }));
                 }}
+                onTransfer={() => { setOpenMoneyTransferOnAccounts(true); navigateFinanceSubtab('accounts'); }}
                 onMoveToSavings={() => {
                   navigateFinanceSubtab('savings');
                   if (savingsGoals.length === 1) {
@@ -1962,11 +2646,14 @@ export default function App() {
             )}
 
             {financeSubtab === 'accounts' && <MoneyAccounts accounts={financialAccounts} transactions={transactions} transfers={accountTransfers} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
-              onCreateAccount={async input => { await StorageService.accounts.add(input); await reloadAllData(); }}
-              onUpdateAccount={async (id, input) => { await StorageService.accounts.update(id, input); await reloadAllData(); }}
+              accountDraft={accountFormDraft} onAccountDraftChange={setAccountFormDraft} accountDirty={accountFormDirty} onAccountDirtyChange={setAccountFormDirty} accountSaving={financeWriteBusy} transferDraft={transferFormDraft} onTransferDraftChange={setTransferFormDraft} transferDirty={transferFormDirty} onTransferDirtyChange={setTransferFormDirty}
+              autoOpenTransfer={openMoneyTransferOnAccounts} onTransferRequestHandled={() => setOpenMoneyTransferOnAccounts(false)}
+              confirmAction={confirmAction}
+              onCreateAccount={async input => { await runPreparedFinanceWrite(() => StorageService.accounts.add(input)); }}
+              onUpdateAccount={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.accounts.update(id, input)); }}
               onDeleteAccount={async id => { await StorageService.accounts.delete(id); await reloadAllData(); }}
-              onCreateTransfer={async input => { await StorageService.accounts.addTransfer(input); await reloadAllData(); }}
-              onUpdateTransfer={async (id, input) => { await StorageService.accounts.updateTransfer(id, input); await reloadAllData(); }}
+              onCreateTransfer={async input => { await runPreparedFinanceWrite(() => StorageService.accounts.addTransfer(input)); }}
+              onUpdateTransfer={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.accounts.updateTransfer(id, input)); }}
               onReverseTransfer={async (id, date) => { await StorageService.accounts.reverseTransfer(id, date); await reloadAllData(); }}
               onDeleteTransfer={async id => { await StorageService.accounts.deleteTransfer(id); await reloadAllData(); }} />}
 
@@ -1986,12 +2673,13 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
 
                 {/* Filters */}
-                <div className="flex gap-1.5 overflow-x-auto text-xs pb-1">
+                <div role="group" aria-label="Filter transactions by type" className="flex flex-wrap gap-2 text-xs pb-1">
                   {(['all', 'income', 'expense'] as const).map(t => (
                     <button
                       key={t}
                       onClick={() => setFinanceTypeFilter(t)}
-                      className={`px-3 py-1.5 rounded-full capitalize whitespace-nowrap ${financeTypeFilter === t ? 'lifeos-accent-button font-semibold' : 'lifeos-panel text-secondary border border-[var(--stroke)]'}`}
+                      aria-pressed={financeTypeFilter === t}
+                      className={`min-h-11 rounded-full px-3 capitalize ${financeTypeFilter === t ? 'lifeos-accent-button font-semibold' : 'lifeos-panel text-secondary border border-[var(--stroke)]'}`}
                     >
                       {t}
                     </button>
@@ -2018,7 +2706,7 @@ export default function App() {
                         <div className="transaction-history-actions">
                           <button type="button" onClick={() => openDuplicateTransaction(t)} aria-label={`Duplicate transaction ${t.description || t.category}`}>Duplicate</button>
                           <button type="button" onClick={async () => {
-                            if (!window.confirm(`Delete transaction “${t.description || t.category}”?`)) return;
+                            if (!(await confirmAction({ title: 'Delete this transaction?', message: `“${t.description || t.category}” will be removed from your transaction history.`, confirmLabel: 'Delete transaction', destructive: true }))) return;
                             await StorageService.transactions.delete(t.id);
                             await reloadAllData();
                             showToast('Transaction deleted', 'info');
@@ -2046,7 +2734,7 @@ export default function App() {
                 const amountLabel = categoryMissing ? 'Unavailable' : formatMoney(spent);
                 const remainingLabel = categoryMissing ? 'Restore category to track this plan' : budgetStatus.isOver ? 'Above plan' : budgetStatus.percentUsed === null ? 'Set a limit to track remaining' : `${formatMoney(budgetStatus.remaining)} remaining in plan`;
                 return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{budgetName}</strong><span>{amountLabel} / {formatMoney(b.monthlyAmount)}</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetName} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetStatus.barPercent)} aria-valuetext={budgetStatus.isOver ? overAccessibleLabel : budgetLabel}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${budgetStatus.barPercent}%`, backgroundColor: budgetStatus.isOver ? 'var(--warning)' : undefined }} /></div><div className="mt-2 flex flex-wrap justify-between gap-1 text-xs text-secondary"><span>{budgetStatus.isOver ? overLabel : budgetLabel}</span><span>{remainingLabel}</span></div><button aria-label={`Delete ${budgetName}`} onClick={async () => {
-                  if (!window.confirm(`Delete ${budgetName}? Saved transactions will remain unchanged.`)) return;
+                  if (!(await confirmAction({ title: 'Delete this budget?', message: `${budgetName} will be removed. Saved transactions will remain unchanged.`, confirmLabel: 'Delete budget', destructive: true }))) return;
                   try { await StorageService.budgets.delete(b.id); }
                   catch { showToast('Budget deletion could not be confirmed. Refresh before retrying.', 'danger'); return; }
                   setBudgets(current => current.filter(item => item.id !== b.id));
@@ -2059,10 +2747,11 @@ export default function App() {
             {financeSubtab === 'savings' && <div className="space-y-3">
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
-                  if (!window.confirm(`Delete this ${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} contribution? The saved goal total will be adjusted.`)) return;
+                  if (!(await confirmAction({ title: 'Delete this contribution?', message: `${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} will be removed and the saved goal total will be adjusted.`, confirmLabel: 'Delete contribution', destructive: true }))) return;
                   try { await StorageService.savings.deleteContribution(contribution.id); await reloadAllData(); showToast('Contribution deleted and savings total updated', 'success'); }
                   catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); }
                 }} onContribute={() => {
+                  setCreateFormDirty(false);
                   setCreateDraft({
                     goalId: goal.id,
                     date: new Date().toISOString().slice(0, 10),
@@ -2071,7 +2760,7 @@ export default function App() {
                   });
                   setCreateKind('contribution');
                 }} onDelete={async () => {
-                  if (!window.confirm(`Delete savings goal “${goal.title}” and its contributions?`)) return;
+                  if (!(await confirmAction({ title: 'Delete this savings goal?', message: `“${goal.title}” and its recorded contributions will be removed.`, confirmLabel: 'Delete savings goal', destructive: true }))) return;
                   try { await StorageService.savings.deleteGoal(goal.id); }
                   catch { showToast('LifeOS could not confirm the deletion. Refresh Savings before retrying.', 'danger'); return; }
                   setSavingsGoals(current => current.filter(item => item.id !== goal.id));
@@ -2080,38 +2769,30 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5"><Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense><MoneyPlanning commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories}
-              onAddCommitment={async input => { await StorageService.commitments.add(input); await reloadAllData(); }}
-              onUpdateCommitment={async (id, input) => { await StorageService.commitments.update(id, input); await reloadAllData(); }}
+            {financeSubtab === 'planning' && <div className="space-y-5"><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+              onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
+              onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
               onDeleteCommitment={async id => { await StorageService.commitments.delete(id); await reloadAllData(); }}
-              onAddRate={async input => { await StorageService.exchangeRates.add(input); await reloadAllData(); }}
-              onUpdateRate={async (id, input) => { await StorageService.exchangeRates.update(id, input); await reloadAllData(); }}
-              onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /></div>}
+              onAddRate={async input => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.add(input)); }}
+              onUpdateRate={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.update(id, input)); }}
+              onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /><details className="lifeos-panel rounded-2xl border p-4" onToggle={event => setProjectionExpanded(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer font-semibold">Explore a savings projection</summary><p className="mt-2 text-sm text-secondary">Compare savings scenarios using your own assumptions. This does not change your accounts or planned bills.</p>{activeTab === 'finance' && projectionExpanded && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}</details></div>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
               <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-secondary">Based on transactions saved on this device</p></div><label className="text-[10px] text-secondary">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="lifeos-input mt-1 block min-h-11 rounded-lg px-2 py-2 text-xs" /></label></div>
               <div className="grid grid-cols-2 gap-2.5">
                 {[['Income', financeAnalytics.totalIncome, 'text-[var(--success)]'], ['Expenses', financeAnalytics.totalExpenses, 'text-[var(--danger)]'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-[var(--danger)]' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'lifeos-accent-text']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><p className="text-xs text-secondary">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
               </div>
-              <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
-                <FinanceCharts
-                  analytics={financeAnalytics}
-                  theme={theme}
-                  locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
-                  formatMoney={formatMoney}
-                  month={financeMonth}
-                  range={financeAnalyticsRange}
-                  onRangeChange={setFinanceAnalyticsRange}
-                />
-              </Suspense>
+              {activeTab === 'finance' && (hasFinanceChartData ? <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
+                <FinanceCharts analytics={financeAnalytics} theme={theme} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatMoney={formatMoney} month={financeMonth} range={financeAnalyticsRange} onRangeChange={setFinanceAnalyticsRange} />
+              </Suspense> : <section className="finance-chart-empty lifeos-panel" aria-label="Financial chart empty state"><strong>No recorded patterns yet</strong><span>Charts appear after you save income or spending. No sample numbers are shown.</span></section>)}
               <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-secondary">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${row.category} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, pct)}><div className={`h-full rounded-full ${pct >= 100 ? 'bg-[var(--danger)]' : pct >= 80 ? 'bg-[var(--warning)]' : 'bg-[var(--accent)]'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-secondary"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-[var(--danger)]' : 'text-secondary'}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
               <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
             </div>}
           </div>
-        )}
+        )} />
 
         {/* VIEW 3: HABITS */}
-        {activeTab === 'habits' && (
+        <RetainedScreen active={activeTab === 'habits'} id="screen-habits" {...transitionPropsFor('habits')} render={() => (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
@@ -2133,7 +2814,7 @@ export default function App() {
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
-                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${stats.completedToday ? 'border-[var(--success)] text-[var(--surface)]' : 'border-[var(--stroke)] text-secondary'}`} style={stats.completedToday ? { backgroundColor: 'var(--success)' } : undefined}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-secondary' : ''}`}>{h.name}</span><span className="block text-[10px] text-[var(--warning)]">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button type="button" onClick={event => { event.stopPropagation(); if (!window.confirm(`Delete habit “${h.name}” and its completion history?`)) return; void handleHabitDeletion(h); }} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Delete</button></div>
+                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${stats.completedToday ? 'border-[var(--success)] text-[var(--surface)]' : 'border-[var(--stroke)] text-secondary'}`} style={stats.completedToday ? { backgroundColor: 'var(--success)' } : undefined}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-secondary' : ''}`}>{h.name}</span><span className="block text-[10px] text-[var(--warning)]">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button type="button" onClick={event => { event.stopPropagation(); void confirmAction({ title: 'Delete this habit?', message: `“${h.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(h); }); }} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Delete</button></div>
                       <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
                       {h.reminderTime && <p className="mt-2 text-[10px] text-secondary">Reminder · {h.reminderTime} local</p>}
                     </div>
@@ -2142,16 +2823,16 @@ export default function App() {
               )}
             </div>
           </div>
-        )}
+        )} />
 
         {/* VIEW 4: GOALS */}
-        {activeTab === 'goals' && (
+        <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
           <div className="space-y-4">
             <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
             <div className="grid grid-cols-3 gap-2">{(['active', 'paused', 'completed'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
             {goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
-              <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary">{goalsSubtab === 'completed' ? 'Completed goals will appear here.' : goalsSubtab === 'paused' ? 'No paused goals. You can pause an active goal whenever needed.' : <><p>No active goals yet.</p><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Create a goal</button></>}</div>
+              <div className="goal-empty-state"><div><p className="type-eyebrow">{goalsCategoryFilter === 'all' ? goalsSubtab.toUpperCase() : goalsCategoryFilter.toUpperCase()}</p><h3 className="type-section-title">{goalsSubtab === 'completed' ? 'No completed goals yet' : goalsSubtab === 'paused' ? 'No paused goals' : goalsCategoryFilter === 'all' ? 'A goal when you’re ready' : `No ${goalsCategoryFilter.toLowerCase()} goals yet`}</h3><p className="mt-1 text-sm text-secondary">{goalsSubtab === 'completed' ? 'Completed goals will stay here as a record of what you reached.' : goalsSubtab === 'paused' ? 'If plans change, you can pause an active goal and return to it later.' : 'Choose a longer-term outcome and add milestones when they help.'}</p></div>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-xs font-semibold">Create a goal</button>}</div>
             ) : (
               goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).map(g => {
                 const pct = goalProgress(g);
@@ -2160,19 +2841,24 @@ export default function App() {
                   <div className="flex items-start justify-between gap-3"><div><button onClick={() => openEditGoal(g)} className="min-h-11 text-left font-semibold text-sm lifeos-accent-text">{g.title}</button><p className="text-[10px] text-secondary">{g.category} · target {formatDate(g.targetDate)} · {getDaysRemainingText(g.targetDate)}</p></div><span className="text-sm font-bold lifeos-accent-text">{pct}%</span></div>
                   <div className="lifeos-progress-track h-2 w-full overflow-hidden rounded-full" role="progressbar" aria-label={`${g.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div>
                   <div className="flex justify-between text-xs text-secondary"><span>{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</span><span>{goalMilestones.filter(milestone => milestone.completed).length}/{goalMilestones.length} milestones</span></div>
-                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="lifeos-tint lifeos-accent-text min-h-11 rounded-xl px-3 text-xs font-semibold">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-xs font-semibold">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--warning)]">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--success)]">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!window.confirm(`Delete goal “${g.title}” and its milestones?`)) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="lifeos-raised lifeos-danger min-h-11 rounded-xl px-3 text-xs">Delete</button></div>
+                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="lifeos-tint lifeos-accent-text min-h-11 rounded-xl px-3 text-xs font-semibold">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-xs font-semibold">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--warning)]">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--success)]">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!(await confirmAction({ title: 'Delete this goal?', message: `“${g.title}” and its milestones will be removed.`, confirmLabel: 'Delete goal', destructive: true }))) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="lifeos-raised lifeos-danger min-h-11 rounded-xl px-3 text-xs">Delete</button></div>
                   {goalMilestones.length > 0 && <div className="space-y-2 border-t border-[var(--stroke)] pt-3">{goalMilestones.map(milestone => <label key={milestone.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5 shrink-0" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-xs ${milestone.completed ? 'text-secondary line-through' : ''}`}>{milestone.title}</span>{milestone.targetDate && <span className="block text-[10px] text-secondary">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</span>}</span></label>)}</div>}
                 </div>;
               })
             )}
           </div>
-        )}
+        )} />
 
         {/* VIEW 5: PLANNER */}
-        {activeTab === 'planner' && (
+        <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <div className="space-y-4">
-            <div className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider lifeos-accent-text">Planner</p><h2 className="text-xl font-semibold tracking-tight">Your calendar</h2></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
-            <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar">
+            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
+            <div className="planner-range-nav" role="group" aria-label="Choose task range" data-no-tab-swipe>
+              {(['today', 'tomorrow', 'upcoming'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
+            </div>
+            <details className="planner-calendar-disclosure" data-no-tab-swipe>
+              <summary><span>Calendar</span><span>{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span></summary>
+            <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar" data-no-tab-swipe>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1"><button aria-label="Previous month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronLeft size={19} className="mx-auto" /></button><h3 className="min-w-32 text-center text-sm font-semibold">{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3><button aria-label="Next month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronRight size={19} className="mx-auto" /></button></div>
                 <button onClick={() => { setPlannerSelectedDate(todayKey); setPlannerDisplayedMonth(new Date(clockNow.getFullYear(), clockNow.getMonth(), 1)); setPlannerFilter('all'); }} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text transition active:scale-95">Today</button>
@@ -2194,11 +2880,16 @@ export default function App() {
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--stroke)] pt-2.5 text-[10px] text-secondary"><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />Tasks</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--danger)' }} />Overdue</span><span className="inline-flex items-center gap-1.5"><i className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: 'var(--success)' }} />Complete</span></div>
             </section>
+            </details>
             <section className="space-y-3" aria-label="Selected day agenda">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-panel min-h-11 rounded-lg border px-3 text-xs font-semibold lifeos-accent-text">Quick add</button></div>
-              <input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" />
-              <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
-              {plannerDetailTask && <article className="lifeos-panel rounded-2xl border border-[var(--accent)] p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Back to agenda</button></div><p className="mt-2 text-sm text-secondary">{plannerDetailTask.description || 'No description added.'}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-[var(--danger)]' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div></div><button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-3 min-h-10 w-full rounded-lg border border-[var(--stroke)] px-3 text-xs text-secondary">Diagnose reminder</button>{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-xl lifeos-raised p-3 text-[11px]" aria-live="polite"><dt>Eligibility / secure session</dt><dd>{String(taskReminderDiagnostics.eligible)} / {String(taskReminderDiagnostics.sessionReady)}</dd><dt>Scheduled local time</dt><dd>{String(taskReminderDiagnostics.scheduledLocalTime || 'none')}</dd><dt>LifeOS category / Android permission</dt><dd>{String(taskReminderDiagnostics.categoryEnabled)} / {String(taskReminderDiagnostics.androidPermission)}</dd><dt>Scheduling / pending ID</dt><dd>{String(taskReminderDiagnostics.schedulingResult)} / {String(taskReminderDiagnostics.pendingNotificationId || 'none')}</dd><dt>Delivery evidence</dt><dd>{String(taskReminderDiagnostics.deliveryEvidence)}</dd><dt>Schedule mode / state</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.scheduleMode || 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.deliveryState || 'unknown')}</dd><dt>Native requested / accepted</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.scheduleRequestedAt || 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.nativeAcceptedAt || 'unknown')}</dd><dt>Pending / receiver / active observed</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.pendingObservedAt || 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.receiverEventAt || 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.deliveryObservedAt || 'unknown')}</dd><dt>Delivery unconfirmed / tapped</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.deliveryUnconfirmed ?? 'unknown')} / {String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.tappedAt || 'unknown')}</dd><dt>Lifecycle cancellation</dt><dd>{String((taskReminderDiagnostics.lifecycleEvidence as Record<string, unknown> | null)?.cancellationReason || taskReminderDiagnostics.cancellationReason || 'none')}</dd><dt>Pending scheduled time</dt><dd>{String(taskReminderDiagnostics.pendingScheduledLocalTime || 'none')} · {String(taskReminderDiagnostics.pendingScheduledUtcTime || 'none')}</dd><dt>Timing limits</dt><dd>{String(taskReminderDiagnostics.deliveryTiming)}</dd><dt>Pending time matches</dt><dd>{String(taskReminderDiagnostics.pendingTimestampMatches)}</dd><dt>Exact alarm capability</dt><dd>{String(taskReminderDiagnostics.exactAlarm)}</dd><dt>Resync failed / cancellation reason</dt><dd>{String(taskReminderDiagnostics.synchronizationFailed)} / {String(taskReminderDiagnostics.cancellationReason || 'none')}</dd></dl>}<div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-[var(--stroke)] text-sm font-semibold lifeos-accent-text">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl lifeos-accent-button text-sm font-semibold">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
+              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div></div>
+              <details className="planner-filters">
+                <summary><Search size={15} aria-hidden="true" />Search and filters</summary>
+                <div className="planner-filter-fields"><input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" />
+                  <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
+                </div>
+              </details>
+              {plannerDetailTask && <article className="lifeos-panel rounded-2xl border border-[var(--accent)] p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Back to agenda</button></div>{plannerDetailTask.description && <section className="mt-3"><h5 className="type-caption text-secondary">Notes</h5><p className="mt-1 whitespace-pre-wrap text-sm">{plannerDetailTask.description}</p></section>}<div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-[var(--danger)]' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div>{plannerDetailTask.recurring && plannerDetailTask.recurring !== 'None' && <div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Repeats</p><p className="mt-1 font-medium">{plannerDetailTask.recurring}</p></div>}{plannerDetailTask.category && <div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Category</p><p className="mt-1 font-medium">{plannerDetailTask.category}</p></div>}</div><details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No reminder is set. Edit this task to add one.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-[var(--stroke)] text-sm font-semibold lifeos-accent-text">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl lifeos-accent-button text-sm font-semibold">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
             {visiblePlannerTasks.length === 0 ? (
               <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
             ) : (
@@ -2228,29 +2919,30 @@ export default function App() {
                         <div className="mt-1 flex gap-1"><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.priority}</span><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px]" style={{ color: status === 'Overdue' ? 'var(--danger)' : status === 'Completed' ? 'var(--success)' : 'var(--accent)' }}>{status}</span>{t.recurring !== 'None' && <span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.recurring}</span>}</div>
                       </div>
                     </div>
-                    <div className="flex shrink-0 flex-col gap-2"><button onClick={async event => { event.stopPropagation(); if (!window.confirm(`Delete “${t.title}”?`)) return; await NotificationService.cancelTask(t); await StorageService.tasks.delete(t.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task removed', 'info'); }} className="lifeos-danger min-h-11 rounded-lg px-3 text-xs">Delete</button></div>
+                    <div className="flex shrink-0 flex-col gap-2"><button onClick={async event => { event.stopPropagation(); if (!(await confirmAction({ title: 'Delete this task?', message: `“${t.title}” will be removed from your plan.`, confirmLabel: 'Delete task', destructive: true }))) return; await NotificationService.cancelTask(t); await StorageService.tasks.delete(t.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task removed', 'info'); }} className="lifeos-danger min-h-11 rounded-lg px-3 text-xs">Delete</button></div>
                   </div>
                 })}
               </div>
             )}
             </section>
           </div>
-        )}
+        )} />
 
         {/* VIEW 6: SETTINGS */}
-        {activeTab === 'settings' && (
+        <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
           <div className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { setProfileSection(section); if (section === 'notifications') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications') void refreshNotificationDiagnostics(); }} />}
 
-            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" description="Keep your personal records protected on this device." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" description="Keep your personal records protected on this device." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
               <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-secondary">Device-level authentication for the app.</p></div>
               <p className="text-xs text-secondary">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
+              {onboardingJourney.recoveryName && <p className="text-xs text-secondary">Recovery name: <strong>{onboardingJourney.recoveryName}</strong>. This label cannot restore data without your separate recovery kit.</p>}
               {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
             </section></ProfileSubpage>}
 
-            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" description="Choose how LifeOS looks. Your theme is saved on this device." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
+            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" description="Choose how LifeOS looks. Your theme is saved on this device." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
               <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-secondary">Choose a theme or follow Android's system setting.</p>
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
             </section>
@@ -2274,9 +2966,9 @@ export default function App() {
               </div>
             </section></ProfileSubpage>}
 
-            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => setProfileSection('home')}><ProfilePreferences preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
+            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
 
-            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" description="Choose which local reminders LifeOS may send." onBack={() => setProfileSection('home')}><section className="lifeos-panel rounded-xl border p-4 space-y-3">
+            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" description="Choose which local reminders LifeOS may send." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-xl border p-4 space-y-3">
               <p className="text-xs text-secondary">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
               <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
               <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
@@ -2290,22 +2982,26 @@ export default function App() {
               <button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
             </section></ProfileSubpage>}
 
-            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => setProfileSection('home')}>
-            {/* Demo Data Trigger */}
-            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Sample Demonstration Data</h3>
-              <p className="text-xs text-secondary">Load sample transactions, habits, goals, and tasks to evaluate all features.</p>
+            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
+            {/* Kept available, but disclosed because these records are added to the live local database. */}
+            <details className="profile-demo-disclosure">
+              <summary>Sample data for demonstrations</summary>
+              <div className="lifeos-panel rounded-xl border p-4 space-y-3">
+              <h3 className="text-sm font-semibold">Add demonstration records</h3>
+              <p className="text-xs text-secondary">This adds sample transactions, habits, goals, and tasks alongside your records. Export a backup first if you need to preserve the current state. LifeOS does not automatically remove these records later.</p>
               <button
                 onClick={async () => {
+                  if (!(await confirmAction({ title: 'Add sample records to this device?', message: 'Demonstration transactions, habits, goals, and tasks will be added alongside your existing records. They are not automatically removed.', confirmLabel: 'Add sample records', cancelLabel: 'Cancel' }))) return;
                   await StorageService.backup.seedDemoData();
                   await reloadAllData();
                   showToast('Sample demonstration data loaded', 'success');
                 }}
                 className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold transition"
               >
-                Load Sample Demo Data
+                Add sample records
               </button>
-            </div>
+              </div>
+            </details>
 
             {/* Backup & Restore */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
@@ -2380,7 +3076,7 @@ export default function App() {
               <p className="text-xs text-secondary">Permanently erase all personal database records.</p>
               <button
                 onClick={async () => {
-                  if (!window.confirm('Permanently erase all LifeOS data stored on this device? This cannot be undone.')) return;
+                  if (!(await confirmAction({ title: 'Erase all LifeOS data?', message: 'This permanently removes all personal records stored on this device. This cannot be undone.', confirmLabel: 'Erase all data', cancelLabel: 'Keep my data', destructive: true }))) return;
                   try {
                     await NotificationService.cancelAllRecordReminders();
                     await StorageService.backup.clearAll();
@@ -2396,24 +3092,25 @@ export default function App() {
               </button>
             </div>
             </ProfileSubpage>}
-            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => setProfileSection('home')}>
+            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => navigateProfileSection('home')}>
             <section className="lifeos-panel rounded-xl border p-4 space-y-2">
               <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
-              <button onClick={async () => { if (!window.confirm('Restart the welcome tour? Your records will remain untouched. Onboarding choices may update your name, appearance, security and notification preferences.')) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
+              <button onClick={async () => { if (!(await confirmAction({ title: 'Restart the welcome tour?', message: 'Your records will remain untouched. Choices made during onboarding may update your name, appearance, security, and notification preferences.', confirmLabel: 'Restart tour' }))) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
             </section>
             </ProfileSubpage>}
           </div>
-        )}
+        )} />
         </div>
       </main>
 
       {createKind && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-3" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form onSubmit={saveNewRecord} role="dialog" aria-modal="true" aria-labelledby="record-form-title" className="lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+        <div className="ui-sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
+          <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
-              <button type="button" aria-label="Close" onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
+              <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
             </div>
+            <p id="record-form-description" className="record-form-description">{createKind === 'task' ? 'Start with a title and date. Reminders and repeat options are below.' : createKind === 'transaction' ? 'Enter the amount and category. An account is optional.' : createKind === 'habit' ? 'Choose a routine and how often you want to check in.' : createKind === 'goal' ? 'Name the outcome, then choose a measurable target.' : 'Complete the details below. Your changes are saved only when you confirm.'}</p>
             {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
               {createKind === 'transaction' ? 'Merchant or description (optional)' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
               <input autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
@@ -2425,7 +3122,7 @@ export default function App() {
                 setCreateDraft({ ...createDraft, type, category });
               }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
               <label className="mb-3 block text-xs text-secondary">Amount · {createDraft.currencyCode || userPrefs.currency}<input autoFocus={!editingTransactionId} required type="number" min={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Category<select required value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">
+              <label className="mb-3 block text-xs text-secondary">Category<select required={isEncryptedStorageActivated()} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">
                 <option value="">Select category</option>
                 {createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type) && (
                   <option value={createDraft.category}>Legacy category: {createDraft.category}</option>
@@ -2434,6 +3131,7 @@ export default function App() {
                   <option key={category.id} value={category.name}>{category.name}</option>
                 ))}
               </select></label>
+              {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
               <button type="button" className="mb-3 min-h-11 rounded-lg px-2 text-left text-xs font-semibold lifeos-accent-text" aria-expanded={transactionDetailsOpen} aria-controls="transaction-optional-details" onClick={() => setTransactionDetailsOpen(open => !open)}>{transactionDetailsOpen ? 'Hide optional details' : 'Add optional details'}</button>
               {transactionDetailsOpen && <div id="transaction-optional-details" className="transaction-optional-details rounded-xl p-3">
                 <label className="mb-3 block text-xs text-secondary">Currency<select value={createDraft.currencyCode || userPrefs.currency} onChange={e => setCreateDraft({ ...createDraft, currencyCode: e.target.value, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e.target.value) ? createDraft.accountId : '' })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</option>)}</select><span className="mt-1 block">This labels the transaction. Changing the reporting currency does not convert saved records.</span></label>
@@ -2445,8 +3143,8 @@ export default function App() {
               </div>}
             </>}
             {createKind === 'habit' && <>
+              <label className="mb-3 block text-xs text-secondary">How often?<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
               <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Frequency<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
               <label className="mb-3 block text-xs text-secondary">Daily target (optional)<input type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
@@ -2477,23 +3175,26 @@ export default function App() {
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <>
-              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
               <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Due time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
-              <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
-              <label className="mb-3 block text-xs text-secondary">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
+              <details className="ui-optional-form-details" open={Boolean(editingTaskId && (createDraft.description || createDraft.category || createDraft.reminderAt || (createDraft.recurring && createDraft.recurring !== 'None')))}><summary>More task details</summary>
+                <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
+                <label className="mb-3 block text-xs text-secondary">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
+              </details>
             </>}
             {!['habit', 'budget', 'task', 'transaction', 'goal-progress'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">{createKind === 'goal' || createKind === 'savings' ? 'Target date' : createKind === 'milestone' ? 'Target date (optional)' : 'Date'}<input type="date" required={createKind !== 'milestone'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
-            {editingTransactionId && <button type="button" onClick={async () => { if (!window.confirm('Delete this transaction? This cannot be undone.')) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
-            {editingContributionId && <button type="button" onClick={async () => { if (!window.confirm('Delete this contribution and subtract it from the saved goal total?')) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
-            <button type="submit" className="w-full rounded-xl lifeos-accent-button px-4 py-3 text-sm font-semibold active:scale-[.99]">{editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button>
+            {editingTransactionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this transaction?', message: 'This transaction will be removed from your history. This cannot be undone.', confirmLabel: 'Delete transaction', destructive: true }))) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setCreateFormDirty(false); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
+            {editingContributionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this contribution?', message: 'The contribution will be removed and subtracted from the saved goal total.', confirmLabel: 'Delete contribution', destructive: true }))) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setCreateFormDirty(false); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
+            <div className="ui-form-actions"><button type="button" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-raised min-h-12 flex-1 rounded-xl text-sm font-semibold">Cancel</button><button type="submit" disabled={recordSaving} className="lifeos-accent-button min-h-12 flex-1 rounded-xl px-3 text-sm font-semibold">{recordSaving ? 'Saving…' : editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button></div>
           </form>
         </div>
       )}
 
       {/* Floating Bottom Nav */}
-      <nav aria-label="Main navigation" className="lifeos-nav fixed bottom-0 left-0 right-0 z-30 mx-auto grid max-w-md grid-cols-4 border-t px-2 pt-2 backdrop-blur" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.5rem)' }}>
+      <nav ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
+        <div className="app-nav-items">
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, life: Leaf })[icon];
           const isSelected = primaryDestinationForTab(activeTab) === tab;
@@ -2512,20 +3213,23 @@ export default function App() {
             }}
             aria-label={label}
             aria-current={isSelected ? 'page' : undefined}
-            className={`nav-item flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium transition duration-200 active:scale-95 ${isSelected ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
+            className={`nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium ${isSelected ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
           >
             <Icon size={18} strokeWidth={isSelected ? 2.4 : 1.8} aria-hidden="true" />
             <span>{label}</span>
           </button>
           );
         })}
+        </div>
       </nav>
 
       {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave LifeOS?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
 
+      {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
+
       {/* In-app Toast Notification */}
       {toast && (
-        <div role="status" aria-live="polite" className="lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl">
+        <div role="status" aria-live="polite" className={`ui-toast lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl ${toast.type === 'success' ? 'ui-success-feedback' : ''}`}>
           <span>{toast.message}</span>
         </div>
       )}

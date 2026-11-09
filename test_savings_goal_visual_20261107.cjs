@@ -42,7 +42,10 @@ assert.match(component, /aria-live="polite"/);
 assert.match(component, /onDelete/);
 assert.match(styles, /\.savings-goal-actions button \{[^}]*min-height: 44px/s);
 assert.match(styles, /\.savings-goal-fill \{[^}]*var\(--accent\)/s);
-assert.match(app, /window\.confirm\(`Delete savings goal[\s\S]*?and its contributions/);
+assert.match(app, /confirmAction\(\{ title: 'Delete this savings goal\?', message: `“\$\{goal\.title\}” and its recorded contributions will be removed\.`/,
+  'savings deletion explains that the goal and contributions are removed before asking for confirmation');
+assert.match(app, /StorageService\.savings\.deleteGoal\(goal\.id\)/,
+  'the confirmed action still deletes through the savings storage service');
 assert.match(app, /LifeOS could not confirm the deletion\. Refresh Savings before retrying\./);
 assert.match(app, /Goal deleted\. Reopen Savings to refresh the latest data\./, 'post-delete refresh failure is distinct from delete failure');
 console.log('SAVINGS GOAL VISUAL: 19 rendered-state, data-state, deletion and accessibility contracts passed with synthetic amounts.');

@@ -510,3 +510,58 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **PR state:** #25 is OPEN and draft, target `feature/lifeos2-milestone-a-20261107`. No merge/release was performed.
 - **Remaining:** Device-only visual/accessibility, swipe/edge-back, IME, Android biometric, notification and SAF export/restore acceptance. Mixed-currency analytics remain separate by design; commitments remain plans and do not auto-post. API 36/Play policy compliance remains outside this PR's verified build target.
 - **Exact acceptance steps:** Recorded in the final section of `docs/remediation/bulk-development-20261107/AUDIT_AND_IMPLEMENTATION_MAP.md`.
+
+## PR #36 mandatory security onboarding continuation — 2026-11-09
+
+- **Workspace:** Resumed `/data/data/com.termux/files/home/lifeos-directed-integration-20261109`, branch `feature/lifeos-directed-integration-20261109`, base `9c88d8a5ca708a09dd1753f8016082b39e0fff09`. PR #36 remains open and draft. Original `~/lifeOS` was not edited. Existing untracked `tests/browser/__pycache__/` was preserved and not staged.
+- **Implemented:** New installs require saved name, native device-protected key setup, and the existing real recovery-kit creation plus code confirmation before Today is admitted. The final name is promoted from bootstrap draft into encrypted profile settings; interrupted setup can resume; recovery cancellation keeps the gate closed. Existing completed installations remain on their current protected path. First-record setup becomes unnecessary after verified onboarding.
+- **Native policy:** New API 30+ keys can use Android strong biometric or secure device credential with a 1-second Keystore authorization window. Existing/unmarked keys retain biometric per-use `CryptoObject` behavior. API 29 remains biometric per-use. No custom PIN or plaintext fallback was introduced. Device-auth behavior still requires actual Android execution.
+- **Visual test correction:** Previous CI logs showed the Android visual job still selected the removed optional-flow test `realPackagedScreensFormsAndContentSwipe`. Updated its selection, API 29/34 exclusion inventories, and runner contract to use `packagedMandatoryOnboardingScreensAndRestart`. That test captures only the name, protection and non-secret recovery screens with `FLAG_SECURE` still enabled; it never opens or captures the recovery-code dialog.
+- **Verification:** `npm test` exited 0; all six Sentinel suites passed; `npx tsc --noEmit` passed; `npm run build` passed with the existing large JavaScript chunk warning; onboarding/native source tests and `git diff --check` passed. Browser automation could not run locally because Selenium/Chrome are not installed. Termux has Java and ADB but no Android SDK; Android compile/instrumentation are pending hosted CI. No physical-device evidence was produced.
+- **Previous CI diagnosis:** For the old commit, Android visual failed because its stale test expected the dashboard without the new mandatory setup. API 34 instrumentation passed 9 tests then the runner process crashed during the task-notification bridge test after an emulator graphics-context error; the harness correctly reported 9/19 instead of accepting partial execution. This second failure remains unresolved pending the exact-new-commit run.
+- **Next:** Review and publish the focused PR #36 changes, then inspect the exact-head browser and Android CI reports/artifacts. Keep device authentication, recovery, and existing-user upgrade acceptance explicitly pending until exercised on Android.
+
+
+## PR #36 browser acceptance correction — 2026-11-09
+
+- **Exact-head evidence:** Browser workflow `42638696009` failed after name persistence and cancelled-auth tests passed. The saved failure screenshot showed App Protection still displayed with `StorageService.settings.delete is not a function` after secure setup; no recovery code was visible.
+- **Root cause:** The app contract and raw Dexie service provided settings deletion, but the encrypted storage facade did not implement it. After provisioning, onboarding could not delete the temporary bootstrap name draft, so the flow stayed at App Protection.
+- **Correction:** Added authenticated, transactional settings deletion to the encrypted facade and a production-facade regression assertion. This preserves ciphertext/session boundaries and retires the temporary name draft only once encrypted storage is active.
+- **Validation:** The focused encrypted facade suite passed 18/18, onboarding journey checks passed, TypeScript passed, and `git diff --check` passed. The full suite/build/Sentinel and exact-head browser/Android workflows are being rerun after this correction.
+- **Next:** Commit this correction, push to the same PR #36 branch, and inspect the next browser and Android artifacts. Physical-device auth/recovery remains unverified.
+
+## PR #36 browser existing-user fixture correction — 2026-11-09
+
+- **Exact-head evidence:** Browser workflow `42639881321` passed name persistence, cancellation/retry, encrypted profile promotion, recovery confirmation and completed-install restart. It then failed a later legacy-state check.
+- **Root cause:** That check mutated the same completed encrypted user to `onboardingCompleted=false` and expected onboarding again. Production correctly skipped onboarding because existing private data was present; the test contradicted the existing-user compatibility requirement.
+- **Correction:** The legacy optional `skipped` choices are now tested on a fresh empty installation. The separate completed-user scenario remains and asserts existing users do not re-enter onboarding.
+- **Validation:** Python syntax compilation and `git diff --check` passed. New exact-head browser/Android workflows are pending after this test-only correction.
+
+
+## PR #36 onboarding progress normalization — 2026-11-09
+
+- **Exact-head evidence:** Browser run `42640274802` passed all setup and restart checks through recovery confirmation, then exposed a persisted legacy `skipped` marker remaining in the test store. Production rendered the required protection screen, but did not save its normalized journey until the user advanced.
+- **Correction:** During safe first-run startup, incomplete installations now persist normalized mandatory progress whenever saved progress contains old optional values or invalid fields. Existing data-bearing and completed installations are not modified or routed back through onboarding. The browser legacy-state case now starts from a genuinely fresh empty profile.
+- **Validation:** Focused journey assertions, TypeScript and diff checks passed. Full checks and the new exact-head browser/Android workflows are pending after this correction.
+- **Full local verification after journey persistence change:** `npm test` exited 0; six Sentinel suites passed; `npx tsc --noEmit`, `npm run build`, the onboarding journey test, and `git diff --check` passed. Build still reports the existing large JavaScript chunk warning. Browser and Android CI are being rerun for the latest commit; no Android SDK or device is available in Termux.
+
+## PR #36 existing-user browser assertion correction — 2026-11-09
+
+- **Exact-head evidence:** Browser run `42641123056` reached the existing-user test after all earlier onboarding checks passed. The only failure was an assertion that no journey record existed.
+- **Root cause:** The test created an empty install first, which now correctly persists initial onboarding progress, then converted that same fixture into an existing user. The check for absence of progress was invalid; the actual compatibility requirement is to keep the completed user's workspace open and preserve the profile.
+- **Correction:** Removed only the invalid absence assertion. The test still verifies the completed installation opens Today and retains the encrypted profile name. No product behavior or security assertion was weakened.
+- **Validation:** Python syntax compilation and diff checks passed. Browser and Android checks for the updated test-only commit remain pending.
+
+## PR #36 mandatory onboarding and first-record browser alignment — 2026-11-09
+
+- **Exact-head evidence:** Browser workflow `42641402178` passed the complete three-stage onboarding scenario, including cancellation/retry, recovery confirmation, restart, legacy state and existing-user access. Its broader product acceptance then failed because it still expected categories to load only after the first-record prompt.
+- **Root cause:** That old test modeled pre-onboarding encryption. Mandatory setup now has already enabled encrypted storage and loaded categories before Today, so the first transaction form correctly contains categories immediately.
+- **Correction:** Browser acceptance now selects a loaded category and saves the first expense directly, asserting no redundant first-record security prompt and one encrypted transaction. It no longer expects a deferred category load or a second save action.
+- **Validation:** Python syntax compilation and whitespace checks passed. This is an acceptance-test expectation update to match the new mandatory secure setup; hosted browser, Android and APK verification are pending.
+
+## PR #36 Android visual instrumentation fixture correction — 2026-11-09
+
+- **Exact-head evidence:** Android QA run `42641902231` completed the API 29 recovery preflight and APK compilation, but its Android visual test failed at `DirectedVisualAcceptanceTest.java:95`. The WebView rejected `import('/src/db.ts')` because Java-injected JavaScript has no module base URL (`about:blank`).
+- **Root cause:** The visual test tried to import a Vite TypeScript source module from a packaged Android WebView solely to set non-secret bootstrap progress for rendering the Recovery Kit screen. That import works in the browser harness but not in the native injected-script context.
+- **Correction:** The visual fixture now writes only the disposable `onboardingJourney` bootstrap row through the page's IndexedDB API, then recreates the Activity. It does not provision a native key, authenticate, confirm recovery, open a recovery secret, or expose secret content.
+- **Validation:** The Java change passes `git diff --check`; the hosted Android instrumentation workflow is being rerun. Browser acceptance on `f5ad3bb1eb0574e3ddcb624d5fa894b42df5bad1` passed. Android emulator visual acceptance is not yet verified.

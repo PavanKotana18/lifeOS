@@ -1,5 +1,8 @@
 package com.lifeos.personal;
 
+import android.app.Activity;
+import android.app.Application;
+import android.os.Bundle;
 import android.view.WindowManager;
 import android.content.pm.ApplicationInfo;
 
@@ -10,7 +13,11 @@ import org.junit.Assume;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -31,7 +38,7 @@ public class ScreenshotProtectionAcceptanceTest {
         assertTrue(ScreenshotProtectionPolicy.shouldProtect(true, false, true, false, true));
     }
 
-    @Test public void debugActivityRequiresExplicitSafeStateAndRestoresProtectionOnLifecycle() {
+    @Test public void debugActivityRequiresExplicitSafeStateAndRestoresProtectionOnLifecycle() throws Exception {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             AtomicInteger before = new AtomicInteger();
             AtomicInteger safe = new AtomicInteger();
@@ -56,30 +63,52 @@ public class ScreenshotProtectionAcceptanceTest {
             assertEquals("Safe resumed debug screen may be captured", 0, safe.get());
             assertEquals("Sensitive state restores FLAG_SECURE", 1, sensitive.get());
 
-            // Isolate Activity's resume fence from LifeOS's asynchronous resume
-            // validation, which is exercised by the application lifecycle suite.
-            scenario.onActivity(activity -> {
-                activity.getBridge().getWebView().getSettings().setJavaScriptEnabled(false);
-                activity.getBridge().getWebView().setVisibility(android.view.View.GONE);
-            });
-            androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED);
             AtomicInteger paused = new AtomicInteger();
             scenario.onActivity(activity -> paused.set(hasSecureFlag(activity) ? 1 : 0));
             assertEquals("Backgrounded Activity must be protected", 1, paused.get());
 
-            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
             AtomicInteger resumed = new AtomicInteger();
             AtomicInteger staleUpdate = new AtomicInteger();
             AtomicInteger confirmed = new AtomicInteger();
-            scenario.onActivity(activity -> {
-                resumed.set(hasSecureFlag(activity) ? 1 : 0);
-                activity.setSensitiveScreen(false);
-                staleUpdate.set(hasSecureFlag(activity) ? 1 : 0);
-                activity.confirmResumeValidation();
-                activity.setSensitiveScreen(false);
-                confirmed.set(hasSecureFlag(activity) ? 1 : 0);
-            });
+            AtomicReference<MainActivity> target = new AtomicReference<>();
+            scenario.onActivity(target::set);
+            CountDownLatch resumeAssertionsCompleted = new CountDownLatch(1);
+            AtomicBoolean captureNextResume = new AtomicBoolean(false);
+            Application application = target.get().getApplication();
+            Application.ActivityLifecycleCallbacks lifecycleProbe = new Application.ActivityLifecycleCallbacks() {
+                @Override public void onActivityResumed(Activity activity) {
+                    if (activity != target.get() || !captureNextResume.compareAndSet(true, false)) return;
+                    MainActivity resumedActivity = (MainActivity) activity;
+                    // Run these native assertions synchronously in the resume
+                    // turn. Capacitor 6 dispatches JS plugin calls through its
+                    // separate CapacitorPlugins HandlerThread and then posts
+                    // UI work; queued startup/JS resume traffic must not race
+                    // this direct native state-machine verification.
+                    resumed.set(hasSecureFlag(resumedActivity) ? 1 : 0);
+                    resumedActivity.setSensitiveScreen(false);
+                    staleUpdate.set(hasSecureFlag(resumedActivity) ? 1 : 0);
+                    resumedActivity.confirmResumeValidation();
+                    resumedActivity.setSensitiveScreen(false);
+                    confirmed.set(hasSecureFlag(resumedActivity) ? 1 : 0);
+                    resumeAssertionsCompleted.countDown();
+                }
+
+                @Override public void onActivityCreated(Activity activity, Bundle state) {}
+                @Override public void onActivityStarted(Activity activity) {}
+                @Override public void onActivityPaused(Activity activity) {}
+                @Override public void onActivityStopped(Activity activity) {}
+                @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) {}
+                @Override public void onActivityDestroyed(Activity activity) {}
+            };
+            application.registerActivityLifecycleCallbacks(lifecycleProbe);
+            try {
+                captureNextResume.set(true);
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED);
+                assertTrue("Resume lifecycle callback did not run", resumeAssertionsCompleted.await(5, TimeUnit.SECONDS));
+            } finally {
+                application.unregisterActivityLifecycleCallbacks(lifecycleProbe);
+            }
             assertEquals("Resume stays protected until React revalidates the screen", 1, resumed.get());
             assertEquals("Stale safe-screen updates cannot clear post-resume protection", 1, staleUpdate.get());
             assertEquals("Authenticated resume permits ordinary debug screenshots", 0, confirmed.get());

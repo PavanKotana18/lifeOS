@@ -10,7 +10,12 @@ assert.ok(!/\b(?:text|bg|border)-(?:slate|indigo|emerald|amber|rose|sky|violet)-
 assert.match(today, /role="progressbar" aria-label=\{`\$\{goal\.title\} progress`\}/);
 assert.match(today, /aria-pressed=\{stats\.completedToday\}/);
 assert.match(today, /aria-label=\{`Mark \$\{t\.title\}/);
-assert.match(today, /Create a habit/);
-assert.match(today, /Add a task/);
-assert.match(today, /Nothing scheduled for today yet/);
+assert.match(today, /today-habit-summary[\s\S]*openCreateForm\('habit'\)[\s\S]*Add habit/, 'habit creation sits with the habit list instead of competing with task actions');
+const focusStart = today.indexOf('className="today-focus');
+const focusEnd = today.indexOf('</section>', focusStart);
+assert.ok(focusStart >= 0 && focusEnd > focusStart && !today.slice(focusStart, focusEnd).includes("openCreateForm('habit')"),
+  'Today has one clear task action in its focus section');
+assert.match(today, /No habits to check in yet/, 'the habit empty state stays compact and contextual');
+assert.match(today, /openCreateForm\('task'\)[^>]*>\+ Task/, 'the focus quick action remains available to create a task');
+assert.match(today, /No tasks due today\. Your day is open\./, 'the task empty state avoids a repeated oversized action card');
 console.log('TODAY THEME: 8 source-level theme, progress, status and empty-state checks passed.');

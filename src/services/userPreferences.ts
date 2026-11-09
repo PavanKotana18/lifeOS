@@ -111,7 +111,7 @@ export function buildTransactionUpdate(fields: { type: 'income' | 'expense'; amo
   if (date && Number.isNaN(date.getTime())) throw new Error('Choose a valid transaction date and time.');
   if (!date && (!fields.preserveUnknownTime || !fields.date)) throw new Error('Choose a valid transaction date and time.');
   return {
-    type: fields.type, amount: exactAmount?.amount ?? amount, ...(exactAmount ? { amountMinor: exactAmount.amountMinor, currencyCode: exactAmount.currencyCode } : {}), category: fields.category.trim(), description: fields.description.trim(),
+    type: fields.type, amount: exactAmount?.amount ?? amount, ...(exactAmount ? { amountMinor: exactAmount.amountMinor, currencyCode: exactAmount.currencyCode } : {}), category: fields.category.trim(), description: fields.description.trim() || fields.category.trim(),
     date: date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : fields.date!,
     ...(date ? { occurredAt: date.toISOString() } : {}), paymentMethod: fields.paymentMethod.trim() || 'Other',
     notes: fields.notes?.trim() || undefined, isRecurring: Boolean(fields.isRecurring),

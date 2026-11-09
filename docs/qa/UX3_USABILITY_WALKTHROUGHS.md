@@ -1,0 +1,22 @@
+# UX 3.0 usability walkthroughs
+
+Method: source-informed heuristic walkthrough plus synthetic component/database tests. No external participants, time-on-task measurements, emulator screen recording or physical-device observations were produced by this session. Hosted Android instrumentation ran the native smoke, persistence, notification, font-scale, screenshot-policy and gesture-inset cases, but did not exercise the product UI journeys. The results below are implementation and test evidence, not participant research or visual acceptance.
+
+The exact candidate head `e8bd5aabb6327d90ef5c56efe133c3ec81292388` passed `npm test`, Sentinel 6/6 suites, TypeScript, production build, and the hosted Android matrix in [run 42523767928](https://github.com/PavanKotana18/lifeOS/actions/runs/42523767928). The matrix was API 29 14/14, API 34 19/19 and API 35 19/19 with zero failures, skips or runner errors. This does not convert the heuristic walkthroughs into observed usability tests. If the PR head advances, the exact current-head run is linked from PR #34.
+
+| Journey | Intended shortest path | Corrective work and evidence | Result / limitation |
+|---|---|---|---|
+| A — Today task | Today → Add task → save → find task → complete | Today defaults to focus, today's tasks and habits; task rows open human-readable details and expose direct completion. Today dashboard/layout tests pass. | Flow is connected at source/test level; no rendered or physical walkthrough. |
+| B — Expense | Money → Add expense → save → find in Activity | Expense, income and transfer remain equal quick actions. Synthetic MoneyHome rendering and money-workflow regression tests pass. | Component wiring verified; Android keyboard and visible viewport unverified. |
+| C — Income / transfer | Money → Income or Transfer → understand result | No finance logic changed; existing transfer/account/ledger suites pass. Money summary explicitly says transfers do not change income-minus-expenses. | Ledger tests pass; wording still needs first-time-user review on device. |
+| D — Habit | Life → Add habit → check in → understand streak | Life component renders daily routines and streak/status actions; existing check-in and analytics tests pass. | Component render checks pass; no real use session. |
+| E — Goal | Life → Add goal → add milestone → review progress | Existing goal progress and milestone calculations remain untouched; Life render tests cover active goal and milestone summaries. | Test coverage pass; goal detail navigation remains part of device checklist. |
+| F — Customize Today | Today → Customize → reorder/hide → restart | Existing encrypted preference persistence test verifies saved order/visibility after database close, native relock and module restart. | Test passed with a simulated native authentication bridge; no physical restart. |
+| G — Dirty form | Open/edit → change → dismiss → keep editing/discard | Existing create-handler tests verify failed writes preserve input and explicit retry commits once; shared sheet, focus and dirty-close contracts pass. | Handler-level/mock evidence only; Android keyboard/sheet interaction pending. |
+| H — Reminder tap | Tap notification → protected session admission → correct task | Notification architecture unchanged. Full Node notification contracts pass; hosted API 34/35 instrumentation passed notification bridge delivery and cold-start tap routing. | Emulator contract pass; real delivery/deep-link on iQOO remains pending. |
+| I — Lock / resume | Private content → lock/background → resume/unlock | Existing encrypted-session, admission, screenshot-protection and lifecycle suites pass; inactive screens are hidden/inert and lock replaces the private tree. | Native bridges are simulated in most Node suites; Android screenshot and iQOO lock/Recent Apps test pending. |
+| J — Offline | Create local record → go offline/restart → verify record | Dexie, encrypted storage and offline resilience regression tests pass; no app network dependency in local storage path. | Automated service evidence; no offline phone restart performed. |
+
+## Evaluation rubric
+
+Discoverability, comprehension, action efficiency, feedback, error recovery, visual clarity, consistency and accessibility are represented by focused tests where possible. Product-quality judgments still require rendered emulator review and a single consolidated physical-device acceptance session. No user satisfaction or time-saving claim is made.

@@ -11,5 +11,6 @@ assert.match(source, /Monthly chart data: \{analytics\.periodRows\.map/, 'screen
 assert.match(source, /row\.hasRecords \? `income \$\{formatMoney\(row\.income\)\}, expenses \$\{formatMoney\(row\.expenses\)\}` : 'no saved records'/, 'summary distinguishes recorded zeroes from missing records');
 assert.equal((source.match(/fill="var\(--chart-[1-5]\)"/g) || []).length, 1, 'pie series uses semantic chart tokens');
 assert.equal((source.match(/role="status"/g) || []).length, 2, 'both chart empty states announce their status');
-assert.match(source, /formatMoney\(entry\.amount\).*entry\.percentage\.toFixed\(1\)/, 'category values remain available as readable text alongside the chart');
+assert.match(source, /formatMoney\(entry\.amount\)/, 'category amounts remain available as readable text alongside the chart');
+assert.match(source, /entry\.percentage\.toFixed\(1\)/, 'percentage shares remain available as readable text alongside the chart');
 console.log('FINANCE CHARTS THEME: 9 source-level token, data-summary and empty-state checks passed.');

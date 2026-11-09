@@ -255,7 +255,7 @@ async function fixture({ activate = true } = {}) {
   const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false }, safeFirstRunBrowse: { current: false }, visualThemeId: 'soft-ivory-sage' };
   function appDeps() {
     const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...load('src/services/todayLayout.ts'), ...db, ...notificationModule, ...state,
-      ...load('src/services/csvExportService.ts'),
+      ...load('src/services/csvExportService.ts'), ...load('src/services/onboardingJourney.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       reconcileNotificationPreferences: async () => {},
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
@@ -272,7 +272,11 @@ async function fixture({ activate = true } = {}) {
           activateStorage: db.activateEncryptedStorage,
           isStorageActive: db.isEncryptedStorageActivated,
         }),
+      // App's in-app confirmation dialog replaces window.confirm. Production
+      // handler tests deliberately approve synthetic destructive actions so
+      // they can verify the underlying storage guard and rollback behavior.
       localStorage: global.localStorage, window: { confirm: () => true },
+      confirmAction: async () => true,
       todayLayoutRef: { current: load('src/services/todayLayout.ts').DEFAULT_TODAY_LAYOUT },
       systemDarkPreference: () => false, applyDomTheme() {},
       BiometricService: { async isAvailable() { return { isAvailable: true }; } },

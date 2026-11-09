@@ -65,16 +65,17 @@ function unprovisioned(f) {
       assert.equal(f.isEncryptedStorageActivated(), false);
     } finally { f.StorageService.transactions.getAll = original; }
   });
-  await test('Onboarding display name persists through the bootstrap profile setting before secure setup', async f => {
-    const update = h.appFunction('updateDisplayName');
+  await test('Onboarding keeps only a temporary bootstrap name until secure setup', async f => {
+    const update = h.appFunction('saveOnboardingIdentity');
     let renderedName = '';
     const updateName = h.bind(update, { StorageService: f.StorageService,
-      isEncryptedStorageActivated: f.isEncryptedStorageActivated, setDisplayName: name => { renderedName = name; } });
+      setDisplayName: name => { renderedName = name; } });
     await updateName('  Synthetic Profile  ');
-    assert.equal(renderedName, '  Synthetic Profile  ');
-    assert.equal(await f.StorageService.settings.get('displayName'), 'Synthetic Profile');
+    assert.equal(renderedName, 'Synthetic Profile');
+    assert.equal(await f.StorageService.settings.get('onboardingNameDraft'), 'Synthetic Profile');
+    await assert.rejects(f.StorageService.settings.get('displayName', ''), /Encrypted storage is not ready/);
     const fresh = await f.restart();
-    assert.equal(await fresh.StorageService.settings.get('displayName'), 'Synthetic Profile');
+    assert.equal(await fresh.StorageService.settings.get('onboardingNameDraft'), 'Synthetic Profile');
     await fresh.lifeOSDatabase.close();
     await fresh.lifeOSDatabase.delete();
   });
@@ -125,8 +126,8 @@ function unprovisioned(f) {
     assert.equal(state.setups, 0);
     assert.equal(f.isEncryptedStorageActivated(), false);
     assert.equal(await f.lifeOSDatabase.transactions.count(), 0);
-    await f.StorageService.settings.set('displayName', 'Synthetic User');
-    assert.equal(await f.StorageService.settings.get('displayName'), 'Synthetic User');
+    await f.StorageService.settings.set('onboardingNameDraft', 'Synthetic User');
+    assert.equal(await f.StorageService.settings.get('onboardingNameDraft'), 'Synthetic User');
   });
   await test('Legacy-data startup waits for explicit consent and complete-kit confirmation', async f => {
     const state = unprovisioned(f), consent = deferred(), kit = deferred(), shown = deferred();
