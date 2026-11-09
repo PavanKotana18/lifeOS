@@ -84,12 +84,34 @@ try:
  tab('dashboard'); click('Customize'); capture('today-customization'); toggles=d.find_elements(By.CSS_SELECTOR,'#today-customization input:not(:disabled)'); toggles[-1].click(); click('Customize'); passed('Customize Today through saved section visibility control')
  backup=d.execute_async_script("const done=arguments[0]; Promise.all([import('/src/db.ts'),import('/src/services/backupCryptoService.ts')]).then(async([m,b])=>{const original=await m.StorageService.backup.exportData();const encrypted=await b.encryptBackup(original,'QA isolated backup passphrase 2026');const decoded=await b.decryptBackup(encrypted,'QA isolated backup passphrase 2026');m.validateBackupTables(JSON.parse(decoded).tables);let rejected=false;try{await b.decryptBackup(encrypted,'wrong QA passphrase 2026')}catch{rejected=true;} await m.StorageService.backup.importData(decoded,{replaceExisting:true});done({same:decoded===original,rejected,accounts:(await m.StorageService.accounts.getAll()).length});}).catch(e=>done({error:String(e)}));")
  assert backup=={'same':True,'rejected':True,'accounts':2},str(backup); passed('Encrypted backup roundtrip, wrong-passphrase rejection and isolated restore using production services')
- # Native CDP touch events exercise browser touch arbitration, including content-start swipes.
- tab('dashboard'); e=wait('.today-focus h3'); r=e.rect; x=r['x']+r['width']/2; y=r['y']-d.execute_script('return scrollY')+r['height']/2
- for kind,px in [('touchStart',x),('touchMove',x-30),('touchMove',x-65),('touchMove',max(20,x-130))]:
-  d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':kind,'touchPoints':[{'x':px,'y':y}]}); time.sleep(.04)
- d.save_screenshot(str(out/'swipe-mid-drag.png')); images.append('swipe-mid-drag.png'); (out/'gesture-trace.json').write_text(json.dumps(d.execute_script('return window.__lifeosGestureTrace||[]'),indent=2))
- d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]}); w.until(lambda _: wait('[data-tab="finance"]').get_attribute('aria-current')=='page'); capture('swipe-completed'); passed('Native browser touch swipe from ordinary heading')
+ # CDP touch uses the browser's actual pointer arbitration and implicit capture.
+ def swipe(css,dx,dy=0,ending='touchEnd',mid=None):
+  e=wait(css); d.execute_script('arguments[0].scrollIntoView({block:"center",behavior:"instant"})',e)
+  point=d.execute_script('const r=arguments[0].getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}',e); x=point['x'];y=point['y']
+  # Keep endpoints inside the logical viewport without changing production thresholds.
+  dx=max(20-x,min(dx,d.execute_script('return innerWidth')-20-x))
+  d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
+  for f in [.25,.55,1]:
+   d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':x+dx*f,'y':y+dy*f}]}); time.sleep(.04)
+  if mid:
+   w.until(lambda _: d.execute_script('return !!document.querySelector("[data-gesture-dragging=true]")'))
+   d.save_screenshot(str(out/(mid+'.png')));images.append(mid+'.png')
+  d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':ending,'touchPoints':[]})
+  time.sleep(.25)
+ tab('dashboard'); swipe('.today-focus h3',-120,mid='swipe-mid-drag')
+ w.until(lambda _: wait('[data-tab="finance"]').get_attribute('aria-current')=='page'); capture('swipe-completed'); passed('Real touch swipe from ordinary heading, including implicit capture transfer')
+ swipe('.money-cashflow',-120); w.until(lambda _: wait('[data-tab="plan"]').get_attribute('aria-current')=='page')
+ swipe('.plan-hub-empty',-120); w.until(lambda _: wait('[data-tab="life"]').get_attribute('aria-current')=='page')
+ swipe('.life-section-more',120); w.until(lambda _: wait('[data-tab="plan"]').get_attribute('aria-current')=='page');wait('.plan-hub')
+ swipe('.plan-hub-empty',120); w.until(lambda _: wait('[data-tab="finance"]').get_attribute('aria-current')=='page')
+ swipe('.money-action-expense',120); w.until(lambda _: wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page');assert not d.find_elements(By.CSS_SELECTOR,'form[role="dialog"]')
+ passed('Card, row and ordinary-button touch swipes across all four tabs; no accidental button activation')
+ swipe('.today-focus h3',-15);assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page'
+ swipe('.today-focus h3',-90,ending='touchCancel');assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';assert not d.find_elements(By.CSS_SELECTOR,'[data-gesture-dragging]')
+ passed('Short swipe returns and cancelled swipe clears ownership')
+ d.execute_script('window.scrollTo({top:0,behavior:"instant"})');swipe('.today-focus',0,-110);assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';assert d.execute_script('return scrollY>0');passed('Vertical touch scroll remains independent of tab navigation')
+ d.execute_cdp_cmd('Emulation.setEmulatedMedia',{'features':[{'name':'prefers-reduced-motion','value':'reduce'}]});swipe('.today-focus h3',-120);w.until(lambda _: wait('[data-tab="finance"]').get_attribute('aria-current')=='page');capture('reduced-motion-navigation');d.execute_cdp_cmd('Emulation.setEmulatedMedia',{'features':[]});passed('Reduced motion retains immediate touch navigation')
+ (out/'gesture-trace.json').write_text(json.dumps(d.execute_script('return window.__lifeosGestureTrace||[]'),indent=2))
  click('Open profile and settings'); capture('profile');
  for section in ['Preferences','Notifications','Privacy & security','Data & backup','About LifeOS']:
   click(section); capture('settings-'+section.lower().replace(' ','-').replace('&','and')); click('Profile')
