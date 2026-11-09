@@ -811,3 +811,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 .money-page-toolbar { flex-wrap: wrap; }
 .money-destination-control { flex: 0 1 15rem; max-width: 100%; min-width: 0; }
 .money-destination-control select { max-width: none; min-width: 0; }
+
+/* Focused controls scroll clear of the real sticky action bar, including large text. */
+.ui-bottom-sheet { scroll-padding-bottom: calc(var(--sheet-actions-height, 5rem) + 1rem); }
+.ui-bottom-sheet :is(input,select,textarea,button) { scroll-margin-bottom: max(.75rem, env(safe-area-inset-bottom)); }

@@ -26,6 +26,8 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
       document.documentElement.style.setProperty('--sheet-viewport-top', `${viewport?.offsetTop ?? 0}px`);
       const focused = document.activeElement;
       const currentDialog = findDialog();
+      const actions = currentDialog?.querySelector<HTMLElement>('.ui-form-actions');
+      currentDialog?.style.setProperty('--sheet-actions-height', `${actions?.getBoundingClientRect().height ?? 0}px`);
       if (focused instanceof HTMLElement && currentDialog?.contains(focused)) focused.scrollIntoView({ block: 'nearest' });
     };
     const keydown = (event: KeyboardEvent) => {
@@ -43,10 +45,15 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
       dialog.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled)')?.focus({ preventScroll: true });
     }
     updateViewport();
+    const actions = dialog.querySelector<HTMLElement>('.ui-form-actions');
+    const actionsObserver = actions && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateViewport) : null;
+    if (actions) actionsObserver?.observe(actions);
     viewport?.addEventListener('resize', updateViewport);
     viewport?.addEventListener('scroll', updateViewport);
     document.addEventListener('keydown', keydown);
     return () => {
+      actionsObserver?.disconnect();
+      dialog.style.removeProperty('--sheet-actions-height');
       viewport?.removeEventListener('resize', updateViewport);
       viewport?.removeEventListener('scroll', updateViewport);
       document.removeEventListener('keydown', keydown);
