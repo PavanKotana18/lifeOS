@@ -2115,7 +2115,7 @@ export default function App() {
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">YOUR DAY</p>
                   <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s priorities</h3>
                   {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><span className="font-medium">Tasks due today</span> · <strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> complete</p>
-                    : <p className="mt-1 text-sm text-secondary">No tasks due today. Your day is open.</p>}
+                    : <p className="mt-1 text-sm text-secondary">Choose one thing to make time for today.</p>}
                 </div>
                 <div className="today-quick-actions" aria-label="Quick add">
                   <button type="button" onClick={() => openCreateForm('task')} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">+ Task</button>
@@ -2168,7 +2168,7 @@ export default function App() {
             {/* Today's Habits Summary */}
             <div className="today-habit-summary lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('habits')}>
               <div className="flex justify-between items-center mb-3">
-                <div><p className="type-eyebrow">DAILY ROUTINES</p><h3 className="text-sm font-semibold">Habits today</h3><p className="type-caption text-secondary">{todayOverview.routinesDue ? `${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} checked` : 'A small routine, when you’re ready.'}</p></div>
+                <div><p className="type-eyebrow">DAILY ROUTINES</p><h3 className="text-sm font-semibold">Habits today</h3><p className="type-caption text-secondary">{todayOverview.routinesDue ? `${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} checked` : 'Check in at your own pace.'}</p></div>
                 <div className="today-habit-actions"><button type="button" onClick={() => openCreateForm('habit')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Add habit</button><button type="button" onClick={() => navigateTo('habits')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">All habits</button></div>
               </div>
               {habits.length === 0 ? (

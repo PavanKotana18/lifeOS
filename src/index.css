@@ -778,3 +778,9 @@ html.dark .text-amber-400 { color: var(--warning); }
   .money-home-heading, .money-quick-actions, .money-activity, .money-tools { grid-column: 1 / -1; }
   .life-routine-section, .life-goal-section, .plan-task-focus { padding: 1.5rem; }
 }
+@media (max-width: 480px) {
+  .money-action { flex-direction: column; justify-content: center; text-align: center; gap: .25rem; }
+  .money-action small { display: none; }
+  .money-action strong { font-size: .8125rem; white-space: nowrap; }
+  .money-action-icon { width: 1.5rem; height: 1.5rem; }
+}

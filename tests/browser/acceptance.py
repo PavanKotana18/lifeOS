@@ -17,7 +17,7 @@ def wait(css): return w.until(lambda _: next((x for x in d.find_elements(By.CSS_
 def click(text):
  def locate(_):
   for x in d.find_elements(By.CSS_SELECTOR,'button,summary'):
-   if x.is_displayed() and x.is_enabled() and (x.text.strip()==text or x.get_attribute('aria-label')==text): return x
+   if x.is_displayed() and x.is_enabled() and (x.text.strip().lstrip('+ ')==text or x.get_attribute('aria-label')==text): return x
   return False
  x=w.until(locate); d.execute_script('arguments[0].scrollIntoView({block:"center"})',x); x.click(); return x
 def tab(name):
@@ -32,6 +32,7 @@ def field(text,value):
  e.clear(); e.send_keys(value); return e
 def save(label):
  click(label)
+ w.until(lambda _: d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]') or not any(x.is_displayed() for x in d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="record-form-title"]')))
  if d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="first-record-security-title"]'): click('Protect this device and save')
  w.until(lambda _: not any(x.is_displayed() for x in d.find_elements(By.CSS_SELECTOR,'[aria-labelledby="record-form-title"]')))
 def passed(name): results.append({'journey':name,'status':'PASS','environment':'Chrome, real React UI and IndexedDB; synthetic native AES-GCM adapter'})
@@ -55,7 +56,7 @@ try:
  assert state.get('tasks')==1 and state.get('transactions')==2 and state.get('encrypted'), str(state); passed('Created records persisted as ciphertext in real IndexedDB')
  # Native CDP touch events exercise browser touch arbitration, including content-start swipes.
  tab('dashboard'); e=wait('.today-focus h3'); r=e.rect; x=r['x']+r['width']/2; y=r['y']-d.execute_script('return scrollY')+r['height']/2
- for kind,px in [('touchStart',x),('touchMove',x-40),('touchMove',x-100),('touchMove',x-150)]:
+ for kind,px in [('touchStart',x),('touchMove',x-30),('touchMove',x-65),('touchMove',max(20,x-130))]:
   d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':kind,'touchPoints':[{'x':px,'y':y}]}); time.sleep(.04)
  d.save_screenshot(str(out/'swipe-mid-drag.png')); images.append('swipe-mid-drag.png')
  d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]}); w.until(lambda _: wait('[data-tab="finance"]').get_attribute('aria-current')=='page'); capture('swipe-completed'); passed('Native browser touch swipe from ordinary heading')
