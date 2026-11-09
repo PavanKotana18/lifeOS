@@ -3,6 +3,7 @@ name: Build LifeOS Android APK
 
 on:
   push:
+    paths-ignore: [tests/browser/**]
     branches:
       - main
       - develop

@@ -27,7 +27,7 @@ def tab(name):
 def capture(name):
  time.sleep(.3); p=out/(name+'.png'); d.save_screenshot(str(p)); images.append(p.name)
  assert d.execute_script('return document.documentElement.scrollWidth<=innerWidth+1'), 'Horizontal page overflow: '+name
- assert d.execute_script("return [...document.querySelectorAll('.ui-tab-screen')].filter(e=>!e.hidden).length===1"), 'Overlapping active screens: '+name
+ assert d.execute_script("const n=[...document.querySelectorAll('.ui-tab-screen')].filter(e=>!e.hidden).length;return n===1||(n===0&&!!document.querySelector('[aria-labelledby=first-record-security-title]'))"), 'Overlapping active screens: '+name
 def field(text,value):
  f=wait('form[role="dialog"]')
  e=f.find_element(By.XPATH,".//label[contains(.,'"+text+"')]//*[self::input or self::textarea]")

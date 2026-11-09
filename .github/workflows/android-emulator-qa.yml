@@ -1,7 +1,9 @@
 name: LifeOS Android emulator QA
 
 on:
+  workflow_dispatch:
   push:
+    paths-ignore: [tests/browser/**]
     branches: [feature/lifeos-directed-integration-20261109, qa/lifeos-android-workflow-coverage-20261106, integration/lifeos2-release-candidate-20261108, integration/lifeos-ui2-candidate-20261108, feature/lifeos-ui2-final-product-refinement-20261108]
   pull_request:
     branches: [main, qa/lifeos-android-workflow-coverage-20261106, integration/lifeos-pr18-pr19-20261107, integration/lifeos-functional-security-20261107, feature/lifeos-ui2-final-product-refinement-20261108]

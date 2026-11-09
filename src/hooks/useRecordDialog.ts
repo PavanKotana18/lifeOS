@@ -24,14 +24,16 @@ export function useRecordDialog(open: boolean, dismiss: () => void) {
       document.documentElement.style.setProperty('--sheet-viewport-height', `${viewport?.height ?? window.innerHeight}px`);
       document.documentElement.style.setProperty('--sheet-viewport-top', `${viewport?.offsetTop ?? 0}px`);
       const focused = document.activeElement;
-      if (focused instanceof HTMLElement && dialog.contains(focused)) focused.scrollIntoView({ block: 'nearest' });
+      const currentDialog = document.querySelector<HTMLElement>('[aria-labelledby="record-form-title"]');
+      if (focused instanceof HTMLElement && currentDialog?.contains(focused)) focused.scrollIntoView({ block: 'nearest' });
     };
     const keydown = (event: KeyboardEvent) => {
       // Nested confirmations and native security dialogs own their own focus.
-      if (!dialog.contains(document.activeElement)) return;
+      const currentDialog = document.querySelector<HTMLElement>('[aria-labelledby="record-form-title"]');
+      if (!currentDialog?.contains(document.activeElement)) return;
       if (event.key === 'Escape') { event.preventDefault(); dismissRef.current(); }
       if (event.key !== 'Tab') return;
-      const controls = [...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(item => item.getClientRects().length);
+      const controls = [...currentDialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(item => item.getClientRects().length);
       const first = controls[0], last = controls[controls.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
