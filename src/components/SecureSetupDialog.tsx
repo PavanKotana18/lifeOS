@@ -19,6 +19,9 @@ export default function SecureSetupDialog({ prepared, onDecision, onRecoveryExpo
   const [copyBusy, setCopyBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // React state updates are asynchronous. A ref closes the rapid-tap window
+  // before Android's document picker (or a test adapter) returns control.
+  const exportInFlight = useRef(false);
   const exactMatch = Boolean(prepared && matchesRecoveryCode(code, prepared.recoveryCode));
   // Only the native file provider's completed write is proof of an exported kit.
   // A browser download click is merely an initiation and cannot be confirmed.
@@ -56,7 +59,8 @@ export default function SecureSetupDialog({ prepared, onDecision, onRecoveryExpo
   };
 
   const saveKit = async () => {
-    if (!prepared || exportBusy) return;
+    if (!prepared || exportInFlight.current) return;
+    exportInFlight.current = true;
     setExportBusy(true);
     announce('');
     const releaseExportActivity = onRecoveryExportStart?.();
@@ -88,6 +92,7 @@ export default function SecureSetupDialog({ prepared, onDecision, onRecoveryExpo
       announce('Could not save the recovery kit. Try again or choose another location.');
     } finally {
       releaseExportActivity?.();
+      exportInFlight.current = false;
       setExportBusy(false);
     }
   };
