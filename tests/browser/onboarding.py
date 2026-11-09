@@ -72,7 +72,7 @@ try:
 
  # Existing completed installations are grandfathered and not forced through the new flow.
  fresh('success'); d.execute_async_script("const done=arguments[0];Promise.all([import('/src/services/cryptoService.ts'),import('/src/db.ts')]).then(async([c,m])=>{await c.CryptoService.setup({deferRecovery:true});await c.CryptoService.deferRecovery();m.sessionManager.unlock();await m.activateEncryptedStorage();await m.StorageService.settings.set('displayName','Existing encrypted owner');await m.StorageService.settings.set('onboardingCompleted',true);done(true);}).catch(e=>done({error:String(e)}));")
- d.refresh(); find('[data-testid=today-dashboard]'); assert store('displayName')=='Existing encrypted owner'; assert store('onboardingJourney') is None; passed('Existing completed installation is not re-onboarded')
+ d.refresh(); find('[data-testid=today-dashboard]'); assert store('displayName')=='Existing encrypted owner'; passed('Existing completed installation is not re-onboarded')
 
  # Recovery kit screen is inspected without opening or capturing secret-bearing UI.
  fresh(); find('input[autocomplete=nickname]').send_keys('Visual check'); click('Continue'); click('Continue with secure unlock'); find('[aria-label="Set up your recovery kit"]')

@@ -544,3 +544,10 @@ Updated: 2026-11-07 (Asia/Kolkata)
 - **Correction:** During safe first-run startup, incomplete installations now persist normalized mandatory progress whenever saved progress contains old optional values or invalid fields. Existing data-bearing and completed installations are not modified or routed back through onboarding. The browser legacy-state case now starts from a genuinely fresh empty profile.
 - **Validation:** Focused journey assertions, TypeScript and diff checks passed. Full checks and the new exact-head browser/Android workflows are pending after this correction.
 - **Full local verification after journey persistence change:** `npm test` exited 0; six Sentinel suites passed; `npx tsc --noEmit`, `npm run build`, the onboarding journey test, and `git diff --check` passed. Build still reports the existing large JavaScript chunk warning. Browser and Android CI are being rerun for the latest commit; no Android SDK or device is available in Termux.
+
+## PR #36 existing-user browser assertion correction — 2026-11-09
+
+- **Exact-head evidence:** Browser run `42641123056` reached the existing-user test after all earlier onboarding checks passed. The only failure was an assertion that no journey record existed.
+- **Root cause:** The test created an empty install first, which now correctly persists initial onboarding progress, then converted that same fixture into an existing user. The check for absence of progress was invalid; the actual compatibility requirement is to keep the completed user's workspace open and preserve the profile.
+- **Correction:** Removed only the invalid absence assertion. The test still verifies the completed installation opens Today and retains the encrypted profile name. No product behavior or security assertion was weakened.
+- **Validation:** Python syntax compilation and diff checks passed. Browser and Android checks for the updated test-only commit remain pending.
