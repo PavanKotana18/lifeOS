@@ -67,7 +67,7 @@ public class DirectedVisualAcceptanceTest {
             until("!!document.querySelector('input[autocomplete=nickname]')");
             js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android QA');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()");
             click("Open LifeOS");until("!!document.querySelector('[data-testid=today-dashboard]')");
-            Thread.sleep(800);capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
+            until("!document.querySelector('.lifeos-launch-reveal')");capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
             click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("plan");capture("plan-empty");click("Add task");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("task-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("life");capture("life-empty");click("Add a habit");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("habit-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");

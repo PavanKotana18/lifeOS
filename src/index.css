@@ -781,6 +781,8 @@ html.dark .text-amber-400 { color: var(--warning); }
 @media (max-width: 480px) {
   .money-action { flex-direction: column; justify-content: center; text-align: center; gap: .25rem; }
   .money-action small { display: none; }
-  .money-action strong { font-size: .8125rem; white-space: nowrap; }
+  .money-action strong { font-size: .8125rem; white-space: normal; }
   .money-action-icon { width: 1.5rem; height: 1.5rem; }
 }
+
+.money-quick-actions { grid-template-columns: repeat(auto-fit, minmax(min(100%, 5.5rem), 1fr)); }

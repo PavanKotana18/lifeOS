@@ -3,6 +3,7 @@ import json, os, time, traceback
 from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 out=Path('test-results/directed-visual'); out.mkdir(parents=True,exist_ok=True)
@@ -10,7 +11,7 @@ options=webdriver.ChromeOptions()
 options.add_argument('--headless=new'); options.add_argument('--no-sandbox'); options.add_argument('--disable-dev-shm-usage')
 options.add_argument('--window-size=430,950')
 d=webdriver.Chrome(options=options); d.set_script_timeout(30)
-w=WebDriverWait(d,25); results=[]; images=[]
+w=WebDriverWait(d,25,ignored_exceptions=(StaleElementReferenceException,)); results=[]; images=[]
 d.execute_cdp_cmd('Emulation.setTouchEmulationEnabled',{'enabled':True})
 d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':390,'height':844,'deviceScaleFactor':1,'mobile':True})
 def wait(css): return w.until(lambda _: next((x for x in d.find_elements(By.CSS_SELECTOR,css) if x.is_displayed()),False))
@@ -92,6 +93,10 @@ try:
  for width,height in [(320,780),(768,900),(1024,768)]:
   d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':width,'height':height,'deviceScaleFactor':1,'mobile':True})
   for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(f'{label}-{width}x{height}')
+ d.execute_cdp_cmd('Emulation.setDeviceMetricsOverride',{'width':320,'height':780,'deviceScaleFactor':1,'mobile':True})
+ d.execute_script("document.documentElement.style.fontSize='200%'")
+ for key,label in [('dashboard','today'),('finance','money'),('plan','plan'),('life','life')]: tab(key); capture(label+'-200-percent-text')
+ d.execute_script("document.documentElement.style.fontSize=''")
  passed('Responsive layouts at compact, tablet and landscape browser window sizes')
  results.append({'journey':'Android keyboard, Back, notification delivery/tap, biometric lock and update install','status':'BLOCKED','reason':'Browser evidence does not validate Android native behavior; hosted Android instrumentation is separate.'})
 except Exception as e:

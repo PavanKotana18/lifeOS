@@ -18,5 +18,6 @@ document.activeElement=first;events.get('keydown')({key:'Tab',shiftKey:true,prev
 events.get('keydown')({key:'Escape',preventDefault:()=>{}});assert.equal(dismissed,1);
 document.activeElement=nested;events.get('keydown')({key:'Escape',preventDefault:()=>{}});assert.equal(dismissed,1,'nested dialog owns Escape');
 document.activeElement=first;window.visualViewport.height=320;viewportEvents.get('resize')();assert.equal(props.get('--sheet-viewport-height'),'320px');assert.ok(first.scrolled);
+const remountedFirst=new Element(),remountedLast=new Element();document.querySelector=()=>({contains:e=>e===remountedFirst||e===remountedLast,querySelectorAll:()=>[remountedFirst,remountedLast]});document.activeElement=remountedLast;events.get('keydown')({key:'Tab',shiftKey:false,preventDefault:()=>{}});assert.equal(document.activeElement,remountedFirst,'focus trap follows a form remounted after contextual security');
 cleanup();assert.equal(document.activeElement,opener);assert.equal(events.size,0);assert.equal(viewportEvents.size,0);assert.equal(props.size,0);
-console.log('DIRECTED FORMS: 13 viewport, focus loop, nested-dialog ownership and cleanup assertions passed.');
+console.log('DIRECTED FORMS: 14 viewport, focus loop, nested-dialog ownership and cleanup assertions passed.');
