@@ -55,6 +55,18 @@ public class DirectedVisualAcceptanceTest {
         finally { image.recycle(); }
         captures.put(name+".png");
     }
+    private void captureFailureBeforeTeardown(Throwable failure) {
+        // Never clear FLAG_SECURE. Android may intentionally redact the app;
+        // the system permission/keyboard windows are still useful evidence.
+        try {
+            Bitmap image=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
+            if(image!=null) { try(FileOutputStream file=new FileOutputStream(new File(output,"failure-before-activity-close.png"))){image.compress(Bitmap.CompressFormat.PNG,100,file);} finally {image.recycle();} }
+            JSONObject diagnostics=new JSONObject();diagnostics.put("failure",failure.toString());diagnostics.put("keyboard",keyboardDiagnostics);
+            diagnostics.put("dom",js("JSON.stringify({activeTag:document.activeElement?.tagName,activeType:document.activeElement?.type,inputMode:document.activeElement?.inputMode,ready:!!document.querySelector('[data-testid=today-dashboard]')})"));
+            JSONArray windows=new JSONArray();for(AccessibilityWindowInfo window:InstrumentationRegistry.getInstrumentation().getUiAutomation().getWindows()){AccessibilityNodeInfo root=window.getRoot();JSONObject item=new JSONObject();item.put("type",window.getType());item.put("package",root==null?"unavailable":String.valueOf(root.getPackageName()));windows.put(item);}diagnostics.put("windows",windows);
+            try(FileOutputStream file=new FileOutputStream(new File(output,"failure-diagnostics.json"))){file.write(diagnostics.toString(2).getBytes("UTF-8"));}
+        } catch(Exception | AssertionError diagnostic){failure.addSuppressed(diagnostic);}
+    }
     private void denyOptionalNotificationPrompt() throws Exception {
         UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();
         AccessibilityServiceInfo info=auto.getServiceInfo();
@@ -62,11 +74,17 @@ public class DirectedVisualAcceptanceTest {
         auto.setServiceInfo(info);
         boolean denied=false; long end=SystemClock.elapsedRealtime()+30000;
         while(SystemClock.elapsedRealtime()<end) {
-            AccessibilityNodeInfo root=auto.getRootInActiveWindow();
-            if(root!=null) {
+            java.util.ArrayList<AccessibilityNodeInfo> roots=new java.util.ArrayList<>();
+            AccessibilityNodeInfo active=auto.getRootInActiveWindow();if(active!=null) roots.add(active);
+            // An IME can own accessibility focus while the permission window is
+            // visible. Select the actual permission-controller button, never a
+            // similarly named app control or a forced permission mutation.
+            for(AccessibilityWindowInfo window:auto.getWindows()){AccessibilityNodeInfo root=window.getRoot();if(root!=null)roots.add(root);}
+            for(AccessibilityNodeInfo root:roots) {
                 for(AccessibilityNodeInfo node:root.findAccessibilityNodeInfosByViewId("com.android.permissioncontroller:id/permission_deny_button")) {
                     if(node.isEnabled() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { denied=true; break; }
                 }
+                if(denied) break;
             }
             if(denied) break;
             Thread.sleep(100);
@@ -194,7 +212,7 @@ public class DirectedVisualAcceptanceTest {
         output=new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalFilesDir(null),"LifeOS-directed-visual");
         assertTrue(output.isDirectory()||output.mkdirs());
         try(ActivityScenario<MainActivity> launched=ActivityScenario.launch(MainActivity.class)) {
-            scenario=launched; WebViewTestSupport.awaitReactRoot(scenario);
+            scenario=launched; try { WebViewTestSupport.awaitReactRoot(scenario);
             until("!!document.querySelector('input[autocomplete=nickname]')");
             js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android QA');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()");
             click("Open LifeOS");until("!!document.querySelector('[data-testid=today-dashboard]')");
@@ -206,6 +224,7 @@ public class DirectedVisualAcceptanceTest {
             captureAndroidFontScaling();click("Open profile and settings");until("!!document.querySelector('[data-testid=profile-settings-home]')");capture("profile");
             JSONObject report=new JSONObject();report.put("environment","Real packaged Android app on fresh hosted emulator");report.put("api",android.os.Build.VERSION.SDK_INT);report.put("model",android.os.Build.MODEL);report.put("privateWrites",0);report.put("fontScaling","Actual WebView textZoom 130 and 200; system-font mapping covered separately; global emulator settings unchanged");report.put("androidBack","PASS: first account setup cancelled by native Back; draft retained; key remained unprovisioned and locked");report.put("onboardingCapture","BLOCKED: native onboarding remains protected by the application screenshot policy");report.put("notificationPermission","Denied through the actual Android system dialog on this disposable emulator");report.put("screenshots",captures);report.put("contentSwipe","PASS: native touchscreen injection from Today heading to Money");
             try(FileOutputStream file=new FileOutputStream(new File(output,"environment.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
+            } catch(Exception | AssertionError failure) { captureFailureBeforeTeardown(failure); throw failure; }
         }
     }
 }
