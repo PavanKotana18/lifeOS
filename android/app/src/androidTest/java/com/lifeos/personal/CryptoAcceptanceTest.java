@@ -49,8 +49,9 @@ public class CryptoAcceptanceTest {
         LifeOSCryptoPlugin recreated=new LifeOSCryptoPlugin();Call c=new Call("isUnlocked",new JSObject());recreated.isUnlocked(c);assertFalse(c.response.optBoolean("unlocked",true)); // New instance, not ActivityScenario recreation.
     }
     private void authenticate(Call c,Runnable failure) throws Exception {
-        Method m=LifeOSCryptoPlugin.class.getDeclaredMethod("authenticate",PluginCall.class,Cipher.class,Consumer.class,Runnable.class);m.setAccessible(true);
-        m.invoke(plugin,c,null,(Consumer<Cipher>)cipher->{throw new AssertionError("Unexpected authentication success");},failure);
+        Class<?> cipherFactory=Arrays.stream(LifeOSCryptoPlugin.class.getDeclaredClasses()).filter(type->type.getSimpleName().equals("CipherFactory")).findFirst().orElseThrow();
+        Method m=LifeOSCryptoPlugin.class.getDeclaredMethod("authenticate",PluginCall.class,Cipher.class,cipherFactory,Consumer.class,Runnable.class);m.setAccessible(true);
+        m.invoke(plugin,c,null,null,(Consumer<Cipher>)cipher->{throw new AssertionError("Unexpected authentication success");},failure);
     }
     @Test public void concurrentNativeAttemptRejectedWithoutReleasingOwner() throws Exception {
         AtomicBoolean busy=(AtomicBoolean)get("authenticationInProgress");busy.set(true);int[] failures={0};
