@@ -29,6 +29,7 @@ public class DirectedVisualAcceptanceTest {
     private ActivityScenario<MainActivity> scenario;
     private File output;
     private final JSONArray captures = new JSONArray();
+    private JSONObject keyboardDiagnostics = new JSONObject();
     private String js(String code) throws Exception { return WebViewTestSupport.evaluate(scenario, code); }
     private void until(String code) throws Exception {
         long end=SystemClock.elapsedRealtime()+30000;
@@ -89,6 +90,7 @@ public class DirectedVisualAcceptanceTest {
         long hideDeadline=SystemClock.elapsedRealtime()+10000;
         while(keyboardVisible() && SystemClock.elapsedRealtime()<hideDeadline) Thread.sleep(50);
         assertFalse("Previous text keyboard did not dismiss",keyboardVisible());
+        WebViewTestSupport.evaluateAsync(scenario,"new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))");
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector('input[inputmode=decimal]').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
         final int[] xy={0,0,0};
         scenario.onActivity(a->{int[] o=new int[2];a.getBridge().getWebView().getLocationOnScreen(o);xy[0]=o[0];xy[1]=o[1];xy[2]=a.getBridge().getWebView().getWidth();});
@@ -96,13 +98,16 @@ public class DirectedVisualAcceptanceTest {
         UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();long down=SystemClock.uptimeMillis();
         MotionEvent e=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
         e=MotionEvent.obtain(down,SystemClock.uptimeMillis()+40,MotionEvent.ACTION_UP,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
+        until("document.activeElement?.inputMode==='decimal'");
         long end=SystemClock.elapsedRealtime()+10000;final boolean[] visible={false};
         while(SystemClock.elapsedRealtime()<end) {
             scenario.onActivity(a->{WindowInsets insets=a.getWindow().getDecorView().getRootWindowInsets();visible[0]=insets!=null&&insets.isVisible(WindowInsets.Type.ime());});
             if(visible[0] && numericKeyboardVisible(auto)) { until("document.activeElement?.inputMode==='decimal'"); return; }
             Thread.sleep(100);
         }
-        fail("Native tap on amount did not produce a visible numeric Android keyboard");
+        capture("numeric-keyboard-failure-in-app");
+        try(FileOutputStream file=new FileOutputStream(new File(output,"keyboard-diagnostics.json"))) {file.write(keyboardDiagnostics.toString(2).getBytes("UTF-8"));}
+        fail("Native tap on amount did not produce a visible numeric Android keyboard: "+keyboardDiagnostics);
     }
     private boolean numericKeyboardVisible(UiAutomation auto) {
         for(AccessibilityWindowInfo window:auto.getWindows()) {
@@ -117,8 +122,10 @@ public class DirectedVisualAcceptanceTest {
                 if(text.matches("[a-zA-Z]")||description.matches("[a-zA-Z]")) alphabetic=true;
                 for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i);if(child!=null)nodes.add(child);}
             }
+            try {keyboardDiagnostics.put("digitKeys",digits);keyboardDiagnostics.put("alphabeticKeysPresent",alphabetic);keyboardDiagnostics.put("imeWindow",true);} catch(org.json.JSONException ignored) { throw new AssertionError(ignored); }
             if(digits>=8 && !alphabetic) return true;
         }
+        try {keyboardDiagnostics.put("activeField",js("JSON.stringify({type:document.activeElement?.type,inputMode:document.activeElement?.inputMode,tag:document.activeElement?.tagName})"));} catch(Exception cause) { throw new AssertionError(cause); }
         return false;
     }
     private boolean keyboardVisible() {
@@ -187,7 +194,7 @@ public class DirectedVisualAcceptanceTest {
             js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android QA');e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()");
             click("Open LifeOS");until("!!document.querySelector('[data-testid=today-dashboard]')");
             denyOptionalNotificationPrompt();until("!document.querySelector('.lifeos-launch-reveal')");capture("today-empty");swipeFromTodayText();capture("money-after-native-swipe");
-            click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");openNumericKeyboard();capture("expense-numeric-keyboard");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
+            click("Add expense");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("expense-form");try { openNumericKeyboard(); } catch(Exception | AssertionError failure) { try { capture("keyboard-error-before-activity-close"); } catch(Exception | AssertionError diagnostic) { failure.addSuppressed(diagnostic); } throw failure; }capture("expense-numeric-keyboard");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             cancelFirstAccountThroughAndroidBack();tab("plan");capture("plan-empty");click("Add task");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("task-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             tab("life");capture("life-empty");click("Add a habit");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("habit-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
             click("Add a goal");until("!!document.querySelector('[aria-labelledby=record-form-title]')");capture("goal-form");click("Cancel");until("!document.querySelector('[aria-labelledby=record-form-title]')");
