@@ -1,11 +1,13 @@
 package com.lifeos.personal;
 
-/** Pure policy for screenshot visibility; release builds are always protected. */
+/** Only debug APKs permit capture, regardless of screen or lifecycle state. */
 final class ScreenshotProtectionPolicy {
     private ScreenshotProtectionPolicy() {}
 
     static boolean shouldProtect(boolean debugBuild, boolean sensitiveScreen,
             boolean activityResumed, boolean compatibilityBlocked, boolean resumeValidationPending) {
-        return !debugBuild || sensitiveScreen || !activityResumed || compatibilityBlocked || resumeValidationPending;
+        // Keep the bridge/lifecycle inputs compatible with existing callers.
+        // They cannot override the policy selected by the Android build variant.
+        return !debugBuild;
     }
 }

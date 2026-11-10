@@ -5,7 +5,6 @@ import android.animation.ValueAnimator;
 import android.os.Handler;
 import android.os.Looper;
 import android.content.res.Configuration;
-import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.view.ViewGroup;
@@ -54,10 +53,12 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LaunchExperiencePlugin.class);
         registerPlugin(NotificationTapLaunchPlugin.class);
         registerPlugin(RuntimeInfoPlugin.class);
+        // Apply the build policy before Capacitor renders startup content.
+        applyScreenshotProtection();
         super.onCreate(savedInstanceState);
 
-        // Start protected for every build. Debug UI may opt into screenshots only
-        // after React confirms that the visible surface contains no secrets.
+        // Reapply after native plugins initialize. Release stays protected;
+        // debug capture is independent of React screen and resume state.
         applyScreenshotProtection();
         applySystemFontScale();
         showWebViewUpdateIfRequired();
@@ -110,17 +111,13 @@ public class MainActivity extends BridgeActivity {
 
     private void applyScreenshotProtection() {
         boolean secure = ScreenshotProtectionPolicy.shouldProtect(
-            isDebuggableVariant(), sensitiveScreen, activityResumed, webViewCompatibilityBlocked,
+            BuildConfig.DEBUG, sensitiveScreen, activityResumed, webViewCompatibilityBlocked,
             resumeValidationPending);
         if (secure) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
         }
-    }
-
-    private boolean isDebuggableVariant() {
-        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     private void showWebViewUpdateIfRequired() {
@@ -182,11 +179,12 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onResume() {
-        // Keep the window protected until JS re-evaluates the current screen.
+        // Preserve lifecycle validation; capture depends only on the APK variant.
         activityResumed = true;
         sensitiveScreen = true;
         applyScreenshotProtection();
         super.onResume();
+        applyScreenshotProtection();
         notifyScreenshotPolicyRefresh();
         notifyWebTheme(getResources().getConfiguration());
     }

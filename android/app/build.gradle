@@ -33,6 +33,9 @@ def lifeosDebugSigningReady =
     }
 
 android {
+    buildFeatures {
+        buildConfig true
+    }
     signingConfigs {
         if (lifeosReleaseSigningReady) {
             release {
