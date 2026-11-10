@@ -14,13 +14,18 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LifeOSBackupPlugin.class);
         registerPlugin(NotificationSettingsPlugin.class);
         registerPlugin(StorageAccessPlugin.class);
+        applyScreenshotProtection();
         super.onCreate(savedInstanceState);
+    }
 
-        // Prevent screenshots, screen recording and sensitive recent-app previews.
-        getWindow().setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        );
+    private void applyScreenshotProtection() {
+        // Only debug APKs permit capture. Release windows, including recent-app
+        // previews, stay protected for the entire Activity lifecycle.
+        if (BuildConfig.DEBUG) {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        }
     }
 
     private void notifyWebTheme(Configuration configuration) {
@@ -42,6 +47,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        applyScreenshotProtection();
         notifyWebTheme(getResources().getConfiguration());
     }
 }
