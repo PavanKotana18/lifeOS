@@ -55,15 +55,15 @@ public class DirectedVisualAcceptanceTest {
         finally { image.recycle(); }
         captures.put(name+".png");
     }
-    private void captureProtectedSyntheticOnboarding(String name) throws Exception {
+    private void captureSyntheticOnboarding(String name) throws Exception {
         // Test-only view bitmap of our fresh synthetic UI, not a system screenshot.
-        // FLAG_SECURE and native screenshot/Recent Apps protections remain enabled.
+        // The APK build policy controls native screenshot/Recent Apps protection.
         until("!!document.querySelector('.initial-setup')");
         JSONObject key=new JSONObject(WebViewTestSupport.evaluateAsync(scenario,"window.Capacitor.Plugins.LifeOSCrypto.getKeyState()"));
         assertFalse("Capture is restricted to an unprovisioned synthetic first launch",key.getBoolean("keyProvisioned"));
         final Bitmap[] image={null};
         scenario.onActivity(a->{
-            assertTrue("Onboarding must retain screenshot protection",(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)!=0);
+            assertEquals("Onboarding follows the APK capture policy",!BuildConfig.DEBUG,(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)!=0);
             android.webkit.WebView view=a.getBridge().getWebView();
             image[0]=Bitmap.createBitmap(view.getWidth(),view.getHeight(),Bitmap.Config.ARGB_8888);
             view.draw(new android.graphics.Canvas(image[0]));
@@ -74,19 +74,19 @@ public class DirectedVisualAcceptanceTest {
     }
     private void mandatoryOnboardingVisuals() throws Exception {
         until("!!document.querySelector('input[autocomplete=nickname]')");
-        captureProtectedSyntheticOnboarding("onboarding-name");
+        captureSyntheticOnboarding("onboarding-name");
         js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android synthetic owner');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
         click("Continue");
         until("!!document.querySelector('[aria-label=\"Protect your LifeOS space\"]')");
         assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
         assertEquals("false",js("!![...document.querySelectorAll('button')].some(b=>b.innerText.includes('Not now'))"));
-        captureProtectedSyntheticOnboarding("onboarding-protection");
+        captureSyntheticOnboarding("onboarding-protection");
         scenario.recreate();WebViewTestSupport.awaitReactRoot(scenario);
         until("!!document.querySelector('[aria-label=\"Protect your LifeOS space\"]')");
         for(int zoom:new int[]{130,200}) {
             scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(zoom));
             until("document.documentElement.scrollWidth<=innerWidth+1");
-            captureProtectedSyntheticOnboarding("onboarding-protection-text-"+zoom);
+            captureSyntheticOnboarding("onboarding-protection-text-"+zoom);
         }
         scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(100));
         // Render the recovery screen for visual QA only by advancing disposable
@@ -101,22 +101,22 @@ public class DirectedVisualAcceptanceTest {
         until("!!document.querySelector('[aria-label=\"Set up your recovery kit\"]')");
         assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
         assertEquals("false",js("!!document.querySelector('[aria-label=\"Complete private recovery kit\"]')"));
-        captureProtectedSyntheticOnboarding("onboarding-recovery");
+        captureSyntheticOnboarding("onboarding-recovery");
         openKeyboard("input[placeholder=\"My LifeOS recovery\"]", "document.activeElement?.placeholder==='My LifeOS recovery'");
         assertTrue("Optional recovery label should open the Android keyboard",keyboardVisible());
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
         long deadline=SystemClock.elapsedRealtime()+10000;while(keyboardVisible()&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(50);
         assertFalse("Keyboard Back must not discard the recovery stage",keyboardVisible());
-        captureProtectedSyntheticOnboarding("onboarding-recovery-keyboard-dismissed");
+        captureSyntheticOnboarding("onboarding-recovery-keyboard-dismissed");
         JSONObject report=new JSONObject();
         report.put("environment","Real packaged React UI on hosted Android emulator; native authentication/recovery not invoked");
         report.put("screenshots",captures);report.put("privateWrites",0);
-        report.put("scope","Visual screenshots of name, protection, and recovery stages only. Recovery secret screen was never opened. Activity FLAG_SECURE remained set.");
+        report.put("scope","Visual screenshots of name, protection, and recovery stages only. Recovery secret screen was never opened. Activity capture followed the APK build policy.");
         try(FileOutputStream file=new FileOutputStream(new File(output,"onboarding-visual-evidence.json"))) { file.write(report.toString(2).getBytes("UTF-8")); }
     }
     private void captureFailureBeforeTeardown(Throwable failure) {
-        // Never clear FLAG_SECURE. Android may intentionally redact the app;
-        // the system permission/keyboard windows are still useful evidence.
+        // Keep the APK build policy intact. Android may redact system windows;
+        // the remaining permission/keyboard evidence is still useful.
         try {
             Bitmap image=InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
             if(image!=null) { try(FileOutputStream file=new FileOutputStream(new File(output,"failure-before-activity-close.png"))){image.compress(Bitmap.CompressFormat.PNG,100,file);} finally {image.recycle();} }
@@ -186,7 +186,7 @@ public class DirectedVisualAcceptanceTest {
             if(visible[0] && (!selector.contains("inputmode=decimal") || numericKeyboardVisible(auto))) { until(focusCondition); return; }
             Thread.sleep(100);
         }
-        if("true".equals(js("!!document.querySelector('.initial-setup')")))captureProtectedSyntheticOnboarding("onboarding-keyboard-failure");else capture("numeric-keyboard-failure-in-app");
+        if("true".equals(js("!!document.querySelector('.initial-setup')")))captureSyntheticOnboarding("onboarding-keyboard-failure");else capture("numeric-keyboard-failure-in-app");
         try(FileOutputStream file=new FileOutputStream(new File(output,"keyboard-diagnostics.json"))) {file.write(keyboardDiagnostics.toString(2).getBytes("UTF-8"));}
         fail("Native tap on amount did not produce a visible numeric Android keyboard: "+keyboardDiagnostics);
     }
@@ -315,7 +315,7 @@ public class DirectedVisualAcceptanceTest {
                 assertEquals("true",js("!!document.querySelector('[aria-label=\"Set up your recovery kit\"]')"));
                 JSONObject key=new JSONObject(WebViewTestSupport.evaluateAsync(scenario,"window.Capacitor.Plugins.LifeOSCrypto.getKeyState()"));
                 assertFalse("Visual-only screenshots must not provision a key",key.getBoolean("keyProvisioned"));
-                scenario.onActivity(a->assertTrue("Onboarding remains screenshot protected",(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)!=0));
+                scenario.onActivity(a->assertEquals("Onboarding retains the APK capture policy",!BuildConfig.DEBUG,(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)!=0));
             } catch(Exception | AssertionError failure) { captureFailureBeforeTeardown(failure); throw failure; }
         }
     }

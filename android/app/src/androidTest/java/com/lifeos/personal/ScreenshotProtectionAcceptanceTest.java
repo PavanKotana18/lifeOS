@@ -29,29 +29,29 @@ public class ScreenshotProtectionAcceptanceTest {
         return (activity.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE) != 0;
     }
 
-    @Test public void policyAllowsOnlyResumedNonSensitiveDebugScreens() {
-        assertFalse(ScreenshotProtectionPolicy.shouldProtect(true, false, true, false, false));
-        assertTrue(ScreenshotProtectionPolicy.shouldProtect(false, false, true, false, false));
-        assertTrue(ScreenshotProtectionPolicy.shouldProtect(true, true, true, false, false));
-        assertTrue(ScreenshotProtectionPolicy.shouldProtect(true, false, false, false, false));
-        assertTrue(ScreenshotProtectionPolicy.shouldProtect(true, false, true, true, false));
-        assertTrue(ScreenshotProtectionPolicy.shouldProtect(true, false, true, false, true));
+    @Test public void policyAllowsDebugCaptureAndAlwaysProtectsRelease() {
+        for (int state = 0; state < 16; state++) {
+            boolean sensitive = (state & 1) != 0;
+            boolean resumed = (state & 2) != 0;
+            boolean compatibilityBlocked = (state & 4) != 0;
+            boolean resumePending = (state & 8) != 0;
+            assertFalse("Debug capture must not depend on screen or lifecycle state",
+                ScreenshotProtectionPolicy.shouldProtect(true, sensitive, resumed, compatibilityBlocked, resumePending));
+            assertTrue("Release protection cannot be disabled by screen or lifecycle state",
+                ScreenshotProtectionPolicy.shouldProtect(false, sensitive, resumed, compatibilityBlocked, resumePending));
+        }
     }
 
-    @Test public void debugActivityRequiresExplicitSafeStateAndRestoresProtectionOnLifecycle() throws Exception {
+    @Test public void debugActivityRemainsCapturableAcrossScreenAndLifecycleChanges() throws Exception {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             AtomicInteger before = new AtomicInteger();
             AtomicInteger safe = new AtomicInteger();
             AtomicInteger sensitive = new AtomicInteger();
-            AtomicInteger supported = new AtomicInteger();
             AtomicInteger debugVariant = new AtomicInteger();
             scenario.onActivity(activity -> {
-                String userAgent = activity.getBridge().getWebView().getSettings().getUserAgentString();
-                supported.set(WebViewCompatibility.isSupported(userAgent) ? 1 : 0);
                 debugVariant.set((activity.getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0 ? 1 : 0);
             });
             Assume.assumeTrue("Instrumentation APK must use the debug variant", debugVariant.get() == 1);
-            Assume.assumeTrue("Unsupported WebView remains protected and is covered by compatibility tests", supported.get() == 1);
             scenario.onActivity(activity -> {
                 before.set(hasSecureFlag(activity) ? 1 : 0);
                 activity.setSensitiveScreen(false);
@@ -59,14 +59,14 @@ public class ScreenshotProtectionAcceptanceTest {
                 activity.setSensitiveScreen(true);
                 sensitive.set(hasSecureFlag(activity) ? 1 : 0);
             });
-            assertEquals("Activity starts protected", 1, before.get());
+            assertEquals("Debug Activity starts capturable", 0, before.get());
             assertEquals("Safe resumed debug screen may be captured", 0, safe.get());
-            assertEquals("Sensitive state restores FLAG_SECURE", 1, sensitive.get());
+            assertEquals("Sensitive bridge state cannot disable debug capture", 0, sensitive.get());
 
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED);
             AtomicInteger paused = new AtomicInteger();
             scenario.onActivity(activity -> paused.set(hasSecureFlag(activity) ? 1 : 0));
-            assertEquals("Backgrounded Activity must be protected", 1, paused.get());
+            assertEquals("Backgrounding cannot disable debug capture", 0, paused.get());
 
             AtomicInteger resumed = new AtomicInteger();
             AtomicInteger staleUpdate = new AtomicInteger();
@@ -109,9 +109,11 @@ public class ScreenshotProtectionAcceptanceTest {
             } finally {
                 application.unregisterActivityLifecycleCallbacks(lifecycleProbe);
             }
-            assertEquals("Resume stays protected until React revalidates the screen", 1, resumed.get());
-            assertEquals("Stale safe-screen updates cannot clear post-resume protection", 1, staleUpdate.get());
+            assertEquals("Debug resume is capturable before React revalidation", 0, resumed.get());
+            assertEquals("Pending resume validation cannot disable debug capture", 0, staleUpdate.get());
             assertEquals("Authenticated resume permits ordinary debug screenshots", 0, confirmed.get());
+            scenario.recreate();
+            scenario.onActivity(activity -> assertFalse("Recreation retains debug capture", hasSecureFlag(activity)));
         }
     }
 }

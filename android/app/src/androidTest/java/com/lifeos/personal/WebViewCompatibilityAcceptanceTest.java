@@ -44,7 +44,7 @@ public class WebViewCompatibilityAcceptanceTest {
             assertTrue("An unsupported WebView must show native update guidance", messagePresent.get());
             assertEquals(View.VISIBLE, messageVisibility.get());
             assertEquals(View.GONE, webViewVisibility.get());
-            assertTrue("Compatibility guidance must preserve screenshot protection",
+            assertEquals("Compatibility guidance follows the APK capture policy", !BuildConfig.DEBUG,
                 (flags.get() & WindowManager.LayoutParams.FLAG_SECURE) != 0);
         }
     }
