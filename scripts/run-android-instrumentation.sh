@@ -75,7 +75,14 @@ avd_response=$(timeout 8s adb -s "$SERIAL" emu avd name | tr -d '\r')
 avd_name=$(printf '%s\n' "$avd_response" | sed '/^OK$/d; /^[[:space:]]*$/d' | head -n 1)
 # Capture the entire list before matching. With pipefail, grep -q can close
 # the emulator process pipe early and turn a valid match into a refusal.
-known_avds=$(timeout 10s emulator -list-avds | tr -d '\r')
+EMULATOR_BIN=emulator
+sdk_root=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
+if [[ -n "$sdk_root" && -x "$sdk_root/emulator/emulator" ]]; then
+  EMULATOR_BIN="$sdk_root/emulator/emulator"
+elif [[ -n "$sdk_root" && -x "$sdk_root/emulator/emulator.exe" ]]; then
+  EMULATOR_BIN="$sdk_root/emulator/emulator.exe"
+fi
+known_avds=$(timeout 10s "$EMULATOR_BIN" -list-avds | tr -d '\r')
 if [[ -z "$avd_name" ]] || ! grep -Fx "$avd_name" <<< "$known_avds" >/dev/null; then
   printf 'Selected emulator AVD response: %s\nRegistered AVDs: %s\n' "$avd_response" "$known_avds" >&2
   echo 'Refusing device action: selected emulator serial does not map to a running AVD known to this SDK.' >&2

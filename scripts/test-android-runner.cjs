@@ -50,7 +50,8 @@ assert.match(workflow, /required-test:\s*\"com\.lifeos\.personal\.WebViewCompati
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifeos-runner-contract-'));
 try {
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
-fs.writeFileSync(path.join(bin, 'emulator'), `#!/usr/bin/env node\nif(process.argv.includes('-list-avds'))console.log('LifeOS-QA');\n`, { mode: 0o755 });
+const sdk = path.join(root, 'sdk'); fs.mkdirSync(path.join(sdk, 'emulator'), { recursive: true });
+fs.writeFileSync(path.join(sdk, 'emulator', 'emulator'), `#!/usr/bin/env node\nif(process.argv.includes('-list-avds'))console.log('LifeOS-QA');\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'aapt'), `#!/usr/bin/env node\nif(process.argv.includes('xmltree'))console.log('A: android:targetPackage(0x01010021)="com.lifeos.personal.dev"');else console.log("package: name='"+(process.argv.at(-1).includes('test')?'com.lifeos.personal.dev.test':'com.lifeos.personal.dev')+"'");\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(bin, 'apksigner'), `#!/usr/bin/env node\nconsole.log('Signer #1 certificate SHA-256 digest: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');\n`, { mode: 0o755 });
   const excluded = path.join(root, 'excluded-tests.txt');
@@ -81,7 +82,7 @@ else if(a.includes('shell am instrument')) {
     const out = path.join(root, mode);
     const result = spawnSync(BASH, ['scripts/run-android-instrumentation.sh', 'synthetic-app.apk', 'synthetic-test.apk', out], {
       cwd: path.resolve(__dirname, '..'), timeout: 30000, encoding: 'utf8',
-      env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, QA_STUB_MODE: mode, QA_COMMAND_LOG: path.join(out, 'adb-commands.txt'), LIFEOS_QA_DEVICE_MODE: 'emulator', ANDROID_SERIAL: 'emulator-5554', ANDROID_TEST_FILTER: '', ANDROID_REQUIRED_TEST: '', ANDROID_TEST_EXCLUSION_FILE: excluded, ANDROID_EXPECTED_TESTS: '1' },
+      env: { ...process.env, PATH: bin + path.delimiter + process.env.PATH, ANDROID_HOME: sdk, QA_STUB_MODE: mode, QA_COMMAND_LOG: path.join(out, 'adb-commands.txt'), LIFEOS_QA_DEVICE_MODE: 'emulator', ANDROID_SERIAL: 'emulator-5554', ANDROID_TEST_FILTER: '', ANDROID_REQUIRED_TEST: '', ANDROID_TEST_EXCLUSION_FILE: excluded, ANDROID_EXPECTED_TESTS: '1' },
     });
     assert.ifError(result.error);
     assert.equal(result.status === 0, mode === 'pass', `${mode}: ${result.stderr}`);
