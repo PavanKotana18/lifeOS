@@ -69,3 +69,48 @@ The three-profile matrix starts automatically after the PR’s one-device smoke 
 Every PR run targeting the QA baseline uses one hosted build job, one API 34 smoke emulator, then (only after smoke passes) three sequential matrix emulators. The APKs are compiled once and reused across all four emulator profiles. Planning estimate: roughly 35–60 runner-minutes for a successful run, depending on Android SDK/image setup time; the configured job timeouts impose a 100 runner-minute upper bound if every job consumes its full timeout. These are estimates, not measured results. This uses standard GitHub-hosted Linux minutes and no paid device farm; account quota/billing depends on repository plan. The matrix is automatic on PRs because `workflow_dispatch` is unavailable until the workflow exists on the default branch.
 
 No dependencies, production modules, branches, stashes or historical evidence were removed. No global packages or Termux Android SDK components were installed. The Track A PR #18 branch/worktree was not edited. Manufacturer-specific behavior, TalkBack, actual notification delivery/permission interaction, real Keystore/biometric prompts and physical Android devices remain unverified.
+# Local repeatable QA
+
+On Windows PowerShell, provision and start the disposable AVD, then run local
+QA with its emulator serial:
+
+```powershell
+npm.cmd run qa:avd:setup
+npm.cmd run qa:avd:start
+$env:LIFEOS_QA_DEVICE_MODE = 'emulator'
+$env:ANDROID_SERIAL = 'emulator-5554'
+npm.cmd run qa
+```
+
+The SDK and API 34 system image stay under the existing SDK root. The dedicated
+AVD data directory is `D:\LifeOS-Android-QA\avd`; the starter requires WHPX,
+at least 3.5 GB free RAM, AC power, and the fixed emulator port, then waits at
+most five minutes for boot. It records host RAM and emulator CPU/memory samples
+and shuts the verification AVD down afterward. It does not enumerate ADB
+devices. AVD defaults are 2 GB RAM, two cores, 720 × 1280 at 320 dpi, host
+graphics, cold boot, and snapshots disabled. API 36 is intentionally not
+installed on the 12 GB host.
+
+The command runs the JavaScript suite, Sentinel suite, TypeScript check, web
+build and Android instrumentation parser contract. With Gradle 8.2.1, Android
+SDK, Dev signing and the explicitly selected running emulator available, it
+builds and runs the notification instrumentation subset. It never enumerates
+ADB devices or chooses one implicitly. It refuses any serial not beginning
+with `emulator-`, verifies that selected serial is online, checks the QEMU
+property, and matches the running AVD name to an AVD registered with this SDK.
+
+Reports and command logs are written under
+`%LOCALAPPDATA%\LifeOS\qa-reports\<run-id>`. The report distinguishes
+`PASS`, `FAIL`, and `BLOCKED`; a blocked notification post/tap case means the
+test did not run, commonly because Android notification permission has not
+already been granted outside the local runner. On the fresh, disposable API 33+
+AVD, the guarded runner grants `POST_NOTIFICATIONS` only to
+`com.lifeos.personal.dev`, so the instrumentation can verify an OS-posted
+notification and its tap. Physical-device mode is rejected before ADB is called.
+
+The instrumentation runner verifies the app ID and instrumentation target are
+`com.lifeos.personal.dev` before install, verifies app/test signatures, refuses
+to overwrite an existing Dev package on the disposable AVD, and never targets
+the production package. Its reusable exclusion file is stored under the Dev
+app's private files directory. Emulator logcat is sanitized and bounded;
+failure screenshots and state captures come only from the validated AVD.
