@@ -191,7 +191,7 @@ if ($badging -notmatch "(?m)^package: name='com\.lifeos\.personal\.preview' vers
 }
 $versionCode = $Matches[1]
 $versionName = $Matches[2]
-if ($badging -notmatch "(?m)^application-label:'LifeOS Preview'$") { throw 'Preview APK app label was not LifeOS Preview.' }
+if ($badging -notmatch "(?m)^application-label:'LifeOS Preview'\s*$") { throw 'Preview APK app label was not LifeOS Preview.' }
 
 $manifest = & $aaptPath dump xmltree $apkPath AndroidManifest.xml 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0 -or $manifest -notmatch 'com\.lifeos\.personal\.preview\.SOURCE_COMMIT' -or $manifest -notmatch [regex]::Escape($sourceCommit)) {
@@ -199,7 +199,7 @@ if ($LASTEXITCODE -ne 0 -or $manifest -notmatch 'com\.lifeos\.personal\.preview\
 }
 
 $signatureOutput = & $apksignerPath verify --print-certs $apkPath 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0 -or $signatureOutput -notmatch '(?m)^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})$') {
+if ($LASTEXITCODE -ne 0 -or $signatureOutput -notmatch '(?m)^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})\s*$') {
     throw 'APK signature verification failed or did not report a signer fingerprint.'
 }
 $signerSha256 = $Matches[1].ToLowerInvariant()
