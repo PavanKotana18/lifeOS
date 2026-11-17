@@ -6,7 +6,7 @@ ANDROID_TEST_FILTER='com.lifeos.personal.DirectedVisualAcceptanceTest#packagedMa
 pull_status=0
 # The inner runner writes this only after rejecting physical/existing installations.
 if [[ -s qa-visual-evidence/device-profile.txt ]] && [[ "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" == '1' ]]; then
-  adb -s emulator-5554 pull /sdcard/Android/data/com.lifeos.personal/files/LifeOS-directed-visual qa-visual-evidence/screenshots || pull_status=$?
+  adb -s emulator-5554 pull /sdcard/Android/data/com.lifeos.personal.dev/files/LifeOS-directed-visual qa-visual-evidence/screenshots || pull_status=$?
 else
   pull_status=1
 fi
