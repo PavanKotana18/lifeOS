@@ -102,7 +102,7 @@ jobs:
         run: |
           gradle --version
           gradle -p android --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
-      - name: Verify candidate package, version, and stable Debug certificate
+      - name: Verify isolated Dev package, version, and stable Debug certificate
         env:
           EXPECTED_CERT_SHA256: "735210B06A6088389F5EFADFA630DE42847D5949091C4A146183B579ED7D56A2"
         run: |
@@ -113,20 +113,20 @@ jobs:
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' | tr -d ':' | tr '[:lower:]' '[:upper:]')"
           [[ "$ACTUAL" == "$EXPECTED_CERT_SHA256" ]] || { echo "::error::Debug APK certificate differs from the recorded stable identity."; exit 1; }
           BADGING="$("$AAPT" dump badging "$APK")"
-          grep -q "package: name='com.lifeos.personal'" <<< "$BADGING"
+          grep -q "package: name='com.lifeos.personal.dev'" <<< "$BADGING"
           VERSION="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
           [[ -n "$VERSION" ]] || { echo "::error::Debug APK version metadata is missing."; exit 1; }
           VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
-          [[ "$VERSION" == "$(node -p "require('./package.json').version")" ]] || { echo "::error::APK versionName does not match package.json."; exit 1; }
-          IFS=. read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "$VERSION"
+          [[ "$VERSION" == "$(node -p "require('./package.json').version")-dev" ]] || { echo "::error::APK versionName does not match package.json."; exit 1; }
+          IFS=. read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "${VERSION%-dev}"
           EXPECTED_VERSION_CODE=$((10#$VERSION_MAJOR * 1000000 + 10#$VERSION_MINOR * 1000 + 10#$VERSION_PATCH + GITHUB_RUN_NUMBER))
           [[ "$VERSION_CODE" == "$EXPECTED_VERSION_CODE" ]] || { echo "::error::APK versionCode differs from the expected run-specific value."; exit 1; }
           SHA256="$(sha256sum "$APK" | awk '{print $1}')"
-          echo "Verified candidate APK package=com.lifeos.personal version=$VERSION versionCode=$VERSION_CODE signer_sha256=$ACTUAL apk_sha256=$SHA256"
+          echo "Verified isolated Dev APK package=com.lifeos.personal.dev version=$VERSION versionCode=$VERSION_CODE signer_sha256=$ACTUAL apk_sha256=$SHA256"
           {
-            echo "### Signed candidate Debug APK"
+            echo "### Signed isolated Dev Debug APK"
             echo "- Candidate commit: $CANDIDATE_SHA"
-            echo "- Package: com.lifeos.personal"
+            echo "- Package: com.lifeos.personal.dev"
             echo "- Version: $VERSION"
             echo "- Version code: $VERSION_CODE"
             echo "- Debug certificate SHA-256: $ACTUAL"
