@@ -13,8 +13,8 @@ require.extensions['.tsx'] = (loadedModule, filename) => {
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const render = (element) => renderToStaticMarkup(element);
-const fsSource = fs.readFileSync('src/App.tsx', 'utf8');
-const styles = fs.readFileSync('src/index.css', 'utf8');
+const fsSource = fs.readFileSync('src/App.tsx', 'utf8').replace(/\r\n/g, '\n');
+const styles = fs.readFileSync('src/index.css', 'utf8').replace(/\r\n/g, '\n');
 const lockedStart = fsSource.indexOf('  // If App is Biometrically Locked');
 const shellStart = fsSource.indexOf('className="lifeos-page app-shell"', lockedStart);
 const shell = fsSource.slice(lockedStart, shellStart);
