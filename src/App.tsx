@@ -1909,7 +1909,7 @@ export default function App() {
 
   const openDuplicateTransaction = (transaction: Transaction) => {
     openCreateForm('transaction');
-    setCreateDraft(current => buildDuplicateTransactionDraft(current, transaction));
+    setCreateDraft(current => buildDuplicateTransactionDraft(current, transaction, financialAccounts));
   };
 
   const openEditGoal = (goal: Goal) => {
