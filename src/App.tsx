@@ -2781,6 +2781,7 @@ export default function App() {
             {financeSubtab === 'planning' && <div className="space-y-5"><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
               onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
+              onRecordOccurrence={async row => { await runPreparedFinanceWrite(() => StorageService.commitments.postOccurrence(row.id, row)); }}
               onDeleteCommitment={async id => { await StorageService.commitments.delete(id); await reloadAllData(); }}
               onAddRate={async input => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.add(input)); }}
               onUpdateRate={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.update(id, input)); }}

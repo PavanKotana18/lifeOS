@@ -38,8 +38,13 @@ export function validateManualExchangeRate(record: Pick<ManualExchangeRate, 'bas
   catch { throw new Error('Enter a positive supported-currency rate with up to eight decimal places.'); }
 }
 
-export function validatePlannedCommitment(record: Pick<PlannedCommitment, 'title' | 'amount' | 'amountMinor' | 'currencyCode' | 'frequency' | 'nextDueDate' | 'status'>): void {
+export function validatePlannedCommitment(record: Pick<PlannedCommitment, 'title' | 'amount' | 'amountMinor' | 'currencyCode' | 'frequency' | 'nextDueDate' | 'status' | 'type' | 'recurrenceAnchorDate' | 'lastPostedDate'>): void {
   if (!record.title.trim()) throw new Error('Commitment name is required.');
+  if (record.type !== undefined && !['income', 'expense'].includes(record.type)) throw new Error('Unsupported planned transaction type.');
+  for (const value of [record.recurrenceAnchorDate, record.lastPostedDate]) {
+    if (value !== undefined && !isValidLocalDate(value)) throw new Error('Invalid recurrence history date.');
+  }
+  if (record.lastPostedDate && record.lastPostedDate >= record.nextDueDate) throw new Error('Next due date must be after the last recorded occurrence.');
   if (!Number.isFinite(record.amount) || record.amount <= 0) throw new Error('Commitment amount must be greater than zero.');
   if (getCurrencyMetadata(record.currencyCode).code !== record.currencyCode || !/^[1-9]\d*$/.test(record.amountMinor) ||
       decimalToMinorUnits(record.amount, record.currencyCode) !== BigInt(record.amountMinor)) throw new Error('Commitment amount and currency metadata do not agree.');
@@ -51,7 +56,7 @@ export function validatePlannedCommitment(record: Pick<PlannedCommitment, 'title
 export function validatePlannedCommitmentReferences(record: PlannedCommitment, accounts: FinancialAccount[], categories: Category[]): void {
   if (record.accountId && !accounts.some(account => account.id === record.accountId)) throw new Error('Selected account no longer exists.');
   if (record.accountId && !accounts.some(account => account.id === record.accountId && account.currencyCode === record.currencyCode)) throw new Error('Commitment currency must match its selected account.');
-  if (record.categoryId && !categories.some(category => category.id === record.categoryId && category.type === 'expense')) throw new Error('Choose an available expense category.');
+  if (record.categoryId && !categories.some(category => category.id === record.categoryId && category.type === (record.type || 'expense'))) throw new Error('Choose an available category matching the planned transaction type.');
 }
 
 /** Current balances are calculated from the opening balance and posted activity; they are never persisted. */

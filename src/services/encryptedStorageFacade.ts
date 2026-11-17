@@ -1,3 +1,4 @@
+import { withCommitmentWriteLock } from './commitmentWriteLock';
 import type {
   Transaction,
   Category,
@@ -23,7 +24,8 @@ import type {
   EncryptedRepositories,
   PreparedMutation,
 } from './encryptedTransactionCoordinator';
-import { sortTransactions } from './domainUtils';
+import { sortTransactions, formatLocalDate } from './domainUtils';
+import { advanceCommitmentDate } from './commitmentRecurrence';
 import { decimalToMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './financeCore';
 import { validateAccountTransfer, validateFinancialAccount, validateManualExchangeRate, validatePlannedCommitment, validatePlannedCommitmentReferences } from './financialAccounting';
 
@@ -127,9 +129,17 @@ function reconcileGoal(goal: Goal, milestones: Milestone[]): Goal {
 
 export function createEncryptedStorageFacade(
   repositories: EncryptedRepositories,
-  coordinator: EncryptedStorageTransaction,
+  underlyingCoordinator: EncryptedStorageTransaction,
   helpers: EncryptedStorageHelpers
 ) {
+  // Serialize the full facade write operation across tabs, including reference
+  // changes and restore/reset, before the existing encrypted write lease.
+  const coordinator: EncryptedStorageTransaction = {
+    run: operation => withCommitmentWriteLock(() => underlyingCoordinator.run(operation)),
+  };
+  const occurrenceCoordinator: EncryptedStorageTransaction = {
+    run: operation => withCommitmentWriteLock(() => underlyingCoordinator.run(operation), true),
+  };
   const readAll = <T>(table: EncryptedTable) =>
     repositories[table].getAll<T>();
 
@@ -211,6 +221,7 @@ export function createEncryptedStorageFacade(
       getById: (id: string) => get<Transaction>('transactions', id),
 
       add: async (input: Omit<Transaction, 'id' | 'createdAt'>) => {
+        if (input.commitmentId || input.commitmentOccurrenceDate) throw new Error('Scheduled occurrence identity is managed by its plan.');
         const record: Transaction = {
           ...input,
           id: helpers.createRecordId('tx'),
@@ -242,7 +253,7 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           const existing = await ctx.get<Transaction>('transactions', id);
           if (!existing) throw new Error('Transaction not found.');
-          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt };
+          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt, commitmentId: existing.commitmentId, commitmentOccurrenceDate: existing.commitmentOccurrenceDate };
           helpers.validateTransactionRecord(merged, true);
           const [categories, accounts] = await Promise.all([
             ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')
@@ -615,10 +626,48 @@ export function createEncryptedStorageFacade(
     },
 
     commitments: {
+      postOccurrence: async (id: string, expected: PlannedCommitment) => occurrenceCoordinator.run(async ctx => {
+        if (!expected || expected.id !== id) throw new Error('Review the current planned occurrence before recording it.');
+        const current = await ctx.get<PlannedCommitment>('plannedCommitments', id);
+        if (!current) throw new Error('This plan no longer exists.');
+        const transactions = await ctx.getAll<Transaction>('transactions');
+        const posted = transactions.find(row => row.commitmentId === id && row.commitmentOccurrenceDate === expected.nextDueDate);
+        if (posted) return posted; // Durable retry: the original record is returned, never posted twice.
+        if (current.lastPostedDate && expected.nextDueDate <= current.lastPostedDate) throw new Error('This occurrence was already recorded; deleting its transaction does not make it eligible again.');
+        for (const key of ['nextDueDate', 'amountMinor', 'currencyCode', 'amount', 'categoryId', 'accountId', 'type', 'frequency', 'status', 'updatedAt', 'title', 'notes', 'recurrenceAnchorDate', 'lastPostedDate'] as const) {
+          if (current[key] !== expected[key]) throw new Error('This plan changed. Review it again before recording.');
+        }
+        validatePlannedCommitment(current);
+        if (current.status !== 'active') throw new Error('Resume this plan before recording an occurrence.');
+        if (current.nextDueDate > formatLocalDate(new Date())) throw new Error('This occurrence is not due yet.');
+        const [categories, accounts] = await Promise.all([ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')]);
+        validatePlannedCommitmentReferences(current, accounts, categories);
+        const category = categories.find(row => row.id === current.categoryId);
+        if (!category) throw new Error('Choose a category on this plan before recording an occurrence.');
+        if (current.accountId && !accounts.find(row => row.id === current.accountId)?.isActive) throw new Error('Choose an active account or leave this plan unassigned.');
+        // The primary key is unique across tabs/processes as well as retries.
+        const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([id, current.nextDueDate])));
+        const occurrenceId = 'occurrence_' + Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+        const record: Transaction = {
+          id: occurrenceId, createdAt: new Date().toISOString(),
+          type: current.type || 'expense', amount: current.amount, amountMinor: current.amountMinor,
+          currencyCode: current.currencyCode, accountId: current.accountId, category: category.name,
+          description: current.title, notes: current.notes, date: current.nextDueDate,
+          paymentMethod: 'Other', isRecurring: true, commitmentId: id, commitmentOccurrenceDate: current.nextDueDate,
+        };
+        helpers.validateTransactionRecord(record, true);
+        const recurrenceAnchorDate = current.recurrenceAnchorDate || current.nextDueDate;
+        const next = { ...current, recurrenceAnchorDate, lastPostedDate: current.nextDueDate,
+          nextDueDate: advanceCommitmentDate(current.nextDueDate, current.frequency, recurrenceAnchorDate), updatedAt: new Date().toISOString() };
+        validatePlannedCommitment(next);
+        ctx.add('transactions', record);
+        ctx.put('plannedCommitments', next);
+        return record;
+      }),
       getAll: async () => (await readAll<PlannedCommitment>('plannedCommitments'))
         .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.title.localeCompare(b.title)),
       add: async input => {
-        const record: PlannedCommitment = { ...input, id: helpers.createRecordId('commitment'), createdAt: new Date().toISOString() };
+        const record: PlannedCommitment = { ...input, recurrenceAnchorDate: input.nextDueDate, lastPostedDate: undefined, id: helpers.createRecordId('commitment'), createdAt: new Date().toISOString() };
         validatePlannedCommitment(record);
         await coordinator.run(async ctx => {
           const [accounts, categories] = await Promise.all([ctx.getAll<FinancialAccount>('financialAccounts'), ctx.getAll<Category>('categories')]);
@@ -630,7 +679,9 @@ export function createEncryptedStorageFacade(
       update: async (id, updates) => coordinator.run(async ctx => {
         const existing = await ctx.get<PlannedCommitment>('plannedCommitments', id);
         if (!existing) return;
-        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, lastPostedDate: existing.lastPostedDate,
+          recurrenceAnchorDate: (updates.nextDueDate && updates.nextDueDate !== existing.nextDueDate) || (updates.frequency && updates.frequency !== existing.frequency)
+            ? (updates.nextDueDate || existing.nextDueDate) : existing.recurrenceAnchorDate, updatedAt: new Date().toISOString() };
         validatePlannedCommitment(updated);
         const [accounts, categories] = await Promise.all([ctx.getAll<FinancialAccount>('financialAccounts'), ctx.getAll<Category>('categories')]);
         validatePlannedCommitmentReferences(updated, accounts, categories);

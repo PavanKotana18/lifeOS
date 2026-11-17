@@ -389,6 +389,7 @@ export interface IDataStorage {
   };
   commitments: {
     getAll(): Promise<PlannedCommitment[]>;
+    postOccurrence(id: string, expected: PlannedCommitment): Promise<Transaction>;
     add(input: Omit<PlannedCommitment, 'id' | 'createdAt' | 'updatedAt'>): Promise<PlannedCommitment>;
     update(id: string, updates: Partial<Omit<PlannedCommitment, 'id' | 'createdAt'>>): Promise<void>;
     delete(id: string): Promise<void>;
@@ -472,9 +473,20 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'occurredAt', 'transactions', i);
     optionalInstant(r, 'updatedAt', 'transactions', i);
     optionalBoolean(r, 'isRecurring', 'transactions', i);
+    optionalString(r, 'commitmentId', 'transactions', i);
+    if (r.commitmentOccurrenceDate !== undefined && !date(r.commitmentOccurrenceDate)) fail('transactions', i, 'commitmentOccurrenceDate');
+    if (Boolean(r.commitmentId) !== Boolean(r.commitmentOccurrenceDate)) fail('transactions', i, 'occurrence identity');
     try { validateMoneyMetadata(r); } catch { fail('transactions', i, 'currency/amountMinor'); }
     optionalString(r, 'accountId', 'transactions', i);
     if (r.accountId && !ids.financialAccounts.has(r.accountId)) fail('transactions', i, 'accountId reference');
+  });
+
+  const occurrenceKeys = new Set<string>();
+  tablesData.transactions.forEach((r: any, i: number) => {
+    if (!r.commitmentId) return;
+    const key = JSON.stringify([r.commitmentId, r.commitmentOccurrenceDate]);
+    if (occurrenceKeys.has(key)) fail('transactions', i, 'duplicate scheduled occurrence');
+    occurrenceKeys.add(key);
   });
 
   check('financialAccounts', (r, i) => {
@@ -547,6 +559,11 @@ export function validateBackupTables(tablesData: any): string[] {
   });
 
   check('plannedCommitments', (r, i) => {
+    if (r.type !== undefined && !enumValue(r.type, ['income', 'expense'])) fail('plannedCommitments', i, 'type');
+    for (const key of ['recurrenceAnchorDate', 'lastPostedDate']) {
+      if (r[key] !== undefined && !date(r[key])) fail('plannedCommitments', i, key);
+    }
+    if (r.lastPostedDate && r.lastPostedDate >= r.nextDueDate) fail('plannedCommitments', i, 'lastPostedDate');
     requiredString(r, 'title', 'plannedCommitments', i);
     requiredNumber(r, 'amount', 'plannedCommitments', i);
     try { validateMoneyMetadata(r); } catch { fail('plannedCommitments', i, 'currency/amountMinor'); }
@@ -557,7 +574,11 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'notes', 'plannedCommitments', i);
     optionalString(r, 'categoryId', 'plannedCommitments', i);
     optionalString(r, 'accountId', 'plannedCommitments', i);
-    if (r.categoryId && !ids.categories.has(r.categoryId)) fail('plannedCommitments', i, 'categoryId reference');
+    if (r.categoryId && !tablesData.categories.some((category: any) => category.id === r.categoryId && category.type === (r.type || 'expense'))) fail('plannedCommitments', i, 'categoryId reference');
+    if (r.lastPostedDate && !r.recurrenceAnchorDate) fail('plannedCommitments', i, 'recurrenceAnchorDate');
+    for (const tx of tablesData.transactions) {
+      if (tx.commitmentId === r.id && (!r.lastPostedDate || tx.commitmentOccurrenceDate > r.lastPostedDate || tx.commitmentOccurrenceDate >= r.nextDueDate)) fail('plannedCommitments', i, 'occurrence history');
+    }
     if (r.accountId && !ids.financialAccounts.has(r.accountId)) fail('plannedCommitments', i, 'accountId reference');
     optionalInstant(r, 'updatedAt', 'plannedCommitments', i);
   });
@@ -1137,6 +1158,7 @@ const rawStorageService: IDataStorage = {
     async delete(id) { await db.manualExchangeRates.delete(id); }
   },
   commitments: {
+    async postOccurrence() { throw new Error('Activate encrypted storage before recording a scheduled occurrence.'); },
     async getAll() { return (await db.plannedCommitments.toArray()).sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.title.localeCompare(b.title)); },
     async add(input) {
       const record: PlannedCommitment = { ...input, id: createRecordId('commitment'), createdAt: new Date().toISOString() };

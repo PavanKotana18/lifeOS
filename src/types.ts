@@ -16,6 +16,8 @@ export interface Transaction {
   paymentMethod: string;
   notes?: string;
   isRecurring?: boolean;
+  commitmentId?: string;
+  commitmentOccurrenceDate?: string;
   occurredAt?: string; // ISO instant represented by the user-selected local date/time
   createdAt: string;
   updatedAt?: string;
@@ -112,6 +114,10 @@ export interface ManualExchangeRate {
 export type CommitmentFrequency = 'weekly' | 'monthly' | 'yearly';
 export type CommitmentStatus = 'active' | 'paused';
 export interface PlannedCommitment {
+  /** Missing on legacy plans means expense. */
+  type?: TransactionType;
+  recurrenceAnchorDate?: string;
+  lastPostedDate?: string;
   id: string;
   title: string;
   amount: number;
