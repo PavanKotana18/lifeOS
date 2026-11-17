@@ -25,6 +25,7 @@ audit/
 *.pfx
 *.jks
 *.keystore
+*.dpapi
 google-services.json
 GoogleService-Info.plist
 

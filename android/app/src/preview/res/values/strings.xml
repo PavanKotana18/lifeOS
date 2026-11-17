@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">LifeOS Preview</string>
+    <string name="title_activity_main">LifeOS Preview</string>
+    <string name="package_name">com.lifeos.personal.preview</string>
+    <string name="custom_url_scheme">com.lifeos.personal.preview</string>
+</resources>

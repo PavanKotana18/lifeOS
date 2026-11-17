@@ -1,8 +1,7 @@
 apply plugin: 'com.android.application'
 
-// package.json is the authoritative app version. CI adds its monotonically
-// increasing workflow run number so every distributable build gets a higher
-// Android versionCode while local builds remain reproducible.
+// package.json is the authoritative app version. An optional build number can
+// distinguish automated artifacts; ordinary local builds remain reproducible.
 def lifeosPackage = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
 def lifeosVersion = lifeosPackage.version
 def lifeosVersionMatch = (lifeosVersion =~ /^(\d+)\.(\d+)\.(\d+)$/)
@@ -31,6 +30,12 @@ def lifeosDebugSigningReady =
      'LIFEOS_DEBUG_KEY_ALIAS', 'LIFEOS_DEBUG_KEY_PASSWORD'].every {
         System.getenv(it)?.trim()
     }
+def lifeosPreviewSigningReady =
+    ['LIFEOS_PREVIEW_KEYSTORE_PATH', 'LIFEOS_PREVIEW_KEYSTORE_PASSWORD',
+     'LIFEOS_PREVIEW_KEY_ALIAS', 'LIFEOS_PREVIEW_KEY_PASSWORD'].every {
+        System.getenv(it)?.trim()
+    }
+def lifeosPreviewSourceCommit = System.getenv('LIFEOS_PREVIEW_SOURCE_COMMIT') ?: ''
 
 android {
     signingConfigs {
@@ -48,6 +53,14 @@ android {
                 storePassword System.getenv('LIFEOS_DEBUG_KEYSTORE_PASSWORD')
                 keyAlias System.getenv('LIFEOS_DEBUG_KEY_ALIAS')
                 keyPassword System.getenv('LIFEOS_DEBUG_KEY_PASSWORD')
+            }
+        }
+        lifeosPreview {
+            if (lifeosPreviewSigningReady) {
+                storeFile file(System.getenv('LIFEOS_PREVIEW_KEYSTORE_PATH'))
+                storePassword System.getenv('LIFEOS_PREVIEW_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('LIFEOS_PREVIEW_KEY_ALIAS')
+                keyPassword System.getenv('LIFEOS_PREVIEW_KEY_PASSWORD')
             }
         }
     }
@@ -68,16 +81,50 @@ android {
         debug {
             applicationIdSuffix ".dev"
             versionNameSuffix "-dev"
-            if (!lifeosDebugSigningReady) {
-                throw new GradleException('Debug APK signing requires LIFEOS_DEBUG_KEYSTORE_PATH, LIFEOS_DEBUG_KEYSTORE_PASSWORD, LIFEOS_DEBUG_KEY_ALIAS, and LIFEOS_DEBUG_KEY_PASSWORD.')
+            if (lifeosDebugSigningReady) {
+                signingConfig signingConfigs.lifeosDebug
+            } else {
+                signingConfig = null
             }
-            signingConfig signingConfigs.lifeosDebug
+        }
+        preview {
+            initWith debug
+            applicationIdSuffix ".preview"
+            versionNameSuffix "-preview"
+            debuggable true
+            matchingFallbacks = ['debug']
+            signingConfig signingConfigs.lifeosPreview
+            manifestPlaceholders = [lifeosSourceCommit: lifeosPreviewSourceCommit ?: 'unavailable']
         }
         release {
             if (lifeosReleaseSigningReady) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+// Keep the existing Dev identity strict while allowing its separate preview
+// build type to use a dedicated local key. Neither variant falls back to the
+// shared Android debug keystore when its own signing inputs are missing.
+gradle.taskGraph.whenReady { graph ->
+    def lifeosAppProject = project
+    def artifactTaskPrefixes = ['assemble', 'package', 'bundle', 'install', 'sign', 'validatesigning']
+    def requestedVariants = graph.allTasks.findAll { task ->
+        def name = task.name.toLowerCase()
+        task.project == lifeosAppProject && artifactTaskPrefixes.any { prefix -> name.startsWith(prefix) }
+            && (name.contains('debug') || name.contains('preview'))
+    }
+    def requestsDebug = requestedVariants.any { it.name.toLowerCase().contains('debug') }
+    def requestsPreview = requestedVariants.any { it.name.toLowerCase().contains('preview') }
+    if (requestsDebug && !lifeosDebugSigningReady) {
+        throw new GradleException('Dev APK signing requires the persistent LIFEOS_DEBUG_KEY_* identity; standard debug signing is disabled.')
+    }
+    if (requestsPreview && !lifeosPreviewSigningReady) {
+        throw new GradleException('Preview APK signing requires its separate LIFEOS_PREVIEW_KEY_* identity.')
+    }
+    if (requestsPreview && !(lifeosPreviewSourceCommit ==~ /[0-9a-f]{40}/)) {
+        throw new GradleException('Preview APK build requires LIFEOS_PREVIEW_SOURCE_COMMIT to identify the exact source commit.')
     }
 }
 
