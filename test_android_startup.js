@@ -65,6 +65,11 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
     },
     '@capacitor/core': { Capacitor: { isNativePlatform: () => true }, registerPlugin: name => name === 'SystemAppearance' ? ({ getSystemAppearance: nativeAppearance }) : ({ getLaunchInfo: async () => ({ coldStart: false }) }) },
     './index.css': {},
+    './styles/money-details.css': {},
+    './styles/money-transformation.css': {},
+    './styles/four-tab-transformation.css': {},
+    './styles/interface-motion.css': {},
+    './styles/planning-life-transformation.css': {},
   };
   vm.runInNewContext(mainCode, {
     exports: {},

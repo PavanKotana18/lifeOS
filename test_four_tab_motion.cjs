@@ -71,3 +71,80 @@ assert.ok(resistDrag(50, 320, 'snappy') > resistDrag(50, 320, 'silky'));
 assert.ok(resistDrag(50, 320, 'silky') > resistDrag(50, 320, 'oil'));
 assert.equal(estimateDragVelocity([]), 0);
 console.log('FOUR TAB MOTION: all presets, physical spring decay, mirrored resistance, recent velocity bounds and reduced-motion endpoints passed.');
+
+const fs = require('node:fs');
+const ts = require('typescript');
+require.extensions['.tsx'] = (loaded, file) => loaded._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+}).outputText, file);
+const React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
+const MotionPreferences = require('./src/components/MotionPreferences.tsx').default;
+const { createMotionPreferenceController, MOTION_CACHE_KEY } = require('./src/services/interfaceMotion.ts');
+const markup = renderToStaticMarkup(React.createElement(MotionPreferences, { value: 'oil', onChange() {}, reducedMotion: true, error: 'Synthetic failure' }));
+assert.equal((markup.match(/type="radio"/g) || []).length, 3);
+assert.match(markup, /<input(?=[^>]*value="oil")(?=[^>]*checked="")[^>]*>/);
+assert.match(markup, /Reduced motion is active/);
+assert.match(markup, /role="alert"/);
+assert.match(markup, /aria-describedby=/);
+const busyMarkup = renderToStaticMarkup(React.createElement(MotionPreferences, { value: 'silky', onChange() {}, saving: true }));
+assert.equal((busyMarkup.match(/disabled=""/g) || []).length, 3);
+for (const preset of MOTION_PRESET_OPTIONS) {
+  const reduced = getMotionCssVariables(preset.id, true);
+  assert.equal(reduced['--motion-tab'], '0ms');
+  assert.equal(reduced['--motion-panel'], '0ms');
+  assert.equal(reduced['--motion-feedback'], '0ms');
+}
+
+(async () => {
+  const h = require('./tests/wp0/production-harness.cjs');
+  const fixture = await h.fixture({ activate: false });
+  try {
+    const nativeBefore = [...fixture.native.calls];
+    const controller = createMotionPreferenceController(fixture.StorageService.settings, global.localStorage);
+    await controller.load();
+    assert.equal(controller.getSnapshot().preset, 'silky');
+    assert.equal(await controller.setPreset('oil'), true);
+    assert.equal(await fixture.StorageService.settings.get('motionPreset', null), 'oil');
+    assert.equal(global.localStorage.getItem(MOTION_CACHE_KEY), 'oil');
+    const raw = await fixture.lifeOSDatabase.settings.get('motionPreset');
+    assert.equal(raw.value, 'oil');
+    assert.equal(raw.__lifeosEncrypted, undefined, 'Only a cosmetic preset is exposed before private unlock');
+    assert.deepEqual(fixture.native.calls, nativeBefore, 'Saving motion does not provision or unlock private storage');
+    await Promise.all([controller.setPreset('snappy'), controller.setPreset('silky'), controller.setPreset('oil')]);
+    assert.equal(controller.getSnapshot().preset, 'oil');
+    assert.equal(controller.getSnapshot().saving, false);
+    assert.equal(await fixture.StorageService.settings.get('motionPreset', null), 'oil');
+    const restored = createMotionPreferenceController(fixture.StorageService.settings);
+    await restored.load();
+    assert.equal(restored.getSnapshot().preset, 'oil', 'Preference survives a new controller without cache');
+    assert.equal(await controller.setPreset('unsafe'), false);
+    assert.equal(await fixture.StorageService.settings.get('motionPreset', null), 'oil');
+    let rejectWrites = true;
+    const failures = createMotionPreferenceController({ get: async () => 'oil', set: async () => { if (rejectWrites) throw new Error('Synthetic failure'); } });
+    await failures.load();
+    assert.equal(await failures.setPreset('snappy'), false);
+    assert.equal(failures.getSnapshot().preset, 'oil', 'Rejected write retains last persisted preference');
+    assert.match(failures.getSnapshot().error, /Could not save/);
+    assert.equal(failures.getSnapshot().saving, false);
+    rejectWrites = false;
+    assert.equal(await failures.setPreset('silky'), true, 'A failed save does not poison the queue');
+    assert.equal(failures.getSnapshot().error, null);
+    let finishRead;
+    const race = createMotionPreferenceController({ get: () => new Promise(resolve => { finishRead = resolve; }), set: async () => {} });
+    const loading = race.load();
+    await Promise.resolve();
+    await race.setPreset('snappy');
+    finishRead('oil');
+    await loading;
+    assert.equal(race.getSnapshot().preset, 'snappy', 'Late initialization never overwrites a newer saved choice');
+    const hung = createMotionPreferenceController({ get: () => new Promise(() => {}), set: async () => {} }, { getItem: () => 'oil', setItem() {} }, 10);
+    await hung.load();
+    assert.equal(hung.getSnapshot().preset, 'oil', 'A bounded timeout keeps cached preference');
+    const corrupt = createMotionPreferenceController({ get: async () => '<script>', set: async () => {} }, { getItem: () => 'oil', setItem() {} });
+    await corrupt.load();
+    assert.equal(corrupt.getSnapshot().preset, 'silky', 'Malformed authoritative storage safely restores the default');
+    assert.equal(await fixture.lifeOSDatabase.transactions.count(), 0);
+    console.log('MOTION PREFERENCES: production persistence, bootstrap isolation, serialized writes, hydration race, timeout, failure recovery and accessible choices passed.');
+  } finally { await fixture.dispose(); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

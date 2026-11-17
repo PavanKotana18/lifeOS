@@ -40,3 +40,8 @@
 .plan-schedule-indicators { display:flex; gap:.6rem; flex-wrap:wrap; }
 .plan-schedule-indicators > span { display:inline-flex; align-items:center; gap:.25rem; }
 .plan-compose { padding:.65rem 1rem; border-radius:.8rem; }
+.plan-quick-entry form { min-width:0; }
+.plan-quick-entry form > label { min-width:0; overflow-wrap:anywhere; }
+.plan-quick-entry form > div { min-width:0; flex-wrap:wrap; }
+.plan-quick-entry form input { min-width:0; flex:1 1 10rem; }
+.plan-quick-entry form button { flex:0 1 auto; white-space:normal; }

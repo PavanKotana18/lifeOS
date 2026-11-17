@@ -27,9 +27,92 @@ export function normalizeMotionPreset(value: unknown): MotionPresetId {
 export function getMotionPreset(value: unknown = 'silky'): MotionPreset {
   return presets[normalizeMotionPreset(value)];
 }
-export function getMotionCssVariables(value: unknown = 'silky'): Record<string, string> {
+export function getMotionCssVariables(value: unknown = 'silky', reducedMotion = false): Record<string, string> {
   const preset = getMotionPreset(value);
-  return { '--interface-motion-duration': `${preset.duration}ms`, '--interface-motion-easing': preset.easing };
+  const duration = reducedMotion ? 0 : preset.duration;
+  return {
+    '--interface-motion-duration': `${duration}ms`,
+    '--interface-motion-easing': preset.easing,
+    '--motion-tab': `${duration}ms`,
+    '--motion-panel': `${reducedMotion ? 0 : Math.round(duration * 0.75)}ms`,
+    '--motion-feedback': `${reducedMotion ? 0 : Math.round(duration * 0.35)}ms`,
+  };
+}
+
+export const MOTION_PREFERENCE_KEY = 'motionPreset';
+export const MOTION_CACHE_KEY = 'lifeos-motion-preset';
+export type MotionPreferenceState = Readonly<{ preset: MotionPresetId; saving: boolean; error: string | null }>;
+type MotionSettings = {
+  get: (key: string, fallback: unknown) => Promise<unknown>;
+  set: (key: string, value: MotionPresetId) => Promise<unknown>;
+};
+type MotionCache = { getItem: (key: string) => string | null; setItem: (key: string, value: string) => void };
+
+/** Cosmetic preference only. Pending storage reads never overwrite a newer choice. */
+export function createMotionPreferenceController(settings: MotionSettings, cache?: MotionCache, timeoutMs = 1500) {
+  let cached: unknown;
+  try { cached = cache?.getItem(MOTION_CACHE_KEY); } catch { /* Optional cache. */ }
+  let state: MotionPreferenceState = { preset: normalizeMotionPreset(cached), saving: false, error: null };
+  let revision = 0;
+  let pending = 0;
+  let queue = Promise.resolve();
+  let hydration: Promise<void> | undefined;
+  const listeners = new Set<(state: MotionPreferenceState) => void>();
+  const emit = (patch: Partial<MotionPreferenceState>) => {
+    state = { ...state, ...patch };
+    listeners.forEach(listener => listener(state));
+  };
+  const cachePreset = (preset: MotionPresetId) => { try { cache?.setItem(MOTION_CACHE_KEY, preset); } catch { /* Database remains authoritative. */ } };
+  return {
+    getSnapshot: () => state,
+    subscribe(listener: (state: MotionPreferenceState) => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    load(): Promise<void> {
+      if (hydration) return hydration;
+      const startedAt = revision;
+      hydration = (async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = Symbol('timeout');
+        try {
+          const result = await Promise.race([
+            Promise.resolve().then(() => settings.get(MOTION_PREFERENCE_KEY, null)),
+            new Promise<typeof timeout>(resolve => { timer = setTimeout(() => resolve(timeout), Math.max(1, Math.min(5000, Number.isFinite(timeoutMs) ? timeoutMs : 1500))); }),
+          ]);
+          if (result !== timeout && revision === startedAt) {
+            const preset = normalizeMotionPreset(result);
+            cachePreset(preset);
+            emit({ preset });
+          }
+        } catch { /* Keep safe cached appearance when IndexedDB is unavailable. */ }
+        finally { if (timer !== undefined) clearTimeout(timer); }
+      })();
+      return hydration;
+    },
+    async setPreset(value: MotionPresetId): Promise<boolean> {
+      if (value !== 'silky' && value !== 'snappy' && value !== 'oil') {
+        emit({ error: 'Choose Silky, Snappy or Oil.' });
+        return false;
+      }
+      revision++;
+      pending++;
+      emit({ saving: true, error: null });
+      let succeeded = false;
+      const operation = queue.then(async () => {
+        try {
+          await settings.set(MOTION_PREFERENCE_KEY, value);
+          cachePreset(value);
+          succeeded = true;
+          emit({ preset: value, error: null });
+        } catch { emit({ error: 'Could not save motion preference. Try again.' }); }
+        finally { pending--; emit({ saving: pending > 0 }); }
+      });
+      queue = operation.catch(() => {});
+      await operation;
+      return succeeded;
+    },
+  };
 }
 
 const finite = (value: number): number => Number.isFinite(value) ? value : 0;

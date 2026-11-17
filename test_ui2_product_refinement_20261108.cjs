@@ -27,7 +27,7 @@ assert.ok(actionIndex >= 0 && actionIndex < balanceIndex, 'Expense, Income and T
 assert.equal((moneyHome.match(/className="money-action money-action-/g) || []).length, 3, 'Money has three equally presented primary actions');
 assert.match(accounts, /record income and spending without an account/, 'account tracking remains optional in the first-use state');
 assert.doesNotMatch(moneyHome, /money-account-nudge/, 'the overview does not repeat an account-creation prompt');
-assert.match(app, /money-destination-control[^]*<select id="money-destination"/, 'nested Money selection is themeable while retaining native select accessibility');
+assert.match(app, /<MoneyDetailHeader section=\{financeSubtab\}[^]*onBack=\{\(\) => navigateFinanceSubtab\('overview'\)/, 'focused Money details retain explicit overview navigation');
 assert.match(accounts, /confirmAction\(\{ title: 'Reverse this transfer\?'/, 'transfer reversal remains explicitly confirmed');
 assert.match(accounts, /closeAccountDraft/, 'account edits have a shared dirty-form close path');
 assert.match(planning, /closeCommitment[\s\S]*closeRate/, 'planned commitment and manual-rate drafts protect unsaved edits');

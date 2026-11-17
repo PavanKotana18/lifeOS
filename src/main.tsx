@@ -8,6 +8,7 @@ import { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveIn
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId } from './services/themeCatalog';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import './index.css';
+import './styles/money-details.css';
 import './styles/money-transformation.css';
 import './styles/four-tab-transformation.css';
 import './styles/interface-motion.css';

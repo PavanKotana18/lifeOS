@@ -1,3 +1,6 @@
+import { useInterfaceMotion } from './hooks/useInterfaceMotion';
+import MotionPreferences from './components/MotionPreferences';
+import MoneyDetailHeader from './components/MoneyDetailHeader';
 import { resistDrag } from './services/interfaceMotion';
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -105,6 +108,7 @@ import {
 } from './types';
 
 export default function App() {
+  const interfaceMotion = useInterfaceMotion();
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const activeTabRef = useRef<MainTab>('dashboard');
@@ -478,7 +482,7 @@ export default function App() {
     screen.removeAttribute('data-gesture-dragging');
     screen.style.removeProperty('--gesture-x');
     if (!animateBack || !shouldAnimatePrimaryGestureSettlement(window.matchMedia('(prefers-reduced-motion: reduce)').matches) || typeof screen.animate !== 'function') return;
-    const settle = buildSpringSettle(readTranslateX(transform), velocity);
+    const settle = buildSpringSettle(readTranslateX(transform), velocity, interfaceMotion.preset);
     if (!settle.duration) return;
     const animation = screen.animate(settle.keyframes, { duration: settle.duration, easing: 'linear' });
     swipeSettleAnimation.current = animation;
@@ -627,7 +631,7 @@ export default function App() {
       swipeMoveFrame.current = null;
       if (swipePointer.current?.pointerId !== start.pointerId || swipePointer.current.axis !== 'horizontal') return;
       screen.setAttribute('data-gesture-dragging', 'true');
-      screen.style.setProperty('--gesture-x', `${resistDrag(swipePointer.current.latestOffsetX, window.innerWidth)}px`);
+      screen.style.setProperty('--gesture-x', `${resistDrag(swipePointer.current.latestOffsetX, window.innerWidth, interfaceMotion.preset)}px`);
     });
   };
 
@@ -2697,13 +2701,8 @@ export default function App() {
         /></Suspense>} />
 
         <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
-          <div className="money-page space-y-5">
-            {financeSubtab !== 'overview' && <div className="money-page-toolbar">
-              <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
-              <div className="money-destination-control"><label className="sr-only" htmlFor="money-destination">Money section</label><select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)}>
-                {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
-              </select><ChevronDown size={16} aria-hidden="true" /></div>
-            </div>}
+          <div className="money-page space-y-5" data-detail={financeSubtab}>
+            {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => navigateFinanceSubtab('overview')} />}
 
             {/* Money home: recorded cash flow, never an inferred account balance. */}
             {financeSubtab === 'overview' && (
@@ -2765,14 +2764,14 @@ export default function App() {
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Search description, category..."
+                    aria-label="Search transactions" placeholder="Search description, category..."
                     value={financeSearch}
                     onChange={(e) => setFinanceSearch(e.target.value)}
                     className="lifeos-input min-h-11 flex-1 rounded-xl px-3 py-2.5 text-xs"
                   />
                   <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
                 </div>
-                <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
+                <details className="money-detail-filters"><summary>Refine transactions</summary><div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
 
                 {/* Filters */}
                 <div role="group" aria-label="Filter transactions by type" className="flex flex-wrap gap-2 text-xs pb-1">
@@ -2789,6 +2788,8 @@ export default function App() {
                 </div>
                 <label className="flex items-center justify-between text-[10px] text-secondary">Sort<select value={financeSort} onChange={e => setFinanceSort(e.target.value)} className="lifeos-input min-h-11 rounded-lg px-2 py-2 text-xs"><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="amount-desc">Largest amount</option></select></label>
 
+                </details>
+                <div className="money-detail-results"><span role="status">{filteredTransactions.length} posted transaction{filteredTransactions.length === 1 ? '' : 's'}</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); }}>Clear filters</button></div>
                 {/* Transactions List */}
                 <div className="space-y-2">
                   {filteredTransactions.length === 0 ? (
@@ -2802,7 +2803,7 @@ export default function App() {
                             <span>{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ' · time not recorded'} &bull; {t.category} ({t.paymentMethod || 'Other'}){t.accountId ? ` · ${financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'}` : ''}</span>
                           </button>
                           <span className={`transaction-history-amount ${t.type === 'income' ? 'is-income' : 'is-expense'}`}>
-                            {t.type === 'income' ? '+' : '−'}{formatMoney(t.amount, t.currencyCode || userPrefs.currency)}
+                            {t.type === 'income' ? '+' : '−'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(t.amount, t.currencyCode || userPrefs.currency)}
                           </span>
                         </div>
                         <div className="transaction-history-actions">
@@ -3072,6 +3073,7 @@ export default function App() {
                 <button type="button" disabled={!themePreviewId} onClick={cancelVisualThemePreview} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50">Cancel</button>
                 <button type="button" disabled={!themePreviewId} onClick={() => void applyVisualTheme()} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">Apply theme</button>
               </div>
+              <MotionPreferences value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
               <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
             </section></ProfileSubpage>}
 
