@@ -71,8 +71,13 @@ if [[ "$(timeout 10s adb -s "$SERIAL" get-state | tr -d '\r')" != device ]]; the
 fi
 qemu=$(timeout 8s adb -s "$SERIAL" shell getprop ro.kernel.qemu | tr -d '\r')
 if [[ "$qemu" != '1' ]]; then echo 'Refusing device action: selected target is not an Android emulator.' >&2; exit 1; fi
-avd_name=$(timeout 8s adb -s "$SERIAL" emu avd name | tr -d '\r' | sed '/^OK$/d' | head -n 1)
-if [[ -z "$avd_name" ]] || ! emulator -list-avds | grep -Fqx "$avd_name"; then
+avd_response=$(timeout 8s adb -s "$SERIAL" emu avd name | tr -d '\r')
+avd_name=$(printf '%s\n' "$avd_response" | sed '/^OK$/d; /^[[:space:]]*$/d' | head -n 1)
+# Capture the entire list before matching. With pipefail, grep -q can close
+# the emulator process pipe early and turn a valid match into a refusal.
+known_avds=$(timeout 10s emulator -list-avds | tr -d '\r')
+if [[ -z "$avd_name" ]] || ! grep -Fx "$avd_name" <<< "$known_avds" >/dev/null; then
+  printf 'Selected emulator AVD response: %s\nRegistered AVDs: %s\n' "$avd_response" "$known_avds" >&2
   echo 'Refusing device action: selected emulator serial does not map to a running AVD known to this SDK.' >&2
   exit 1
 fi
