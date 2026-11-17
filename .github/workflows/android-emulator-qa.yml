@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lifeos-android-qa-${{ github.event.pull_request.number || github.ref }}
+  group: lifeos-android-qa-native-serial
   cancel-in-progress: false
 
 jobs:
@@ -290,10 +290,11 @@ jobs:
 
   android-api34-notification-isolation:
     name: API 34 notification isolation (attempt ${{ matrix.attempt }})
-    needs: [build-test-apks, android-api29-recovery-preflight]
+    needs: [build-test-apks, android-api29-recovery-preflight, android-visual]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
+      max-parallel: 1
       fail-fast: false
       matrix:
         attempt: [1, 2, 3]
@@ -449,7 +450,7 @@ jobs:
           retention-days: 7
 
   android-visual:
-    needs: build-test-apks
+    needs: [build-test-apks, android-api29-recovery-preflight]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
