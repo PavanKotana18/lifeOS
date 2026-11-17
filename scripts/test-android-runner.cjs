@@ -15,9 +15,8 @@ function bashExecutable() {
 }
 const BASH = bashExecutable();
 const pathToAndroidTests = path.resolve(__dirname, '../android/app/src/androidTest/java/com/lifeos/personal');
-const instrumentationWorkflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/android-emulator-qa.yml'), 'utf8');
-assert.match(instrumentationWorkflow, /pull_request:\s*\n\s+branches:\s*\[[^\]]*\bmain\b/,
-  'candidate PRs targeting main must run Android QA');
+assert.equal(fs.existsSync(path.resolve(__dirname, '../.github/workflows')), false,
+  'local-only development policy keeps GitHub Actions workflow automation out of the repository');
 const declaredTests = fs.readdirSync(pathToAndroidTests)
   .filter(file => file.endsWith('.java'))
   .flatMap(file => {
@@ -38,15 +37,12 @@ for (const [inventory, expectedCount, requiredTest] of [
   assert.ok(declaredTests.includes(requiredTest), `${inventory} required test is not declared`);
   assert.ok(!exclusions.includes(requiredTest), `${inventory} excludes its own required test`);
 }
-assert.match(instrumentationWorkflow, /android-visual:[\s\S]*script: bash scripts\/run-directed-android-visual\.sh/, 'visual job executes one shell so failure evidence is preserved');
 const visualRunner = fs.readFileSync(path.resolve(__dirname, 'run-directed-android-visual.sh'), 'utf8');
 assert.match(visualRunner, /ANDROID_EXPECTED_TESTS=1/, 'the excluded visual case has its own mandatory one-test count');
 assert.match(visualRunner, /DirectedVisualAcceptanceTest#packagedMandatoryOnboardingScreensAndRestart/, 'the visual runner selects the mandatory onboarding visual case');
-const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/workstream-integration.yml'), 'utf8');
-assert.match(workflow, /test-filter:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
-  'API 29 filter must name the fully qualified instrumentation class');
-assert.match(workflow, /required-test:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
-  'API 29 acceptance gate must require the fully qualified compatibility case');
+const compatibilityTest = fs.readFileSync(path.join(pathToAndroidTests, 'WebViewCompatibilityAcceptanceTest.java'), 'utf8');
+assert.match(compatibilityTest, /unsupportedEngineShowsNativeUpdateMessage/,
+  'the API compatibility regression remains in local instrumentation sources');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifeos-runner-contract-'));
 try {
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);

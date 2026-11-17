@@ -72,14 +72,15 @@ Build a debug APK:
     cd android
     gradle assembleDebug
 
-## Continuous integration
+## Local verification
 
-The GitHub Actions workflow runs application tests, dependency auditing,
-Sentinel verification, TypeScript checks, the web build and Capacitor
-synchronisation. Eligible branch and pull-request builds also produce an
-Android debug APK artifact.
+LifeOS development checks run locally. Before sharing a change, run
+`npm test`, `npm run test:sentinel`, `npx tsc --noEmit` and `npm run build`.
+GitHub Actions workflow automation is not configured in this repository.
 
-The workflow does not currently produce a signed production release APK.
+Android debug APKs are built locally with the isolated Dev signing identity.
+Keep its keystore and password values outside the repository; see
+`RELEASING.md` for the local build steps.
 
 ## Security
 
