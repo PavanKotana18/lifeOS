@@ -1,5 +1,21 @@
 # LifeOS master delivery plan
 
+## Local product batch, 2026-11-17
+
+The owner's full-feature batch supersedes the delivery orchestration below for this session: implement and validate locally, create checkpoint commits, and leave publishing/PR/CI/merge work to a separate session. PR #42's dependency audit must not be bypassed.
+
+Implemented in the local integration branch:
+
+- Recurring plan edits preserve the latest paused/active state; only an explicit resume makes a paused plan postable.
+- Tasks may omit a due date. Encrypted CRUD and backup validation reject time/reminder/recurrence without a date. Unscheduled tasks stay outside Today/Upcoming schedules and reminder planning; Planner provides an Unscheduled range and quick creation.
+- Today retains its existing card visibility/order/reset persistence, now in a contextual dialog with keyboard focus handling and Back dismissal.
+- Planned cash flow expands active unrecorded plans for a selected month using exact integer minor units. Other currencies are excluded explicitly, calculation bounds are visible, and estimates never enter posted totals.
+- Transaction editing uses authoritative minor units for drafts and permits explicit removal/reselection of an optional account.
+- Custom accent preferences persist as cosmetic bootstrap settings; generated text/button/focus colors enforce contrast across catalog palettes and appearance modes. Reset reapplies base tokens.
+- Cancelled navigation drags settle using a bounded analytic spring and release velocity; reduced motion and navigation thresholds remain intact.
+
+Remaining scope includes automatic posting (still confirmation-first), deeper budget/savings and habit/goal integrations, entitlements/purchase design, API 36 migration, and native acceptance. JavaScript/source/synthetic checks do not establish mounted screen-reader, Android notification delivery, lifecycle, native smoothness, or iOS acceptance. See `docs/qa/PRODUCT_BATCH_20261117.md` for executed validation and recovery details.
+
 Prepared 2026-11-17 from the repository implementation and the owner's Master Development Program. Baseline integration is PRs [#39](https://github.com/PavanKotana18/lifeOS/pull/39), [#40](https://github.com/PavanKotana18/lifeOS/pull/40), and [#41](https://github.com/PavanKotana18/lifeOS/pull/41), previously verified on main at `315b56de85989707f271fe6ae7452cd3ad7acbf5`. The delivery coordinator must refresh the exact remote SHA and CI evidence for every subsequent milestone.
 
 This is a source-backed inventory, not a claim that every implemented feature has passed native acceptance. IMPLEMENTED means a production path exists; PARTIAL means a useful path exists with specified gaps; MISSING means no production implementation was found; BLOCKED means execution requires an unavailable prerequisite; DEFERRED means deliberately queued behind a stated dependency or consent boundary. Historical documentation does not override these restrictions: the owner's physical phone is permanently excluded, production user data must never be touched, local emulator guards must remain enabled, and Play publication or billing activation needs separate approval.
