@@ -51,9 +51,10 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifeos-runner-contract-'));
 try {
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
 const sdk = path.join(root, 'sdk'); fs.mkdirSync(path.join(sdk, 'emulator'), { recursive: true });
+  const buildTools = path.join(sdk, 'build-tools', '34.0.0'); fs.mkdirSync(buildTools, { recursive: true });
 fs.writeFileSync(path.join(sdk, 'emulator', 'emulator'), `#!/usr/bin/env node\nif(process.argv.includes('-list-avds'))console.log('LifeOS-QA');\n`, { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'aapt'), `#!/usr/bin/env node\nif(process.argv.includes('xmltree'))console.log('A: android:targetPackage(0x01010021)="com.lifeos.personal.dev"');else console.log("package: name='"+(process.argv.at(-1).includes('test')?'com.lifeos.personal.dev.test':'com.lifeos.personal.dev')+"'");\n`, { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'apksigner'), `#!/usr/bin/env node\nconsole.log('Signer #1 certificate SHA-256 digest: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(buildTools, 'aapt'), `#!/usr/bin/env node\nif(process.argv.includes('xmltree'))console.log('A: android:targetPackage(0x01010021)="com.lifeos.personal.dev"');else console.log("package: name='"+(process.argv.at(-1).includes('test')?'com.lifeos.personal.dev.test':'com.lifeos.personal.dev')+"'");\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(buildTools, 'apksigner'), `#!/usr/bin/env node\nconsole.log('Signer #1 certificate SHA-256 digest: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');\n`, { mode: 0o755 });
   const excluded = path.join(root, 'excluded-tests.txt');
   fs.writeFileSync(excluded, 'com.lifeos.personal.BiometricDeviceAcceptanceTest#actualSetupCancelConcurrentResumeRecreateAndUnlock\n');
   fs.writeFileSync(path.join(bin, 'adb'), `#!/usr/bin/env node

@@ -96,6 +96,21 @@ fi
 SAFE_DEVICE=true
 # Verify both APK identities before install. The production application ID is
 # never an install target, even when a release APK is accidentally supplied.
+if ! command -v aapt >/dev/null || ! command -v apksigner >/dev/null; then
+  # Hosted emulator jobs have the SDK installed without build-tools on PATH.
+  build_tools_path=''
+  for candidate in "$sdk_root"/build-tools/*; do
+    if [[ -x "$candidate/aapt" || -x "$candidate/aapt.exe" ]]; then
+      build_tools_path=$candidate
+      if [[ "${candidate##*/}" == '34.0.0' ]]; then break; fi
+    fi
+  done
+  if [[ -n "$build_tools_path" ]]; then export PATH="$build_tools_path:$PATH"; fi
+fi
+if ! command -v aapt >/dev/null || ! command -v apksigner >/dev/null; then
+  echo 'Refusing APK install: SDK build-tools aapt and apksigner must both be available.' >&2
+  exit 1
+fi
 APP_ID=$(aapt dump badging "$APP_APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)
 TEST_ID=$(aapt dump badging "$TEST_APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)
 TEST_TARGET=$(aapt dump xmltree "$TEST_APK" AndroidManifest.xml | sed -n 's/.*android:targetPackage[^=]*="\([^"]*\)".*/\1/p' | head -n 1)
