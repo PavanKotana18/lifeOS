@@ -1,61 +1,117 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Git Bash/MSYS rewrites Android device paths such as /data/local/tmp into
+# host paths. Exclude only Android's /data paths so host-side script paths and
+# executable lookup still receive normal MSYS conversion.
+export MSYS2_ARG_CONV_EXCL=/data
 
 APP_APK=${1:?expected app debug APK path}
 TEST_APK=${2:?expected Android instrumentation APK path}
 OUT=${3:-qa-emulator-evidence}
-SERIAL=${ANDROID_SERIAL:-emulator-5554}
+SERIAL=${ANDROID_SERIAL:-}
 TEST_FILTER=${ANDROID_TEST_FILTER:-}
 REQUIRED_TEST=${ANDROID_REQUIRED_TEST:-${TEST_FILTER:-LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView}}
 EXCLUDED_TESTS_FILE=${ANDROID_TEST_EXCLUSION_FILE:-}
 EXPECTED_TESTS=${ANDROID_EXPECTED_TESTS:-unconfigured}
+DEV_PACKAGE=${ANDROID_DEV_PACKAGE:-com.lifeos.personal.dev}
+TEST_PACKAGE=${ANDROID_TEST_PACKAGE:-${DEV_PACKAGE}.test}
+DEVICE_MODE=${LIFEOS_QA_DEVICE_MODE:-emulator}
+PROTECTED_PACKAGE=com.lifeos.personal
 mkdir -p "$OUT"
-SAFE_EMULATOR=false
+SAFE_DEVICE=false
 
 capture_evidence() {
   local result=$?
   trap - EXIT
   set +e
-  # A refusal must never collect screenshots/logs from an existing installation
-  # or a physical handset. Diagnostics below are limited to the fresh QA AVD.
-  if [[ "$SAFE_EMULATOR" != true ]]; then exit "$result"; fi
+  # Collect evidence only after the explicit emulator serial has been checked.
+  if [[ "$SAFE_DEVICE" != true ]]; then exit "$result"; fi
   timeout 8s adb -s "$SERIAL" shell dumpsys webviewupdate > "$OUT/webview-provider.txt" 2>&1
-  timeout 15s adb -s "$SERIAL" logcat -b all -d -v threadtime '*:E' > "$OUT/logcat-errors.txt" 2>&1
-  timeout 10s adb -s "$SERIAL" logcat -b all -d -v threadtime ActivityManager:I lmkd:I AndroidRuntime:E '*:S' > "$OUT/platform-process-lifecycle.txt" 2>&1
+  timeout 15s adb -s "$SERIAL" logcat -b all -d -v threadtime '*:E' 2>&1 \
+    | grep -E 'LifeOSAcceptance|AndroidRuntime|FATAL EXCEPTION|ANR in|Process .* died' \
+    | node scripts/sanitize-android-log.cjs > "$OUT/logcat-errors.txt"
+  timeout 10s adb -s "$SERIAL" logcat -b all -d -v threadtime ActivityManager:I lmkd:I AndroidRuntime:E '*:S' 2>&1 \
+    | grep -E 'ActivityManager|lmkd|AndroidRuntime|LifeOSAcceptance' \
+    | node scripts/sanitize-android-log.cjs > "$OUT/platform-process-lifecycle.txt"
   if [[ "$result" -ne 0 ]]; then
     {
       printf 'serial=%s\n' "$SERIAL"
       printf 'sdk='; timeout 5s adb -s "$SERIAL" shell getprop ro.build.version.sdk
-      printf 'app_pid='; timeout 5s adb -s "$SERIAL" shell pidof com.lifeos.personal
-      printf 'instrumentation_pid='; timeout 5s adb -s "$SERIAL" shell pidof com.lifeos.personal.test
-      timeout 8s adb -s "$SERIAL" shell ps -A | grep -E 'com\.lifeos\.personal(:|$)|com\.lifeos\.personal\.test' || true
+      printf 'dev_app_pid='; timeout 5s adb -s "$SERIAL" shell pidof "$DEV_PACKAGE"
+      printf 'instrumentation_pid='; timeout 5s adb -s "$SERIAL" shell pidof "$TEST_PACKAGE"
     } > "$OUT/process-state.txt" 2>&1
     sdk=$(timeout 5s adb -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')
     if [[ "$sdk" =~ ^[0-9]+$ ]] && (( sdk >= 30 )); then
-      timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info com.lifeos.personal > "$OUT/app-exit-info.txt" 2>&1
-      timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info com.lifeos.personal.test > "$OUT/instrumentation-exit-info.txt" 2>&1
+      timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info "$DEV_PACKAGE" > "$OUT/app-exit-info.txt" 2>&1
+      timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info "$TEST_PACKAGE" > "$OUT/instrumentation-exit-info.txt" 2>&1
       timeout 8s adb -s "$SERIAL" shell dumpsys activity exit-info com.google.android.gms > "$OUT/google-play-services-exit-info.txt" 2>&1
     fi
+    timeout 8s adb -s "$SERIAL" shell dumpsys meminfo "$DEV_PACKAGE" > "$OUT/app-memory-info.txt" 2>&1
     timeout 12s adb -s "$SERIAL" shell dumpsys meminfo > "$OUT/system-memory-info.txt" 2>&1
-    timeout 8s adb -s "$SERIAL" shell dumpsys meminfo com.lifeos.personal > "$OUT/app-memory-info.txt" 2>&1
     timeout 8s adb -s "$SERIAL" exec-out screencap -p > "$OUT/failure.png" 2> "$OUT/screenshot-error.txt"
-    timeout 5s adb devices -l > "$OUT/adb-devices.txt" 2>&1
   fi
   exit "$result"
 }
 trap capture_evidence EXIT
 
-timeout 10s adb -s "$SERIAL" get-state
-if [[ "$(timeout 8s adb -s "$SERIAL" shell getprop ro.kernel.qemu | tr -d '\r')" != '1' ]]; then
-  echo 'Refusing APK installation: this runner requires a disposable emulator.' >&2
+if [[ "$DEVICE_MODE" != emulator ]]; then
+  echo 'Refusing device action: this QA runner supports emulator targets only.' >&2
   exit 1
 fi
-existing_package=$(timeout 8s adb -s "$SERIAL" shell pm list packages com.lifeos.personal)
-if [[ -n "$existing_package" ]]; then
-  echo 'Refusing to overwrite an existing LifeOS installation; create a fresh AVD.' >&2
+if [[ "$DEVICE_MODE" == emulator && -z "$SERIAL" ]]; then
+  SERIAL=emulator-5554
+fi
+if [[ ! "$SERIAL" =~ ^emulator-[0-9]+$ ]]; then
+  echo "Refusing device action: serial must begin with emulator-; physical serials are prohibited (received '$SERIAL')." >&2
   exit 1
 fi
-SAFE_EMULATOR=true
+if [[ "$(timeout 10s adb -s "$SERIAL" get-state | tr -d '\r')" != device ]]; then
+  echo "Refusing device action: selected emulator serial $SERIAL is not online." >&2
+  exit 1
+fi
+qemu=$(timeout 8s adb -s "$SERIAL" shell getprop ro.kernel.qemu | tr -d '\r')
+if [[ "$qemu" != '1' ]]; then echo 'Refusing device action: selected target is not an Android emulator.' >&2; exit 1; fi
+avd_name=$(timeout 8s adb -s "$SERIAL" emu avd name | tr -d '\r' | sed '/^OK$/d' | head -n 1)
+if [[ -z "$avd_name" ]] || ! emulator -list-avds | grep -Fqx "$avd_name"; then
+  echo 'Refusing device action: selected emulator serial does not map to a running AVD known to this SDK.' >&2
+  exit 1
+fi
+existing_package=$(timeout 8s adb -s "$SERIAL" shell pm list packages "$DEV_PACKAGE")
+if printf '%s\n' "$existing_package" | grep -Fqx "package:$DEV_PACKAGE"; then
+  echo "Refusing to overwrite existing $DEV_PACKAGE on a QA emulator." >&2
+  exit 1
+fi
+SAFE_DEVICE=true
+# Verify both APK identities before install. The production application ID is
+# never an install target, even when a release APK is accidentally supplied.
+APP_ID=$(aapt dump badging "$APP_APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)
+TEST_ID=$(aapt dump badging "$TEST_APK" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)
+TEST_TARGET=$(aapt dump xmltree "$TEST_APK" AndroidManifest.xml | sed -n 's/.*android:targetPackage[^=]*="\([^"]*\)".*/\1/p' | head -n 1)
+if [[ "$APP_ID" != "$DEV_PACKAGE" || "$TEST_ID" != "$TEST_PACKAGE" || "$TEST_TARGET" != "$DEV_PACKAGE" || "$APP_ID" == "$PROTECTED_PACKAGE" ]]; then
+  echo "Refusing APK install: expected app=$DEV_PACKAGE and instrumentation target=$DEV_PACKAGE (test APK=$TEST_PACKAGE); found app=$APP_ID test=$TEST_ID target=$TEST_TARGET." >&2
+  exit 1
+fi
+if ! command -v apksigner >/dev/null 2>&1; then
+  echo 'Refusing APK install: Android build-tools apksigner is unavailable.' >&2
+  exit 1
+fi
+if ! apksigner verify --print-certs "$APP_APK" > "$OUT/app-signature.txt" 2>&1 || ! apksigner verify --print-certs "$TEST_APK" > "$OUT/test-signature.txt" 2>&1; then
+  echo 'Refusing APK install: app or instrumentation APK signature verification failed.' >&2
+  exit 1
+fi
+APP_SIGNER=$(sed -n 's/.*certificate SHA-256 digest: //p' "$OUT/app-signature.txt" | head -n 1 | tr '[:upper:]' '[:lower:]')
+TEST_SIGNER=$(sed -n 's/.*certificate SHA-256 digest: //p' "$OUT/test-signature.txt" | head -n 1 | tr '[:upper:]' '[:lower:]')
+if [[ -z "$APP_SIGNER" || "$APP_SIGNER" != "$TEST_SIGNER" ]]; then
+  echo 'Refusing APK install: app/test APK signing identities do not match or could not be read.' >&2
+  exit 1
+fi
+
+{
+  printf 'app_id=%s\n' "$APP_ID"
+  printf 'instrumentation_package=%s\n' "$TEST_ID"
+  printf 'instrumentation_target=%s\n' "$TEST_TARGET"
+  printf 'app_and_test_signer_sha256=%s\n' "$APP_SIGNER"
+} > "$OUT/apk-identity-and-signing.txt"
 {
   printf 'serial=%s\n' "$SERIAL"
   adb -s "$SERIAL" shell getprop ro.build.version.release
@@ -64,15 +120,20 @@ SAFE_EMULATOR=true
   adb -s "$SERIAL" shell wm density
 } > "$OUT/device-profile.txt"
 
-# sys.boot_completed alone does not mean Pixel Launcher has finished drawing.
-# Exercise HOME before LifeOS owns any font-provider dependency or permission UI.
-# Keep failures visible; never dismiss ANR dialogs or force-stop platform services.
-timeout 45s adb -s "$SERIAL" shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME > "$OUT/launcher-readiness.txt" 2>&1
-timeout 120s adb -s "$SERIAL" install "$APP_APK"
-timeout 120s adb -s "$SERIAL" install "$TEST_APK"
-adb -s "$SERIAL" shell pm path com.lifeos.personal
+  # sys.boot_completed alone does not mean Pixel Launcher has finished drawing.
+  # Keep failures visible; never dismiss ANR dialogs or force-stop services.
+  timeout 45s adb -s "$SERIAL" shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME > "$OUT/launcher-readiness.txt" 2>&1
+  timeout 120s adb -s "$SERIAL" install "$APP_APK"
+  timeout 120s adb -s "$SERIAL" install "$TEST_APK"
+android_api=$(timeout 8s adb -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')
+if [[ "$android_api" =~ ^[0-9]+$ ]] && (( android_api >= 33 )); then
+  # This is a disposable emulator with a fresh Dev package. Grant only the
+  # test runtime permission needed to observe a posted notification.
+  timeout 10s adb -s "$SERIAL" shell pm grant "$DEV_PACKAGE" android.permission.POST_NOTIFICATIONS
+fi
+  adb -s "$SERIAL" logcat -c
+adb -s "$SERIAL" shell pm path "$DEV_PACKAGE"
 adb -s "$SERIAL" shell pm list instrumentation
-adb -s "$SERIAL" logcat -c
 
 {
   printf 'expected_tests=%s\n' "$EXPECTED_TESTS"
@@ -91,11 +152,11 @@ if [[ -n "$TEST_FILTER" ]]; then
 fi
 if [[ -n "$EXCLUDED_TESTS_FILE" ]]; then
   test -s "$EXCLUDED_TESTS_FILE"
-  RUNNER_PROCESS_PACKAGE=com.lifeos.personal
+  RUNNER_PROCESS_PACKAGE=$DEV_PACKAGE
   HOST_EXCLUSIONS_FILE=/data/local/tmp/lifeos-test-exclusions.txt
   timeout 10s adb -s "$SERIAL" push "$EXCLUDED_TESTS_FILE" "$HOST_EXCLUSIONS_FILE"
   RUNNER_PROCESS_DATA_DIR=$(timeout 10s adb -s "$SERIAL" shell run-as "$RUNNER_PROCESS_PACKAGE" pwd | tr -d '\r')
-  if [[ ! "$RUNNER_PROCESS_DATA_DIR" =~ ^/data/(user/[0-9]+|data)/com\.lifeos\.personal$ ]]; then
+  if [[ "$RUNNER_PROCESS_DATA_DIR" != "/data/user/0/$DEV_PACKAGE" && "$RUNNER_PROCESS_DATA_DIR" != "/data/data/$DEV_PACKAGE" ]]; then
     echo "Unexpected instrumentation process data directory: $RUNNER_PROCESS_DATA_DIR" >&2
     exit 1
   fi
@@ -106,7 +167,7 @@ if [[ -n "$EXCLUDED_TESTS_FILE" ]]; then
   instrument_args+=(-e notTestFile "$REMOTE_EXCLUDED_TESTS_FILE")
 fi
 timeout 480s adb -s "$SERIAL" shell am instrument "${instrument_args[@]}" \
-  com.lifeos.personal.test/androidx.test.runner.AndroidJUnitRunner \
+  "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" \
   2>&1 | tee "$OUT/instrumentation-output.txt"
 pipe_status=("${PIPESTATUS[@]}")
 instrumentation_status=${pipe_status[0]}
