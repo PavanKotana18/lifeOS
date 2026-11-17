@@ -86,7 +86,7 @@ if (-not $keytoolPath -or -not (Test-Path -LiteralPath $keytoolPath)) {
 $sdkCandidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT, (Join-Path $localAppData 'Android\Sdk')) |
     Where-Object { $_ -and (Test-Path -LiteralPath $_) }
 if (-not $sdkCandidates) { throw 'Android SDK was not found.' }
-$androidSdk = $sdkCandidates[0]
+$androidSdk = $sdkCandidates | Select-Object -First 1
 
 $oldPreviewEnvironment = @{}
 $previewEnvironmentNames = @(
@@ -146,6 +146,7 @@ try {
     $env:LIFEOS_PREVIEW_SOURCE_COMMIT = $sourceCommit
     $env:ANDROID_HOME = $androidSdk
     $env:ANDROID_SDK_ROOT = $androidSdk
+    Write-Output "Using Android SDK at $androidSdk."
 
     $gradlePath = Join-Path $localAppData 'Programs\LifeOS-Tools\gradle-8.2.1\bin\gradle.bat'
     if (-not (Test-Path -LiteralPath $gradlePath)) {
@@ -174,7 +175,7 @@ try {
 $apkPath = Join-Path $repoRoot 'android\app\build\outputs\apk\preview\app-preview.apk'
 if (-not (Test-Path -LiteralPath $apkPath)) { throw "Gradle completed without producing the expected APK: $apkPath" }
 
-$buildToolsRoot = Join-Path $sdkCandidates[0] 'build-tools'
+$buildToolsRoot = Join-Path $androidSdk 'build-tools'
 $buildTools = Get-ChildItem -LiteralPath $buildToolsRoot -Directory |
     Sort-Object { try { [Version]$_.Name } catch { [Version]'0.0' } } -Descending |
     Where-Object { (Test-Path (Join-Path $_.FullName 'aapt.exe')) -and (Test-Path (Join-Path $_.FullName 'apksigner.bat')) } |
