@@ -123,17 +123,22 @@ try {
     & $keytoolPath @validateArgs *> $null
     if ($LASTEXITCODE -ne 0) { throw 'The existing preview keystore or protected password record did not validate; no replacement was made.' }
 
-    $certificatePath = Join-Path $signingDirectory ('.preview-certificate-' + [Guid]::NewGuid().ToString('N') + '.der')
+    $exportArgs = @(
+        '-exportcert', '-rfc', '-keystore', $keystorePath, '-storetype', 'PKCS12', '-alias', $keyAlias,
+        '-storepass:env', 'LIFEOS_PREVIEW_KEYSTORE_PASSWORD'
+    )
+    $certificatePem = (& $keytoolPath @exportArgs) -join [Environment]::NewLine
+    if ($LASTEXITCODE -ne 0 -or $certificatePem -notmatch '-----BEGIN CERTIFICATE-----(?<der>[A-Za-z0-9+/=\s]+)-----END CERTIFICATE-----') {
+        throw 'Could not read the certificate from the preview keystore.'
+    }
+    $certificateDer = [Convert]::FromBase64String(($Matches.der -replace '\s', ''))
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
     try {
-        $exportArgs = @(
-            '-exportcert', '-keystore', $keystorePath, '-storetype', 'PKCS12', '-alias', $keyAlias,
-            '-storepass:env', 'LIFEOS_PREVIEW_KEYSTORE_PASSWORD', '-file', $certificatePath
-        )
-        & $keytoolPath @exportArgs *> $null
-        if ($LASTEXITCODE -ne 0) { throw 'Could not read the certificate from the preview keystore.' }
-        $expectedSignerSha256 = (Get-FileHash -LiteralPath $certificatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $expectedSignerSha256 = [BitConverter]::ToString($sha256.ComputeHash($certificateDer)).Replace('-', '').ToLowerInvariant()
     } finally {
-        Remove-Item -LiteralPath $certificatePath -Force -ErrorAction SilentlyContinue
+        $sha256.Dispose()
+        [Array]::Clear($certificateDer, 0, $certificateDer.Length)
+        $certificatePem = $null
     }
 
     $env:LIFEOS_PREVIEW_KEYSTORE_PATH = $keystorePath
