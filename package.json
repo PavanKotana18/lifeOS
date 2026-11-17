@@ -26,7 +26,8 @@
     "test:ui-navigation": "node tests/ui-navigation-foundations.test.cjs",
     "qa": "node scripts/qa-local.cjs",
     "qa:avd:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-lifeos-qa-avd.ps1",
-    "qa:avd:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-lifeos-qa-emulator.ps1"
+    "qa:avd:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-lifeos-qa-emulator.ps1",
+    "test:browser:full": "node tests/browser/full-app-acceptance.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.0.0",
@@ -47,6 +48,7 @@
     "autoprefixer": "^10.4.20",
     "esbuild": "^0.25.12",
     "fake-indexeddb": "^6.2.7",
+    "playwright-core": "1.65.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3",

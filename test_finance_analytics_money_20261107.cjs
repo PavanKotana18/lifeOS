@@ -19,6 +19,11 @@ assert.equal(fractional.totalExpenses, 1.01, 'finance analytics must use the sam
 assert.equal(fractional.budgetRows[0].spent, 1.01);
 assert.equal(fractional.budgetRows[0].allocated, 1.01);
 assert.equal(fractional.budgetRows[0].remaining, 0);
+assert.equal(fractional.totalExpensesMinor, '101', 'posted analytics totals retain exact minor units');
+assert.equal(fractional.categories[0].amountMinor, '101', 'category chart values retain exact minor units');
+assert.equal(fractional.budgetRows[0].allocatedMinor, '101');
+assert.equal(fractional.budgetRows[0].spentMinor, '101');
+assert.equal(fractional.budgetRows[0].remainingMinor, '0');
 
 const zeroDecimal = buildFinanceAnalytics(
   [{ date: '2026-11-07', amount: 123.5, type: 'expense' }],
@@ -45,4 +50,12 @@ const mixed = buildFinanceAnalytics([
 assert.equal(mixed.totalExpenses, 35, 'analytics sum legacy reporting-context rows and matching explicit currency only');
 assert.equal(mixed.excludedCurrencyCount, 2, 'analytics reports incompatible transaction and budget currencies instead of adding them');
 assert.equal(mixed.categories.find(row => row.name === 'Travel').amount, 25, 'exact per-record minor units drive category totals');
+assert.equal(mixed.categories.find(row => row.name === 'Travel').amountMinor, '2500');
+assert.equal(mixed.currencyCode, 'INR');
+assert.equal(mixed.periodRows.at(-1).expensesMinor, '3500');
+const exactLarge = buildFinanceAnalytics([
+  { date: '2026-11-05', amount: 90071992547409.9, amountMinor: '900719925474099001', currencyCode: 'USD', type: 'expense', category: 'Large' },
+], [], '2026-11', 2, [], 'USD');
+assert.equal(exactLarge.totalExpensesMinor, '900719925474099001', 'large exact ledger values do not depend on floating point aggregation');
+assert.equal(exactLarge.categories[0].amountMinor, '900719925474099001');
 console.log('FINANCE ANALYTICS MONEY: 13 currency-precision, explicit-identity, and mixed-currency assertions passed.');
