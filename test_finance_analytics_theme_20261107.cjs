@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const app = fs.readFileSync('src/App.tsx', 'utf8');
+const app = fs.readFileSync('src/App.tsx', 'utf8').replace(/\r\n/g, '\n');
 const start = app.indexOf("            {financeSubtab === 'analytics' && <div className=\"space-y-4\">");
 const end = app.indexOf('\n            </div>}\n          </div>', start);
 assert.ok(start >= 0 && end > start, 'Finance Analytics view boundaries are present');

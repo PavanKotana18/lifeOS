@@ -296,6 +296,18 @@ test('Rejects non-string recurrence metadata in task backups', () => {
   rejects(e, /tasks.*spawnedTaskId/);
 });
 
+test('Accepts optional backward-compatible task subtasks in backups', () => {
+  const d = sample();
+  d.tasks[0].subtasks = [{ id: 'step-1', title: 'Prepare', completed: false, createdAt: '2026-11-13T10:00:00.000Z' }];
+  assert.strictEqual(validate(d).length, 15);
+});
+
+test('Rejects malformed task subtask records in backups', () => {
+  const d = sample();
+  d.tasks[0].subtasks = [{ id: 'step-1', title: 'Prepare', completed: 'no', createdAt: '2026-11-13T10:00:00.000Z' }];
+  rejects(d, /tasks.*subtasks\[0\]\.completed/);
+});
+
 test('Rejects duplicate settings keys', () => {
   const d = sample(); d.settings.push({ ...d.settings[0] });
   rejects(d, /duplicate key/);
