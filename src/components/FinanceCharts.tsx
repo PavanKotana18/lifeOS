@@ -31,7 +31,7 @@ export default function FinanceCharts({
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
             <h4 className="text-sm font-semibold">Income & expenses</h4>
-            <p className="text-xs text-secondary">Monthly totals</p>
+            <p className="text-xs text-secondary">Posted monthly totals · planned estimates stay separate</p>
           </div>
           <select aria-label="Analytics time range" value={range}
             onChange={event => onRangeChange(Number(event.target.value) as 3 | 6 | 12)}
