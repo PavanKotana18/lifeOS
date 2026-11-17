@@ -34,17 +34,24 @@ const planProps = {
   onSelectRange: range => calls.push(`range:${range}`), onOpenGoals: () => calls.push('goals'),
 };
 const planMarkup = renderToStaticMarkup(React.createElement(PlanHub, planProps));
-assert.match(planMarkup, /See what’s next, then choose one thing to do/);
-assert.match(planMarkup, /Go to a date in your planner/);
-assert.match(planMarkup, /role="group" aria-label="Open tasks by date"/);
+assert.match(planMarkup, /Search tasks/);
+assert.match(planMarkup, /Calendar planner/);
+assert.match(planMarkup, /role="group" aria-label="Task views"/);
 assert.match(planMarkup, /Overdue · Today/);
 assert.match(planMarkup, /Call the dentist/);
 assert.doesNotMatch(planMarkup, /2026-11-11/, 'dates are presented in a readable local format rather than raw storage format');
 assert.match(planMarkup, /Repeats daily/);
 assert.match(planMarkup, /No due date/);
-assert.match(planMarkup, /See all tasks in planner/);
+assert.match(planMarkup, /All statuses/);
 assert.doesNotMatch(planMarkup, /Open planner/);
-const planElement = PlanHub(planProps);
+const state = []; let cursor = 0;
+function renderPlan() {
+  const useState = React.useState, useId = React.useId;
+  React.useState = initial => { const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], value => { state[index] = value; }]; };
+  React.useId = () => 'directed-plan'; cursor = 0;
+  try { return PlanHub(planProps); } finally { React.useState = useState; React.useId = useId; }
+}
+const planElement = renderPlan();
 function walk(node, visit) {
   if (!node || typeof node !== 'object') return;
   if (React.isValidElement(node)) {
@@ -61,9 +68,13 @@ function clickButtonContaining(element, text) {
   button.props.onClick();
 }
 clickButtonContaining(planElement, 'Add task');
-clickButtonContaining(planElement, 'Tomorrow');
-clickButtonContaining(planElement, 'See all tasks');
-assert.deepEqual(calls, ['create-task', 'range:tomorrow', 'planner'], 'Plan actions preserve their existing navigation and creation callbacks');
+clickButtonContaining(planElement, 'Upcoming');
+assert.equal(state[0], 'upcoming', 'Upcoming selects a local view instead of navigating away');
+const upcoming = renderToStaticMarkup(renderPlan());
+assert.match(upcoming, /Call the dentist/);
+assert.doesNotMatch(upcoming, /class="plan-hub-row-title">Sort the paperwork/);
+clickButtonContaining(planElement, 'Calendar planner');
+assert.deepEqual(calls, ['create-task', 'planner'], 'Creation and calendar preserve callbacks while task view selection stays local');
 const emptyPlan = renderToStaticMarkup(React.createElement(PlanHub, { ...planProps, tasks: [] }));
 assert.match(emptyPlan, /No tasks yet/);
 assert.match(emptyPlan, /Start with one thing you want to remember/);

@@ -37,14 +37,17 @@ const markup = renderToStaticMarkup(React.createElement(PlanHub, {
 }));
 assert.ok(markup.indexOf('>early</span>') < markup.indexOf('>late</span>'), 'the Plan screen renders same-day timed tasks chronologically');
 assert.match(markup, /Today · 09:00/);
-assert.match(markup, />Next up</, 'the task list has a clear task-first heading');
+assert.match(markup, />All tasks</, 'the task workspace identifies its active local view');
 assert.match(markup, /6 open · 5 due today/, 'the summary counts only open tasks and explains what is due');
-assert.equal((markup.match(/class="plan-hub-task ui-interactive-row(?: is-overdue)?"/g) || []).length, 5, 'the Plan screen keeps a concise five-task action list');
+assert.equal((markup.match(/class="plan-hub-task ui-interactive-row(?: is-overdue)?"/g) || []).length, 6, 'the workspace shows every matching open task instead of truncating at five');
 assert.match(markup, /aria-label="Mark early complete"/, 'each task has a directly accessible completion control');
-assert.match(markup, /role="group" aria-label="Open tasks by date"/, 'date shortcuts are identified as planner navigation, not filters on the preview list');
-assert.match(markup, /Next 7 days/);
-assert.match(markup, /Working toward a longer-term goal\?/);
-assert.match(markup, /See all tasks/, 'the planner entry point uses plain task language');
+assert.match(markup, /role="group" aria-label="Task views"/, 'view controls are identified as local task filters');
+assert.match(markup, /Upcoming/);
+assert.match(markup, /Unscheduled/);
+assert.match(markup, /All statuses/);
+assert.match(markup, /Calendar planner/);
+assert.match(markup, /Goals in Life/);
+assert.match(markup, /Calendar planner/, 'the calendar remains available without leaving the task workspace ambiguous');
 assert.doesNotMatch(markup, /Open planner/);
 assert.doesNotMatch(markup, /Goals<\/h3>/, 'goal management stays in Life instead of being duplicated under Plan');
 assert.doesNotMatch(markup, /truncate/, 'long task and goal titles are not clipped by the Plan summary');
@@ -60,6 +63,7 @@ assert.doesNotMatch(overdueMarkup, /due today/);
 const completedMarkup = renderToStaticMarkup(React.createElement(PlanHub, {
   tasks: [task('done', '2026-11-07', undefined, undefined, true)], today: '2026-11-07', now: new Date('2026-11-07T08:00:00'), onNavigatePlanner: () => {}, onOpenTask: () => {}, onToggleTask: () => {}, onCreateTask: () => {}, onSelectRange: () => {}, onOpenGoals: () => {},
 }));
-assert.match(completedMarkup, /You’re all caught up/);
+assert.match(completedMarkup, /You are all caught up/);
+assert.match(completedMarkup, /All statuses/, 'completed tasks remain reachable through status selection');
 assert.doesNotMatch(completedMarkup, /No tasks yet/);
-console.log('PLAN HUB UI 2.0: task-first hierarchy, truthful due counts, date routing, completion and empty states passed.');
+console.log('PLAN HUB UI 2.0: local workspace hierarchy, truthful due counts, full task visibility, completion and empty states passed.');

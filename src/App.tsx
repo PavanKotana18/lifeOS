@@ -1,3 +1,4 @@
+import { resistDrag } from './services/interfaceMotion';
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -432,6 +433,7 @@ export default function App() {
   const [habitsSelectedDate, setHabitsSelectedDate] = useState<string>(formatLocalDate(new Date()));
 
   const [goalsSubtab, setGoalsSubtab] = useState<'active' | 'paused' | 'completed'>('active');
+  const [lifeDetail, setLifeDetail] = useState<{ kind: 'habit' | 'goal'; id: string } | null>(null);
   const [goalsCategoryFilter, setGoalsCategoryFilter] = useState<string>('all');
 
   const [plannerSubtab, setPlannerSubtab] = useState<'agenda' | 'weekly' | 'all'>('agenda');
@@ -456,8 +458,8 @@ export default function App() {
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
   const [editingSavingsGoalId, setEditingSavingsGoalId] = useState<string | null>(null);
 
-  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen });
-  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen };
+  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail });
+  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail };
 
   const navigateTo = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
@@ -625,7 +627,7 @@ export default function App() {
       swipeMoveFrame.current = null;
       if (swipePointer.current?.pointerId !== start.pointerId || swipePointer.current.axis !== 'horizontal') return;
       screen.setAttribute('data-gesture-dragging', 'true');
-      screen.style.setProperty('--gesture-x', `${swipePointer.current.latestOffsetX}px`);
+      screen.style.setProperty('--gesture-x', `${resistDrag(swipePointer.current.latestOffsetX, window.innerWidth)}px`);
     });
   };
 
@@ -745,6 +747,7 @@ export default function App() {
     if (!state.isLocked && state.appReady && !(state.onboardingRequired && !state.onboardingComplete) && state.activeTab === 'dashboard' && state.todayCustomizationOpen && !state.createKind && !state.modalContent) {
       closeTodayCustomization(); return;
     }
+    if (!state.isLocked && state.appReady && !state.createKind && !state.modalContent && state.lifeDetail && (state.activeTab === 'habits' || state.activeTab === 'goals')) { setLifeDetail(null); return; }
     const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileSection !== 'home') }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
     if (action === 'exit-app') { void CapacitorApp.exitApp(); return; }
@@ -1060,7 +1063,7 @@ export default function App() {
 
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
     order: todayLayout.order.indexOf(id) + 2,
-    display: todayLayout.hidden.includes(id) ? 'none' : undefined,
+    display: todayLayout.hidden.includes(id) || (id === 'habits' && !habits.length) || (id === 'goals' && !goals.some(goal => goal.status === 'In Progress')) || (id === 'upcoming' && !tasks.some(task => !task.completed && task.dueDate && task.dueDate > formatLocalDate(clockNow))) || (id === 'agenda' && !tasks.some(task => task.dueDate === formatLocalDate(clockNow) || getTaskStatus(task, clockNow) === 'Overdue')) || (id === 'money' && !transactions.length) ? 'none' : undefined,
   });
 
   const requestCloseForm = () => {
@@ -2362,8 +2365,8 @@ export default function App() {
     return byDate;
   }, [tasks]);
   const selectedPlannerDateLabel = new Date(`${plannerSelectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-  const dashboardTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => getTaskStatus(task, clockNow) === 'Overdue' || task.dueDate === todayKey), clockNow).slice(0, 5), [tasks, clockNow, todayKey]);
-  const dashboardUpcomingTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => !task.completed && Boolean(task.dueDate) && task.dueDate > todayKey), clockNow).slice(0, 4), [tasks, clockNow, todayKey]);
+  const dashboardTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => getTaskStatus(task, clockNow) === 'Overdue' || task.dueDate === todayKey), clockNow).slice(0, 3), [tasks, clockNow, todayKey]);
+  const dashboardUpcomingTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => !task.completed && Boolean(task.dueDate) && task.dueDate > todayKey), clockNow).slice(0, 2), [tasks, clockNow, todayKey]);
   const visiblePlannerTasks = useMemo(() => {
     const dateScopedTasks = ['today', 'tomorrow', 'upcoming', 'unscheduled'].includes(plannerFilter) ? tasks : getTasksForDate(tasks, plannerSelectedDate);
     return sortTasksByDeadline(dateScopedTasks.filter(task => {
@@ -2494,7 +2497,7 @@ export default function App() {
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
-          <div className="today-sections" data-testid="today-dashboard">
+          <div className="today-sections command-centre" data-testid="today-dashboard">
             <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
             {todayCustomizationOpen && createPortal(<div className="ui-sheet-backdrop" onMouseDown={dismissTodayCustomizationBackdrop}>
@@ -2532,7 +2535,7 @@ export default function App() {
               </div>
               {goals.filter(goal => goal.status === 'In Progress').length === 0 ? (
                 <div className="today-inline-empty"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
-              ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => {
+              ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 1).map(goal => {
                 const progress = goalProgress(goal);
                 return <button key={goal.id} onClick={() => navigateTo('goals')} className="lifeos-raised block min-h-11 w-full rounded-xl p-3 text-left">
                   <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{goal.title}</span><span className="shrink-0 text-xs font-bold lifeos-accent-text">{progress}%</span></div>
@@ -2574,7 +2577,7 @@ export default function App() {
                 <div className="today-inline-empty"><p>No habits to check in yet. Add one when you’re ready.</p></div>
               ) : (
                 <div className="space-y-2">
-                  {habits.slice(0, 4).map(h => {
+                  {habits.slice(0, 2).map(h => {
                     const todayStr = todayKey;
                     const stats = getHabitStreaks(h.id, todayStr);
                     return (
@@ -2651,6 +2654,8 @@ export default function App() {
 
         {/* VIEW 2: FINANCE */}
         <RetainedScreen active={activeTab === 'life'} id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
+          onOpenHabit={id => { setLifeDetail({ kind: 'habit', id }); navigateTo('habits'); }}
+          onOpenGoal={id => { setGoalsSubtab('active'); setGoalsCategoryFilter('all'); setLifeDetail({ kind: 'goal', id }); navigateTo('goals'); }}
           habits={lifeHubHabits}
           goals={lifeHubGoals}
           routinesDue={todayOverview.routinesDue}
@@ -2660,12 +2665,12 @@ export default function App() {
           onCheckIn={habit => { const original = habits.find(item => item.id === habit.id); if (original) void handleHabitCompletion(original.id, original.name, todayKey, habit.completedToday); }}
           onCreateHabit={() => openCreateForm('habit')}
           onCreateGoal={() => openCreateForm('goal')}
-          onHabits={() => { setHabitsSubtab('checklist'); navigateTo('habits'); }}
-          onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
+          onHabits={() => { setLifeDetail(null); setHabitsSubtab('checklist'); navigateTo('habits'); }}
+          onGoals={() => { setLifeDetail(null); setGoalsSubtab('active'); navigateTo('goals'); }}
           onInsights={() => navigateTo('insights')}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} today={todayKey} now={clockNow}
+        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub onQuickAdd={addUnscheduledTask} tasks={tasks} today={todayKey} now={clockNow}
           onNavigatePlanner={() => navigateTo('planner')}
           onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter(task.dueDate ? 'all' : 'unscheduled'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
@@ -2687,8 +2692,8 @@ export default function App() {
           hasHistory={transactions.length > 0 || habits.length > 0 || goals.length > 0}
           formatMoney={formatMoney}
           onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
-          onHabits={() => { setHabitsSubtab('weekly'); navigateTo('habits'); }}
-          onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
+          onHabits={() => { setLifeDetail(null); setHabitsSubtab('weekly'); navigateTo('habits'); }}
+          onGoals={() => { setLifeDetail(null); setGoalsSubtab('active'); navigateTo('goals'); }}
         /></Suspense>} />
 
         <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
@@ -2891,7 +2896,7 @@ export default function App() {
 
         {/* VIEW 3: HABITS */}
         <RetainedScreen active={activeTab === 'habits'} id="screen-habits" {...transitionPropsFor('habits')} render={() => (
-          <div className="space-y-4">
+          <div className="space-y-4"><button type="button" className="money-back-button" onClick={() => { if (lifeDetail) setLifeDetail(null); else navigateTo('life'); }}><ChevronLeft size={18} aria-hidden="true" />{lifeDetail ? 'Back to list' : 'Back to Life'}</button>
             <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold">Habit Tracker</h2>
@@ -2905,7 +2910,7 @@ export default function App() {
               {habits.length === 0 ? (
                 <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary"><p>No habits yet.</p><p className="mt-1 text-xs">Create a routine that fits your day.</p><button onClick={() => openCreateForm('habit')} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Create a habit</button></div>
               ) : (
-                habits.map(h => {
+                habits.filter(h => !lifeDetail || lifeDetail.kind !== 'habit' || h.id === lifeDetail.id).map(h => {
                   const todayStr = habitsSelectedDate;
                   const stats = getHabitStreaks(h.id, todayStr);
                   const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency);
@@ -2925,11 +2930,11 @@ export default function App() {
 
         {/* VIEW 4: GOALS */}
         <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
-          <div className="space-y-4">
+          <div className="space-y-4"><button type="button" className="money-back-button" onClick={() => { if (lifeDetail) setLifeDetail(null); else navigateTo('life'); }}><ChevronLeft size={18} aria-hidden="true" />{lifeDetail ? 'Back to list' : 'Back to Life'}</button>
             <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
             <div className="grid grid-cols-3 gap-2">{(['active', 'paused', 'completed'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
-            {goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
+            {goals.filter(goal => (!lifeDetail || lifeDetail.kind !== 'goal' || goal.id === lifeDetail.id) && (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
               <div className="goal-empty-state"><div><p className="type-eyebrow">{goalsCategoryFilter === 'all' ? goalsSubtab.toUpperCase() : goalsCategoryFilter.toUpperCase()}</p><h3 className="type-section-title">{goalsSubtab === 'completed' ? 'No completed goals yet' : goalsSubtab === 'paused' ? 'No paused goals' : goalsCategoryFilter === 'all' ? 'A goal when you’re ready' : `No ${goalsCategoryFilter.toLowerCase()} goals yet`}</h3><p className="mt-1 text-sm text-secondary">{goalsSubtab === 'completed' ? 'Completed goals will stay here as a record of what you reached.' : goalsSubtab === 'paused' ? 'If plans change, you can pause an active goal and return to it later.' : 'Choose a longer-term outcome and add milestones when they help.'}</p></div>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-xs font-semibold">Create a goal</button>}</div>
             ) : (
               goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).map(g => {

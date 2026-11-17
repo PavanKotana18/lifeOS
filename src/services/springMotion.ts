@@ -1,3 +1,5 @@
+import { getMotionPreset, type MotionPresetId } from './interfaceMotion';
+
 export type SpringSettle = {
   keyframes: Array<{ offset: number; transform: string }>;
   duration: number;
@@ -12,15 +14,16 @@ const transformFor = (value: number): string => `translateX(${Math.abs(value) < 
  * It is reserved for releasing a cancelled drag, not for deciding navigation.
  * The caller is responsible for honoring prefers-reduced-motion.
  */
-export function buildSpringSettle(startOffsetPx: number, initialVelocityPxPerSecond = 0): SpringSettle {
+export function buildSpringSettle(startOffsetPx: number, initialVelocityPxPerSecond = 0, presetId: MotionPresetId = 'silky'): SpringSettle {
   const start = clamp(finite(startOffsetPx), 640);
   if (Math.abs(start) < 0.001) {
     return { duration: 0, keyframes: [{ offset: 0, transform: 'translateX(0px)' }, { offset: 1, transform: 'translateX(0px)' }] };
   }
-  const velocity = clamp(finite(initialVelocityPxPerSecond), Math.min(2400, Math.abs(start) * 10));
-  const duration = 480;
-  const frequency = 28; // radians / second, unit mass
-  const dampingRatio = 0.8;
+  const preset = getMotionPreset(presetId);
+  const velocity = clamp(finite(initialVelocityPxPerSecond), Math.min(preset.velocityLimit, Math.abs(start) * 10));
+  const duration = preset.duration;
+  const frequency = preset.frequency; // radians / second, unit mass
+  const dampingRatio = preset.dampingRatio;
   const decay = dampingRatio * frequency;
   const dampedFrequency = frequency * Math.sqrt(1 - dampingRatio ** 2);
   const velocityTerm = (velocity + decay * start) / dampedFrequency;

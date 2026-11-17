@@ -8,6 +8,11 @@ import { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveIn
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId } from './services/themeCatalog';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import './index.css';
+import './styles/money-transformation.css';
+import './styles/four-tab-transformation.css';
+import './styles/interface-motion.css';
+import './styles/planning-life-transformation.css';
+
 import { LifeOSLaunchReveal } from './components/LifeOSBrand';
 
 const SystemAppearance = registerPlugin<{ getSystemAppearance: () => Promise<{ dark: boolean }> }>('SystemAppearance');

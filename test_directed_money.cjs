@@ -46,12 +46,12 @@ assert.match(home, /Wallet: \$80\.00/, 'account amount is accessible with its ac
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="Edit Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
 assert.match(home, /Future bills and saved exchange rates/);
-assert.match(home, /planned bills<\/span>/);
+assert.match(home, /Financial Planning/);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],
 }));
-assert.match(emptyHome, /No activity for this period yet\. Choose Expense, Income or Transfer above\./);
+assert.match(emptyHome, /No activity for this period yet\. Add an expense or income to start tracking\./);
 assert.doesNotMatch(emptyHome, /money-account-nudge/, 'optional accounts do not look required before a first transaction');
 
 const accounts = [

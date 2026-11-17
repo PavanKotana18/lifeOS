@@ -1,0 +1,23 @@
+/* Money destinations remain visible, wrapping instead of becoming a clipped strip. */
+.money-home .money-destinations { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+.money-home .money-destination-card { min-width: 0; min-height: 7rem; display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; padding: 1rem; text-align: left; border: 1px solid var(--stroke); border-radius: 1.1rem; background: var(--surface); color: var(--ink); }
+.money-home .money-destination-card > span:nth-child(2) { flex: 1 1 8rem; min-width: 0; }
+.money-home .money-destination-card strong { display: block; font-size: 1rem; overflow-wrap: anywhere; }
+.money-home .money-destination-card small { display: block; margin-top: .3rem; line-height: 1.4; color: var(--ink-secondary); }
+.money-home .money-destination-card:hover { border-color: var(--accent); background: var(--surface-raised); }
+.money-home .money-destination-icon { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: .8rem; color: var(--accent); background: var(--accent-tint); }
+.money-home .money-destination-planning { grid-column: 1 / -1; min-height: 5.5rem; }
+.money-home .money-quick-actions { grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); }
+.money-home .money-posted-bars { display: grid; gap: .45rem; margin-top: .85rem; }
+.money-home .money-posted-track { height: .5rem; overflow: hidden; border-radius: 1rem; background: var(--surface-muted); }
+.money-home .money-posted-track span { display: block; height: 100%; border-radius: inherit; }
+.money-home .money-posted-income { background: var(--accent); }
+.money-home .money-posted-expense { background: var(--ink-secondary); }
+.money-home .money-secondary-summary { border: 1px solid var(--stroke); border-radius: 1rem; background: var(--surface); }
+.money-home .money-secondary-summary > summary { padding: 1rem; min-height: 3rem; cursor: pointer; font-weight: 650; }
+.money-home .money-secondary-summary > summary span { display: block; margin-top: .25rem; font-size: .75rem; font-weight: 400; color: var(--ink-secondary); }
+.money-home .money-secondary-content { display: grid; gap: 1rem; padding: 0 .75rem .75rem; }
+.money-home .money-secondary-content .money-context { margin: 0; }
+.money-home .money-optional-accounts { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; justify-content: space-between; font-size: .8rem; color: var(--ink-secondary); padding: .5rem; }
+@media (min-width: 760px) { .money-home .money-destinations { grid-template-columns: repeat(3, minmax(0, 1fr)); } .money-home .money-destination-planning { grid-column: auto; } }
+@media (max-width: 350px) { .money-home .money-destinations { grid-template-columns: minmax(0, 1fr); } .money-home .money-destination-planning { grid-column: auto; } }

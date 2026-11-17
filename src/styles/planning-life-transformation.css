@@ -1,0 +1,55 @@
+﻿/* Scoped workspace layouts: records and navigation remain in the app. */
+.plan-workspace, .life-workspace { display: grid; gap: 1rem; min-width: 0; }
+.plan-workspace-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.plan-workspace-heading h2, .life-workspace h2 { margin-bottom: .25rem; }
+.plan-workspace .plan-compose { min-height: 44px; padding: .65rem .9rem; border-radius: .85rem; white-space: nowrap; }
+.plan-quick-entry form { padding: .85rem 1rem; }
+.plan-view-controls { display: grid; gap: .8rem; }
+.plan-view-switch { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .25rem; padding: .3rem; border: 1px solid var(--stroke); border-radius: 1rem; background: var(--surface-raised); }
+.plan-view-switch button { min-height: 44px; min-width: 0; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: .35rem; border-radius: .7rem; padding: .45rem .2rem; font-size: .8rem; font-weight: 600; }
+.plan-view-switch button[aria-pressed="true"] { background: var(--accent-tint); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.plan-view-switch button span, .life-context-nav button > span { font-size: .7rem; font-variant-numeric: tabular-nums; opacity: .72; }
+.plan-search-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .55fr); gap: .65rem; }
+.plan-search-controls label { display: grid; gap: .3rem; min-width: 0; font-size: .75rem; }
+.plan-search-controls input, .plan-search-controls select { min-width: 0; width: 100%; min-height: 44px; padding: .55rem .65rem; border-radius: .7rem; }
+.plan-task-workspace { border: 1px solid var(--stroke); border-radius: 1rem; overflow: hidden; }
+.plan-list-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .8rem 1rem; border-bottom: 1px solid var(--stroke); }
+.plan-list-heading h3 { font-weight: 650; font-size: .9rem; }
+.plan-workspace .plan-hub-list { padding: 0 .8rem; }
+.plan-workspace .plan-hub-task { padding-block: .8rem; }
+.plan-workspace .plan-hub-task-open { min-width: 0; }
+.plan-workspace .plan-hub-row-title { overflow-wrap: anywhere; }
+.plan-workspace .is-complete .plan-hub-row-title { text-decoration: line-through; opacity: .65; }
+.plan-schedule-indicators { display: flex; flex-wrap: wrap; gap: .65rem; margin-top: .2rem; }
+.plan-schedule-indicators > span { display: inline-flex; align-items: center; gap: .25rem; }
+.plan-workspace .plan-hub-empty { margin: .8rem; padding: .8rem .2rem; }
+.plan-workspace .plan-hub-empty button { margin-top: .5rem; min-height: 44px; text-decoration: underline; }
+.plan-workspace-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; }
+.plan-workspace-footer button { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; font-size: .8rem; }
+.life-context-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.life-context-nav button { display: flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; border-radius: .8rem; border: 1px solid var(--stroke); font-size: .85rem; font-weight: 600; }
+.life-workspace .life-rhythm-compact { display: grid; gap: .6rem; padding: .9rem 1rem; }
+.life-rhythm-compact h3 { font-size: .9rem; font-weight: 600; }
+.life-workspace .life-rhythm-stats { display: flex; flex-wrap: wrap; gap: .7rem 1.75rem; margin: 0; padding: 0; }
+.life-workspace .life-rhythm-stats dd { font-size: .85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.life-workspace-sections { display: grid; gap: .9rem; min-width: 0; }
+.life-workspace .life-routine-section, .life-workspace .life-goal-section { padding: .9rem 1rem; }
+.life-workspace .life-section-heading { margin-bottom: .4rem; }
+.life-workspace .life-habit-row { padding-block: .65rem; }
+.life-habit-detail { position: relative; padding: .15rem 1.5rem .15rem 0; text-align: left; min-height: 44px; min-width: 0; flex: 1; }
+.life-habit-detail > svg { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+.life-habit-detail strong { overflow-wrap: anywhere; }
+.life-workspace .life-goal-list { gap: .65rem; }
+.life-workspace .life-goal-card { padding: .8rem; }
+.life-workspace .life-goal-heading strong { overflow-wrap: anywhere; }
+.life-workspace .life-section-more { min-height: 44px; margin-top: .25rem; }
+.life-workspace .life-insights-link { padding: .85rem 1rem; }
+.life-combined-empty { display: grid; justify-items: start; gap: .6rem; border: 1px solid var(--stroke); border-radius: 1rem; padding: 1.25rem; }
+.life-empty-symbol { display: grid; place-items: center; width: 44px; height: 44px; background: var(--accent-tint); border-radius: .85rem; }
+.life-combined-empty h3 { font-size: 1.1rem; font-weight: 650; }
+.life-combined-empty p { font-size: .85rem; color: var(--ink-secondary); }
+.life-combined-empty > div { display: flex; flex-wrap: wrap; gap: .6rem; }
+.life-combined-empty > div button { min-height: 44px; padding: .55rem .85rem; border-radius: .8rem; }
+.plan-workspace button:focus-visible, .life-workspace button:focus-visible, .plan-workspace input:focus-visible, .plan-workspace select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (min-width: 760px) { .life-workspace-sections { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+@media (max-width: 360px) { .plan-view-switch button { font-size: .7rem; } .plan-search-controls { grid-template-columns: 1fr; } }

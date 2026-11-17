@@ -1,0 +1,21 @@
+/* Only shared shell surfaces opt in. Gestures animate transforms through WAAPI. */
+:root {
+  --interface-motion-duration: 480ms;
+  --interface-motion-easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+:root[data-motion-preset='snappy'] {
+  --interface-motion-duration: 340ms;
+  --interface-motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
+}
+:root[data-motion-preset='oil'] {
+  --interface-motion-duration: 500ms;
+  --interface-motion-easing: cubic-bezier(0.22, 0.7, 0.25, 1);
+}
+.interface-motion-surface {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: var(--interface-motion-duration);
+  transition-timing-function: var(--interface-motion-easing);
+}
+@media (prefers-reduced-motion: reduce) {
+  .interface-motion-surface { transition-duration: 0ms; }
+}
