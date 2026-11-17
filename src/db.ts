@@ -669,6 +669,18 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'updatedAt', 'tasks', i);
     optionalString(r, 'recurrenceRootId', 'tasks', i);
     optionalString(r, 'spawnedTaskId', 'tasks', i);
+    if (r.subtasks !== undefined) {
+      if (!Array.isArray(r.subtasks)) fail('tasks', i, 'subtasks');
+      for (let subtaskIndex = 0; subtaskIndex < r.subtasks.length; subtaskIndex++) {
+        const subtask = r.subtasks[subtaskIndex];
+        if (!obj(subtask)) fail('tasks', i, `subtasks[${subtaskIndex}]`);
+        if (!str(subtask.id)) fail('tasks', i, `subtasks[${subtaskIndex}].id`);
+        if (!str(subtask.title)) fail('tasks', i, `subtasks[${subtaskIndex}].title`);
+        if (typeof subtask.completed !== 'boolean') fail('tasks', i, `subtasks[${subtaskIndex}].completed`);
+        if (!instant(subtask.createdAt)) fail('tasks', i, `subtasks[${subtaskIndex}].createdAt`);
+        if (subtask.updatedAt !== undefined && !instant(subtask.updatedAt)) fail('tasks', i, `subtasks[${subtaskIndex}].updatedAt`);
+      }
+    }
   });
 
   check('settings', (r, i) => {

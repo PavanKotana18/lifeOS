@@ -182,6 +182,14 @@ export interface Milestone {
 
 export type RecurrenceType = 'None' | 'Daily' | 'Weekly' | 'Monthly';
 
+export interface TaskSubtask {
+  id: string;
+  title: string;
+  completed: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -199,6 +207,8 @@ export interface Task {
   updatedAt?: string;
   recurrenceRootId?: string;
   spawnedTaskId?: string;
+  /** Optional child checklist stored inside the same encrypted task record. */
+  subtasks?: TaskSubtask[];
 }
 
 export interface NotificationPreferences {
