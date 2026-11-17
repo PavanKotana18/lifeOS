@@ -27,6 +27,8 @@ import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { getBudgetDisplayStatus } from './services/budgetDisplay';
 import { buildDuplicateTransactionDraft } from './services/transactionDraft';
 import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodaySectionVisible, TODAY_SECTION_LABELS, type TodayLayout, type TodaySectionId } from './services/todayLayout';
+import { groupUpcomingTasks } from './services/taskViews';
+import TaskDetailScreen from './components/TaskDetailScreen';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
@@ -131,6 +133,8 @@ export default function App() {
   const [plannerSelectedDate, setPlannerSelectedDate] = useState(() => formatLocalDate(new Date()));
   const [plannerDisplayedMonth, setPlannerDisplayedMonth] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); });
   const [plannerDetailTaskId, setPlannerDetailTaskId] = useState<string | null>(null);
+  const taskDetailReturnFocusRef = useRef<HTMLElement | null>(null);
+  const plannerHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const pendingNotificationTaskId = useRef<string | null>(null);
   const pendingNotificationActionId = useRef<number | null>(null);
   const handledNotificationIds = useRef(new Set<number>());
@@ -1625,6 +1629,7 @@ export default function App() {
       return;
     }
     setPlannerSelectedDate(task.dueDate);
+    taskDetailReturnFocusRef.current = plannerHeadingRef.current;
     setPlannerDetailTaskId(task.id);
     const actionId = pendingNotificationActionId.current;
     pendingNotificationActionId.current = null;
@@ -2288,6 +2293,10 @@ export default function App() {
     }), clockNow);
   }, [tasks, clockNow, plannerFilter, plannerSearch, plannerPriority, todayKey, tomorrowKey, plannerSelectedDate]);
   const plannerDetailTask = plannerDetailTaskId ? tasks.find(task => task.id === plannerDetailTaskId) : undefined;
+  const upcomingTaskGroups = useMemo(() => groupUpcomingTasks(visiblePlannerTasks, todayKey), [visiblePlannerTasks, todayKey]);
+  useEffect(() => {
+    if (!plannerDetailTaskId && taskDetailReturnFocusRef.current?.isConnected) taskDetailReturnFocusRef.current.focus();
+  }, [plannerDetailTaskId]);
 
   const goalProgress = (goal: Goal) => getGoalProgress(goal.currentValue, goal.targetValue);
   const editingLegacyDateOnly = Boolean(createKind === 'transaction' && editingTransactionId
@@ -2540,7 +2549,7 @@ export default function App() {
                             style={{ accentColor: 'var(--accent)' }}
                           />
                         </label>
-                        <button type="button" onClick={() => { setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
+                        <button type="button" onClick={() => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
                           <span className={`today-task-title${t.completed ? ' is-complete' : ''}`}>{t.title}</span>
                           <span className="today-task-meta">{t.dueTime ? formatClockTime(t.dueTime) : 'Due today'} · {status} · {t.priority} priority</span>
                         </button>
@@ -2570,7 +2579,7 @@ export default function App() {
 
         <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} today={todayKey} now={clockNow}
           onNavigatePlanner={() => navigateTo('planner')}
-          onOpenTask={task => { setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }}
+          onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
           onCreateTask={() => openCreateForm('task')}
           onSelectRange={range => { setPlannerFilter(range); if (range === 'today') setPlannerSelectedDate(todayKey); if (range === 'tomorrow') setPlannerSelectedDate(tomorrowKey); navigateTo('planner'); }}
@@ -2851,8 +2860,10 @@ export default function App() {
 
         {/* VIEW 5: PLANNER */}
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
+          <>
+          {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={`${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}`} reminderLabel={plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={<details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No reminder is set. Edit this task to add one.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
-            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
+            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
             <div className="planner-range-nav" role="group" aria-label="Choose task range" data-no-tab-swipe>
               {(['today', 'tomorrow', 'upcoming'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
             </div>
@@ -2889,14 +2900,15 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
                 </div>
               </details>
-              {plannerDetailTask && <article className="lifeos-panel rounded-2xl border border-[var(--accent)] p-4" aria-label="Task details"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide lifeos-accent-text">Task details</p><h4 className="mt-1 text-lg font-semibold">{plannerDetailTask.title}</h4></div><button onClick={() => setPlannerDetailTaskId(null)} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Back to agenda</button></div>{plannerDetailTask.description && <section className="mt-3"><h5 className="type-caption text-secondary">Notes</h5><p className="mt-1 whitespace-pre-wrap text-sm">{plannerDetailTask.description}</p></section>}<div className="mt-4 grid grid-cols-2 gap-2 text-sm"><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Due</p><p className="mt-1 font-medium">{formatDate(plannerDetailTask.dueDate)}{plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Status</p><p className={`mt-1 font-semibold ${getTaskStatus(plannerDetailTask, clockNow) === 'Overdue' ? 'text-[var(--danger)]' : getTaskStatus(plannerDetailTask, clockNow) === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}`}>{getTaskStatus(plannerDetailTask, clockNow)}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Priority</p><p className="mt-1 font-medium">{plannerDetailTask.priority}</p></div><div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Reminder</p><p className="mt-1 font-medium">{plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'}</p></div>{plannerDetailTask.recurring && plannerDetailTask.recurring !== 'None' && <div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Repeats</p><p className="mt-1 font-medium">{plannerDetailTask.recurring}</p></div>}{plannerDetailTask.category && <div className="rounded-xl lifeos-raised p-3"><p className="text-xs text-muted">Category</p><p className="mt-1 font-medium">{plannerDetailTask.category}</p></div>}</div><details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No reminder is set. Edit this task to add one.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details><div className="mt-4 flex gap-2"><button onClick={() => openEditTask(plannerDetailTask)} className="min-h-11 flex-1 rounded-xl border border-[var(--stroke)] text-sm font-semibold lifeos-accent-text">Edit task</button><button onClick={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="min-h-11 flex-1 rounded-xl lifeos-accent-button text-sm font-semibold">{plannerDetailTask.completed ? 'Reopen task' : 'Complete task'}</button></div></article>}
+
             {visiblePlannerTasks.length === 0 ? (
               <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
             ) : (
               <div className="space-y-2">
                 {visiblePlannerTasks.map(t => {
                   const status = getTaskStatus(t, clockNow);
-                  return <div key={t.id} role="button" tabIndex={0} aria-label={`Open task ${t.title}`} onClick={() => setPlannerDetailTaskId(t.id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPlannerDetailTaskId(t.id); } }} className="lifeos-panel flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3.5 transition hover:border-[var(--accent)]" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : undefined }}>
+                  const dateGroup = upcomingTaskGroups.find(group => group.tasks[0]?.id === t.id);
+                  return <React.Fragment key={t.id}>{plannerFilter === 'upcoming' && dateGroup && <h4 className="planner-date-group-title" aria-label={`${dateGroup.label}, ${dateGroup.tasks.length} task${dateGroup.tasks.length === 1 ? '' : 's'}`}>{dateGroup.label}<span>{dateGroup.tasks.length}</span></h4>}<div role="button" tabIndex={0} aria-label={`Open task ${t.title}`} onClick={event => { taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); } }} className="lifeos-panel flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3.5 transition hover:border-[var(--accent)]" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : undefined }}>
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
@@ -2920,12 +2932,13 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col gap-2"><button onClick={async event => { event.stopPropagation(); if (!(await confirmAction({ title: 'Delete this task?', message: `“${t.title}” will be removed from your plan.`, confirmLabel: 'Delete task', destructive: true }))) return; await NotificationService.cancelTask(t); await StorageService.tasks.delete(t.id); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task removed', 'info'); }} className="lifeos-danger min-h-11 rounded-lg px-3 text-xs">Delete</button></div>
-                  </div>
+                  </div></React.Fragment>
                 })}
               </div>
             )}
             </section>
           </div>
+          </>
         )} />
 
         {/* VIEW 6: SETTINGS */}

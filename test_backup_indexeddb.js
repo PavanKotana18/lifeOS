@@ -71,7 +71,7 @@ async function main() {
     if (
     parent &&
     parent.filename &&
-    parent.filename.endsWith('/src/db.integration.cjs')
+    path.basename(parent.filename) === 'db.integration.cjs'
   ) {
     if (request === './services/financeCore') return financeLoaded.exports;
     if (request === './services/financialAccounting') return accountingLoaded.exports;

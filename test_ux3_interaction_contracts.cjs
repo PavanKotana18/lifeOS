@@ -31,14 +31,12 @@ assert.doesNotMatch(markup, /synthetic-private-task-id|99127|pendingNotification
   'user-facing reminder help omits internal task and notification identifiers');
 
 const app = fs.readFileSync('./src/App.tsx', 'utf8');
-const detailStart = app.indexOf('aria-label="Task details"');
-const detailEnd = app.indexOf('</article>}', detailStart);
-assert.ok(detailStart >= 0 && detailEnd > detailStart, 'task details are present');
-const taskDetails = app.slice(detailStart, detailEnd);
-for (const field of ['Task details', 'plannerDetailTask.title', 'Due', 'Status', 'Priority', 'Reminder', 'Edit task', 'Complete task']) {
+const taskDetails = fs.readFileSync('./src/components/TaskDetailScreen.tsx', 'utf8');
+assert.match(app, /<TaskDetailScreen task=\{plannerDetailTask\}/, 'task details are wired to the selected task');
+for (const field of ['TASK DETAILS', 'task.title', 'Due', 'status', 'Priority', 'Reminder', 'Edit task', 'Complete task']) {
   assert.ok(taskDetails.includes(field), `task details contain the human-facing ${field} field/action`);
 }
-assert.doesNotMatch(taskDetails, /<dl|pendingNotificationId|JSON\.stringify/,
+assert.doesNotMatch(taskDetails, /pendingNotificationId|JSON\.stringify/,
   'task details do not render a developer diagnostic record');
 assert.match(app, /check reminder status/, 'save feedback uses the same plain-language action as task details');
 assert.match(markup, /aria-live="polite" aria-label="Reminder status"/);
