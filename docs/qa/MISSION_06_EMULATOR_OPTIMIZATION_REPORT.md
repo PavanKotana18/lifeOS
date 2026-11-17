@@ -1,6 +1,6 @@
 # Mission 06: Safe LifeOS emulator optimization
 
-Date: 2026-11-17 (Asia/Kolkata)  
+Date: 2026-11-17 (Asia/Kolkata)
 Branch: `local/lifeos-debug-isolated`
 
 ## Current diagnostics
