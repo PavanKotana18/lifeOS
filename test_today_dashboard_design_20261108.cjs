@@ -19,7 +19,7 @@ assert.match(today, /role="progressbar" aria-label="Today’s tasks complete"/);
 assert.match(today, /handleHabitCompletion\(h\.id, h\.name, todayStr, stats\.completedToday\)/, 'habit check-ins still use the existing completion flow');
 assert.match(today, /persistTodayLayout\(setTodaySectionVisible/);
 assert.match(today, /persistTodayLayout\(moveTodaySection/);
-assert.match(app, /tasks\.filter\(task => !task\.completed && task\.dueDate > todayKey\)/, 'the existing upcoming-task definition remains intact');
+assert.match(app, /tasks\.filter\(task => !task\.completed && Boolean\(task\.dueDate\) && task\.dueDate > todayKey\)/, 'upcoming excludes completed, undated and non-future tasks');
 assert.match(css, /\.today-focus-progress span[^\n]*transition: width 180ms ease-out/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/, 'progress respects the global reduced-motion rule');
 

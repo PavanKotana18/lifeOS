@@ -1,4 +1,5 @@
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
@@ -30,9 +31,14 @@ import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodayS
 import { groupUpcomingTasks } from './services/taskViews';
 import TaskDetailScreen from './components/TaskDetailScreen';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
+import { buildCustomAccentOverrides, normalizeCustomAccent } from './services/customAccent';
+import CustomAccentPicker from './components/CustomAccentPicker';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
 import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
+import QuickTaskEntry from './components/QuickTaskEntry';
+import PlannedCashFlow from './components/PlannedCashFlow';
+import { buildSpringSettle, readTranslateX } from './services/springMotion';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
@@ -66,9 +72,12 @@ function ScreenLoading({ label }: { label: string }) {
 }
 
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
-const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID) => {
+const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID, customAccent?: string) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
   applyThemeTokens(themeId, theme);
+  for (const [name, value] of Object.entries(buildCustomAccentOverrides(normalizeCustomAccent(customAccent), themeId, theme))) {
+    document.documentElement.style.setProperty(name, value);
+  }
   document.documentElement.style.colorScheme = theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#101712' : '#FAFAF7');
 };
@@ -161,6 +170,10 @@ export default function App() {
     try { return resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { return DEFAULT_THEME_ID; }
   });
   const [themePreviewId, setThemePreviewId] = useState<ThemeId | null>(null);
+  const [customAccent, setCustomAccent] = useState<string | undefined>(() => {
+    try { return normalizeCustomAccent(localStorage.getItem('lifeos-custom-accent')); } catch { return undefined; }
+  });
+  const customAccentSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [displayName, setDisplayName] = useState('');
   const [clockNow, setClockNow] = useState(() => new Date());
@@ -422,7 +435,7 @@ export default function App() {
   const [goalsCategoryFilter, setGoalsCategoryFilter] = useState<string>('all');
 
   const [plannerSubtab, setPlannerSubtab] = useState<'agenda' | 'weekly' | 'all'>('agenda');
-  const [plannerFilter, setPlannerFilter] = useState<'all' | 'pending' | 'overdue' | 'completed' | 'today' | 'tomorrow' | 'upcoming'>('all');
+  const [plannerFilter, setPlannerFilter] = useState<'all' | 'pending' | 'overdue' | 'completed' | 'today' | 'tomorrow' | 'upcoming' | 'unscheduled'>('all');
   const [plannerSearch, setPlannerSearch] = useState('');
   const [plannerPriority, setPlannerPriority] = useState('all');
 
@@ -443,8 +456,8 @@ export default function App() {
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
   const [editingSavingsGoalId, setEditingSavingsGoalId] = useState<string | null>(null);
 
-  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts });
-  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts };
+  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen });
+  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen };
 
   const navigateTo = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
@@ -456,14 +469,16 @@ export default function App() {
     transitionToTab(tab, direction);
   };
 
-  const clearGestureDrag = (animateBack: boolean) => {
+  const clearGestureDrag = (animateBack: boolean, velocity = 0) => {
     const screen = document.getElementById(`screen-${activeTabRef.current}`);
     if (!screen?.hasAttribute('data-gesture-dragging')) return;
     const transform = getComputedStyle(screen).transform;
     screen.removeAttribute('data-gesture-dragging');
     screen.style.removeProperty('--gesture-x');
     if (!animateBack || !shouldAnimatePrimaryGestureSettlement(window.matchMedia('(prefers-reduced-motion: reduce)').matches) || typeof screen.animate !== 'function') return;
-    const animation = screen.animate([{ transform }, { transform: 'none' }], { duration: 110, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    const settle = buildSpringSettle(readTranslateX(transform), velocity);
+    if (!settle.duration) return;
+    const animation = screen.animate(settle.keyframes, { duration: settle.duration, easing: 'linear' });
     swipeSettleAnimation.current = animation;
     void animation.finished.catch(() => undefined).finally(() => {
       if (swipeSettleAnimation.current === animation) swipeSettleAnimation.current = null;
@@ -642,7 +657,7 @@ export default function App() {
         swipeClickSuppression.current = { pointerId: event.pointerId, target: swipeOriginAction.current, expiresAt: performance.now() + 500 };
       }
       swipeOriginAction.current = null;
-      clearGestureDrag(true);
+      clearGestureDrag(true, deltaX * 1000 / Math.max(1, performance.now() - start.startedAt));
     }
   };
 
@@ -726,6 +741,9 @@ export default function App() {
     if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(false).catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
     if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
       void requestCloseFinanceDraft(); return;
+    }
+    if (!state.isLocked && state.appReady && !(state.onboardingRequired && !state.onboardingComplete) && state.activeTab === 'dashboard' && state.todayCustomizationOpen && !state.createKind && !state.modalContent) {
+      closeTodayCustomization(); return;
     }
     const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileSection !== 'home') }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
@@ -896,14 +914,18 @@ export default function App() {
 
   useEffect(() => {
     if (appearance !== 'system') return;
-    const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved, themePreviewId || visualThemeId); };
+    const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved, themePreviewId || visualThemeId, customAccent); };
     const nativeTheme = (event: Event) => update((event as CustomEvent<{ dark: boolean }>).detail.dark ? 'dark' : 'light');
     window.addEventListener('lifeos:system-appearance', nativeTheme);
     const stopMedia = typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
       ? () => {}
       : watchSystemTheme(window.matchMedia('(prefers-color-scheme: dark)'), update);
     return () => { stopMedia(); window.removeEventListener('lifeos:system-appearance', nativeTheme); };
-  }, [appearance, visualThemeId, themePreviewId]);
+  }, [appearance, visualThemeId, themePreviewId, customAccent]);
+
+  useEffect(() => {
+    applyDomTheme(theme, themePreviewId || visualThemeId, customAccent);
+  }, [theme, visualThemeId, themePreviewId, customAccent]);
 
   useEffect(() => {
     if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
@@ -966,6 +988,8 @@ export default function App() {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const settleImmediately = () => {
       if (!preference.matches) return;
+      swipeSettleAnimation.current?.cancel();
+      swipeSettleAnimation.current = null;
       activeTransitionId.current = null;
       setTabTransition(null);
     };
@@ -1026,6 +1050,14 @@ export default function App() {
       .catch(() => showToast('Today layout could not be saved. Your previous layout will return after restart.', 'danger'));
   };
 
+  const closeTodayCustomization = () => setTodayCustomizationOpen(false);
+  const dismissTodayCustomizationBackdrop = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) closeTodayCustomization();
+  };
+  useEffect(() => {
+    if (activeTab !== 'dashboard' || isLocked) setTodayCustomizationOpen(false);
+  }, [activeTab, isLocked]);
+
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
     order: todayLayout.order.indexOf(id) + 2,
     display: todayLayout.hidden.includes(id) ? 'none' : undefined,
@@ -1058,6 +1090,8 @@ export default function App() {
     : planningDrafts.commitment ? 'money-commitment-dialog' : 'money-rate-dialog';
   useRecordDialog(Boolean(createKind || financeDialogOpen) && !isLocked && !firstRecordSecurityOpen && secureSetup === null,
     () => { if (createKind) requestCloseForm(); else void requestCloseFinanceDraft(); }, recordDialogId);
+  useRecordDialog(todayCustomizationOpen && activeTab === 'dashboard' && !isLocked && !createKind && !modalContent && !firstRecordSecurityOpen && secureSetup === null,
+    closeTodayCustomization, 'today-customization');
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
     if (next === financeSubtab) return;
@@ -1077,12 +1111,29 @@ export default function App() {
     // Bootstrap-safe preferences only.
     const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'system');
     const savedVisualTheme = await resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', visualThemeId));
+    let cachedAccent: string | undefined;
+    try { cachedAccent = normalizeCustomAccent(localStorage.getItem('lifeos-custom-accent')); } catch { /* Cosmetic cache is optional. */ }
+    let accentTimer: ReturnType<typeof setTimeout> | number | undefined;
+    let storedAccent: unknown;
+    try {
+      storedAccent = await Promise.race([
+        Promise.resolve().then(() => StorageService.settings.get('customAccent', null)),
+        new Promise<undefined>(resolve => { accentTimer = setTimeout(resolve, 1500); }),
+      ]);
+    } catch { storedAccent = undefined; }
+    finally { if (accentTimer !== undefined) clearTimeout(accentTimer); }
+    const savedAccent = storedAccent === undefined ? cachedAccent : normalizeCustomAccent(storedAccent);
+    setCustomAccent(savedAccent);
     setVisualThemeId(savedVisualTheme);
     setAppearancePreference(savedTheme);
     const resolvedTheme = resolveAppearance(savedTheme, systemDarkPreference());
     setTheme(resolvedTheme);
-    applyDomTheme(resolvedTheme, savedVisualTheme);
+    applyDomTheme(resolvedTheme, savedVisualTheme, savedAccent);
     try { localStorage.setItem('lifeos-theme-id', savedVisualTheme); } catch { /* Cosmetic cache is optional. */ }
+    try {
+      if (savedAccent) localStorage.setItem('lifeos-custom-accent', savedAccent);
+      else localStorage.removeItem('lifeos-custom-accent');
+    } catch { /* Cosmetic cache is optional. */ }
     localStorage.setItem('lifeos-appearance', savedTheme);
 
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
@@ -1237,19 +1288,19 @@ export default function App() {
     setAppearancePreference(preference);
     const resolved = resolveAppearance(preference, systemDarkPreference());
     setTheme(resolved);
-    applyDomTheme(resolved, themePreviewId || visualThemeId);
+    applyDomTheme(resolved, themePreviewId || visualThemeId, customAccent);
     await StorageService.settings.set('theme', preference);
     localStorage.setItem('lifeos-appearance', preference);
   };
 
   const previewVisualTheme = (themeId: ThemeId) => {
     setThemePreviewId(themeId);
-    applyDomTheme(theme, themeId);
+    applyDomTheme(theme, themeId, customAccent);
   };
 
   const cancelVisualThemePreview = () => {
     setThemePreviewId(null);
-    applyDomTheme(theme, visualThemeId);
+    applyDomTheme(theme, visualThemeId, customAccent);
   };
 
   const applyVisualTheme = async () => {
@@ -1259,12 +1310,33 @@ export default function App() {
       setVisualThemeId(themePreviewId);
       try { localStorage.setItem('lifeos-theme-id', themePreviewId); } catch { /* Persistent setting remains authoritative. */ }
       setThemePreviewId(null);
-      applyDomTheme(theme, themePreviewId);
+      applyDomTheme(theme, themePreviewId, customAccent);
       showToast('Color theme applied', 'success');
     } catch (error) {
       cancelVisualThemePreview();
       showToast(error instanceof Error ? error.message : 'Could not save this theme.', 'danger');
     }
+  };
+
+  const applyCustomAccent = async (color: string | undefined) => {
+    const normalized = normalizeCustomAccent(color);
+    if (color !== undefined && !normalized) {
+      showToast('Choose a color in #RRGGBB format.', 'danger');
+      return;
+    }
+    const save = customAccentSaveQueue.current.then(async () => {
+      await StorageService.settings.set('customAccent', normalized ?? null);
+      setCustomAccent(normalized);
+      try {
+        if (normalized) localStorage.setItem('lifeos-custom-accent', normalized);
+        else localStorage.removeItem('lifeos-custom-accent');
+      } catch { /* Persistent cosmetic setting remains authoritative. */ }
+      showToast(normalized ? 'Accent color applied' : 'Palette accent restored', 'success');
+    });
+    // Keep later choices usable after a failed write without applying it.
+    customAccentSaveQueue.current = save.catch(() => {});
+    try { await save; }
+    catch { showToast('Could not save this accent color. Try again.', 'danger'); }
   };
 
   const refreshNotificationDiagnostics = async () => {
@@ -1628,7 +1700,7 @@ export default function App() {
       if (actionId !== null) await NotificationService.acknowledgeInitialTapAction(actionId);
       return;
     }
-    setPlannerSelectedDate(task.dueDate);
+    setPlannerSelectedDate(task.dueDate || formatLocalDate(new Date()));
     taskDetailReturnFocusRef.current = plannerHeadingRef.current;
     setPlannerDetailTaskId(task.id);
     const actionId = pendingNotificationActionId.current;
@@ -1870,7 +1942,7 @@ export default function App() {
     const today = formatLocalDate(now);
     setCreateFormDirty(false);
     setCreateDraft({
-      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
+      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: kind === 'task' ? taskDate || '' : taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       currencyCode: userPrefs.currency, accountId: '', type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
       goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
@@ -1888,7 +1960,7 @@ export default function App() {
   const openEditTransaction = (transaction: Transaction) => {
     setCreateFormDirty(false);
     setCreateDraft({
-      title: transaction.description || '', amount: String(transaction.amount), category: transaction.category,
+      title: transaction.description || '', amount: transaction.amountMinor !== undefined && transaction.currencyCode ? minorUnitsToDecimal(BigInt(transaction.amountMinor), transaction.currencyCode) : String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
       currencyCode: transaction.currencyCode || userPrefs.currency, accountId: transaction.accountId || '',
       dateTime: transaction.occurredAt ? formatLocalDateTime(new Date(transaction.occurredAt)) : '',
@@ -1932,7 +2004,7 @@ export default function App() {
   const openEditTask = (task: Task) => {
     setCreateFormDirty(false);
     setCreateDraft({
-      title: task.title, description: task.description || task.notes || '', date: task.dueDate,
+      title: task.title, description: task.description || task.notes || '', date: task.dueDate || '',
       time: task.dueTime || '', reminderAt: task.reminderAt ? formatLocalDateTime(new Date(task.reminderAt)) : '',
       priority: task.priority, category: task.category || '', recurring: task.recurring || 'None',
     });
@@ -2001,6 +2073,20 @@ export default function App() {
     } finally { financeWriteOperation.current = false; setFinanceWriteBusy(false); }
   };
 
+  const quickTaskOperation = useRef(false);
+  const addUnscheduledTask = async (title: string) => {
+    const nextTitle = title.trim();
+    if (!nextTitle || nextTitle.length > 200) throw new Error('Enter a task title of 1 to 200 characters.');
+    if (quickTaskOperation.current) throw new Error('A task is already being saved.');
+    quickTaskOperation.current = true;
+    try {
+      await ensurePrivateStorageBeforeWrite();
+      await StorageService.tasks.add({ title: nextTitle, priority: 'Medium', recurring: 'None', completed: false });
+      try { await reloadAllData(); showToast('Task saved without a due date.', 'success'); }
+      catch { showToast('Task saved. Reopen Tasks to refresh your list.', 'info'); }
+    } finally { quickTaskOperation.current = false; }
+  };
+
   const saveNewRecord = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!createKind || createOperation.current) return;
@@ -2010,6 +2096,7 @@ export default function App() {
     const value = (key: string) => (createDraft[key] || '').trim();
     let reminderCouldNotEnable = false;
     try {
+      if (createKind === 'task' && !value('date') && (value('time') || value('reminderAt') || (value('recurring') && value('recurring') !== 'None'))) throw new Error('Add a due date before setting a time, reminder or repeat.');
       await ensurePrivateStorageBeforeWrite();
       // A fresh user may begin with Money. Categories are private and are only
       // loaded after explicit secure provisioning; never post an unclassified
@@ -2030,7 +2117,7 @@ export default function App() {
       if (createKind === 'transaction') {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
         const preserveUnknownTime = Boolean(existingTransaction && !existingTransaction.occurredAt && !value('dateTime'));
-        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: value('accountId') || existingTransaction?.accountId };
+        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
         const accountId = values.accountId;
         if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
@@ -2105,9 +2192,9 @@ export default function App() {
         const reminderAt = value('reminderAt') ? new Date(value('reminderAt')).toISOString() : undefined;
         const taskUpdates: Partial<Task> = {
           title: value('title'), description: value('description') || undefined, notes: value('description') || undefined,
-          dueDate: value('date'), dueTime: value('time') || undefined, reminderAt,
+          dueDate: value('date') || undefined, dueTime: value('time') || undefined, reminderAt,
           priority: value('priority') as Task['priority'], category: value('category') || undefined,
-          recurring: value('recurring') as Task['recurring'],
+          recurring: (value('recurring') || 'None') as Task['recurring'],
         };
         if (editingTaskId) await StorageService.tasks.update(editingTaskId, taskUpdates);
         else await StorageService.tasks.add({ ...taskUpdates, title: taskUpdates.title!, dueDate: taskUpdates.dueDate!, priority: taskUpdates.priority!, recurring: taskUpdates.recurring!, completed: false });
@@ -2276,17 +2363,17 @@ export default function App() {
   }, [tasks]);
   const selectedPlannerDateLabel = new Date(`${plannerSelectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const dashboardTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => getTaskStatus(task, clockNow) === 'Overdue' || task.dueDate === todayKey), clockNow).slice(0, 5), [tasks, clockNow, todayKey]);
-  const dashboardUpcomingTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => !task.completed && task.dueDate > todayKey), clockNow).slice(0, 4), [tasks, clockNow, todayKey]);
+  const dashboardUpcomingTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => !task.completed && Boolean(task.dueDate) && task.dueDate > todayKey), clockNow).slice(0, 4), [tasks, clockNow, todayKey]);
   const visiblePlannerTasks = useMemo(() => {
-    const dateScopedTasks = ['today', 'tomorrow', 'upcoming'].includes(plannerFilter) ? tasks : getTasksForDate(tasks, plannerSelectedDate);
+    const dateScopedTasks = ['today', 'tomorrow', 'upcoming', 'unscheduled'].includes(plannerFilter) ? tasks : getTasksForDate(tasks, plannerSelectedDate);
     return sortTasksByDeadline(dateScopedTasks.filter(task => {
     const status = getTaskStatus(task, clockNow);
-    const dateScope = ['today', 'tomorrow', 'upcoming'].includes(plannerFilter);
+    const dateScope = ['today', 'tomorrow', 'upcoming', 'unscheduled'].includes(plannerFilter);
     const statusMatch = dateScope || plannerFilter === 'all' ? true : status.toLowerCase() === plannerFilter;
     const dateMatch = plannerFilter === 'today' ? task.dueDate === todayKey
       : plannerFilter === 'tomorrow' ? task.dueDate === tomorrowKey
-        : plannerFilter === 'upcoming' ? task.dueDate > todayKey && task.dueDate <= formatLocalDate(new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 7))
-          : task.dueDate === plannerSelectedDate;
+        : plannerFilter === 'upcoming' ? Boolean(task.dueDate) && task.dueDate > todayKey && task.dueDate <= formatLocalDate(new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 7))
+          : plannerFilter === 'unscheduled' ? !task.dueDate : task.dueDate === plannerSelectedDate;
     const query = plannerSearch.trim().toLowerCase();
     const searchMatch = !query || `${task.title} ${task.description || ''} ${task.notes || ''} ${task.category || ''}`.toLowerCase().includes(query);
     return statusMatch && dateMatch && searchMatch && (plannerPriority === 'all' || task.priority === plannerPriority);
@@ -2408,16 +2495,17 @@ export default function App() {
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
           <div className="today-sections" data-testid="today-dashboard">
-            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
-            {todayCustomizationOpen && <section id="today-customization" aria-labelledby="today-customization-title" className="today-customization lifeos-panel rounded-2xl border p-4" style={{ order: 1 }}>
-              <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order.</p></div>
+            {todayCustomizationOpen && createPortal(<div className="ui-sheet-backdrop" onMouseDown={dismissTodayCustomizationBackdrop}>
+            <section id="today-customization" role="dialog" aria-modal="true" aria-labelledby="today-customization-title" aria-describedby="today-customization-description" className="today-customization ui-sheet-motion ui-bottom-sheet lifeos-panel max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border p-4">
+              <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p id="today-customization-description" className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order. Changes save as you make them.</p></div>
               <ul className="today-customization-list">{todayLayout.order.map((id, index) => <li key={id}>
                 <label className="today-section-toggle"><input type="checkbox" checked={!todayLayout.hidden.includes(id)} disabled={id === 'focus'} onChange={event => persistTodayLayout(setTodaySectionVisible(todayLayoutRef.current, id, event.target.checked))} /><span>{TODAY_SECTION_LABELS[id]}</span></label>
                 <div className="today-order-actions"><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} up`} disabled={index === 0} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, -1))}>↑</button><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} down`} disabled={index === todayLayout.order.length - 1} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, 1))}>↓</button></div>
               </li>)}</ul>
-              <button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="mt-3 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button>
-            </section>}
+              <div className="ui-form-actions mt-3"><button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="min-h-11 flex-1 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button><button type="button" onClick={closeTodayCustomization} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold">Done</button></div>
+            </section></div>, document.body)}
 
             {/* Keep the first panel focused: one useful progress cue and fast ways to act. */}
             <section className="today-focus lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
@@ -2579,7 +2667,7 @@ export default function App() {
 
         <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} today={todayKey} now={clockNow}
           onNavigatePlanner={() => navigateTo('planner')}
-          onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }}
+          onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter(task.dueDate ? 'all' : 'unscheduled'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
           onCreateTask={() => openCreateForm('task')}
           onSelectRange={range => { setPlannerFilter(range); if (range === 'today') setPlannerSelectedDate(todayKey); if (range === 'tomorrow') setPlannerSelectedDate(tomorrowKey); navigateTo('planner'); }}
@@ -2778,7 +2866,7 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5"><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+            {financeSubtab === 'planning' && <div className="space-y-5"><label className="block text-sm">Planned month<input type="month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="lifeos-input ml-3 min-h-11 rounded-lg px-3" /></label><PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
               onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
               onRecordOccurrence={async row => { await runPreparedFinanceWrite(() => StorageService.commitments.postOccurrence(row.id, row)); }}
@@ -2862,11 +2950,12 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <>
-          {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={`${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}`} reminderLabel={plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={<details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No reminder is set. Edit this task to add one.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
+          {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={<details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No reminder is set. Edit this task to add one.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
-            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
+            <QuickTaskEntry onAdd={addUnscheduledTask} />
+            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
             <div className="planner-range-nav" role="group" aria-label="Choose task range" data-no-tab-swipe>
-              {(['today', 'tomorrow', 'upcoming'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
+              {(['today', 'tomorrow', 'upcoming', 'unscheduled'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
             </div>
             <details className="planner-calendar-disclosure" data-no-tab-swipe>
               <summary><span>Calendar</span><span>{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span></summary>
@@ -2894,16 +2983,16 @@ export default function App() {
             </section>
             </details>
             <section className="space-y-3" aria-label="Selected day agenda">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div></div>
+              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : plannerFilter === 'unscheduled' ? 'Unscheduled' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div></div>
               <details className="planner-filters">
                 <summary><Search size={15} aria-hidden="true" />Search and filters</summary>
                 <div className="planner-filter-fields"><input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" />
-                  <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
+                  <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'unscheduled', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
                 </div>
               </details>
 
             {visiblePlannerTasks.length === 0 ? (
-              <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
+              <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
             ) : (
               <div className="space-y-2">
                 {visiblePlannerTasks.map(t => {
@@ -2928,7 +3017,7 @@ export default function App() {
                       <div>
                         <span className={`text-sm font-medium ${t.completed ? 'line-through text-secondary' : ''}`}>{t.title}</span>
                         {t.description && <p className="mt-0.5 text-xs text-secondary">{t.description}</p>}
-                        <p className="text-xs text-secondary">Due {formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ' · end of day'}</p>
+                        <p className="text-xs text-secondary">{t.dueDate ? `Due ${formatDate(t.dueDate)}` : 'No due date'}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : t.dueDate ? ' · end of day' : ''}</p>
                         <div className="mt-1 flex gap-1"><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.priority}</span><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px]" style={{ color: status === 'Overdue' ? 'var(--danger)' : status === 'Completed' ? 'var(--success)' : 'var(--accent)' }}>{status}</span>{t.recurring !== 'None' && <span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.recurring}</span>}</div>
                       </div>
                     </div>
@@ -2978,6 +3067,7 @@ export default function App() {
                 <button type="button" disabled={!themePreviewId} onClick={cancelVisualThemePreview} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50">Cancel</button>
                 <button type="button" disabled={!themePreviewId} onClick={() => void applyVisualTheme()} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">Apply theme</button>
               </div>
+              <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
             </section></ProfileSubpage>}
 
             {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
@@ -3189,13 +3279,13 @@ export default function App() {
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
               <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
               <details className="ui-optional-form-details" open={Boolean(editingTaskId && (createDraft.description || createDraft.category || createDraft.reminderAt || (createDraft.recurring && createDraft.recurring !== 'None')))}><summary>More task details</summary>
                 <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
-                <label className="mb-3 block text-xs text-secondary">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
+                <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input disabled={!createDraft.date} type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
+                <label className="mb-3 block text-xs text-secondary">Repeat<select disabled={!createDraft.date} value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
               </details>
             </>}
             {!['habit', 'budget', 'task', 'transaction', 'goal-progress'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">{createKind === 'goal' || createKind === 'savings' ? 'Target date' : createKind === 'milestone' ? 'Target date (optional)' : 'Date'}<input type="date" required={createKind !== 'milestone'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}

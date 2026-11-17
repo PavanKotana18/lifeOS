@@ -18,6 +18,8 @@ import {
 export const BOOTSTRAP_SETTING_KEYS = new Set([
   'theme',
   'visualTheme',
+  // Cosmetic opaque color only; available before first private unlock.
+  'customAccent',
   'biometricLockEnabled',
   'onboardingCompleted',
   'onboardingStarted',

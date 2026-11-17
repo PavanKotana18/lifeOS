@@ -15,7 +15,8 @@ type Props = {
   onOpenGoals: () => void;
 };
 
-function formatTaskDate(value: string, today: string) {
+function formatTaskDate(value: string | undefined, today: string) {
+  if (!value) return 'No due date';
   if (value === today) return 'Today';
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return value;

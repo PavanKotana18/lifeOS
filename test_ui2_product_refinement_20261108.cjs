@@ -42,7 +42,7 @@ const plannerStart = app.indexOf('id="screen-planner"');
 const plannerEnd = app.indexOf('id="screen-settings"', plannerStart);
 const planner = app.slice(plannerStart, plannerEnd > plannerStart ? plannerEnd : plannerStart + 40000);
 assert.match(planner, /Tasks by date/, 'the nested planner leads with tasks rather than its calendar');
-assert.match(planner, /Choose task range[\s\S]*\['today', 'tomorrow', 'upcoming'\][\s\S]*Next 7 days/, 'Today, Tomorrow and the next seven days are one tap away');
+assert.match(planner, /Choose task range[\s\S]*\['today', 'tomorrow', 'upcoming', 'unscheduled'\][\s\S]*Next 7 days/, 'Today, Tomorrow, the next seven days and Unscheduled are one tap away');
 assert.ok(planner.indexOf('Choose task range') < planner.indexOf('Monthly task calendar'), 'task ranges precede the supporting calendar');
 assert.match(planner, /<details className="planner-calendar-disclosure"/, 'the month grid is disclosed on demand');
 assert.doesNotMatch(planner, />Quick add</, 'the planner no longer repeats its header Add task action');
