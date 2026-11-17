@@ -111,7 +111,8 @@ export function sortTasksByDeadline<T extends Pick<Task, 'dueDate' | 'dueTime' |
 /** Chronological ordering for upcoming-task summaries using the saved local schedule. */
 export function sortTasksBySchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'createdAt' | 'id'>>(tasks: T[]): T[] {
   const scheduleKey = (task: T) => {
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || '') ? task.dueDate : '9999-12-31';
+    const dueDate = task.dueDate || '';
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : '9999-12-31';
     const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(task.dueTime || '') ? task.dueTime! : '23:59';
     return `${date}T${time}`;
   };
@@ -318,7 +319,7 @@ export function buildFinanceEntry(localDateTime: string, savedAt = new Date()) {
   return { date: formatLocalDate(parsed), occurredAt: parsed.toISOString(), createdAt: savedAt.toISOString() };
 }
 export function buildTaskNotificationPlan(task: Task, preferences: NotificationPreferences, now = new Date()) {
-  if (task.completed) return [] as { kind: keyof NotificationPreferences; at: Date }[];
+  if (task.completed || !task.dueDate) return [] as { kind: keyof NotificationPreferences; at: Date }[];
   const plan: { kind: keyof NotificationPreferences; at: Date }[] = [];
   const deadline = getTaskDeadline(task);
   const add = (kind: keyof NotificationPreferences, at: Date | null) => { if (at && !Number.isNaN(at.getTime()) && at > now) plan.push({ kind, at }); };

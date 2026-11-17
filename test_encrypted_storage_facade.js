@@ -2,6 +2,21 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
 const esbuild = require('esbuild');
+const fs = require('node:fs');
+const ts = require('typescript');
+
+// Bind the production validator without evaluating db.ts or its native/database
+// imports. Extracting its AST declaration keeps this isolated fixture aligned
+// with the actual schedule rules instead of providing a permissive test stub.
+const dbFilename = path.resolve('src/db.ts');
+const dbSource = ts.createSourceFile(dbFilename, fs.readFileSync(dbFilename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+assert.equal(dbSource.parseDiagnostics.length, 0, 'Production database source must parse');
+const scheduleDeclarations = dbSource.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'normalizeTaskSchedule');
+assert.equal(scheduleDeclarations.length, 1, 'Expected one production task schedule validator');
+const scheduleModule = new Module(dbFilename, module);
+scheduleModule._compile(esbuild.transformSync(scheduleDeclarations[0].getText(dbSource), { loader: 'ts', format: 'cjs', target: 'node22' }).code, dbFilename);
+const { normalizeTaskSchedule } = scheduleModule.exports;
+assert.equal(typeof normalizeTaskSchedule, 'function');
 
 const TABLES = [
   'transactions', 'categories', 'budgets', 'savingsGoals',
@@ -91,6 +106,7 @@ function makeEnvironment() {
   };
 
   const helpers = {
+    normalizeTaskSchedule,
     createRecordId(prefix) {
       idCounter += 1;
       if (failIdAt && idCounter === failIdAt) {

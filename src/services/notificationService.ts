@@ -252,7 +252,7 @@ export const NotificationService = {
           ...(plan.kind === 'taskReminders' && task.reminderAt ? { originalReminderAt: task.reminderAt } : {}) },
       })));
       for (const task of tasks) {
-        if (!task.reminderAt || task.completed) continue;
+        if (!task.reminderAt || task.completed || !task.dueDate) continue;
         const id = taskNotificationId(task, 'taskReminders');
         const existingPending = pending.notifications.some(item => item.id === id);
         const existingVisible = delivered.notifications.some(item => Number(item.id) === id);
@@ -279,7 +279,7 @@ export const NotificationService = {
         if (String(item.extra?.kind || '') !== 'taskReminders') continue;
         const taskId = String(item.extra?.taskId || '');
         const task = tasksById.get(taskId);
-        if (!task || task.completed || !preferences.taskReminders || !task.reminderAt) continue;
+        if (!task || task.completed || !task.dueDate || !preferences.taskReminders || !task.reminderAt) continue;
         const selectedAt = new Date(task.reminderAt);
         if (!Number.isFinite(selectedAt.getTime()) || selectedAt > now) continue;
         const originalAt = item.extra?.originalReminderAt

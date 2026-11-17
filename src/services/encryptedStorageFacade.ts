@@ -67,6 +67,7 @@ export interface EncryptedStorageHelpers {
   ): void;
   /** Throws on invalid data; returns validated table names, never error messages. */
   validateBackupTables(tables: unknown): string[];
+  normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt' | 'recurring'>>(task: T): T;
   getNextRecurringTaskDate(
     task: Task,
     fromDate?: string
@@ -810,14 +811,17 @@ export function createEncryptedStorageFacade(
       getAll: () => readAll<Task>('tasks'),
 
       add: async (input: Omit<Task, 'id' | 'createdAt'>) =>
-        add('tasks', {
+        add('tasks', helpers.normalizeTaskSchedule({
           ...input,
           id: helpers.createRecordId('task'),
           createdAt: new Date().toISOString(),
-        }),
+        })),
 
-      update: (id: string, changes: Partial<Task>) =>
-        update('tasks', id, changes, true),
+      update: (id: string, changes: Partial<Task>) => coordinator.run(async ctx => {
+        const existing = await ctx.get<Task>('tasks', id);
+        if (!existing) throw new Error('Task not found.');
+        ctx.put('tasks', helpers.normalizeTaskSchedule({ ...existing, ...changes, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() }));
+      }),
 
       delete: (id: string) => remove('tasks', id),
 
@@ -825,6 +829,7 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           const task = await ctx.get<Task>('tasks', id);
           if (!task) throw new Error('Task not found.');
+          helpers.normalizeTaskSchedule(task);
           if (task.completed === completed) return;
 
           const now = new Date().toISOString();
@@ -844,7 +849,7 @@ export function createEncryptedStorageFacade(
             return;
           }
 
-          if (completed && !task.completed && task.recurring && task.recurring !== 'None') {
+          if (completed && !task.completed && task.dueDate && task.recurring && task.recurring !== 'None') {
             const nextDate = helpers.getNextRecurringTaskDate(task);
             if (nextDate) {
               const rootId = helpers.getRecurrenceRootId(task);

@@ -144,8 +144,30 @@ export function getRecurrenceRootId(
   return rootId;
 }
 
+/** Validate a dated schedule, or a genuinely unscheduled task with no alarms/recurrence. */
+export function normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt' | 'recurring'>>(task: T): T {
+  if (task.dueDate !== undefined && typeof task.dueDate !== 'string') throw new Error('Choose a valid task date.');
+  if (task.dueTime !== undefined && typeof task.dueTime !== 'string') throw new Error('Choose a valid task time.');
+  if (task.reminderAt !== undefined && typeof task.reminderAt !== 'string') throw new Error('Choose a valid task reminder.');
+  if (task.recurring !== undefined && typeof task.recurring !== 'string') throw new Error('Choose a valid task recurrence.');
+  const dueDate = task.dueDate?.trim() || undefined;
+  const dueTime = task.dueTime || undefined;
+  const reminderAt = task.reminderAt || undefined;
+  const recurring = task.recurring || 'None';
+  if (!['None', 'Daily', 'Weekly', 'Monthly'].includes(recurring)) throw new Error('Choose a valid task recurrence.');
+  if (!dueDate && (dueTime || reminderAt || recurring !== 'None')) throw new Error('Choose a task date before setting a time, reminder or recurrence.');
+  if (dueDate) {
+    const [year, month, day] = dueDate.split('-').map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) throw new Error('Choose a valid task date.');
+  }
+  if (dueTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(dueTime)) throw new Error('Choose a valid task time.');
+  if (reminderAt && !Number.isFinite(Date.parse(reminderAt))) throw new Error('Choose a valid task reminder.');
+  return { ...task, dueDate, dueTime, reminderAt, recurring };
+}
+
 export function getNextRecurringTaskDate(
-  dueDate: string,
+  dueDate: string | undefined,
   recurring: Task['recurring'],
   todayLocalDate = (() => {
     const now = new Date();
@@ -167,6 +189,7 @@ export function getNextRecurringTaskDate(
     return date;
   };
 
+  if (!dueDate) throw new Error('Invalid recurring task due date');
   const nextDate = parseDate(dueDate);
   const today = parseDate(todayLocalDate);
 
@@ -676,7 +699,7 @@ export function validateBackupTables(tablesData: any): string[] {
 
   check('tasks', (r, i) => {
     requiredString(r, 'title', 'tasks', i);
-    requiredDate(r, 'dueDate', 'tasks', i);
+    if (r.dueDate !== undefined) requiredDate(r, 'dueDate', 'tasks', i);
     if (!enumValue(r.priority, ['Low', 'Medium', 'High', 'Urgent'])) fail('tasks', i, 'priority');
     if (!enumValue(r.recurring, ['None', 'Daily', 'Weekly', 'Monthly'])) fail('tasks', i, 'recurring');
     if (typeof r.completed !== 'boolean') fail('tasks', i, 'completed');
@@ -690,6 +713,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'updatedAt', 'tasks', i);
     optionalString(r, 'recurrenceRootId', 'tasks', i);
     optionalString(r, 'spawnedTaskId', 'tasks', i);
+    try { normalizeTaskSchedule(r); } catch { fail('tasks', i, 'schedule'); }
     if (r.subtasks !== undefined) {
       if (!Array.isArray(r.subtasks)) fail('tasks', i, 'subtasks');
       for (let subtaskIndex = 0; subtaskIndex < r.subtasks.length; subtaskIndex++) {
@@ -1350,7 +1374,7 @@ const rawStorageService: IDataStorage = {
     },
     async add(task) {
       const id = createRecordId('t');
-      const record: Task = { ...task, id, createdAt: new Date().toISOString() };
+      const record: Task = normalizeTaskSchedule({ ...task, id, createdAt: new Date().toISOString() });
       await db.tasks.add(record);
       return record;
     },
@@ -1358,9 +1382,10 @@ const rawStorageService: IDataStorage = {
       const safeUpdates = { ...updates };
       delete safeUpdates.id;
       delete safeUpdates.createdAt;
-      await db.tasks.update(id, {
-        ...safeUpdates,
-        updatedAt: new Date().toISOString()
+      await db.transaction('rw', db.tasks, async () => {
+        const existing = await db.tasks.get(id);
+        if (!existing) return;
+        await db.tasks.put(normalizeTaskSchedule({ ...existing, ...safeUpdates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() }));
       });
     },
     async delete(id) {
@@ -1389,7 +1414,8 @@ const rawStorageService: IDataStorage = {
           return;
         }
 
-        if (task.recurring && task.recurring !== 'None' && !task.completed) {
+        normalizeTaskSchedule(task);
+        if (task.dueDate && task.recurring && task.recurring !== 'None' && !task.completed) {
           const nextDueDate = getNextRecurringTaskDate(task.dueDate, task.recurring);
           const rootId = getRecurrenceRootId(task);
           const nextTaskId = `rec_${rootId}_${nextDueDate}`;
@@ -1639,8 +1665,9 @@ export const encryptedStorageRuntime = createLifeOSEncryptedRuntime(
     createRecordId,
     validateTransactionRecord,
     validateBackupTables,
+    normalizeTaskSchedule,
     getNextRecurringTaskDate: (task, fromDate) =>
-      getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate),
+      task.dueDate ? getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate) : null,
     getRecurrenceRootId,
   }
 );
