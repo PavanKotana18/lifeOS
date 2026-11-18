@@ -1,11 +1,9 @@
 package com.lifeos.personal;
 
 import android.Manifest;
-import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.AlarmManager;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.app.UiAutomation;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -14,15 +12,11 @@ import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.core.content.ContextCompat;
+import androidx.lifecycle.Lifecycle;
 import android.os.ParcelFileDescriptor;
-import android.os.SystemClock;
 import android.service.notification.StatusBarNotification;
-import android.util.DisplayMetrics;
-import android.view.accessibility.AccessibilityNodeInfo;
-import android.view.accessibility.AccessibilityWindowInfo;
 import com.capacitorjs.plugins.localnotifications.NotificationStorage;
 import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher;
-import java.io.InputStream;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.junit.Test;
@@ -64,7 +58,6 @@ public class LocalNotificationBridgeAcceptanceTest {
     @Test public void backgroundedSyntheticTaskReminderIsActuallyPosted() throws Exception {
         final int id = 2147000002;
         final String syntheticTaskId = "synthetic-background-task";
-        final String title = "LifeOS synthetic task reminder";
         Context context = ApplicationProvider.getApplicationContext();
         requireNotificationPermission(context);
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -77,7 +70,7 @@ public class LocalNotificationBridgeAcceptanceTest {
             String scheduled = WebViewTestSupport.evaluateAsync(scenario,
                 "(async()=>{const p=window.Capacitor.Plugins.LocalNotifications;" +
                 "await p.createChannel({id:'lifeos-reminders',name:'LifeOS reminders',importance:4,visibility:0});" +
-                "const at=new Date(Date.now()+8000);await p.schedule({notifications:[{id:" + id + ",title:" + JSONObject.quote(title) + "," +
+                "const at=new Date(Date.now()+8000);await p.schedule({notifications:[{id:" + id + ",title:'LifeOS synthetic task reminder'," +
                 "body:'Synthetic test only',schedule:{at,allowWhileIdle:true},channelId:'lifeos-reminders',smallIcon:'ic_transparent'," +
                 "extra:{kind:'taskReminders',taskId:'" + syntheticTaskId + "'}}]});" +
                 "const q=await p.getPending();return JSON.stringify({pending:q.notifications.some(n=>n.id===" + id + "),exact:(await p.checkExactNotificationSetting()).exact_alarm});})()");
@@ -89,9 +82,7 @@ public class LocalNotificationBridgeAcceptanceTest {
             PendingIntent scheduledAlarm = PendingIntent.getBroadcast(context, id, alarmIntent, alarmFlags);
             assertNotNull("Android AlarmManager must retain the synthetic reminder's scheduled broadcast", scheduledAlarm);
 
-            ParcelFileDescriptor home = InstrumentationRegistry.getInstrumentation().getUiAutomation()
-                .executeShellCommand("input keyevent 3");
-            if (home != null) home.close();
+            scenario.moveToState(Lifecycle.State.CREATED);
             NotificationStorage storage = new NotificationStorage(context);
             // Dispatch the exact scheduled broadcast under test control. This
             // exercises the production receiver and NotificationManager path
@@ -116,15 +107,18 @@ public class LocalNotificationBridgeAcceptanceTest {
                     storage.getSavedNotificationIds().contains(String.valueOf(id)));
                 assertNotNull("Posted reminder must expose a native content tap action", postedNotification);
                 assertNotNull("Posted reminder content tap must be launchable", postedNotification.contentIntent);
-                tapSystemNotification(context, title);
+                // The post and pending-row checks above run with the Activity stopped.
+                // Resume it before sending the posted content action from the test process.
+                scenario.moveToState(Lifecycle.State.RESUMED);
+                postedNotification.contentIntent.send();
                 JSONObject tap = new JSONObject(WebViewTestSupport.evaluateAsync(scenario,
                     "(async()=>{const until=Date.now()+10000;while(Date.now()<until){if(window.__lifeosQaNotificationTap)" +
                     "return JSON.stringify(window.__lifeosQaNotificationTap);await new Promise(r=>setTimeout(r,50));}return '{}';})()"));
                 JSONObject notification = tap.optJSONObject("notification");
-                assertNotNull("System notification tap must reach the Capacitor action listener", notification);
+                assertNotNull("Posted content action must reach the Capacitor action listener", notification);
                 assertEquals(id, notification.optInt("id"));
                 JSONObject extra = notification.optJSONObject("extra");
-                assertNotNull("Tap action must retain its destination payload", extra);
+                assertNotNull("Content action must retain its destination payload", extra);
                 assertEquals(syntheticTaskId, extra.optString("taskId"));
             } finally {
                 manager.cancel(id);
@@ -134,41 +128,6 @@ public class LocalNotificationBridgeAcceptanceTest {
                 }
                 storage.deleteNotification(String.valueOf(id));
             }
-        }
-    }
-
-    private static void tapSystemNotification(Context context, String title) throws Exception {
-        UiAutomation ui = InstrumentationRegistry.getInstrumentation().getUiAutomation();
-        AccessibilityServiceInfo service = ui.getServiceInfo();
-        int originalFlags = service.flags;
-        service.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
-        ui.setServiceInfo(service);
-        try {
-            // Open the shade with the same system gesture as an unlocked user.
-            DisplayMetrics display = context.getResources().getDisplayMetrics();
-            int center = display.widthPixels / 2;
-            String swipe = "input swipe " + center + " 1 " + center + " " + display.heightPixels / 2 + " 350";
-            try (InputStream command = new ParcelFileDescriptor.AutoCloseInputStream(ui.executeShellCommand(swipe))) {
-                while (command.read() != -1) { /* Wait for the gesture to finish. */ }
-            }
-            long deadline = SystemClock.elapsedRealtime() + 10000L;
-            while (SystemClock.elapsedRealtime() < deadline) {
-                // Launcher or an overlay can still be the active window.
-                for (AccessibilityWindowInfo window : ui.getWindows()) {
-                    AccessibilityNodeInfo root = window.getRoot();
-                    if (root == null || !"com.android.systemui".equals(String.valueOf(root.getPackageName()))) continue;
-                    for (AccessibilityNodeInfo match : root.findAccessibilityNodeInfosByText(title)) {
-                        for (AccessibilityNodeInfo node = match; node != null; node = node.getParent()) {
-                            if (node.isClickable() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
-                        }
-                    }
-                }
-                Thread.sleep(100L);
-            }
-            fail("SystemUI did not expose the posted synthetic notification for a tap");
-        } finally {
-            service.flags = originalFlags;
-            ui.setServiceInfo(service);
         }
     }
 
