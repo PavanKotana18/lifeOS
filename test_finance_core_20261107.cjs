@@ -44,6 +44,15 @@ assert.throws(() => finance.decimalToMinorUnits('1.00', 'XXX'), /Unsupported cur
 const exactLarge = 900719925474099312345n;
 const formattedLarge = finance.formatMinorUnits(exactLarge, 'USD', 'en-US');
 assert.match(formattedLarge, /9,007,199,254,740,993,123\.45/);
+for (const [rupees, expected] of [
+  [121350, '1,21,350'],
+  [199000, '1,99,000'],
+  [1234567, '12,34,567'],
+  [12345678, '1,23,45,678'],
+]) {
+  assert.ok(finance.formatMinorUnits(BigInt(rupees) * 100n, 'INR', 'en-IN').includes(expected), `en-IN groups ₹${rupees} as ${expected}`);
+}
+assert.ok(finance.formatMinorUnits(12345678n, 'INR', 'en-US').includes('123,456.78'), 'an explicitly selected locale overrides INR home-market grouping');
 assert.equal(finance.formatMinorUnits(12345678n, 'INR', 'en-IN'), '₹1,23,456.78');
 assert.equal(finance.formatMinorUnits(-123n, 'JPY', 'ja-JP'), '-￥123');
 const originalNumberFormat = Intl.NumberFormat;
