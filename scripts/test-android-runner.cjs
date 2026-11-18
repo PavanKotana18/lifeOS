@@ -99,13 +99,13 @@ else if(a.includes('shell am instrument')) {
     if (admitted) {
       assert.match(fs.readFileSync(path.join(out, 'test-inventory.txt'), 'utf8'), /expected_tests=1/);
       const commands = fs.readFileSync(path.join(out, 'adb-commands.txt'), 'utf8');
-      assert.match(commands, /shell pm grant com\.lifeos\.personal\.dev android\.permission\.POST_NOTIFICATIONS/,
-        'the disposable API 34 emulator grants notification permission to the isolated Dev package');
+      assert.match(commands, /shell pm grant com\.lifeos\.personal\.debug android\.permission\.POST_NOTIFICATIONS/,
+        'the disposable API 34 emulator grants notification permission to the isolated Debug package');
       assert.doesNotMatch(commands, /adb devices(?:\s|-l)|com\.lifeos\.personal(?:\s|$)/,
         'the runner does not enumerate devices or target the protected production package');
       assert.match(commands, /push .* \/data\/local\/tmp\/lifeos-test-exclusions\.txt/);
-      assert.match(commands, /run-as com\.lifeos\.personal\.dev cp \/data\/local\/tmp\/lifeos-test-exclusions\.txt \/data\/user\/0\/com\.lifeos\.personal\.dev\/files\/lifeos-test-exclusions\.txt/);
-      assert.match(commands, /-e notTestFile \/data\/user\/0\/com\.lifeos\.personal\.dev\/files\/lifeos-test-exclusions\.txt/);
+      assert.match(commands, /run-as com\.lifeos\.personal\.debug cp \/data\/local\/tmp\/lifeos-test-exclusions\.txt \/data\/user\/0\/com\.lifeos\.personal\.debug\/files\/lifeos-test-exclusions\.txt/);
+      assert.match(commands, /-e notTestFile \/data\/user\/0\/com\.lifeos\.personal\.debug\/files\/lifeos-test-exclusions\.txt/);
     }
     if (mode === 'crash') {
       assert.match(fs.readFileSync(path.join(out, 'junit.xml'), 'utf8'), /errors="[1-9]/);

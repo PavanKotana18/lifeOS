@@ -154,7 +154,7 @@ fi
   timeout 120s adb -s "$SERIAL" install "$TEST_APK"
 android_api=$(timeout 8s adb -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')
 if [[ "$android_api" =~ ^[0-9]+$ ]] && (( android_api >= 33 )); then
-  # This is a disposable emulator with a fresh Dev package. Grant only the
+  # This is a disposable emulator with a fresh Debug package. Grant only the
   # test runtime permission needed to observe a posted notification.
   timeout 10s adb -s "$SERIAL" shell pm grant "$DEV_PACKAGE" android.permission.POST_NOTIFICATIONS
 fi
