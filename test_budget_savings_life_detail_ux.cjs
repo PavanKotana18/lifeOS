@@ -47,5 +47,7 @@ assert.match(app, /StorageService\.goals\.toggleMilestone\(row\.id, !row\.comple
   'goal detail reads and updates persisted milestone records');
 assert.match(app, /Net cash flow/);
 assert.match(app, /formatMonthYear\(financeMonth\)/, 'analytics metrics name their selected reporting month');
-assert.match(fs.readFileSync('src/components/FinanceCharts.tsx', 'utf8'), /Posted monthly totals · planned estimates stay separate/);
+const chart = fs.readFileSync('src/components/FinanceCharts.tsx', 'utf8');
+assert.doesNotMatch(chart, /Posted monthly totals/);
+assert.match(chart, /<InfoTip label="Posted and planned amounts">[^<]*Planned estimates stay separate/);
 console.log('BUDGET/SAVINGS/LIFE DETAIL UX: exact minor-unit display and focused editor/detail contracts passed.');
