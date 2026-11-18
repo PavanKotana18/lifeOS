@@ -870,11 +870,11 @@ html.dark .text-amber-400 { color: var(--warning); }
 .initial-setup-error { color: var(--danger); font-size: .9rem; line-height: 1.5; margin-top: 1rem; }
 .initial-setup :focus-visible { outline: 2px solid var(--focus-color); outline-offset: 4px; }
 .life-metric-tip { display:flex; justify-content:flex-end; align-items:center; gap:.4rem; color:var(--ink-secondary); font-size:.72rem; }
-.lifeos-info-tip { position:relative; display:inline-flex; color:var(--ink-secondary); }
-.lifeos-info-tip summary { display:grid; min-width:2.25rem; min-height:2.25rem; place-items:center; border:1px solid var(--stroke); border-radius:999px; cursor:pointer; list-style:none; color:var(--accent); }
-.lifeos-info-tip summary::-webkit-details-marker { display:none; }
-.lifeos-info-tip[open] summary { color:var(--ink); border-color:var(--accent); }
-.lifeos-info-tip p { position:absolute; z-index:20; top:calc(100% + .35rem); right:0; width:min(18rem, calc(100vw - 3rem)); padding:.75rem; border:1px solid var(--stroke); border-radius:.8rem; background:var(--surface-raised); color:var(--ink); box-shadow:0 12px 30px rgb(0 0 0 / .16); font-size:.75rem; line-height:1.5; }
+.lifeos-info-trigger, .lifeos-info-close { display:grid; min-width:2.5rem; min-height:2.5rem; place-items:center; border:1px solid var(--stroke); border-radius:999px; color:var(--accent); background:var(--surface); }
+.lifeos-info-dialog { width:min(28rem, calc(100vw - 2rem)); max-width:none; max-height:min(75dvh, 32rem); margin:auto; padding:0; overflow:auto; border:1px solid var(--stroke); border-radius:1.1rem; background:var(--surface-raised); color:var(--ink); box-shadow:0 18px 56px rgb(0 0 0 / .28); }
+.lifeos-info-dialog::backdrop { background:rgb(0 0 0 / .48); }
+.lifeos-info-dialog-content { padding:1.1rem; }
+.lifeos-info-trigger:focus-visible, .lifeos-info-close:focus-visible, .lifeos-info-dialog :focus-visible { outline:2px solid var(--focus-color); outline-offset:3px; }
 .plan-filter-details { border:1px solid var(--stroke); border-radius:.85rem; padding:0 .75rem; background:var(--surface); }
 .plan-filter-details > summary { display:flex; min-height:2.75rem; align-items:center; justify-content:space-between; color:var(--ink-secondary); font-size:.8rem; font-weight:600; cursor:pointer; list-style:none; }
 .plan-filter-details > summary::-webkit-details-marker { display:none; }

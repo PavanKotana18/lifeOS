@@ -39,7 +39,9 @@ const home = renderToStaticMarkup(React.createElement(MoneyHome, homeProps));
 assert.equal((home.match(/data-testid="money-add-transaction"/g) || []).length, 1, 'Money has one clear primary transaction entry point');
 assert.match(home, /Choose income or expense/, 'the primary transaction entry point names its available records');
 assert.match(home, /Income minus expenses/);
-assert.match(home, /Posted activity only\. Planned bills and savings targets are separate; this is not an account balance\./);
+assert.match(home, /Posted activity for this month; not an account balance\./);
+assert.match(home, /aria-label="About Net cash flow" aria-haspopup="dialog" aria-expanded="false"/,
+  'the cash-flow explanation stays hidden behind its contextual info control');
 assert.match(home, /Recorded cash flow: income \$500\.00; expenses \$120\.00/);
 assert.match(home, /Showing 3 of 4 accounts\./, 'the summary makes omitted accounts discoverable');
 assert.match(home, /Wallet: \$80\.00/, 'account amount is accessible with its account name');

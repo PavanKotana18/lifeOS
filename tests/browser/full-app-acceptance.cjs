@@ -209,10 +209,10 @@ async function main() {
     await journey('first launch and safe browsing', async () => {
       await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success`, { waitUntil: 'networkidle' });
       await page.locator('input[autocomplete="nickname"]').fill('Synthetic acceptance user');
-      await clickButton('Continue');
+      await clickButton('Open LifeOS');
       await page.getByTestId('today-dashboard').waitFor();
       assert.equal(await page.getByRole('button', { name: /notification/i }).count(), 0,
-        'welcome does not request or expose notification permission');
+        'the browser synthetic plugin does not expose native notification permission controls');
       const storage = await page.evaluate(async () => {
         const db = await import('/src/db.ts');
         return { active: db.isEncryptedStorageActivated(),
@@ -289,6 +289,21 @@ async function main() {
       assert.deepEqual(budgetState, ['100000'], 'budget saves exact monthly minor units');
       await capture('money-budget-populated-390');
       await clickButton('Money overview');
+      const netCashflowInfo = page.locator('button[aria-label="About Net cash flow"]:visible').last();
+      await netCashflowInfo.waitFor();
+      const infoDialog = page.locator(await netCashflowInfo.evaluate(button => `#${CSS.escape(button.getAttribute('aria-controls'))}`));
+      assert.equal(await infoDialog.evaluate(element => element.open), false, 'contextual information starts closed');
+      assert.equal(await page.getByText('This is posted income minus posted expenses for the selected month.', { exact: false }).isVisible().catch(() => false), false,
+        'the full explanation is hidden from the default screen');
+      await capture('info-net-cashflow-hidden-390');
+      await netCashflowInfo.click();
+      await infoDialog.waitFor({ state: 'visible' });
+      await page.getByText('This is posted income minus posted expenses for the selected month.', { exact: false }).waitFor();
+      await capture('info-net-cashflow-open-390');
+      await page.keyboard.press('Escape');
+      await infoDialog.waitFor({ state: 'hidden' });
+      assert.equal(await netCashflowInfo.evaluate(element => document.activeElement === element), true,
+        'dismissal restores focus to the information control');
       await page.getByTestId('money-home').getByRole('button', { name: /^Analytics/ }).click();
       await page.getByRole('heading', { name: 'Financial insights' }).waitFor();
       await page.getByText(/Posted expenses/).waitFor();

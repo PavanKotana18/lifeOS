@@ -3,6 +3,7 @@ import {
   ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import { formatMinorUnits } from '../services/financeCore';
+import InfoTip from './InfoTip';
 
 type FinanceAnalytics = ReturnType<typeof import('../services/financeAnalytics').buildFinanceAnalytics>;
 
@@ -31,18 +32,18 @@ export default function FinanceCharts({
   return (
     <>
       <section className="lifeos-panel rounded-2xl border p-4">
-        <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
             <h4 className="text-sm font-semibold">Income & expenses</h4>
             <p className="text-xs text-secondary">Posted monthly totals · planned estimates stay separate</p>
           </div>
-          <label className="shrink-0 text-[11px] text-secondary">Chart range<select aria-label="Chart range" value={range}
+          <div className="flex items-center gap-2"><InfoTip label="Posted and planned amounts">This chart includes saved income and expenses. Planned estimates stay separate until you confirm and record an occurrence.</InfoTip><label className="shrink-0 text-[11px] text-secondary">Chart range<select aria-label="Chart range" value={range}
             onChange={event => onRangeChange(Number(event.target.value) as 3 | 6 | 12)}
             className="lifeos-input min-h-11 rounded-lg px-3 py-2 text-xs">
             <option value={3}>3 months</option>
             <option value={6}>6 months</option>
             <option value={12}>12 months</option>
-          </select></label>
+          </select></label></div>
         </div>
         <p className="sr-only">Monthly chart data in posted {analytics.currencyCode}: {analytics.periodRows.map(row => `${row.month}: ${row.hasRecords ? `income ${row.incomeMinor === null ? formatMoney(row.income) : formatMinorUnits(BigInt(row.incomeMinor), analytics.currencyCode, locale)}, expenses ${row.expensesMinor === null ? formatMoney(row.expenses) : formatMinorUnits(BigInt(row.expensesMinor), analytics.currencyCode, locale)}` : 'no saved records'}`).join('; ')}. Planned amounts are excluded.</p>
         {analytics.periodRows.some(row => row.hasRecords) ? (

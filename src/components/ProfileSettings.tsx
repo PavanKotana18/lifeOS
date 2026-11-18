@@ -47,7 +47,7 @@ export function ProfileHome({ name, initial, onNameChange, onOpen, developerAllo
     <ProfileIdentityCard name={name} initial={initial} onChange={onNameChange} />
     <nav aria-label="Profile settings" className="grid gap-2">
       {profileLinks.map(({ section, title, detail, Icon }) => <ProfileNavigationRow key={section} title={title} detail={detail} icon={Icon} onClick={() => onOpen(section)} />)}
-      {developerAllowed && <ProfileNavigationRow title="Developer / Preview" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} />}
+      {developerAllowed && <ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} />}
     </nav>
     <p className="px-1 text-xs leading-5 text-muted">LifeOS works offline. Your personal records are stored in encrypted local app storage.</p>
   </div>;

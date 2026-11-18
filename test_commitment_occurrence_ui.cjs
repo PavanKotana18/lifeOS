@@ -33,7 +33,9 @@ assert.match(markup, /aria-label="Record occurrence for Synthetic income"/);
 assert.match(markup, /disabled=""[^>]*aria-label="Record occurrence for Paused plan"/);
 assert.match(markup, /disabled=""[^>]*aria-label="Record occurrence for Future plan"/);
 assert.match(markup, /income - monthly/);
-assert.match(markup, /No automatic posting or bank payment occurs/);
+assert.match(markup, /Nothing is posted until you confirm an occurrence/);
+assert.match(markup, /aria-label="About Recurring Money confirmation"/);
+assert.match(markup, /A plan creates no transaction automatically/);
 (async () => {
   for (const consent of [false, true]) {
     const states = [], errors = [], writes = [], confirmations = [];

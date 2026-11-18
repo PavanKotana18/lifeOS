@@ -1,0 +1,253 @@
+
+name: Build LifeOS Android APK
+
+on:
+  push:
+    paths-ignore: [tests/browser/**]
+    branches:
+      - main
+      - develop
+      - testing
+      - "feature/**"
+      - "bugfix/**"
+      - "release/**"
+      - "hotfix/**"
+      - "fix/**"
+      - "integration/lifeos-local-consolidation-20261106"
+      - "integration/lifeos-ui2-candidate-20261108"
+  pull_request:
+    branches: [main, develop, testing, fix/lifeos-security-data-sprint1-20261106, integration/lifeos-local-consolidation-20261106]
+  workflow_dispatch:
+    inputs:
+      build_release:
+        description: Build a signed Release artifact after explicit approval
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Automated checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Run Automated LifeOS Verification Tests
+        run: npm test
+
+      # Known acceptance failures stay visible without making the existing gate red.
+      # The runner still fails for harness/dependency errors and unexpected passes.
+      - name: Observe known production defects (not release acceptance)
+        run: npm run test:regressions -- --json test-results/wp0-known-defects.json
+
+      - name: Upload WP0 regression observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: WP0-known-defect-observations
+          path: test-results/wp0-known-defects.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Run Sentinel QA and Security Verification Suite
+        run: npm run test:sentinel
+
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+  android-build:
+    name: Android debug build
+    needs: checks
+    if: >-
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/testing' || github.ref == 'refs/heads/integration/lifeos-local-consolidation-20261106' || github.ref == 'refs/heads/integration/lifeos-ui2-candidate-20261108' || startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/bugfix/') || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/fix/'))) ||
+      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop' || github.base_ref == 'testing' || github.base_ref == 'fix/lifeos-security-data-sprint1-20261106' || github.base_ref == 'integration/lifeos-local-consolidation-20261106')) ||
+      (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/testing' || github.ref == 'refs/heads/integration/lifeos-local-consolidation-20261106' || github.ref == 'refs/heads/integration/lifeos-ui2-candidate-20261108' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/bugfix/')))
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android SDK components
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::Android sdkmanager not found."
+            exit 1
+          fi
+          # sdkmanager may finish successfully before `yes` does.
+          # Use sdkmanager's exit status, not yes's expected SIGPIPE.
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          set -o pipefail
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      - name: Install checksum-verified pinned Gradle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/setup-pinned-gradle.sh
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Build Debug APK
+        run: gradle -p android :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+
+      - name: Report APK signing identity
+        run: gradle -p android :app:signingReport
+
+      - name: Verify standard debug APK signature and package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
+          "$APKSIGNER" verify "$APK"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
+          [[ -n "$ACTUAL" ]] || { echo "::error::Debug APK has no signer certificate."; exit 1; }
+          BADGING="$("$AAPT" dump badging "$APK")"
+          grep -q "package: name='com.lifeos.personal.debug'" <<< "$BADGING" || { echo "::error::Unexpected LifeOS applicationId in debug APK."; exit 1; }
+          VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
+          VERSION_NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || { echo "::error::Debug APK has an invalid versionCode."; exit 1; }
+          {
+            echo "### Debug APK identity"
+            echo "- SHA-256 signer: $ACTUAL (standard Android debug key)"
+            echo "- applicationId: com.lifeos.personal.debug"
+            echo "- versionCode: $VERSION_CODE"
+            echo "- versionName: $VERSION_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeOS-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Android instrumentation APK (not execution evidence)
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeOS-AndroidTest-APK
+          path: android/app/build/outputs/apk/androidTest/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify merged notification manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="$(find android/app/build/intermediates -type f -name AndroidManifest.xml | grep -E '/merged_manifest(s)?/' | head -n 1 || true)"
+          test -n "$MANIFEST" || { echo "Merged manifest not found"; exit 1; }
+          grep -q 'LocalNotificationRestoreReceiver' "$MANIFEST"
+          grep -q 'TimedNotificationPublisher' "$MANIFEST"
+          grep -q 'RECEIVE_BOOT_COMPLETED' "$MANIFEST"
+          grep -q 'POST_NOTIFICATIONS' "$MANIFEST"
+          echo "PASS: notification receivers and permissions are merged"
+
+      - name: Check Android release signing secrets
+        id: signing
+        if: github.event_name == 'workflow_dispatch' && inputs.build_release == true
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing secrets are not fully configured; skipping signed release."
+          fi
+
+      - name: Decode Android release keystore
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="$RUNNER_TEMP/lifeos-release.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Validate Android release keystore
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/lifeos-release.keystore
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -s "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "PASS: keystore is readable and configured alias exists"
+
+      - name: Build signed release APK
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: gradle -p android assembleRelease --stacktrace
+
+      - name: Upload signed release APK
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: LifeOS-signed-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30

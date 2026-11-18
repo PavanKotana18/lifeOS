@@ -24,9 +24,9 @@ assert.match(service, /setAndAllowWhileIdle|approximate/, 'denied exact-alarm ac
 assert.match(service, /allowWhileIdle: plan\.kind === 'taskReminders'/, 'only explicit task reminders consume the per-app idle-aware alarm quota');
 assert.match(service, /lifeos\.notificationLifecycle\.v1/, 'per-reminder request/acceptance/observation evidence survives pending-row removal');
 assert.match(service, /reminderLifecycle: readReminderLifecycleSummary\(\)/, 'diagnostics expose a bounded content-free reminder lifecycle');
-assert.match(app, /developerPreviewEnabled && notificationDiagnostics\.reminderLifecycle\.length/, 'the delivery timeline is rendered only in Developer/Preview');
+assert.match(app, /developerToolsEnabled && notificationDiagnostics\.reminderLifecycle\.length/, 'the delivery timeline is limited to developer diagnostics');
 assert.match(app, /Android posted:/, 'the timeline displays the OS post timestamp separately from schedule acceptance');
-assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationDeliveryDiagnosticsPlugin.java', 'utf8'), /getPostTime\(\)/, 'the Preview timeline uses Android post time for actual OS delivery evidence');
+assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationDeliveryDiagnosticsPlugin.java', 'utf8'), /getPostTime\(\)/, 'the reminder timeline uses Android post time for actual OS delivery evidence');
 assert.match(service, /delivery-unconfirmed/, 'an elapsed reminder without active delivery evidence remains unconfirmed');
 assert.match(service, /localNotificationReceived/, 'native plugin receipt events are recorded separately from schedule acceptance');
 assert.match(service, /taskSyncQueue\.then\(run, run\)/, 'task schedule updates are serialized');
@@ -35,12 +35,14 @@ assert.match(service, /visibility: 0/, 'new channel requests private lock-screen
 assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
 assert.match(manifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
 assert.match(app, /const exactAlarm = await NotificationService\.checkExactAlarmPermission\(\);[\s\S]*?status: exactAlarm === 'granted' \? 'granted' : 'approximate'/, 'exact alarm access is reported as precision, not a hard delivery prerequisite');
-assert.doesNotMatch(permissionFlow, /requestPermission\(\)/, 'welcome completion never prompts for notification permission');
+assert.match(permissionFlow, /requestNotificationsAfterWelcome\(\)/, 'welcome completion starts the one-time post-welcome Android permission request');
+assert.match(app, /const requestNotificationsAfterWelcome = \(\) =>[\s\S]*?notificationPermissionRequested'[\s\S]*?NotificationService\.requestPermission\(\)[\s\S]*?if \(saved\) return;[\s\S]*?saveNotificationSelection\(defaultsAfterConsent, true\)/, 'permission is requested once and category defaults are saved only after grant without replacing prior choices');
+assert.match(app, /requestExactAlarmPermission\(\)[\s\S]*?Open exact alarm access/, 'exact alarm special access is separate and user-invoked when reminder categories are active');
 assert.match(app, /const toggleNotificationCategory[\s\S]*?askNotificationPermission\(\)/, 'permission is requested when a notification category is enabled');
 assert.match(app, /const setNotificationsMaster[\s\S]*?askNotificationPermission\(\)/, 'the notification master switch is a second explicit opt-in path');
 assert.match(notificationService, /sendImmediateTestNotification/);
 assert.match(notificationService, /schedule-verification-missing:test-notification/, 'test actions distinguish scheduling acceptance from delivery');
-assert.match(service, /taskReminders: false,[\s\S]*?overdueAlerts: false/, 'notification categories default off until the user enables one');
+assert.match(service, /taskReminders: false,[\s\S]*?overdueAlerts: false/, 'notification categories stay off until Android permission is granted on a fresh install');
 assert.match(bootstrap, /'notificationPreferences'[\s\S]*?'notificationsEnabled'/, 'opt-in notification preferences remain available before the first encrypted record');
 assert.match(notificationService, /localNotificationActionPerformed/);
 assert.match(notificationService, /getInitialTapAction/);

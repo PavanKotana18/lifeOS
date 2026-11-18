@@ -54,7 +54,8 @@ const crossCurrencyCopy = buildTransferReversalConfirmation({ fromAmountMinor: '
 assert.match(crossCurrencyCopy, /₹2,49,000\.00 from Rupee account back to Travel fund; the original \$3,000\.00 value is restored/);
 const planningMarkup = renderToStaticMarkup(React.createElement(MoneyPlanning, { commitments: [], rates: [], accounts, categories: [], onAddCommitment: noop, onUpdateCommitment: noop, onDeleteCommitment: noop, onAddRate: noop, onUpdateRate: noop, onDeleteRate: noop }));
 assert.match(planningMarkup, /Planned commitments/);
-assert.match(planningMarkup, /never changes your recorded income or expenses/);
+assert.match(planningMarkup, /Nothing is posted until you confirm an occurrence/);
+assert.match(planningMarkup, /aria-label="About Recurring Money confirmation" aria-haspopup="dialog" aria-expanded="false"/);
 assert.match(planningMarkup, /Manual exchange rates/);
 assert.match(planningMarkup, /does not download rates/);
 const app = fs.readFileSync('src/App.tsx', 'utf8');

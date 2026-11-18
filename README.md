@@ -72,15 +72,15 @@ Build a debug APK:
     cd android
     gradle assembleDebug
 
-## Local verification
+## Android build types
 
-LifeOS development checks run locally. Before sharing a change, run
-`npm test`, `npm run test:sentinel`, `npx tsc --noEmit` and `npm run build`.
-GitHub Actions workflow automation is not configured in this repository.
-
-Android debug APKs are built locally with the isolated Dev signing identity.
-Keep its keystore and password values outside the repository; see
-`RELEASING.md` for the local build steps.
+Use the standard `:app:assembleDebug` variant for local development. It is
+labelled **LifeOS Debug**, uses the isolated package `com.lifeos.personal.debug`
+and the standard Android debug signing key. It does not replace existing Dev,
+Preview or production installations. Release keeps the production package
+`com.lifeos.personal` and requires the production signing identity. Release
+artifact builds are manual and require an explicit workflow dispatch choice.
+See `RELEASING.md` for the commands and release controls.
 
 ## Security
 

@@ -1,60 +1,47 @@
-import { useRef, useState, type FormEvent } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
 import { LifeOSBrand } from './LifeOSBrand';
-import type { OnboardingJourney } from '../services/onboardingJourney';
 
 interface Props {
   initialName: string;
-  initialJourney?: OnboardingJourney;
   onSaveIdentity: (name: string) => Promise<void>;
-  onSaveJourney?: (journey: OnboardingJourney) => Promise<void>;
-  onProvisionProtection: () => Promise<{ success: boolean; message?: string }>;
-  onConfirmRecovery: (label: string) => Promise<boolean>;
   onFinish: () => Promise<void>;
 }
 
-/** Welcome and identity only. Device protection is offered contextually before the first private save. */
+/** A calm, one-step welcome; security and notification choices stay contextual. */
 export default function Onboarding({ initialName, onSaveIdentity, onFinish }: Props) {
   const [name, setName] = useState(initialName);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const pending = useRef(false);
-
-  const saveName = (event: FormEvent) => {
+  const openLifeOS = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const normalized = name.trim();
-    if (!normalized || pending.current) return;
-    pending.current = true;
+    const trimmed = name.trim();
+    if (!trimmed || busy) return;
     setBusy(true);
     setMessage('');
-    void (async () => {
-      try {
-        await onSaveIdentity(normalized);
-        await onFinish();
-      } catch (error) {
-        setMessage(error instanceof Error ? error.message : 'LifeOS could not finish setup. Your records remain protected. Please retry.');
-      } finally {
-        pending.current = false;
-        setBusy(false);
-      }
-    })();
+    try {
+      await onSaveIdentity(trimmed);
+      await onFinish();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'LifeOS could not finish opening. Your information remains on this screen.');
+    } finally {
+      setBusy(false);
+    }
   };
-
-  return <main className="onboarding-root lifeos-page initial-setup" aria-label="Welcome to LifeOS">
-    <div className="initial-setup-inner">
-      <header className="initial-setup-header"><LifeOSBrand className="lifeos-onboarding-brand" markClassName="lifeos-onboarding-mark" /><span className="initial-setup-count">Welcome</span></header>
-      <section className="initial-setup-content">
-        <p className="initial-setup-eyebrow">A personal start</p>
-        <h1>Welcome. What should we call you?</h1>
-        <p className="initial-setup-description">Choose the name we’ll use to welcome you. You can change it any time.</p>
-        <form onSubmit={saveName}>
-          <label>Your name<input autoFocus autoCapitalize="words" value={name} maxLength={48} autoComplete="nickname" onChange={event => setName(event.target.value)} placeholder="Name" className="lifeos-input" /></label>
-          <button type="submit" disabled={!name.trim() || busy} className="lifeos-accent-button">{busy ? 'Opening your space…' : 'Continue'}<ArrowRight size={18} aria-hidden="true" /></button>
+  return <main className="onboarding-root lifeos-page fixed inset-0 z-[70] overflow-y-auto px-5 py-[max(1.25rem,env(safe-area-inset-top))]" aria-label="Welcome to LifeOS">
+    <div className="mx-auto flex min-h-full max-w-md flex-col justify-center py-8">
+      <div className="mb-10"><LifeOSBrand className="lifeos-onboarding-brand" markClassName="lifeos-onboarding-mark" /><p className="ml-[3.75rem] -mt-1 text-[11px] text-secondary">A little more in sync, every day</p></div>
+      <section>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-[.16em] lifeos-accent-text">A personal start</p>
+        <h1 className="text-3xl font-semibold tracking-tight">Welcome. What should we call you?</h1>
+        <p className="mt-3 text-sm leading-6 text-secondary">Choose a name for your greetings. You can explore LifeOS before setting up reminders or device protection.</p>
+        <form onSubmit={event => { void openLifeOS(event); }}>
+          <label className="mt-8 block text-xs font-medium text-secondary">Your name
+            <input autoCapitalize="words" value={name} maxLength={48} autoComplete="nickname" onChange={event => setName(event.target.value)} placeholder="Name" className="lifeos-input mt-2 min-h-12 w-full rounded-xl px-4 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--focus-color)]" />
+          </label>
+          {message && <p role="alert" className="mt-3 text-sm text-[var(--danger)]">{message}</p>}
+          <button type="submit" disabled={!name.trim() || busy} className="lifeos-accent-button mt-5 min-h-12 w-full rounded-xl px-4 text-sm font-semibold disabled:opacity-50">{busy ? 'Opening LifeOS…' : 'Open LifeOS'}</button>
         </form>
-        <p className="mt-4 text-xs leading-5 text-secondary">Your records are encrypted before the first private save. You can set up recovery later in Settings.</p>
-        {message && <p role="alert" className="initial-setup-error">{message}</p>}
       </section>
-      <footer className="initial-setup-footer">Your space stays on this device.</footer>
     </div>
   </main>;
 }

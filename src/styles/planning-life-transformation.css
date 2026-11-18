@@ -51,5 +51,5 @@
 .life-combined-empty > div { display: flex; flex-wrap: wrap; gap: .6rem; }
 .life-combined-empty > div button { min-height: 44px; padding: .55rem .85rem; border-radius: .8rem; }
 .plan-workspace button:focus-visible, .life-workspace button:focus-visible, .plan-workspace input:focus-visible, .plan-workspace select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-@media (min-width: 760px) { .life-workspace-sections { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+@media (min-width: 880px) { .life-workspace-sections { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
 @media (max-width: 360px) { .plan-view-switch button { font-size: .7rem; } .plan-search-controls { grid-template-columns: 1fr; } }

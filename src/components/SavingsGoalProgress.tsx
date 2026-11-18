@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowRight, Check, Pencil, Trash2 } from 'lucide-react';
 import type { SavingsContribution, SavingsGoal } from '../types';
 import { decimalToMinorUnits, formatMinorUnits } from '../services/financeCore';
+import InfoTip from './InfoTip';
 
 type Props = {
   goal: SavingsGoal;
@@ -47,7 +48,7 @@ export default function SavingsGoalProgress({ goal, formatMoney, locale, formatD
       <span className="savings-goal-percent tabular-nums">{percentLabel}</span>
     </div>
     <div className="savings-goal-content">
-      <div className="savings-goal-heading"><div className="min-w-0"><p className="type-eyebrow">{goal.category || 'PERSONAL GOAL'}</p><h4 id={`savings-title-${goal.id}`} className="type-section-title truncate">{goal.title}</h4></div><span className="savings-goal-target-date">By {formatDate(goal.targetDate)}</span></div>
+      <div className="savings-goal-heading"><div className="min-w-0"><p className="type-eyebrow">{goal.category || 'PERSONAL GOAL'}</p><h4 id={`savings-title-${goal.id}`} className="type-section-title truncate">{goal.title}</h4></div><div className="flex items-center gap-2"><InfoTip label="Savings progress">Progress compares saved contributions with the target in this goal’s currency. The visual progress indicator is capped at 100%.</InfoTip><span className="savings-goal-target-date">By {formatDate(goal.targetDate)}</span></div></div>
       <p className="savings-goal-status" aria-live="polite">{status}</p>
       <p className="savings-goal-target">Target · {targetLabel}</p>
       <div className="savings-goal-actions">

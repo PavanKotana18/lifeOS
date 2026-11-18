@@ -15,8 +15,15 @@ function bashExecutable() {
 }
 const BASH = bashExecutable();
 const pathToAndroidTests = path.resolve(__dirname, '../android/app/src/androidTest/java/com/lifeos/personal');
-assert.equal(fs.existsSync(path.resolve(__dirname, '../.github/workflows')), false,
-  'local-only development policy keeps GitHub Actions workflow automation out of the repository');
+const workflowDirectory = path.resolve(__dirname, '../.github/workflows');
+assert.ok(fs.existsSync(workflowDirectory), 'the standard repository build and QA workflows are restored');
+const buildWorkflow = fs.readFileSync(path.join(workflowDirectory, 'build-apk.yml'), 'utf8');
+assert.match(buildWorkflow, /:app:assembleDebug/, 'ordinary Android CI builds the standard Debug variant');
+assert.match(buildWorkflow, /build_release:[\s\S]*?default: false/, 'Release artifact builds require an explicit manual workflow choice');
+assert.doesNotMatch(buildWorkflow, /Require and configure persistent debug signing|LIFEOS_DEBUG_KEYSTORE/,
+  'the isolated Debug variant uses standard Android debug signing');
+assert.equal(fs.existsSync(path.resolve(__dirname, '../scripts/build-preview-apk.ps1')), false,
+  'the custom Preview APK build path remains removed');
 const declaredTests = fs.readdirSync(pathToAndroidTests)
   .filter(file => file.endsWith('.java'))
   .flatMap(file => {
