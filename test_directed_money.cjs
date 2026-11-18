@@ -37,9 +37,8 @@ const homeProps = {
 };
 const home = renderToStaticMarkup(React.createElement(MoneyHome, homeProps));
 assert.equal((home.match(/data-testid="money-add-transaction"/g) || []).length, 1, 'Money has one clear primary transaction entry point');
-assert.match(home, /Choose income or expense/, 'the primary transaction entry point names its available records');
-assert.match(home, /Income minus expenses/);
-assert.match(home, /Posted activity for this month; not an account balance\./);
+assert.match(home, /Add transaction/, 'the primary transaction entry point names its available records');
+assert.match(home, /Net cash flow/);
 assert.match(home, /aria-label="About Net cash flow" aria-haspopup="dialog" aria-expanded="false"/,
   'the cash-flow explanation stays hidden behind its contextual info control');
 assert.match(home, /Recorded cash flow: income \$500\.00; expenses \$120\.00/);
@@ -47,13 +46,13 @@ assert.match(home, /Showing 3 of 4 accounts\./, 'the summary makes omitted accou
 assert.match(home, /Wallet: \$80\.00/, 'account amount is accessible with its account name');
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="Edit Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
-assert.match(home, /Monthly details <span>Accounts, savings and spending patterns<\/span>/);
-assert.match(home, /Financial Planning/);
+assert.match(home, /Accounts, budgets and plans/);
+assert.match(home, /Upcoming bills/);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],
 }));
-assert.match(emptyHome, /No activity for this period yet\. Add an expense or income to start tracking\./);
+assert.match(emptyHome, /No transactions this month/);
 assert.doesNotMatch(emptyHome, /money-account-nudge/, 'optional accounts do not look required before a first transaction');
 
 const accounts = [
@@ -116,7 +115,7 @@ assert.match(accountsSource, /Exchange rate \(received for 1 sent\)/);
 assert.match(accountsSource, /rate of 2 means 10 sent equals 20 received/);
 assert.match(accountsSource, /openingBalanceMinor = decimalToMinorUnits\(accountDraft\.opening/);
 assert.match(accountsSource, /fromAmountMinor = decimalToMinorUnits\(transferDraft\.fromAmount/);
-assert.match(homeSource, /formatMinorUnits\(BigInt\(account\.balanceMinor\), account\.currencyCode\)/);
+assert.match(homeSource, /formatMinorUnits\(BigInt\(account\.balanceMinor\), account\.currencyCode, locale\)/);
 console.log('DIRECTED MONEY: dashboard hierarchy, account clarity, readable amounts, optional accounts, transfer guidance and unchanged accounting callback paths passed.');
 
 for(const [currency,min] of [['JPY','1'],['USD','0.01'],['KWD','0.001']]) {

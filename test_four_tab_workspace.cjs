@@ -21,5 +21,5 @@ assert.equal(selectPlanTasks(tasks,'2026-11-17',now,'unscheduled','','all').leng
 assert.deepEqual(selectPlanTasks(tasks,'2026-11-17',now,'all','FINISHED','completed').map(x=>x.id),['d']);
 const noop=()=>{};const html=renderToStaticMarkup(React.createElement(Plan,{tasks,today:'2026-11-17',now,onCreateTask:noop,onQuickAdd:async()=>{},onToggleTask:noop,onOpenTask:noop,onNavigatePlanner:noop,onOpenGoals:noop,onSelectRange:noop}));
 for(const text of ['Task views','Upcoming','Unscheduled','Search tasks','Quick task','Reminder','Later'])if(text!=='Reminder')assert.ok(html.includes(text),text);
-assert.ok(!html.includes('Finished'),'completed records remain accessible through explicit status filter');
+assert.ok(html.includes('Finished'),'All includes completed records by default');
 console.log('PASS four-tab workspace: real date/status/search selectors, quick capture and rendered controls');

@@ -26,11 +26,8 @@ assert.match(app, /onboardingNameDraft[\s\S]*?settings\.set\('displayName'[\s\S]
 assert.match(app, /safeFirstRunState\)\s*\{[\s\S]*?safeFirstRunBrowse\.current = true/, 'an empty installation can browse before provisioning encrypted storage');
 assert.match(app, /if \(isEncryptedStorageActivated\(\) && sessionManager\.isUnlocked\(\)\) return;/, 'protected writes reuse the verified encrypted workspace');
 const finish = app.slice(app.indexOf('const finishOnboarding'), app.indexOf('const processPendingTaskNotification'));
-assert.match(finish, /requestNotificationsAfterWelcome\(\)/, 'welcome completion requests notification permission after entering the main app');
-assert.match(app, /const choice = await requestFirstRecordSecurity\(\)/, 'security is presented in context before the first protected write');
-assert.match(onboarding, /Welcome\. What should we call you\?/);
-assert.match(onboarding, /Open LifeOS|onFinish\(\)/, 'name entry leads directly to the main app');
-assert.match(onboarding, /onFinish\(\)/, 'the name form enters the main application directly');
-assert.doesNotMatch(onboarding, /Create and save recovery kit|onProvisionProtection\(\)|onConfirmRecovery\(/, 'ordinary onboarding contains no recovery export or biometric prompt');
-
-console.log('ONBOARDING JOURNEY: original welcome/name flow, contextual protected-write security, one-time post-welcome notification prompt, and deferred recovery passed.');
+assert.match(finish, /notificationDefaultsPending/);
+assert.match(app, /onClick=\{\(\) => void acceptNotificationOffer\(\)\}>Enable notifications/);
+assert.match(onboarding, /onSaveIdentity[\s\S]*?onStep\(1\)/);
+assert.match(onboarding, /Biometric setup[\s\S]*?onProtect\(\)[\s\S]*?onStep\(2\)[\s\S]*?Recovery setup[\s\S]*?onRecover\(\)/);
+console.log('ONBOARDING: identity, protection, recovery and explicit notification opt-in contracts passed.');

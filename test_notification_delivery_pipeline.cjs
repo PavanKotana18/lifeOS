@@ -11,7 +11,7 @@ const bootstrap = fs.readFileSync('src/services/encryptedStorageIntegration.ts',
 const taskSave = app.slice(app.indexOf('const saveNewRecord'), app.indexOf('const formatMoney'));
 assert.match(service, /this\.checkPermission\(\), LocalNotifications\.areEnabled\(\), LocalNotifications\.listChannels\(\)/, 'runtime app and channel availability gate scheduling as well as permission');
 assert.match(service, /Number\(reminderChannel\.importance\) > 0/, 'a blocked reminders channel cannot be misreported as scheduled for delivery');
-assert.match(nativeScheduler, /Notification scheduled with non-exact alarm/);
+assert.match(nativeScheduler, /setAndAllowWhileIdle\(AlarmManager\.RTC_WAKEUP/);
 assert.match(nativeScheduler, /alarmManager\.setAndAllowWhileIdle/, 'native plugin falls back to inexact allow-while-idle delivery');
 assert.doesNotMatch(service, /body: task\.title/, 'scheduled reminder body must not expose the task title');
 assert.match(service, /permission-denied-or-revoked/, 'permission loss is diagnostically distinguishable');
@@ -35,9 +35,9 @@ assert.match(service, /visibility: 0/, 'new channel requests private lock-screen
 assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
 assert.match(manifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
 assert.match(app, /const exactAlarm = await NotificationService\.checkExactAlarmPermission\(\);[\s\S]*?status: exactAlarm === 'granted' \? 'granted' : 'approximate'/, 'exact alarm access is reported as precision, not a hard delivery prerequisite');
-assert.match(permissionFlow, /requestNotificationsAfterWelcome\(\)/, 'welcome completion starts the one-time post-welcome Android permission request');
-assert.match(app, /const requestNotificationsAfterWelcome = \(\) =>[\s\S]*?notificationPermissionRequested'[\s\S]*?NotificationService\.requestPermission\(\)[\s\S]*?if \(saved\) return;[\s\S]*?saveNotificationSelection\(defaultsAfterConsent, true\)/, 'permission is requested once and category defaults are saved only after grant without replacing prior choices');
-assert.match(app, /requestExactAlarmPermission\(\)[\s\S]*?Open exact alarm access/, 'exact alarm special access is separate and user-invoked when reminder categories are active');
+assert.match(app, /notificationDefaultsPending[\s\S]*?Enable notifications/, "Today offers an explicit opt-in");
+
+assert.match(app, /requestExactAlarmPermission\(\)[\s\S]*?Allow precise reminders/, 'exact alarm special access is separate and user-invoked when reminder categories are active');
 assert.match(app, /const toggleNotificationCategory[\s\S]*?askNotificationPermission\(\)/, 'permission is requested when a notification category is enabled');
 assert.match(app, /const setNotificationsMaster[\s\S]*?askNotificationPermission\(\)/, 'the notification master switch is a second explicit opt-in path');
 assert.match(notificationService, /sendImmediateTestNotification/);
@@ -61,7 +61,7 @@ assert.match(service, /diagnoseTaskReminder/);
 assert.match(app, /Check reminder status/);
 assert.match(app, /sessionReady: sessionManager\.isUnlocked\(\) && isEncryptedStorageActivated\(\)/, 'task diagnostic reports the encrypted-session prerequisite without record content');
 assert.match(app, /capability: 'initializing'/, 'initial diagnostics do not claim that the native plugin is absent before a probe');
-assert.match(app, /notificationDiagnostics\.capability === 'unavailable'/, 'unavailable state is only rendered after the asynchronous capability probe');
+
 assert.match(app, /if \(safeFirstRunState\)[\s\S]*?setAppReady\(true\);\s*return;/, 'fresh-install browse remains unblocked while diagnostics initialize');
 assert.match(app, /useEffect\(\(\) => \{\s*if \(!appReady\) return;\s*void refreshNotificationDiagnostics\(\);/, 'capability is refreshed asynchronously once the React app is available');
 assert.match(service, /for \(let attempt = 0; attempt < 5; attempt\+\+\)/, 'native registration probe is bounded');

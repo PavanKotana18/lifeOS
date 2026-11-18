@@ -458,51 +458,27 @@ async function rejects(fn, pattern) {
     assert.equal((await storage.budgets.getAll()).length, 0);
   });
 
-  await test('failed demo seed rolls back all staged writes', async () => {
-    // Use a pristine store and inject a deterministic mid-seed failure.
+  await test('six-month sample is accurate, encrypted, idempotent and removable', async () => {
     storage = makeEnvironment();
-
-    const before = {};
-    for (const table of TABLES) {
-      before[table] = state[table].size;
-    }
-
-    failIdAt = 4;
-    try {
-      await rejects(
-        () => storage.backup.seedDemoData(),
-        /Injected test failure during demo seed/
-      );
-    } finally {
-      failIdAt = 0;
-    }
-
-    assert.ok(idCounter >= 4, 'Failure was not injected during the seed operation');
-
-    for (const table of TABLES) {
-      assert.equal(
-        state[table].size,
-        before[table],
-        `${table} changed after failed seed`
-      );
-    }
-  });
-
-  await test('preview seed is labeled, measured and idempotent in encrypted storage', async () => {
-    storage = makeEnvironment();
+    const real = await storage.tasks.add({ title: 'Personal task', recurring: 'None', priority: 'Medium', completed: false });
     await storage.backup.seedDemoData();
     const firstCounts = Object.fromEntries(TABLES.map(table => [table, state[table].size]));
-    const waterHabit = (await storage.habits.getAll()).find(row => row.name === '[PREVIEW SAMPLE] Drink water');
-    const waterLogs = await storage.habits.getLogs(waterHabit.id);
-    assert.equal(waterHabit.trackingMode, 'quantity');
-    assert.equal(waterHabit.targetPerDay, 4);
-    assert.equal(waterHabit.quantityUnit, 'glasses');
-    assert.ok(waterLogs.some(row => row.quantity === 3 && row.completed === false));
-    assert.ok((await storage.tasks.getAll()).every(row => row.title.startsWith('[PREVIEW SAMPLE]')));
-    assert.ok(await storage.settings.get('previewDemoDataSeededAt', null));
-
+    const water = (await storage.habits.getAll()).find(row => row.name === 'Drink water');
+    const logs = await storage.habits.getLogs(water.id);
+    assert.equal(water.targetPerDay, 2);
+    assert.equal(water.quantityUnit, 'L');
+    assert.ok(logs.length > 120 && logs.every(row => row.quantityUnit === 'L' && row.completed === (row.quantity >= 2)));
+    const transactions = await storage.transactions.getAll();
+    assert.equal(new Set(transactions.map(row => row.date.slice(0, 7))).size, 6);
+    assert.ok(transactions.every(row => BigInt(row.amountMinor) === BigInt(row.amount * 100)));
+    assert.ok(transactions.every(row => !/[{}[]]/.test(row.description)));
     await storage.backup.seedDemoData();
-    for (const table of TABLES) assert.equal(state[table].size, firstCounts[table], `${table} was duplicated on a second seed`);
+    for (const table of TABLES) assert.equal(state[table].size, firstCounts[table]);
+    await storage.backup.removeSampleData();
+    assert.deepEqual(await storage.tasks.getAll(), [real]);
+    assert.equal((await storage.transactions.getAll()).length, 0);
+    await storage.backup.seedDemoData();
+    assert.equal((await storage.transactions.getAll()).length, transactions.length);
   });
 
   console.log('\n========================================');

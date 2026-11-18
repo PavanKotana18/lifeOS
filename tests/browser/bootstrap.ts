@@ -75,4 +75,16 @@ if (new URLSearchParams(location.search).has('onboarding-auth')) {
     return { success: true, message: '' };
   };
 }
+if (new URLSearchParams(location.search).has('onboarding-auth')) {
+  const { NotificationService } = await import('../../src/services/notificationService');
+  let granted = sessionStorage.getItem('qa-notification-consent') === 'true';
+  NotificationService.isSupported = () => true;
+  NotificationService.checkPermission = async () => granted ? 'granted' : 'prompt';
+  NotificationService.requestPermission = async () => {
+    sessionStorage.setItem('qa-notification-consent', 'true');
+    granted = true;
+    return 'granted';
+  };
+  NotificationService.checkExactAlarmPermission = async () => 'denied';
+}
 await import('../../src/main');

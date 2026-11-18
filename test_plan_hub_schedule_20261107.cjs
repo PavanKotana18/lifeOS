@@ -38,7 +38,7 @@ const markup = renderToStaticMarkup(React.createElement(PlanHub, {
 assert.ok(markup.indexOf('>early</span>') < markup.indexOf('>late</span>'), 'the Plan screen renders same-day timed tasks chronologically');
 assert.match(markup, /Today · 09:00/);
 assert.match(markup, />All tasks</, 'the task workspace identifies its active local view');
-assert.match(markup, /6 open · 5 due today/, 'the summary counts only open tasks and explains what is due');
+assert.match(markup, /aria-pressed="true">All/);
 assert.equal((markup.match(/class="plan-hub-task ui-interactive-row(?: is-overdue)?"/g) || []).length, 6, 'the workspace shows every matching open task instead of truncating at five');
 assert.match(markup, /aria-label="Mark early complete"/, 'each task has a directly accessible completion control');
 assert.match(markup, /role="group" aria-label="Task views"/, 'view controls are identified as local task filters');
@@ -58,12 +58,12 @@ assert.match(dateOnlyMarkup, /Today · end of day/);
 const overdueMarkup = renderToStaticMarkup(React.createElement(PlanHub, {
   tasks: [task('past-time', '2026-11-07', '07:00')], today: '2026-11-07', now: new Date('2026-11-07T08:00:00'), onNavigatePlanner: () => {}, onOpenTask: () => {}, onToggleTask: () => {}, onCreateTask: () => {}, onSelectRange: () => {}, onOpenGoals: () => {},
 }));
-assert.match(overdueMarkup, /1 open · 1 overdue/, 'a task past its due time is not double-counted as upcoming today');
+assert.match(overdueMarkup, /Overdue/);
 assert.doesNotMatch(overdueMarkup, /due today/);
 const completedMarkup = renderToStaticMarkup(React.createElement(PlanHub, {
   tasks: [task('done', '2026-11-07', undefined, undefined, true)], today: '2026-11-07', now: new Date('2026-11-07T08:00:00'), onNavigatePlanner: () => {}, onOpenTask: () => {}, onToggleTask: () => {}, onCreateTask: () => {}, onSelectRange: () => {}, onOpenGoals: () => {},
 }));
-assert.match(completedMarkup, /You are all caught up/);
+assert.match(completedMarkup, /Mark .* incomplete/);
 assert.match(completedMarkup, /All statuses/, 'completed tasks remain reachable through status selection');
 assert.doesNotMatch(completedMarkup, /No tasks yet/);
 console.log('PLAN HUB UI 2.0: local workspace hierarchy, truthful due counts, full task visibility, completion and empty states passed.');

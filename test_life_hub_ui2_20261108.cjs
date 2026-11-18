@@ -23,7 +23,7 @@ const props = {
   onCheckIn: noop, onCreateHabit: noop, onCreateGoal: noop, onHabits: noop, onGoals: noop, onInsights: noop,
 };
 const markup = renderToStaticMarkup(React.createElement(LifeHub, props));
-assert.match(markup, /Habits are things you repeat\. Goals are outcomes you build toward\./);
+assert.doesNotMatch(markup, /Habits are things you repeat\. Goals are outcomes you build toward\./);
 assert.match(markup, /aria-label="Routine progress"/);
 assert.match(markup, /1 of 2 check-ins/);
 assert.match(markup, /4 of 7 routines/);
@@ -35,7 +35,7 @@ assert.match(markup, /Finish a course/);
 assert.match(markup, /45%/);
 assert.match(markup, /role="progressbar" aria-label="Finish a course progress"/);
 assert.match(markup, /1 of 3 milestones/);
-assert.match(markup, /Life insights/);
+assert.match(markup, /Explore Life/);
 assert.match(markup, /View all habits/);
 assert.doesNotMatch(markup, /lazy|failure|behind|missed/i, 'Life copy stays considerate and nonjudgmental');
 

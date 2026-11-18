@@ -42,7 +42,7 @@ assert.doesNotMatch(viewport, /user-scalable\s*=\s*no|max(?:imum)?-scale\s*=\s*1
 for (const [code, locale, symbol] of [['INR', 'en-IN', '₹'], ['USD', 'en-US', '$'], ['EUR', 'de-DE', '€'], ['GBP', 'en-GB', '£'], ['JPY', 'en-US', '¥']]) assert.ok(formatCurrency(1234567.89, code, locale).includes(symbol), `${code} currency symbol is rendered`);
 assert.ok(formatCurrency(1234567.89, 'INR', 'en-IN').includes('12,34,567.89'), 'Indian currency grouping and paise precision are retained');
 assert.ok(!formatCurrency(1234567.89, 'JPY', 'en-US').includes('.'), 'zero-minor-unit currency omits decimals');
-assert.match(moneyHome, /Income minus expenses/);
+assert.match(moneyHome, /Net cash flow/);
 assert.match(moneyHome, /formatMoney\(netCashFlow\)/);
 assert.match(app, /aria-label="Open profile and settings"/);
 assert.match(app, /primaryDestinationForTab\(activeTab\)/);
@@ -56,7 +56,7 @@ const markup = renderToStaticMarkup(React.createElement(MoneyHome, {
   accountSummaries: [], savingsGoals: [], legacyCurrency: 'INR', onAccounts() {},
   onMonthChange() {}, onAddExpense() {}, onAddIncome() {}, onTransfer() {}, onMoveToSavings() {}, onTransactions() {}, onBudgets() {}, onSavings() {}, onAnalytics() {}, onPlanning() {}, onEditTransaction() {},
 }));
-assert.match(markup, /Income minus expenses/);
+assert.match(markup, /Net cash flow/);
 assert.match(markup, /₹17,200/);
 assert.match(markup, /Lunch/);
 assert.match(markup, /2026-11-07/);
@@ -64,8 +64,8 @@ assert.doesNotMatch(markup, /Add to savings/, 'a second savings action is not ad
 assert.match(markup, /<strong>Savings<\/strong>/, 'savings remains available through the progressively disclosed tools');
 assert.match(markup, /Optional accounts/);
 assert.match(markup, /<nav class="money-destinations" aria-label="Money destinations">/);
-assert.match(markup, /Analytics/);
-assert.match(markup, /Financial Planning/);
+assert.match(markup, /Insights/);
+assert.match(markup, /Upcoming bills/);
 assert.doesNotMatch(markup, /Track account balances \(optional\)/, 'optional account tracking does not compete with recording a transaction');
 assert.match(markup, /data-testid="money-add-transaction"/);
 assert.match(markup, /Choose income or expense/);

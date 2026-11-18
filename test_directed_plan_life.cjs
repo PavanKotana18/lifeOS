@@ -91,8 +91,8 @@ const lifeProps = {
   onHabits: noop, onGoals: noop, onInsights: noop,
 };
 const lifeMarkup = renderToStaticMarkup(React.createElement(LifeHub, lifeProps));
-assert.match(lifeMarkup, /Habits are things you repeat/);
-assert.match(lifeMarkup, /Your routine, at a glance/);
+assert.doesNotMatch(lifeMarkup, /Habits are things you repeat/);
+assert.match(lifeMarkup, /life-rhythm-title/);
 assert.match(lifeMarkup, /1 of 2 check-ins/);
 assert.match(lifeMarkup, /4 of 7 routines/);
 assert.match(lifeMarkup, /1 of 3 milestones/);
@@ -107,9 +107,9 @@ checkButton.props.onClick();
 assert.equal(calls.at(-1), 'check:h1', 'habit check-in retains the original callback');
 const emptyLife = renderToStaticMarkup(React.createElement(LifeHub, { ...lifeProps, habits: [], goals: [], routinesDue: 0, completedRoutines: 0, weeklyTotal: 0, weeklyCompleted: 0 }));
 assert.match(emptyLife, /No routines yet/);
-assert.match(emptyLife, /Start with one small habit/);
+assert.match(emptyLife, /Add a habit/);
 assert.match(emptyLife, /No goals yet/);
-assert.doesNotMatch(emptyLife, /Your routine, at a glance/, 'an empty Life screen does not fabricate zero activity');
+assert.doesNotMatch(emptyLife, /life-rhythm-title/, 'an empty Life screen does not fabricate zero activity');
 
 const goal = { id: 'g2', title: 'Read more', currentValue: 5, targetValue: 10, category: 'Personal Development', unit: 'pages', startDate: '2026-11-01', targetDate: '2026-12-01', priority: 'Medium', status: 'In Progress', createdAt: '2026-11-01T00:00:00.000Z' };
 const insightProps = {

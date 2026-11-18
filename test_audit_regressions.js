@@ -14,7 +14,7 @@ function check(condition, message) {
 
 // F-01: Demo budget must use a seeded category ID.
 check(
-  db.includes("categoryId: 'cat_food'") &&
+  fs.readFileSync("src/services/sampleData.ts", "utf8").includes("categoryId: 'cat_food'") &&
   db.includes("id: 'cat_food'"),
   'Demo Food budget references the seeded Food category ID'
 );

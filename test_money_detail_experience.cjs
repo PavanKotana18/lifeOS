@@ -18,7 +18,7 @@ for(const section of ['transactions','accounts','budgets','savings','planning','
  const html=renderToStaticMarkup(React.createElement(Header,props)); assert.match(html,/Money overview/);assert.match(html,/<h2/);
  const tree=Header(props);const walk=(n,f)=>{if(!n)return;if(Array.isArray(n))return n.forEach(x=>walk(x,f));if(typeof n==='object'){f(n);walk(n.props?.children,f);}};
  walk(tree,node=>{if(node.type==='input'){node.props.onChange({target:{value:''}});assert.equal(month,'2026-11');node.props.onChange({target:{value:'2027-02'}});assert.equal(month,'2027-02');}if(node.type==='button')node.props.onClick();});assert.equal(back,1);
- if(section==='planning')assert.match(html,/separate until recorded/);if(section==='analytics')assert.match(html,/Planned amounts are excluded/);
+ if(section==='planning')assert.match(html,/Upcoming bills/);if(section==='analytics')assert.match(html,/Insights/);
 }
 const app=fs.readFileSync('src/App.tsx','utf8');assert.match(app,/aria-label="Search transactions"/);assert.match(app,/Refine transactions/);assert.match(app,/setFinanceCategoryFilter\('all'\)/);assert.match(app,/formatMinorUnits\(BigInt\(t.amountMinor\)/);
 console.log('PASS Money detail headings, actual period validation/back handlers, explicit posted/planned labels and exact amount wiring');

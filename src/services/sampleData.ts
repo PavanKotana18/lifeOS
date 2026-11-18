@@ -59,7 +59,7 @@ export function createSampleData(anchor = new Date()) {
   }
 
   const future = offset(3);
-  future.setHours(17, 30);
+  future.setHours(17, 30, 0, 0);
   tasks.push(
     { id: id('task', 'overdue'), title: 'Replace water filter', dueDate: formatLocalDate(offset(-2)), recurring: 'None', priority: 'High', completed: false, createdAt },
     { id: id('task', 'unscheduled'), title: 'Sort old photographs', recurring: 'None', priority: 'Low', completed: false, createdAt },

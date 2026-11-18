@@ -205,15 +205,31 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const id=stableId(`task:${task.id}:taskReminders`);
   // Capacitor Local Notifications 6.1.3 rewrites an elapsed trigger to now+15s
   // in its BOOT_COMPLETED receiver while preserving legacy extra metadata.
-  f.pending.set(id,{id,title:'Task reminder',schedule:{at:new Date(Date.now()+15_000)},extra:{kind:'taskReminders',taskId:task.id}});
+  const restoredTrigger = new Date(Date.now() + 15_000);
+  f.pending.set(id,{id,title:'Task reminder',schedule:{at:restoredTrigger},extra:{kind:'taskReminders',taskId:task.id}});
   await ns.syncTasks([task],prefs);
   const queued=f.pending.get(id);
   assert.ok(queued,'boot-restored alarm is not treated as an unrelated future reminder');
-  assert.equal(queued.extra.lateCatchUp,true,'stale restore trigger is normalized to one immediate catch-up');
-  assert.equal(queued.extra.originalReminderAt,selectedAt.toISOString());
+  assert.equal(new Date(queued.schedule.at).getTime(), restoredTrigger.getTime(), 'resume leaves the valid reboot-restored trigger in place');
   assert.ok(new Date(queued.schedule.at).getTime()>Date.now());
   await ns.syncTasks([task],prefs);
   assert.equal(new Date(f.pending.get(id).schedule.at).getTime(),new Date(queued.schedule.at).getTime(),'repeated resume synchronization is idempotent');
+ }));
+ await test('Unchanged native reminder survives resume without replacing its alarm', async () => fixture(async f => {
+  const prefs = { ...f.DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };
+  const reminderAt = new Date(Date.now() + 120 * 60_000).toISOString();
+  const task = await f.StorageService.tasks.add({ title: 'Private task', dueDate: '2030-01-01', priority: 'Medium', recurring: 'None', completed: false, reminderAt });
+  let schedules = 0;
+  const originalSchedule = f.notifications.schedule;
+  f.notifications.schedule = async options => {
+    schedules++;
+    return originalSchedule(options);
+  };
+  await f.NotificationService.syncTasks([task], prefs);
+  await f.NotificationService.syncTasks([task], prefs);
+  assert.equal(schedules, 1);
+  await f.NotificationService.syncTasks([{ ...task, reminderAt: new Date(Date.parse(reminderAt) + 60_000).toISOString() }], prefs);
+  assert.equal(schedules, 2, 'an edited trigger still replaces the alarm');
  }));
  await test('Task sync removes completed or deleted task schedules without affecting unrelated reminders', async () => fixture(async f => {
   const prefs = { ...f.DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };

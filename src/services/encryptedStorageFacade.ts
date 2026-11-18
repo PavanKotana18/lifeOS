@@ -1018,6 +1018,10 @@ export function createEncryptedStorageFacade(
       }),
 
       removeSampleData: async () => coordinator.run(async ctx => {
+        const posted = await ctx.getAll<Transaction>('transactions');
+        if (posted.some(row => !isSampleRecord(row.id) && isSampleRecord(row.commitmentId ?? ''))) {
+          throw new Error('Remove or unlink transactions recorded from sample plans before removing sample data.');
+        }
         const tables = Object.keys(createSampleData()) as (keyof ReturnType<typeof createSampleData>)[];
         for (const table of tables) {
           const rows = await ctx.getAll<{ id: string; habitId?: string; goalId?: string; recurrenceRootId?: string; commitmentId?: string }>(table);
@@ -1026,9 +1030,6 @@ export function createEncryptedStorageFacade(
               (table === 'tasks' && isSampleRecord(row.recurrenceRootId ?? '')) ||
               (['habitLogs', 'milestones', 'savingsContributions'].includes(table) && isSampleRecord(row.habitId ?? row.goalId ?? ''))) {
               ctx.delete(table, row.id);
-            } else if (row.commitmentId && isSampleRecord(row.commitmentId)) {
-              // Keep real posted activity when removing the corresponding plan.
-              ctx.put(table, { ...row, commitmentId: undefined, commitmentOccurrenceDate: undefined });
             }
           }
         }

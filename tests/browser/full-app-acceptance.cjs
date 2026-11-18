@@ -209,10 +209,20 @@ async function main() {
     await journey('first launch and safe browsing', async () => {
       await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success`, { waitUntil: 'networkidle' });
       await page.locator('input[autocomplete="nickname"]').fill('Synthetic acceptance user');
-      await clickButton('Open LifeOS');
+      await capture('welcome-390');
+      await clickButton('Continue');
+      await page.getByRole('heading', { name: 'Biometric setup' }).waitFor();
+      await capture('biometric-390');
+      await clickButton('Not now');
+      await page.getByRole('heading', { name: 'Recovery setup' }).waitFor();
+      await capture('recovery-390');
+      await clickButton('Set up later');
       await page.getByTestId('today-dashboard').waitFor();
-      assert.equal(await page.getByRole('button', { name: /notification/i }).count(), 0,
-        'the browser synthetic plugin does not expose native notification permission controls');
+      await page.getByRole('dialog', { name: 'Stay on top of what matters' }).waitFor();
+      await capture('today-notification-opt-in-390');
+      assert.equal(await page.evaluate(() => sessionStorage.getItem('qa-notification-consent')), null);
+      await clickButton('Maybe later');
+      await page.getByRole('dialog', { name: 'Stay on top of what matters' }).waitFor({ state: 'hidden' });
       const storage = await page.evaluate(async () => {
         const db = await import('/src/db.ts');
         return { active: db.isEncryptedStorageActivated(),
@@ -242,6 +252,9 @@ async function main() {
 
     await journey('create and complete a task', async () => {
       await activeTab('plan');
+      const views = page.getByRole('group', { name: 'Task views' }).getByRole('button');
+      assert.match(await views.first().innerText(), /^All/);
+      assert.equal(await views.first().getAttribute('aria-pressed'), 'true');
       const quick = page.getByLabel('Quick task', { exact: true });
       await quick.fill('QA acceptance: review weekly plan');
       await page.getByRole('button', { name: 'Add task', exact: true }).last().click();
@@ -293,18 +306,18 @@ async function main() {
       await netCashflowInfo.waitFor();
       const infoDialog = page.locator(await netCashflowInfo.evaluate(button => `#${CSS.escape(button.getAttribute('aria-controls'))}`));
       assert.equal(await infoDialog.evaluate(element => element.open), false, 'contextual information starts closed');
-      assert.equal(await page.getByText('This is posted income minus posted expenses for the selected month.', { exact: false }).isVisible().catch(() => false), false,
+      assert.equal(await page.getByText('Income received minus spending recorded in this period.', { exact: false }).isVisible().catch(() => false), false,
         'the full explanation is hidden from the default screen');
       await capture('info-net-cashflow-hidden-390');
       await netCashflowInfo.click();
       await infoDialog.waitFor({ state: 'visible' });
-      await page.getByText('This is posted income minus posted expenses for the selected month.', { exact: false }).waitFor();
+      await page.getByText('Income received minus spending recorded in this period.', { exact: false }).waitFor();
       await capture('info-net-cashflow-open-390');
       await page.keyboard.press('Escape');
       await infoDialog.waitFor({ state: 'hidden' });
       assert.equal(await netCashflowInfo.evaluate(element => document.activeElement === element), true,
         'dismissal restores focus to the information control');
-      await page.getByTestId('money-home').getByRole('button', { name: /^Analytics/ }).click();
+      await page.getByTestId('money-home').getByRole('button', { name: /^Insights/ }).click();
       await page.getByRole('heading', { name: 'Financial insights' }).waitFor();
       await page.getByText(/Posted expenses/).waitFor();
       assert.ok(await page.locator('.recharts-wrapper').count() > 0, 'real finance chart is rendered from the saved expense');
@@ -313,8 +326,8 @@ async function main() {
       await capture('money-analytics-posted-390');
       assert.match(await page.locator('.money-period-control input').getAttribute('aria-label'), /November 2026/,
         'period selector retains a full accessible month name');
-      assert.equal(await page.locator('.money-period-value').innerText(), 'Nov 2026',
-        'period selector shows a compact month label');
+      assert.equal(await page.locator('.money-period-value').innerText(), 'November 2026',
+        'period selector shows the full month label');
       for (const width of [320, 390]) {
         await page.setViewportSize({ width, height: 844 });
         await page.waitForFunction(expected => innerWidth === expected, width);
@@ -432,6 +445,78 @@ async function main() {
       await page.getByTestId('money-home').waitFor();
       await verifyProtectedRows();
       completed.add('back navigation and ciphertext persistence');
+    });
+
+    await journey('Money swipe cancellation and repeated navigation', async () => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await activeTab('finance');
+      const cdp = await context.newCDPSession(page);
+      try {
+        const cash = page.locator('.money-flow-split');
+        await cash.scrollIntoViewIfNeeded();
+        const box = await cash.boundingBox();
+        assert.ok(box);
+        const y = Math.round(box.y + box.height / 2);
+        const touch = (type, xs) => cdp.send('Input.dispatchTouchEvent', {
+          type, touchPoints: xs.map((x, id) => ({ x, y, id })),
+        });
+        const swipe = async (points, end = 'touchEnd') => {
+          await touch('touchStart', [points[0]]);
+          for (const x of points.slice(1)) await touch('touchMove', [x]);
+          await touch(end, []);
+        };
+        const atRest = () => page.waitForFunction(() => {
+          const screen = document.querySelector('#screen-finance');
+          return screen && !screen.hasAttribute('data-gesture-dragging') &&
+            Math.abs(new DOMMatrix(getComputedStyle(screen).transform).m41) < 1;
+        });
+        await swipe([265, 245, 224, 269]);
+        await atRest();
+        await swipe([265, 220, 180], 'touchCancel');
+        await atRest();
+        await touch('touchStart', [265]);
+        await touch('touchMove', [218]);
+        await touch('touchStart', [218, 290]);
+        await touch('touchCancel', []);
+        await atRest();
+        assert.equal(await page.locator('[data-tab="finance"]').getAttribute('aria-current'), 'page');
+        await swipe([283, 240, 190, 120, 55]);
+        await page.waitForFunction(() => document.querySelector('[data-tab="plan"]')?.getAttribute('aria-current') === 'page');
+        await activeTab('finance');
+        await atRest();
+      } finally {
+        await cdp.detach();
+      }
+    });
+
+    await journey('compact settings and six-month sample data', async () => {
+      await clickButton('Open profile and settings');
+      await page.getByTestId('profile-settings-home').waitFor();
+      await capture('profile-390');
+      for (const name of ['Preferences', 'Notifications', 'Developer tools']) {
+        await clickButton(name);
+        await page.getByRole('heading', { name, exact: true }).waitFor();
+        await inspectVisiblePage(name);
+        await capture(name.toLowerCase().replaceAll(' ', '-') + '-390');
+        if (name === 'Developer tools') {
+          await clickButton('Add sample data');
+          await page.getByRole('alertdialog').getByRole('button', { name: 'Add sample data', exact: true }).click();
+          await page.getByText('Sample data is ready').waitFor();
+          const coverage = await page.evaluate(async () => {
+            const { StorageService } = await import('/src/db.ts');
+            const rows = (await StorageService.transactions.getAll()).filter(row => row.id.startsWith('lifeos-demo-v2:'));
+            const months = new Set(rows.map(row => row.date.slice(0, 7)));
+            return { months: months.size, transactions: rows.length };
+          });
+          assert.equal(coverage.months, 6);
+          assert.ok(coverage.transactions >= 55);
+          await clickButton('Remove sample data');
+          await page.getByRole('alertdialog').getByRole('button', { name: 'Remove sample data', exact: true }).click();
+          await page.getByText('Sample data removed').waitFor();
+        }
+        await clickButton('Profile');
+      }
+      await activeTab('dashboard');
     });
 
     await journey('responsive layouts and live accessibility audit', async () => {
