@@ -17,7 +17,7 @@ For each row, record the task's chosen local trigger time, the time shown in Lif
 
 | Pass | Action | Record |
 | --- | --- | --- |
-| Immediate | Use Profile ? Developer tools to send the immediate test notification. |
+| Immediate | Use Profile ? Developer tools to send the immediate test notification. | Check that Android posts it and note the time. |
 | +2, +5, +10 minutes | Create individual reminders at those offsets; leave LifeOS foregrounded for the first pass. | Trigger time, native accepted/pending status, visible notification time, tap result. |
 | Background | Schedule a reminder about five minutes ahead; background the app and lock the screen. | Trigger and observed time, lock-screen privacy, title/body shown, tap destination. |
 | Process stopped | Schedule about five minutes ahead, then normally dismiss LifeOS from Recents without force-stopping it. | Whether it appears and the measured drift. |

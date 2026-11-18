@@ -68,7 +68,7 @@ assert.match(markup, /Insights/);
 assert.match(markup, /Upcoming bills/);
 assert.doesNotMatch(markup, /Track account balances \(optional\)/, 'optional account tracking does not compete with recording a transaction');
 assert.match(markup, /data-testid="money-add-transaction"/);
-assert.match(markup, /Choose income or expense/);
+assert.match(markup, /Add transaction/);
 assert.doesNotMatch(markup, /Quick money actions/, 'one primary action opens transaction type options');
 assert.match(app, /openMoneyTransferOnAccounts/);
 assert.match(app, /autoOpenTransfer=\{openMoneyTransferOnAccounts\}/);
@@ -76,8 +76,8 @@ assert.match(moneyAccounts, /if \(active\.length >= 2\) beginTransfer\(\)/, 'tra
 assert.match(moneyAccounts, /Add at least two active accounts before making a transfer/);
 assert.match(markup, /Overall plan/);
 assert.match(markup, /22,200\.00 left/);
-assert.match(markup, /largest recorded expense category is <strong>Food<\/strong>/);
-assert.match(markup, /up 5\.0% from the previous month/);
+assert.doesNotMatch(markup, /largest recorded expense category/);
+assert.doesNotMatch(markup, /from the previous month/);
 assert.match(markup, /Recorded cash flow: income/);
 const emptyMarkup = renderToStaticMarkup(React.createElement(MoneyHome, {
   month: '2026-11', income: 0, expenses: 0, netCashFlow: 0, budgetRows: [],
@@ -88,6 +88,6 @@ const emptyMarkup = renderToStaticMarkup(React.createElement(MoneyHome, {
   onSavings() {}, onAnalytics() {}, onPlanning() {}, onAccounts() {}, accountSummaries: [],
   savingsGoals: [], legacyCurrency: 'INR', onEditTransaction() {},
 }));
-assert.match(emptyMarkup, /No activity for this period yet\. Add an expense or income to start tracking\./, 'empty Money history directs users to the three available transaction actions');
+assert.match(emptyMarkup, /No transactions this month/, 'empty Money history uses a brief status');
 assert.equal((emptyMarkup.match(/money-account-nudge/g) || []).length, 0, 'empty Money does not present an optional account prompt as a required first step');
 console.log('LIFEOS 2 TYPOGRAPHY + MONEY: bundled Inter/OFL, five script fallbacks, zoom support, token scale, currency formatting and Money navigation checks passed.');
