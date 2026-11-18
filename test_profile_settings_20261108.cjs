@@ -21,12 +21,12 @@ for (const section of ['appearance', 'preferences', 'notifications', 'privacy', 
   assert.ok(profile.includes(`section: '${section}'`), `Profile links to ${section}`);
   assert.ok(settings.includes(`profileSection === '${section}'`), `${section} has an independent destination`);
 }
-assert.match(profile, /Your information stays on this device/);
+assert.doesNotMatch(profile, /Your information stays on this device/);
 assert.match(profile, /aria-label="Profile settings"/);
 assert.match(settings, /onBack=\{\(\) => navigateProfileSection\('home'\)\}/);
 assert.match(preferences, /onClick=\{\(\) => onChange\('swipeNavigationEnabled', !preferences\.swipeNavigationEnabled\)\}/);
 assert.match(settings, /Export encrypted backup/);
-assert.match(preferences, /Currency for financial records/);
+assert.match(preferences, /Currency and locale/);
 assert.match(preferences, /disabled=\{hasFinancialRecords\}/);
 assert.match(settings, /Clear All Application Data/);
 const fresh = mergeUserPreferences({}, 'INR');
@@ -36,17 +36,17 @@ assert.equal(mergeUserPreferences({ currency: 'JPY' }, 'INR').currency, 'JPY', '
 assert.equal(mergeUserPreferences({}, 'INR').currency, DEFAULT_USER_PREFERENCES.currency);
 
 const homeMarkup = renderToStaticMarkup(React.createElement(ProfileHome, { name: 'Asha', initial: 'A', onNameChange: () => {}, onOpen: () => {} }));
-for (const title of ['Appearance', 'Preferences', 'Notifications', 'Privacy &amp; security', 'Data &amp; backup', 'About LifeOS']) assert.ok(homeMarkup.includes(title), `rendered profile exposes ${title.replaceAll('&amp;', '&')}`);
-assert.ok(homeMarkup.includes('Asha') && homeMarkup.includes('Your information stays on this device.'));
+for (const title of ['Appearance', 'Preferences', 'Notifications', 'Privacy &amp; Security', 'Backup &amp; Restore', 'About']) assert.ok(homeMarkup.includes(title), `rendered profile exposes ${title.replaceAll('&amp;', '&')}`);
+assert.ok(homeMarkup.includes('Asha'));
 assert.match(homeMarkup, /aria-label="Profile settings"/);
 const subpageMarkup = renderToStaticMarkup(React.createElement(ProfileSubpage, { title: 'Appearance', description: 'Theme settings', onBack: () => {}, children: React.createElement('p', null, 'Preview') }));
 assert.ok(subpageMarkup.includes('Appearance') && subpageMarkup.includes('Preview') && subpageMarkup.includes('Profile'));
 const preferenceMarkup = renderToStaticMarkup(React.createElement(ProfilePreferences, { preferences: DEFAULT_USER_PREFERENCES, hasFinancialRecords: true, onChange: () => {} }));
-assert.match(preferenceMarkup, /Currency for financial records/);
+assert.match(preferenceMarkup, /Currency and locale/);
 assert.match(preferenceMarkup, /Search currencies/);
-assert.match(preferenceMarkup, /Search by name, code or symbol/);
+assert.match(preferenceMarkup, /Search by name or code/);
 assert.match(preferenceMarkup, /disabled=""/);
-assert.match(preferenceMarkup, /locked because saved financial records do not yet store their own currency/i);
+assert.match(preferenceMarkup, /locked for existing financial records/);
 assert.match(preferenceMarkup, /Swipe between tabs/);
 
 console.log('PROFILE SETTINGS: routes, live server rendering, currency safety, local profile copy, preserved data actions and preference hydration checks passed.');

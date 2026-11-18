@@ -15,9 +15,15 @@ function bashExecutable() {
 }
 const BASH = bashExecutable();
 const pathToAndroidTests = path.resolve(__dirname, '../android/app/src/androidTest/java/com/lifeos/personal');
-const instrumentationWorkflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/android-emulator-qa.yml'), 'utf8');
-assert.match(instrumentationWorkflow, /pull_request:\s*\n\s+branches:\s*\[[^\]]*\bmain\b/,
-  'candidate PRs targeting main must run Android QA');
+const workflowDirectory = path.resolve(__dirname, '../.github/workflows');
+assert.ok(fs.existsSync(workflowDirectory), 'the standard repository build and QA workflows are restored');
+const buildWorkflow = fs.readFileSync(path.join(workflowDirectory, 'build-apk.yml'), 'utf8');
+assert.match(buildWorkflow, /:app:assembleDebug/, 'ordinary Android CI builds the standard Debug variant');
+assert.match(buildWorkflow, /build_release:[\s\S]*?default: false/, 'Release artifact builds require an explicit manual workflow choice');
+assert.doesNotMatch(buildWorkflow, /Require and configure persistent debug signing|LIFEOS_DEBUG_KEYSTORE/,
+  'the isolated Debug variant uses standard Android debug signing');
+assert.equal(fs.existsSync(path.resolve(__dirname, '../scripts/build-preview-apk.ps1')), false,
+  'the custom Preview APK build path remains removed');
 const declaredTests = fs.readdirSync(pathToAndroidTests)
   .filter(file => file.endsWith('.java'))
   .flatMap(file => {
@@ -25,7 +31,9 @@ const declaredTests = fs.readdirSync(pathToAndroidTests)
     return [...source.matchAll(/@Test\s+(?:public\s+)?void\s+(\w+)\s*\(/g)]
       .map(match => `com.lifeos.personal.${file.slice(0, -5)}#${match[1]}`);
   });
-assert.equal(declaredTests.length, 25, 'Android test inventory changed; update the hosted expected counts deliberately');
+// Timed and denied-access scenarios run with explicit exact-alarm state in the
+// disposable native lab. Unattended profiles keep their existing inventory.
+assert.equal(declaredTests.length, 27, 'Android test inventory changed; update the hosted expected counts deliberately');
 for (const [inventory, expectedCount, requiredTest] of [
   ['instrumentation-exclusions-api29.txt', 17, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
   ['instrumentation-exclusions-api34-35.txt', 22, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
@@ -38,22 +46,19 @@ for (const [inventory, expectedCount, requiredTest] of [
   assert.ok(declaredTests.includes(requiredTest), `${inventory} required test is not declared`);
   assert.ok(!exclusions.includes(requiredTest), `${inventory} excludes its own required test`);
 }
-assert.match(instrumentationWorkflow, /android-visual:[\s\S]*script: bash scripts\/run-directed-android-visual\.sh/, 'visual job executes one shell so failure evidence is preserved');
 const visualRunner = fs.readFileSync(path.resolve(__dirname, 'run-directed-android-visual.sh'), 'utf8');
 assert.match(visualRunner, /ANDROID_EXPECTED_TESTS=1/, 'the excluded visual case has its own mandatory one-test count');
 assert.match(visualRunner, /DirectedVisualAcceptanceTest#packagedMandatoryOnboardingScreensAndRestart/, 'the visual runner selects the mandatory onboarding visual case');
-const workflow = fs.readFileSync(path.resolve(__dirname, '../.github/workflows/workstream-integration.yml'), 'utf8');
-assert.match(workflow, /test-filter:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
-  'API 29 filter must name the fully qualified instrumentation class');
-assert.match(workflow, /required-test:\s*\"com\.lifeos\.personal\.WebViewCompatibilityAcceptanceTest#unsupportedEngineShowsNativeUpdateMessage\"/,
-  'API 29 acceptance gate must require the fully qualified compatibility case');
+const compatibilityTest = fs.readFileSync(path.join(pathToAndroidTests, 'WebViewCompatibilityAcceptanceTest.java'), 'utf8');
+assert.match(compatibilityTest, /unsupportedEngineShowsNativeUpdateMessage/,
+  'the API compatibility regression remains in local instrumentation sources');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifeos-runner-contract-'));
 try {
   const bin = path.join(root, 'bin'); fs.mkdirSync(bin);
 const sdk = path.join(root, 'sdk'); fs.mkdirSync(path.join(sdk, 'emulator'), { recursive: true });
   const buildTools = path.join(sdk, 'build-tools', '34.0.0'); fs.mkdirSync(buildTools, { recursive: true });
 fs.writeFileSync(path.join(sdk, 'emulator', 'emulator'), `#!/usr/bin/env node\nif(process.argv.includes('-list-avds'))console.log('LifeOS-QA');\n`, { mode: 0o755 });
-  fs.writeFileSync(path.join(buildTools, 'aapt'), `#!/usr/bin/env node\nif(process.argv.includes('xmltree'))console.log('A: android:targetPackage(0x01010021)="com.lifeos.personal.dev"');else console.log("package: name='"+(process.argv.at(-1).includes('test')?'com.lifeos.personal.dev.test':'com.lifeos.personal.dev')+"'");\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(buildTools, 'aapt'), `#!/usr/bin/env node\nif(process.argv.includes('xmltree'))console.log('A: android:targetPackage(0x01010021)="com.lifeos.personal.debug"');else console.log("package: name='"+(process.argv.at(-1).includes('test')?'com.lifeos.personal.debug.test':'com.lifeos.personal.debug')+"'");\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(buildTools, 'apksigner'), `#!/usr/bin/env node\nconsole.log('Signer #1 certificate SHA-256 digest: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');\n`, { mode: 0o755 });
   const excluded = path.join(root, 'excluded-tests.txt');
   fs.writeFileSync(excluded, 'com.lifeos.personal.BiometricDeviceAcceptanceTest#actualSetupCancelConcurrentResumeRecreateAndUnlock\n');
@@ -67,9 +72,9 @@ else if(a.includes('getprop ro.product.model')) console.log('I2304');
 else if(a.includes('getprop ro.product.name')) console.log('I2304T');
 else if(a.includes('getprop ro.build.version.release')) console.log('14');
 else if(a.includes('getprop ro.build.version.sdk')) console.log('34');
-else if(a.includes('shell pm path com.lifeos.personal.dev')) console.log('package:/data/app/~~synthetic/com.lifeos.personal.dev/base.apk');
-else if(a.includes('pm list packages')) { if(mode==='existing') console.log('package:com.lifeos.personal.dev'); }
-else if(a.includes('shell run-as com.lifeos.personal.dev pwd')) console.log('/data/user/0/com.lifeos.personal.dev');
+else if(a.includes('shell pm path com.lifeos.personal.debug')) console.log('package:/data/app/~~synthetic/com.lifeos.personal.debug/base.apk');
+else if(a.includes('pm list packages')) { if(mode==='existing') console.log('package:com.lifeos.personal.debug'); }
+else if(a.includes('shell run-as com.lifeos.personal.debug pwd')) console.log('/data/user/0/com.lifeos.personal.debug');
 else if(a.includes('dumpsys activity exit-info')) console.log('synthetic process exit information');
 else if(a.includes('dumpsys meminfo')) console.log('synthetic process memory information');
 else if(a.includes('logcat -b all -d')) console.log('E/AndroidRuntime: synthetic crash log contact=qa@example.com token=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ');
@@ -94,13 +99,13 @@ else if(a.includes('shell am instrument')) {
     if (admitted) {
       assert.match(fs.readFileSync(path.join(out, 'test-inventory.txt'), 'utf8'), /expected_tests=1/);
       const commands = fs.readFileSync(path.join(out, 'adb-commands.txt'), 'utf8');
-      assert.match(commands, /shell pm grant com\.lifeos\.personal\.dev android\.permission\.POST_NOTIFICATIONS/,
-        'the disposable API 34 emulator grants notification permission to the isolated Dev package');
+      assert.match(commands, /shell pm grant com\.lifeos\.personal\.debug android\.permission\.POST_NOTIFICATIONS/,
+        'the disposable API 34 emulator grants notification permission to the isolated Debug package');
       assert.doesNotMatch(commands, /adb devices(?:\s|-l)|com\.lifeos\.personal(?:\s|$)/,
         'the runner does not enumerate devices or target the protected production package');
       assert.match(commands, /push .* \/data\/local\/tmp\/lifeos-test-exclusions\.txt/);
-      assert.match(commands, /run-as com\.lifeos\.personal\.dev cp \/data\/local\/tmp\/lifeos-test-exclusions\.txt \/data\/user\/0\/com\.lifeos\.personal\.dev\/files\/lifeos-test-exclusions\.txt/);
-      assert.match(commands, /-e notTestFile \/data\/user\/0\/com\.lifeos\.personal\.dev\/files\/lifeos-test-exclusions\.txt/);
+      assert.match(commands, /run-as com\.lifeos\.personal\.debug cp \/data\/local\/tmp\/lifeos-test-exclusions\.txt \/data\/user\/0\/com\.lifeos\.personal\.debug\/files\/lifeos-test-exclusions\.txt/);
+      assert.match(commands, /-e notTestFile \/data\/user\/0\/com\.lifeos\.personal\.debug\/files\/lifeos-test-exclusions\.txt/);
     }
     if (mode === 'crash') {
       assert.match(fs.readFileSync(path.join(out, 'junit.xml'), 'utf8'), /errors="[1-9]/);

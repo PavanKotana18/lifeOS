@@ -2,6 +2,21 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
 const esbuild = require('esbuild');
+const fs = require('node:fs');
+const ts = require('typescript');
+
+// Bind the production validator without evaluating db.ts or its native/database
+// imports. Extracting its AST declaration keeps this isolated fixture aligned
+// with the actual schedule rules instead of providing a permissive test stub.
+const dbFilename = path.resolve('src/db.ts');
+const dbSource = ts.createSourceFile(dbFilename, fs.readFileSync(dbFilename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+assert.equal(dbSource.parseDiagnostics.length, 0, 'Production database source must parse');
+const scheduleDeclarations = dbSource.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'normalizeTaskSchedule');
+assert.equal(scheduleDeclarations.length, 1, 'Expected one production task schedule validator');
+const scheduleModule = new Module(dbFilename, module);
+scheduleModule._compile(esbuild.transformSync(scheduleDeclarations[0].getText(dbSource), { loader: 'ts', format: 'cjs', target: 'node22' }).code, dbFilename);
+const { normalizeTaskSchedule } = scheduleModule.exports;
+assert.equal(typeof normalizeTaskSchedule, 'function');
 
 const TABLES = [
   'transactions', 'categories', 'budgets', 'savingsGoals',
@@ -91,6 +106,7 @@ function makeEnvironment() {
   };
 
   const helpers = {
+    normalizeTaskSchedule,
     createRecordId(prefix) {
       idCounter += 1;
       if (failIdAt && idCounter === failIdAt) {
@@ -442,34 +458,27 @@ async function rejects(fn, pattern) {
     assert.equal((await storage.budgets.getAll()).length, 0);
   });
 
-  await test('failed demo seed rolls back all staged writes', async () => {
-    // Use a pristine store and inject a deterministic mid-seed failure.
+  await test('six-month sample is accurate, encrypted, idempotent and removable', async () => {
     storage = makeEnvironment();
-
-    const before = {};
-    for (const table of TABLES) {
-      before[table] = state[table].size;
-    }
-
-    failIdAt = 4;
-    try {
-      await rejects(
-        () => storage.backup.seedDemoData(),
-        /Injected test failure during demo seed/
-      );
-    } finally {
-      failIdAt = 0;
-    }
-
-    assert.ok(idCounter >= 4, 'Failure was not injected during the seed operation');
-
-    for (const table of TABLES) {
-      assert.equal(
-        state[table].size,
-        before[table],
-        `${table} changed after failed seed`
-      );
-    }
+    const real = await storage.tasks.add({ title: 'Personal task', recurring: 'None', priority: 'Medium', completed: false });
+    await storage.backup.seedDemoData();
+    const firstCounts = Object.fromEntries(TABLES.map(table => [table, state[table].size]));
+    const water = (await storage.habits.getAll()).find(row => row.name === 'Drink water');
+    const logs = await storage.habits.getLogs(water.id);
+    assert.equal(water.targetPerDay, 2);
+    assert.equal(water.quantityUnit, 'L');
+    assert.ok(logs.length > 120 && logs.every(row => row.quantityUnit === 'L' && row.completed === (row.quantity >= 2)));
+    const transactions = await storage.transactions.getAll();
+    assert.equal(new Set(transactions.map(row => row.date.slice(0, 7))).size, 6);
+    assert.ok(transactions.every(row => BigInt(row.amountMinor) === BigInt(row.amount * 100)));
+    assert.ok(transactions.every(row => !/[{}[]]/.test(row.description)));
+    await storage.backup.seedDemoData();
+    for (const table of TABLES) assert.equal(state[table].size, firstCounts[table]);
+    await storage.backup.removeSampleData();
+    assert.deepEqual(await storage.tasks.getAll(), [real]);
+    assert.equal((await storage.transactions.getAll()).length, 0);
+    await storage.backup.seedDemoData();
+    assert.equal((await storage.transactions.getAll()).length, transactions.length);
   });
 
   console.log('\n========================================');

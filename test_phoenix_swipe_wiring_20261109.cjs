@@ -11,7 +11,8 @@ const pointerDown = app.match(/const handleContentPointerDown = \(event: React\.
 assert.ok(pointerDown, 'the primary content surface has one explicit pointer-down owner');
 assert.match(pointerDown[1], /button,a,label,summary/, 'ordinary buttons and row controls remain swipe candidates');
 assert.match(pointerDown[1], /textEntry = target\.closest/, 'editable fields remain excluded');
-assert.match(pointerDown[1], /recharts-wrapper.*canvas/, 'charts and canvas controls retain their own gestures');
+assert.doesNotMatch(pointerDown[1], /recharts-wrapper|\[data-chart\]/, 'display charts participate in page swipes');
+assert.match(pointerDown[1], /data-horizontal-scroll/, 'meaningful nested horizontal scrolling retains its own gesture');
 assert.doesNotMatch(pointerDown[1], /setPointerCapture/, 'tap controls are not captured at pointer-down');
 
 const pointerMove = app.match(/const handleContentPointerMove = \(event: PointerEvent\) => \{([\s\S]*?)\n  \};/);

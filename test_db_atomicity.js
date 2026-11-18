@@ -385,6 +385,30 @@ async function main() {
       'Repeated completion toggles update one existing log'
     );
 
+    await db.habits.add({ id: 'habit-quantity', name: 'Drink water', frequency: 'daily', color: '#123456',
+      trackingMode: 'quantity', targetPerDay: 4, quantityUnit: 'glasses', createdAt: stamp });
+    await StorageService.habits.logQuantity('habit-quantity', '2026-11-03', 2);
+    let quantityLog = await db.habitLogs.where('[habitId+date]').equals(['habit-quantity', '2026-11-03']).first();
+    check(quantityLog?.quantity === 2 && quantityLog.completed === false && quantityLog.quantityUnit === 'glasses',
+      'Quantitative habit stores partial progress with its unit without marking the target complete');
+    await StorageService.habits.logQuantity('habit-quantity', '2026-11-03', 4);
+    quantityLog = await db.habitLogs.where('[habitId+date]').equals(['habit-quantity', '2026-11-03']).first();
+    check(quantityLog?.quantity === 4 && quantityLog.completed === true,
+      'Quantitative habit updates its daily quantity and completes at the saved target');
+    await Promise.all(Array.from({ length: 12 }, () => StorageService.habits.adjustQuantity('habit-quantity', '2026-11-04', 1)));
+    quantityLog = await db.habitLogs.where('[habitId+date]').equals(['habit-quantity', '2026-11-04']).first();
+    check(quantityLog?.quantity === 12 && quantityLog.completed && quantityLog.quantityUnit === 'glasses',
+      'Concurrent quantity taps are applied atomically and keep the original unit');
+    await db.habits.update('habit-quantity', { quantityUnit: 'litre' });
+    check((await db.habitLogs.get(quantityLog.id))?.quantityUnit === 'glasses',
+      'Changing a habit unit does not reinterpret existing quantity history');
+    await db.habitLogs.add({ id: 'legacy-quantity', habitId: 'habit-quantity', date: '2026-11-02', quantity: 35, completed: true });
+    await StorageService.habits.setQuantityLogUnit('legacy-quantity', 'litre');
+    check((await db.habitLogs.get('legacy-quantity'))?.quantityUnit === 'litre',
+      'A legacy quantity unit is assigned only after an explicit user repair');
+    await assert.rejects(StorageService.habits.logQuantity('habit-log-race', '2026-11-03', 1), /quantity tracking/i,
+      'binary habits reject quantity writes instead of reinterpreting existing check-ins');
+
 
     // 10. Same-millisecond record creation must not collide.
     const originalNow = Date.now;

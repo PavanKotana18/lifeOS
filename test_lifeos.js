@@ -23,7 +23,7 @@ function loadTsModule(path) {
   return loadedModule.exports;
 }
 const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
-const { getTodayOverview } = loadTsModule('./src/services/domainUtils.ts');
+const { getTodayOverview, buildTaskNotificationPlan } = loadTsModule('./src/services/domainUtils.ts');
 const userPreferenceUtils = loadTsModule('./src/services/userPreferences.ts');
 const { buildFinanceAnalytics } = loadTsModule('./src/services/financeAnalytics.ts');
 const { pushTabHistory, popTabHistory } = loadTsModule('./src/services/tabHistory.ts');
@@ -36,7 +36,6 @@ const {
   sortTasksByDeadline,
   getGoalProgress,
   calculateWeeklyHabitRate,
-  buildTaskNotificationPlan,
   buildFinanceEntry,
   shouldShowOnboarding,
   profileInitial,
@@ -423,7 +422,7 @@ async function runTestSuite() {
   assert(entry.date === '2026-07-04' && entry.occurredAt === new Date('2026-07-04T08:05').toISOString(), 'Finance date/time converts from device-local input to a stable instant');
   assert(entry.createdAt === localNow.toISOString(), 'Finance entry keeps the exact save timestamp');
   const taskPlan = buildTaskNotificationPlan({ dueDate: '2026-07-06', dueTime: '10:00', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4));
-  assert(taskPlan.length === 3 && taskPlan[0].at.getHours() === 9 && taskPlan[0].at.getMinutes() === 15, 'Task notification planning includes custom reminder, upcoming deadline and overdue alert times');
+  assert(taskPlan.length === 4 && taskPlan.some(alert => alert.kind === 'taskReminders' && alert.at.getHours() === 9 && alert.at.getMinutes() === 15), 'Task notification planning includes custom reminder, upcoming deadline and overdue alert times');
   assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', completed: true }, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true }, new Date(2026, 6, 4)).length === 0, 'Completed task notifications are not scheduled');
 
   console.log('\n--- 4C. Testing onboarding, profile and notification diagnostics ---');

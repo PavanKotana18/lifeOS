@@ -16,6 +16,8 @@ export interface Transaction {
   paymentMethod: string;
   notes?: string;
   isRecurring?: boolean;
+  commitmentId?: string;
+  commitmentOccurrenceDate?: string;
   occurredAt?: string; // ISO instant represented by the user-selected local date/time
   createdAt: string;
   updatedAt?: string;
@@ -112,6 +114,10 @@ export interface ManualExchangeRate {
 export type CommitmentFrequency = 'weekly' | 'monthly' | 'yearly';
 export type CommitmentStatus = 'active' | 'paused';
 export interface PlannedCommitment {
+  /** Missing on legacy plans means expense. */
+  type?: TransactionType;
+  recurrenceAnchorDate?: string;
+  lastPostedDate?: string;
   id: string;
   title: string;
   amount: number;
@@ -137,6 +143,8 @@ export interface Habit {
   icon?: string;
   color: string;
   targetPerDay?: number;
+  trackingMode?: 'binary' | 'quantity';
+  quantityUnit?: string;
   reminderTime?: string; // HH:mm local time
   reminderWeekday?: number; // Capacitor weekday value, Sunday=1 through Saturday=7
   createdAt: string;
@@ -148,6 +156,9 @@ export interface HabitLog {
   habitId: string;
   date: string; // YYYY-MM-DD
   completed: boolean;
+  quantity?: number;
+  /** Unit recorded with this quantity; absent on legacy rows with unknown units. */
+  quantityUnit?: string;
   completedAt?: string;
 }
 
@@ -194,9 +205,11 @@ export interface Task {
   id: string;
   title: string;
   description?: string;
-  dueDate: string; // YYYY-MM-DD
+  dueDate?: string; // YYYY-MM-DD; absent means unscheduled
   dueTime?: string; // HH:mm local time
-  reminderAt?: string; // ISO instant
+  reminderAt?: string; // Previously saved absolute reminder
+  reminderLeadMinutes?: number;
+  dueAlertDisabled?: boolean;
   priority: PriorityLevel;
   category?: string;
   notes?: string;

@@ -18,6 +18,10 @@ import {
 export const BOOTSTRAP_SETTING_KEYS = new Set([
   'theme',
   'visualTheme',
+  // Cosmetic opaque color only; available before first private unlock.
+  'customAccent',
+  // Cosmetic interface animation preset; no private record content.
+  'motionPreset',
   'biometricLockEnabled',
   'onboardingCompleted',
   'onboardingStarted',
@@ -28,9 +32,11 @@ export const BOOTSTRAP_SETTING_KEYS = new Set([
   'onboardingNameDraft',
   // Notification controls are non-content preferences needed before first unlock.
   'notificationPreferences',
+  'notificationTone',
   'notificationsEnabled',
   'notificationPermissionRequested',
-  'notificationDefaultsPending'
+  'notificationDefaultsPending',
+  'dateOnlyAlertTime'
 ]);
 
 export type LifeOSRawDatabase = Record<EncryptedTable, DexieTableLike>;

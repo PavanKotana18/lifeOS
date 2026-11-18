@@ -36,22 +36,22 @@ const homeProps = {
   savingsGoals: [], legacyCurrency: 'USD', onEditTransaction: noop,
 };
 const home = renderToStaticMarkup(React.createElement(MoneyHome, homeProps));
-const actions = home.match(/<section aria-label="Quick money actions"[\s\S]*?<\/section>/)?.[0] || '';
-assert.ok(actions.includes('Add expense') && actions.includes('Add income') && actions.includes('Transfer'), 'expense, income and transfer remain equally discoverable');
-assert.match(home, /Income minus expenses/);
-assert.match(home, /Recorded income minus recorded spending\. Transfers do not change this amount\./);
+assert.equal((home.match(/data-testid="money-add-transaction"/g) || []).length, 1, 'Money has one clear primary transaction entry point');
+assert.match(home, /Add transaction/, 'the primary transaction entry point names its available records');
+assert.match(home, /Net cash flow/);
+assert.match(home, /aria-label="About Net cash flow" aria-haspopup="dialog" aria-expanded="false"/,
+  'the cash-flow explanation stays hidden behind its contextual info control');
 assert.match(home, /Recorded cash flow: income \$500\.00; expenses \$120\.00/);
-assert.match(home, /Showing 3 of 4 accounts\./, 'the summary makes omitted accounts discoverable');
-assert.match(home, /Wallet: \$80\.00/, 'account amount is accessible with its account name');
+assert.doesNotMatch(home, /Showing 3 of 4 accounts/, "Balances appear on the monthly page");
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
-assert.match(home, /aria-label="Edit Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
-assert.match(home, /Future bills and saved exchange rates/);
-assert.match(home, /planned bills<\/span>/);
+assert.match(home, /aria-label="View Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
+assert.match(home, />This month/);
+assert.match(home, />Plans</);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],
 }));
-assert.match(emptyHome, /No activity for this period yet\. Choose Expense, Income or Transfer above\./);
+assert.match(emptyHome, /No transactions this month/);
 assert.doesNotMatch(emptyHome, /money-account-nudge/, 'optional accounts do not look required before a first transaction');
 
 const accounts = [
@@ -72,7 +72,7 @@ const emptyAccounts = renderToStaticMarkup(React.createElement(MoneyAccounts, {
   onCreateAccount: asyncNoop, onUpdateAccount: asyncNoop, onDeleteAccount: asyncNoop,
   onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
 }));
-assert.match(emptyAccounts, /Account tracking is optional[\s\S]*record income and spending without an account/);
+assert.match(emptyAccounts, /Add an account to track its balance and transfers/);
 assert.equal((emptyAccounts.match(/>Add account<\/button>/g) || []).length, 1, 'account creation has one clear first-use action');
 assert.match(emptyAccounts, /aria-describedby="account-transfer-help"[\s\S]*Add two active accounts to move money between them/);
 const controlledDraft = { name: 'Rainy day fund', type: 'bank', currencyCode: 'USD', opening: '125.50', description: 'Buffer', isActive: true };
@@ -114,7 +114,7 @@ assert.match(accountsSource, /Exchange rate \(received for 1 sent\)/);
 assert.match(accountsSource, /rate of 2 means 10 sent equals 20 received/);
 assert.match(accountsSource, /openingBalanceMinor = decimalToMinorUnits\(accountDraft\.opening/);
 assert.match(accountsSource, /fromAmountMinor = decimalToMinorUnits\(transferDraft\.fromAmount/);
-assert.match(homeSource, /formatMinorUnits\(BigInt\(account\.balanceMinor\), account\.currencyCode\)/);
+assert.match(accountsSource, /formatMinorUnits\([^;\n]+account\.currencyCode, locale\)/);
 console.log('DIRECTED MONEY: dashboard hierarchy, account clarity, readable amounts, optional accounts, transfer guidance and unchanged accounting callback paths passed.');
 
 for(const [currency,min] of [['JPY','1'],['USD','0.01'],['KWD','0.001']]) {

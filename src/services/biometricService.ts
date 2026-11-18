@@ -1,6 +1,8 @@
 export interface BiometricAvailability {
   isAvailable: boolean;
   biometricsSupported: boolean;
+  strongBiometricAvailable?: boolean;
+  deviceCredentialAvailable?: boolean;
   code: string;
 }
 

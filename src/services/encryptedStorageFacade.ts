@@ -1,3 +1,5 @@
+import { createSampleData, isSampleRecord } from './sampleData';
+import { withCommitmentWriteLock } from './commitmentWriteLock';
 import type {
   Transaction,
   Category,
@@ -23,7 +25,8 @@ import type {
   EncryptedRepositories,
   PreparedMutation,
 } from './encryptedTransactionCoordinator';
-import { sortTransactions } from './domainUtils';
+import { sortTransactions, formatLocalDate } from './domainUtils';
+import { advanceCommitmentDate } from './commitmentRecurrence';
 import { decimalToMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './financeCore';
 import { validateAccountTransfer, validateFinancialAccount, validateManualExchangeRate, validatePlannedCommitment, validatePlannedCommitmentReferences } from './financialAccounting';
 
@@ -65,6 +68,7 @@ export interface EncryptedStorageHelpers {
   ): void;
   /** Throws on invalid data; returns validated table names, never error messages. */
   validateBackupTables(tables: unknown): string[];
+  normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt' | 'recurring' | 'reminderLeadMinutes' | 'dueAlertDisabled'>>(task: T): T;
   getNextRecurringTaskDate(
     task: Task,
     fromDate?: string
@@ -127,9 +131,17 @@ function reconcileGoal(goal: Goal, milestones: Milestone[]): Goal {
 
 export function createEncryptedStorageFacade(
   repositories: EncryptedRepositories,
-  coordinator: EncryptedStorageTransaction,
+  underlyingCoordinator: EncryptedStorageTransaction,
   helpers: EncryptedStorageHelpers
 ) {
+  // Serialize the full facade write operation across tabs, including reference
+  // changes and restore/reset, before the existing encrypted write lease.
+  const coordinator: EncryptedStorageTransaction = {
+    run: operation => withCommitmentWriteLock(() => underlyingCoordinator.run(operation)),
+  };
+  const occurrenceCoordinator: EncryptedStorageTransaction = {
+    run: operation => withCommitmentWriteLock(() => underlyingCoordinator.run(operation), true),
+  };
   const readAll = <T>(table: EncryptedTable) =>
     repositories[table].getAll<T>();
 
@@ -211,6 +223,7 @@ export function createEncryptedStorageFacade(
       getById: (id: string) => get<Transaction>('transactions', id),
 
       add: async (input: Omit<Transaction, 'id' | 'createdAt'>) => {
+        if (input.commitmentId || input.commitmentOccurrenceDate) throw new Error('Scheduled occurrence identity is managed by its plan.');
         const record: Transaction = {
           ...input,
           id: helpers.createRecordId('tx'),
@@ -242,7 +255,7 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           const existing = await ctx.get<Transaction>('transactions', id);
           if (!existing) throw new Error('Transaction not found.');
-          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt };
+          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt, commitmentId: existing.commitmentId, commitmentOccurrenceDate: existing.commitmentOccurrenceDate };
           helpers.validateTransactionRecord(merged, true);
           const [categories, accounts] = await Promise.all([
             ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')
@@ -615,10 +628,48 @@ export function createEncryptedStorageFacade(
     },
 
     commitments: {
+      postOccurrence: async (id: string, expected: PlannedCommitment) => occurrenceCoordinator.run(async ctx => {
+        if (!expected || expected.id !== id) throw new Error('Review the current planned occurrence before recording it.');
+        const current = await ctx.get<PlannedCommitment>('plannedCommitments', id);
+        if (!current) throw new Error('This plan no longer exists.');
+        const transactions = await ctx.getAll<Transaction>('transactions');
+        const posted = transactions.find(row => row.commitmentId === id && row.commitmentOccurrenceDate === expected.nextDueDate);
+        if (posted) return posted; // Durable retry: the original record is returned, never posted twice.
+        if (current.lastPostedDate && expected.nextDueDate <= current.lastPostedDate) throw new Error('This occurrence was already recorded; deleting its transaction does not make it eligible again.');
+        for (const key of ['nextDueDate', 'amountMinor', 'currencyCode', 'amount', 'categoryId', 'accountId', 'type', 'frequency', 'status', 'updatedAt', 'title', 'notes', 'recurrenceAnchorDate', 'lastPostedDate'] as const) {
+          if (current[key] !== expected[key]) throw new Error('This plan changed. Review it again before recording.');
+        }
+        validatePlannedCommitment(current);
+        if (current.status !== 'active') throw new Error('Resume this plan before recording an occurrence.');
+        if (current.nextDueDate > formatLocalDate(new Date())) throw new Error('This occurrence is not due yet.');
+        const [categories, accounts] = await Promise.all([ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')]);
+        validatePlannedCommitmentReferences(current, accounts, categories);
+        const category = categories.find(row => row.id === current.categoryId);
+        if (!category) throw new Error('Choose a category on this plan before recording an occurrence.');
+        if (current.accountId && !accounts.find(row => row.id === current.accountId)?.isActive) throw new Error('Choose an active account or leave this plan unassigned.');
+        // The primary key is unique across tabs/processes as well as retries.
+        const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([id, current.nextDueDate])));
+        const occurrenceId = 'occurrence_' + Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+        const record: Transaction = {
+          id: occurrenceId, createdAt: new Date().toISOString(),
+          type: current.type || 'expense', amount: current.amount, amountMinor: current.amountMinor,
+          currencyCode: current.currencyCode, accountId: current.accountId, category: category.name,
+          description: current.title, notes: current.notes, date: current.nextDueDate,
+          paymentMethod: 'Other', isRecurring: true, commitmentId: id, commitmentOccurrenceDate: current.nextDueDate,
+        };
+        helpers.validateTransactionRecord(record, true);
+        const recurrenceAnchorDate = current.recurrenceAnchorDate || current.nextDueDate;
+        const next = { ...current, recurrenceAnchorDate, lastPostedDate: current.nextDueDate,
+          nextDueDate: advanceCommitmentDate(current.nextDueDate, current.frequency, recurrenceAnchorDate), updatedAt: new Date().toISOString() };
+        validatePlannedCommitment(next);
+        ctx.add('transactions', record);
+        ctx.put('plannedCommitments', next);
+        return record;
+      }),
       getAll: async () => (await readAll<PlannedCommitment>('plannedCommitments'))
         .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.title.localeCompare(b.title)),
       add: async input => {
-        const record: PlannedCommitment = { ...input, id: helpers.createRecordId('commitment'), createdAt: new Date().toISOString() };
+        const record: PlannedCommitment = { ...input, recurrenceAnchorDate: input.nextDueDate, lastPostedDate: undefined, id: helpers.createRecordId('commitment'), createdAt: new Date().toISOString() };
         validatePlannedCommitment(record);
         await coordinator.run(async ctx => {
           const [accounts, categories] = await Promise.all([ctx.getAll<FinancialAccount>('financialAccounts'), ctx.getAll<Category>('categories')]);
@@ -630,7 +681,9 @@ export function createEncryptedStorageFacade(
       update: async (id, updates) => coordinator.run(async ctx => {
         const existing = await ctx.get<PlannedCommitment>('plannedCommitments', id);
         if (!existing) return;
-        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
+        const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, lastPostedDate: existing.lastPostedDate,
+          recurrenceAnchorDate: (updates.nextDueDate && updates.nextDueDate !== existing.nextDueDate) || (updates.frequency && updates.frequency !== existing.frequency)
+            ? (updates.nextDueDate || existing.nextDueDate) : existing.recurrenceAnchorDate, updatedAt: new Date().toISOString() };
         validatePlannedCommitment(updated);
         const [accounts, categories] = await Promise.all([ctx.getAll<FinancialAccount>('financialAccounts'), ctx.getAll<Category>('categories')]);
         validatePlannedCommitmentReferences(updated, accounts, categories);
@@ -694,6 +747,41 @@ export function createEncryptedStorageFacade(
             });
           }
         }),
+      logQuantity: async (habitId: string, date: string, quantity: number) => coordinator.run(async ctx => {
+        const parsedDate = new Date(`${date}T00:00:00.000Z`);
+        if (!Number.isFinite(quantity) || quantity < 0) throw new Error('Habit quantity must be zero or greater.');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) throw new Error('Invalid habit completion date.');
+        const habit = await ctx.get<Habit>('habits', habitId);
+        if (!habit || habit.trackingMode !== 'quantity' || !habit.targetPerDay) throw new Error('This habit is not set up for quantity tracking.');
+        const logs = await ctx.getAll<HabitLog>('habitLogs');
+        const existing = logs.find(row => row.habitId === habitId && row.date === date);
+        const completed = quantity >= habit.targetPerDay;
+        const update = { quantity, completed, completedAt: completed ? new Date().toISOString() : undefined };
+        if (existing) ctx.put('habitLogs', { ...existing, ...update });
+        else ctx.add('habitLogs', { id: helpers.createRecordId('habitlog'), habitId, date, quantityUnit: habit.quantityUnit, ...update });
+      }),
+      adjustQuantity: async (habitId: string, date: string, delta: number) => coordinator.run(async ctx => {
+        const parsedDate = new Date(`${date}T00:00:00.000Z`);
+        if (!Number.isInteger(delta) || delta === 0) throw new Error('Quantity adjustment must be a non-zero whole number.');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) throw new Error('Invalid habit completion date.');
+        const habit = await ctx.get<Habit>('habits', habitId);
+        if (!habit || habit.trackingMode !== 'quantity' || !habit.targetPerDay) throw new Error('This habit is not set up for quantity tracking.');
+        const logs = await ctx.getAll<HabitLog>('habitLogs');
+        const existing = logs.find(row => row.habitId === habitId && row.date === date);
+        const quantity = Math.max(0, (existing?.quantity ?? 0) + delta);
+        const completed = quantity >= habit.targetPerDay;
+        const update = { quantity, completed, completedAt: completed ? new Date().toISOString() : undefined };
+        if (existing) ctx.put('habitLogs', { ...existing, ...update });
+        else ctx.add('habitLogs', { id: helpers.createRecordId('habitlog'), habitId, date, quantityUnit: habit.quantityUnit, ...update });
+        return quantity;
+      }),
+      setQuantityLogUnit: async (logId: string, quantityUnit: string) => coordinator.run(async ctx => {
+        const normalized = quantityUnit.trim();
+        if (!normalized) throw new Error('Enter the unit used for this historical quantity.');
+        const log = await ctx.get<HabitLog>('habitLogs', logId);
+        if (!log || log.quantity === undefined) throw new Error('Quantity history not found.');
+        ctx.put('habitLogs', { ...log, quantityUnit: normalized });
+      }),
     },
 
     goals: {
@@ -759,14 +847,17 @@ export function createEncryptedStorageFacade(
       getAll: () => readAll<Task>('tasks'),
 
       add: async (input: Omit<Task, 'id' | 'createdAt'>) =>
-        add('tasks', {
+        add('tasks', helpers.normalizeTaskSchedule({
           ...input,
           id: helpers.createRecordId('task'),
           createdAt: new Date().toISOString(),
-        }),
+        })),
 
-      update: (id: string, changes: Partial<Task>) =>
-        update('tasks', id, changes, true),
+      update: (id: string, changes: Partial<Task>) => coordinator.run(async ctx => {
+        const existing = await ctx.get<Task>('tasks', id);
+        if (!existing) throw new Error('Task not found.');
+        ctx.put('tasks', helpers.normalizeTaskSchedule({ ...existing, ...changes, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() }));
+      }),
 
       delete: (id: string) => remove('tasks', id),
 
@@ -774,6 +865,7 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           const task = await ctx.get<Task>('tasks', id);
           if (!task) throw new Error('Task not found.');
+          helpers.normalizeTaskSchedule(task);
           if (task.completed === completed) return;
 
           const now = new Date().toISOString();
@@ -793,7 +885,7 @@ export function createEncryptedStorageFacade(
             return;
           }
 
-          if (completed && !task.completed && task.recurring && task.recurring !== 'None') {
+          if (completed && !task.completed && task.dueDate && task.recurring && task.recurring !== 'None') {
             const nextDate = helpers.getNextRecurringTaskDate(task);
             if (nextDate) {
               const rootId = helpers.getRecurrenceRootId(task);
@@ -900,164 +992,49 @@ export function createEncryptedStorageFacade(
         for (const category of DEFAULT_CATEGORIES) ctx.add('categories', category);
       }),
 
-      seedDemoData: async () => {
-        const today = new Date().toISOString().split('T')[0];
-        const curMonth = today.substring(0, 7);
-        const now = new Date().toISOString();
-        const yesterday = new Date(Date.now() - 86400000)
-          .toISOString().split('T')[0];
+      seedDemoData: async () => coordinator.run(async ctx => {
+        if (await ctx.get('settings', 'sampleDataCreated')) return;
+        const sample = createSampleData();
+        const categories = new Map((await ctx.getAll<Category>('categories')).map(row => [row.id, row]));
+        for (const category of DEFAULT_CATEGORIES) {
+          if (!categories.has(category.id)) {
+            ctx.add('categories', category);
+            categories.set(category.id, category);
+          }
+        }
+        const budgets = await ctx.getAll<Budget>('budgets');
+        sample.budgets = sample.budgets.filter(row => categories.get(row.categoryId ?? '')?.type === 'expense' &&
+          !budgets.some(saved => saved.monthYear === row.monthYear && saved.categoryId === row.categoryId));
+        for (const transaction of sample.transactions) {
+          const category = categories.get(transaction.category);
+          if (!category || category.type !== transaction.type) throw new Error('A sample category conflicts with an existing category.');
+          transaction.category = category.name;
+          helpers.validateTransactionRecord(transaction, true);
+        }
+        for (const [key, rows] of Object.entries(sample)) {
+          for (const row of rows) ctx.add(key as keyof typeof sample, row);
+        }
+        ctx.add('settings', { key: 'sampleDataCreated', value: true });
+      }),
 
-        await coordinator.run(async ctx => {
-          const categories = await ctx.getAll<Category>('categories');
-          const availableCategories = categories.length
-            ? categories
-            : DEFAULT_CATEGORIES;
-
-          if (!categories.length) {
-            for (const category of DEFAULT_CATEGORIES) {
-              ctx.add('categories', category);
+      removeSampleData: async () => coordinator.run(async ctx => {
+        const posted = await ctx.getAll<Transaction>('transactions');
+        if (posted.some(row => !isSampleRecord(row.id) && isSampleRecord(row.commitmentId ?? ''))) {
+          throw new Error('Remove or unlink transactions recorded from sample plans before removing sample data.');
+        }
+        const tables = Object.keys(createSampleData()) as (keyof ReturnType<typeof createSampleData>)[];
+        for (const table of tables) {
+          const rows = await ctx.getAll<{ id: string; habitId?: string; goalId?: string; recurrenceRootId?: string; commitmentId?: string }>(table);
+          for (const row of rows) {
+            if (isSampleRecord(row.id) ||
+              (table === 'tasks' && isSampleRecord(row.recurrenceRootId ?? '')) ||
+              (['habitLogs', 'milestones', 'savingsContributions'].includes(table) && isSampleRecord(row.habitId ?? row.goalId ?? ''))) {
+              ctx.delete(table, row.id);
             }
           }
-
-          const demoTxs: Omit<Transaction, 'id' | 'createdAt'>[] = [
-            { type: 'income', amount: 95000, category: 'Salary', description: 'Tech Consultancy Salary', date: `${curMonth}-01`, paymentMethod: 'Bank Transfer' },
-            { type: 'income', amount: 15000, category: 'Freelance', description: 'Web Architecture Sprint', date: `${curMonth}-15`, paymentMethod: 'Net Banking' },
-            { type: 'expense', amount: 28000, category: 'Rent', description: 'Apartment Monthly Rent', date: `${curMonth}-02`, paymentMethod: 'UPI' },
-            { type: 'expense', amount: 6500, category: 'Food', description: 'Organic Pantry Provisions', date: `${curMonth}-08`, paymentMethod: 'Credit Card' },
-            { type: 'expense', amount: 2400, category: 'Utilities', description: 'Fiber Broadband & Power', date: `${curMonth}-12`, paymentMethod: 'UPI' },
-            { type: 'expense', amount: 12000, category: 'Investments', description: 'Index Equity SIP', date: `${curMonth}-05`, paymentMethod: 'Bank Transfer' }
-          ];
-
-          for (const input of demoTxs) {
-            const category = availableCategories.find(
-              row => row.name === input.category
-            );
-
-            if (!category) {
-              throw new Error(`Demo transaction category not found: ${input.category}`);
-            }
-            if (category.type !== input.type) {
-              throw new Error(`Demo transaction category type mismatch: ${input.category}`);
-            }
-
-            const record: Transaction = {
-              ...input,
-              id: helpers.createRecordId('tx'),
-              createdAt: now,
-            };
-            helpers.validateTransactionRecord(record, true);
-            ctx.add('transactions', record);
-          }
-
-          const budgets = await ctx.getAll<Budget>('budgets');
-          const foodCategory = availableCategories.find(
-            row => row.id === 'cat_food' && row.type === 'expense'
-          );
-
-          if (!foodCategory) {
-            throw new Error('Demo budget category not found: cat_food');
-          }
-
-          const budgetInputs: Omit<Budget, 'id' | 'createdAt'>[] = [
-            { monthlyAmount: 60000, monthYear: curMonth },
-            {
-              categoryId: foodCategory.id,
-              monthlyAmount: 12000,
-              monthYear: curMonth,
-            },
-          ];
-
-          for (const input of budgetInputs) {
-            const existing = budgets.find(
-              row => row.monthYear === input.monthYear &&
-                row.categoryId === input.categoryId
-            );
-            if (existing) {
-              ctx.put('budgets', { ...existing, monthlyAmount: input.monthlyAmount });
-            } else {
-              ctx.add('budgets', {
-                ...input,
-                id: helpers.createRecordId('budget'),
-                createdAt: now,
-              });
-            }
-          }
-
-          const goal: SavingsGoal = {
-            id: helpers.createRecordId('sg'),
-            title: 'Emergency Reserve Fund',
-            targetAmount: 200000,
-            currentAmount: 105000,
-            targetDate: '2026-12-31',
-            category: 'Financial',
-            createdAt: now,
-          };
-          ctx.add('savingsGoals', goal);
-          ctx.add('savingsContributions', {
-            id: helpers.createRecordId('contrib'),
-            goalId: goal.id,
-            amount: 20000,
-            date: `${curMonth}-05`,
-            notes: 'Monthly savings contribution',
-            createdAt: now,
-          });
-
-          const habits: Habit[] = [
-            { id: helpers.createRecordId('habit'), name: 'Drink 3L Water', frequency: 'daily', color: '#3b82f6', createdAt: now },
-            { id: helpers.createRecordId('habit'), name: 'Walk 10,000 steps', frequency: 'daily', color: '#10b981', createdAt: now },
-            { id: helpers.createRecordId('habit'), name: 'Read 20 pages', frequency: 'daily', color: '#8b5cf6', createdAt: now },
-          ];
-          for (const habit of habits) ctx.add('habits', habit);
-
-          const habitLogs: HabitLog[] = [
-            { id: helpers.createRecordId('habitlog'), habitId: habits[0].id, date: yesterday, completed: true, completedAt: now },
-            { id: helpers.createRecordId('habitlog'), habitId: habits[0].id, date: today, completed: true, completedAt: now },
-            { id: helpers.createRecordId('habitlog'), habitId: habits[1].id, date: yesterday, completed: true, completedAt: now },
-          ];
-          for (const log of habitLogs) ctx.add('habitLogs', log);
-
-          const goalRecord: Goal = {
-            id: helpers.createRecordId('goal'),
-            title: 'Run Half Marathon (21.1 km)',
-            description: 'Prepare endurance for state marathon event',
-            category: 'Fitness',
-            targetValue: 21.1,
-            currentValue: 10.0,
-            unit: 'km',
-            startDate: '2026-09-01',
-            targetDate: '2026-12-31',
-            priority: 'High',
-            status: 'In Progress',
-            createdAt: now,
-          };
-          ctx.add('goals', goalRecord);
-
-          const milestoneInputs: Omit<Milestone, 'id'>[] = [
-            { goalId: goalRecord.id, title: '5km continuous run', completed: true },
-            { goalId: goalRecord.id, title: '10km non-stop run', completed: true },
-            { goalId: goalRecord.id, title: '15km long trail run', completed: false },
-          ];
-          for (const input of milestoneInputs) {
-            ctx.add('milestones', {
-              ...input,
-              id: helpers.createRecordId('milestone'),
-            });
-          }
-
-          const taskInputs: Omit<Task, 'id' | 'createdAt'>[] = [
-            { title: 'Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false },
-            { title: '5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true },
-            { title: 'Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false },
-          ];
-          for (const input of taskInputs) {
-            ctx.add('tasks', {
-              ...input,
-              id: helpers.createRecordId('task'),
-              createdAt: now,
-            });
-          }
-        });
-      },
+        }
+        ctx.delete('settings', 'sampleDataCreated');
+      }),
     },
   };
 

@@ -144,8 +144,35 @@ export function getRecurrenceRootId(
   return rootId;
 }
 
+/** Validate a dated schedule, or a genuinely unscheduled task with no alarms/recurrence. */
+export function normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt' | 'recurring' | 'reminderLeadMinutes' | 'dueAlertDisabled'>>(task: T): T {
+  if (task.dueDate !== undefined && typeof task.dueDate !== 'string') throw new Error('Choose a valid task date.');
+  if (task.dueTime !== undefined && typeof task.dueTime !== 'string') throw new Error('Choose a valid task time.');
+  if (task.reminderAt !== undefined && typeof task.reminderAt !== 'string') throw new Error('Choose a valid task reminder.');
+  if (task.recurring !== undefined && typeof task.recurring !== 'string') throw new Error('Choose a valid task recurrence.');
+  const dueDate = task.dueDate?.trim() || undefined;
+  const dueTime = task.dueTime || undefined;
+  const reminderAt = task.reminderAt || undefined;
+  const recurring = task.recurring || 'None';
+  if (!['None', 'Daily', 'Weekly', 'Monthly'].includes(recurring)) throw new Error('Choose a valid task recurrence.');
+  if (!dueDate && (dueTime || reminderAt || recurring !== 'None')) throw new Error('Choose a task date before setting a time, reminder or recurrence.');
+  if (dueDate) {
+    const [year, month, day] = dueDate.split('-').map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) throw new Error('Choose a valid task date.');
+  }
+  if (dueTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(dueTime)) throw new Error('Choose a valid task time.');
+  if (reminderAt && !Number.isFinite(Date.parse(reminderAt))) throw new Error('Choose a valid task reminder.');
+  const { reminderLeadMinutes, dueAlertDisabled } = task;
+  if (dueAlertDisabled !== undefined && typeof dueAlertDisabled !== 'boolean') throw new Error('Choose a valid due-time alert setting.');
+  if (reminderLeadMinutes !== undefined && (!dueDate || !Number.isInteger(reminderLeadMinutes) || reminderLeadMinutes < 1 || reminderLeadMinutes > 10080 || reminderAt)) {
+    throw new Error('Choose one early reminder between 1 minute and 7 days.');
+  }
+  return { ...task, dueDate, dueTime, reminderAt, recurring };
+}
+
 export function getNextRecurringTaskDate(
-  dueDate: string,
+  dueDate: string | undefined,
   recurring: Task['recurring'],
   todayLocalDate = (() => {
     const now = new Date();
@@ -167,6 +194,7 @@ export function getNextRecurringTaskDate(
     return date;
   };
 
+  if (!dueDate) throw new Error('Invalid recurring task due date');
   const nextDate = parseDate(dueDate);
   const today = parseDate(todayLocalDate);
 
@@ -338,6 +366,9 @@ export interface IDataStorage {
     delete(id: string): Promise<void>;
     getLogs(habitId?: string): Promise<HabitLog[]>;
     logCompletion(habitId: string, date: string, completed: boolean): Promise<void>;
+    logQuantity(habitId: string, date: string, quantity: number): Promise<void>;
+    adjustQuantity(habitId: string, date: string, delta: number): Promise<number>;
+    setQuantityLogUnit(logId: string, quantityUnit: string): Promise<void>;
   };
   goals: {
     getAll(): Promise<Goal[]>;
@@ -368,6 +399,7 @@ export interface IDataStorage {
     importData(jsonData: string, options?: { replaceExisting?: boolean }): Promise<{ success: boolean; counts: Record<string, number> }>;
     clearAll(): Promise<void>;
     seedDemoData(): Promise<void>;
+    removeSampleData(): Promise<void>;
   };
   accounts: {
     getAll(): Promise<FinancialAccount[]>;
@@ -389,6 +421,7 @@ export interface IDataStorage {
   };
   commitments: {
     getAll(): Promise<PlannedCommitment[]>;
+    postOccurrence(id: string, expected: PlannedCommitment): Promise<Transaction>;
     add(input: Omit<PlannedCommitment, 'id' | 'createdAt' | 'updatedAt'>): Promise<PlannedCommitment>;
     update(id: string, updates: Partial<Omit<PlannedCommitment, 'id' | 'createdAt'>>): Promise<void>;
     delete(id: string): Promise<void>;
@@ -472,9 +505,20 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'occurredAt', 'transactions', i);
     optionalInstant(r, 'updatedAt', 'transactions', i);
     optionalBoolean(r, 'isRecurring', 'transactions', i);
+    optionalString(r, 'commitmentId', 'transactions', i);
+    if (r.commitmentOccurrenceDate !== undefined && !date(r.commitmentOccurrenceDate)) fail('transactions', i, 'commitmentOccurrenceDate');
+    if (Boolean(r.commitmentId) !== Boolean(r.commitmentOccurrenceDate)) fail('transactions', i, 'occurrence identity');
     try { validateMoneyMetadata(r); } catch { fail('transactions', i, 'currency/amountMinor'); }
     optionalString(r, 'accountId', 'transactions', i);
     if (r.accountId && !ids.financialAccounts.has(r.accountId)) fail('transactions', i, 'accountId reference');
+  });
+
+  const occurrenceKeys = new Set<string>();
+  tablesData.transactions.forEach((r: any, i: number) => {
+    if (!r.commitmentId) return;
+    const key = JSON.stringify([r.commitmentId, r.commitmentOccurrenceDate]);
+    if (occurrenceKeys.has(key)) fail('transactions', i, 'duplicate scheduled occurrence');
+    occurrenceKeys.add(key);
   });
 
   check('financialAccounts', (r, i) => {
@@ -547,6 +591,11 @@ export function validateBackupTables(tablesData: any): string[] {
   });
 
   check('plannedCommitments', (r, i) => {
+    if (r.type !== undefined && !enumValue(r.type, ['income', 'expense'])) fail('plannedCommitments', i, 'type');
+    for (const key of ['recurrenceAnchorDate', 'lastPostedDate']) {
+      if (r[key] !== undefined && !date(r[key])) fail('plannedCommitments', i, key);
+    }
+    if (r.lastPostedDate && r.lastPostedDate >= r.nextDueDate) fail('plannedCommitments', i, 'lastPostedDate');
     requiredString(r, 'title', 'plannedCommitments', i);
     requiredNumber(r, 'amount', 'plannedCommitments', i);
     try { validateMoneyMetadata(r); } catch { fail('plannedCommitments', i, 'currency/amountMinor'); }
@@ -557,7 +606,11 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'notes', 'plannedCommitments', i);
     optionalString(r, 'categoryId', 'plannedCommitments', i);
     optionalString(r, 'accountId', 'plannedCommitments', i);
-    if (r.categoryId && !ids.categories.has(r.categoryId)) fail('plannedCommitments', i, 'categoryId reference');
+    if (r.categoryId && !tablesData.categories.some((category: any) => category.id === r.categoryId && category.type === (r.type || 'expense'))) fail('plannedCommitments', i, 'categoryId reference');
+    if (r.lastPostedDate && !r.recurrenceAnchorDate) fail('plannedCommitments', i, 'recurrenceAnchorDate');
+    for (const tx of tablesData.transactions) {
+      if (tx.commitmentId === r.id && (!r.lastPostedDate || tx.commitmentOccurrenceDate > r.lastPostedDate || tx.commitmentOccurrenceDate >= r.nextDueDate)) fail('plannedCommitments', i, 'occurrence history');
+    }
     if (r.accountId && !ids.financialAccounts.has(r.accountId)) fail('plannedCommitments', i, 'accountId reference');
     optionalInstant(r, 'updatedAt', 'plannedCommitments', i);
   });
@@ -655,7 +708,7 @@ export function validateBackupTables(tablesData: any): string[] {
 
   check('tasks', (r, i) => {
     requiredString(r, 'title', 'tasks', i);
-    requiredDate(r, 'dueDate', 'tasks', i);
+    if (r.dueDate !== undefined) requiredDate(r, 'dueDate', 'tasks', i);
     if (!enumValue(r.priority, ['Low', 'Medium', 'High', 'Urgent'])) fail('tasks', i, 'priority');
     if (!enumValue(r.recurring, ['None', 'Daily', 'Weekly', 'Monthly'])) fail('tasks', i, 'recurring');
     if (typeof r.completed !== 'boolean') fail('tasks', i, 'completed');
@@ -665,10 +718,13 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'notes', 'tasks', i);
     if (r.dueTime !== undefined && !time(r.dueTime)) fail('tasks', i, 'dueTime');
     optionalInstant(r, 'reminderAt', 'tasks', i);
+    if (r.dueAlertDisabled !== undefined && typeof r.dueAlertDisabled !== 'boolean') fail('tasks', i, 'invalid due-time alert');
+    if (r.reminderLeadMinutes !== undefined && (!r.dueDate || typeof r.reminderLeadMinutes !== 'number' || !Number.isInteger(r.reminderLeadMinutes) || r.reminderLeadMinutes < 1 || r.reminderLeadMinutes > 10080 || r.reminderAt)) fail('tasks', i, 'invalid early reminder');
     optionalInstant(r, 'completedAt', 'tasks', i);
     optionalInstant(r, 'updatedAt', 'tasks', i);
     optionalString(r, 'recurrenceRootId', 'tasks', i);
     optionalString(r, 'spawnedTaskId', 'tasks', i);
+    try { normalizeTaskSchedule(r); } catch { fail('tasks', i, 'schedule'); }
     if (r.subtasks !== undefined) {
       if (!Array.isArray(r.subtasks)) fail('tasks', i, 'subtasks');
       for (let subtaskIndex = 0; subtaskIndex < r.subtasks.length; subtaskIndex++) {
@@ -1137,6 +1193,7 @@ const rawStorageService: IDataStorage = {
     async delete(id) { await db.manualExchangeRates.delete(id); }
   },
   commitments: {
+    async postOccurrence() { throw new Error('Activate encrypted storage before recording a scheduled occurrence.'); },
     async getAll() { return (await db.plannedCommitments.toArray()).sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.title.localeCompare(b.title)); },
     async add(input) {
       const record: PlannedCommitment = { ...input, id: createRecordId('commitment'), createdAt: new Date().toISOString() };
@@ -1223,7 +1280,49 @@ const rawStorageService: IDataStorage = {
           await db.habitLogs.add({ id, habitId, date, completed, completedAt });
         }
       });
-    }
+    },
+    async logQuantity(habitId, date, quantity) {
+      if (!Number.isFinite(quantity) || quantity < 0) throw new Error('Habit quantity must be zero or greater.');
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Habit log date must use YYYY-MM-DD format');
+      const [year, month, day] = date.split('-').map(Number);
+      const parsedDate = new Date(Date.UTC(year, month - 1, day));
+      if (parsedDate.getUTCFullYear() !== year || parsedDate.getUTCMonth() !== month - 1 || parsedDate.getUTCDate() !== day) throw new Error('Habit log date must be a valid calendar date');
+      await db.transaction('rw', db.habits, db.habitLogs, async () => {
+        const habit = await db.habits.get(habitId);
+        if (!habit || habit.trackingMode !== 'quantity' || !habit.targetPerDay) throw new Error('This habit is not set up for quantity tracking.');
+        const existing = await db.habitLogs.where('[habitId+date]').equals([habitId, date]).first();
+        const log = { quantity, completed: quantity >= habit.targetPerDay, completedAt: quantity >= habit.targetPerDay ? new Date().toISOString() : undefined };
+        if (existing) await db.habitLogs.update(existing.id, log);
+        else await db.habitLogs.add({ id: createRecordId('habitlog'), habitId, date, quantityUnit: habit.quantityUnit, ...log });
+      });
+    },
+    async adjustQuantity(habitId, date, delta) {
+      if (!Number.isInteger(delta) || delta === 0) throw new Error('Quantity adjustment must be a non-zero whole number.');
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Habit log date must use YYYY-MM-DD format');
+      const [year, month, day] = date.split('-').map(Number);
+      const parsedDate = new Date(Date.UTC(year, month - 1, day));
+      if (parsedDate.getUTCFullYear() !== year || parsedDate.getUTCMonth() !== month - 1 || parsedDate.getUTCDate() !== day) throw new Error('Habit log date must be a valid calendar date');
+      return db.transaction('rw', db.habits, db.habitLogs, async () => {
+        const habit = await db.habits.get(habitId);
+        if (!habit || habit.trackingMode !== 'quantity' || !habit.targetPerDay) throw new Error('This habit is not set up for quantity tracking.');
+        const existing = await db.habitLogs.where('[habitId+date]').equals([habitId, date]).first();
+        const quantity = Math.max(0, (existing?.quantity ?? 0) + delta);
+        const completed = quantity >= habit.targetPerDay;
+        const update = { quantity, completed, completedAt: completed ? new Date().toISOString() : undefined };
+        if (existing) await db.habitLogs.update(existing.id, update);
+        else await db.habitLogs.add({ id: createRecordId('habitlog'), habitId, date, quantityUnit: habit.quantityUnit, ...update });
+        return quantity;
+      });
+    },
+    async setQuantityLogUnit(logId, quantityUnit) {
+      const normalized = quantityUnit.trim();
+      if (!normalized) throw new Error('Enter the unit used for this historical quantity.');
+      await db.transaction('rw', db.habits, db.habitLogs, async () => {
+        const log = await db.habitLogs.get(logId);
+        if (!log || log.quantity === undefined) throw new Error('Quantity history not found.');
+        await db.habitLogs.update(logId, { quantityUnit: normalized });
+      });
+    },
   },
   goals: {
     async getAll() {
@@ -1328,7 +1427,7 @@ const rawStorageService: IDataStorage = {
     },
     async add(task) {
       const id = createRecordId('t');
-      const record: Task = { ...task, id, createdAt: new Date().toISOString() };
+      const record: Task = normalizeTaskSchedule({ ...task, id, createdAt: new Date().toISOString() });
       await db.tasks.add(record);
       return record;
     },
@@ -1336,9 +1435,10 @@ const rawStorageService: IDataStorage = {
       const safeUpdates = { ...updates };
       delete safeUpdates.id;
       delete safeUpdates.createdAt;
-      await db.tasks.update(id, {
-        ...safeUpdates,
-        updatedAt: new Date().toISOString()
+      await db.transaction('rw', db.tasks, async () => {
+        const existing = await db.tasks.get(id);
+        if (!existing) return;
+        await db.tasks.put(normalizeTaskSchedule({ ...existing, ...safeUpdates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() }));
       });
     },
     async delete(id) {
@@ -1367,7 +1467,8 @@ const rawStorageService: IDataStorage = {
           return;
         }
 
-        if (task.recurring && task.recurring !== 'None' && !task.completed) {
+        normalizeTaskSchedule(task);
+        if (task.dueDate && task.recurring && task.recurring !== 'None' && !task.completed) {
           const nextDueDate = getNextRecurringTaskDate(task.dueDate, task.recurring);
           const rootId = getRecurrenceRootId(task);
           const nextTaskId = `rec_${rootId}_${nextDueDate}`;
@@ -1381,6 +1482,8 @@ const rawStorageService: IDataStorage = {
               dueDate: nextDueDate,
               dueTime: task.dueTime,
               reminderAt: task.reminderAt,
+              reminderLeadMinutes: task.reminderLeadMinutes,
+              dueAlertDisabled: task.dueAlertDisabled,
               priority: task.priority,
               category: task.category,
               notes: task.notes,
@@ -1541,67 +1644,8 @@ const rawStorageService: IDataStorage = {
       // This parent operation already owns a session lease.
       await rawStorageService.categories.getAll();
     },
-        async seedDemoData() {
-      // User-initiated optional demo data
-      const today = new Date().toISOString().split('T')[0];
-      const curMonth = today.substring(0, 7);
-
-      const demoTxs: Omit<Transaction, 'id' | 'createdAt'>[] = [
-        { type: 'income', amount: 95000, category: 'Salary', description: 'Tech Consultancy Salary', date: `${curMonth}-01`, paymentMethod: 'Bank Transfer' },
-        { type: 'income', amount: 15000, category: 'Freelance', description: 'Web Architecture Sprint', date: `${curMonth}-15`, paymentMethod: 'Net Banking' },
-        { type: 'expense', amount: 28000, category: 'Rent', description: 'Apartment Monthly Rent', date: `${curMonth}-02`, paymentMethod: 'UPI' },
-        { type: 'expense', amount: 6500, category: 'Food', description: 'Organic Pantry Provisions', date: `${curMonth}-08`, paymentMethod: 'Credit Card' },
-        { type: 'expense', amount: 2400, category: 'Utilities', description: 'Fiber Broadband & Power', date: `${curMonth}-12`, paymentMethod: 'UPI' },
-        { type: 'expense', amount: 12000, category: 'Investments', description: 'Index Equity SIP', date: `${curMonth}-05`, paymentMethod: 'Bank Transfer' }
-      ];
-      for (const tx of demoTxs) await rawStorageService.transactions.add(tx);
-
-      await rawStorageService.budgets.upsert({ monthlyAmount: 60000, monthYear: curMonth });
-      await rawStorageService.budgets.upsert({ categoryId: 'cat_food', monthlyAmount: 12000, monthYear: curMonth });
-
-      const goal = await rawStorageService.savings.addGoal({
-        title: 'Emergency Reserve Fund',
-        targetAmount: 200000,
-        currentAmount: 85000,
-        targetDate: '2026-12-31',
-        category: 'Financial'
-      });
-      await rawStorageService.savings.addContribution({
-        goalId: goal.id,
-        amount: 20000,
-        date: `${curMonth}-05`,
-        notes: 'Monthly savings contribution'
-      });
-
-      const h1 = await rawStorageService.habits.add({ name: 'Drink 3L Water', frequency: 'daily', color: '#3b82f6' });
-      const h2 = await rawStorageService.habits.add({ name: 'Walk 10,000 steps', frequency: 'daily', color: '#10b981' });
-      const h3 = await rawStorageService.habits.add({ name: 'Read 20 pages', frequency: 'daily', color: '#8b5cf6' });
-
-      // Add streaks
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-      await rawStorageService.habits.logCompletion(h1.id, yesterday, true);
-      await rawStorageService.habits.logCompletion(h1.id, today, true);
-      await rawStorageService.habits.logCompletion(h2.id, yesterday, true);
-
-      const g = await rawStorageService.goals.add({
-        title: 'Run Half Marathon (21.1 km)',
-        description: 'Prepare endurance for state marathon event',
-        category: 'Fitness',
-        targetValue: 21.1,
-        currentValue: 10.0,
-        unit: 'km',
-        startDate: '2026-09-01',
-        targetDate: '2026-12-31',
-        priority: 'High',
-        status: 'In Progress'
-      });
-      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '5km continuous run', completed: true });
-      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '10km non-stop run', completed: true });
-      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '15km long trail run', completed: false });
-
-      await rawStorageService.tasks.add({ title: 'Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false });
-      await rawStorageService.tasks.add({ title: '5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true });
-      await rawStorageService.tasks.add({ title: 'Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false }); }
+    async seedDemoData() { throw new Error('Sample data requires encrypted storage.'); },
+    async removeSampleData() { throw new Error('Sample data removal requires encrypted storage.'); },
   }
 };
 
@@ -1617,8 +1661,9 @@ export const encryptedStorageRuntime = createLifeOSEncryptedRuntime(
     createRecordId,
     validateTransactionRecord,
     validateBackupTables,
+    normalizeTaskSchedule,
     getNextRecurringTaskDate: (task, fromDate) =>
-      getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate),
+      task.dueDate ? getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate) : null,
     getRecurrenceRootId,
   }
 );

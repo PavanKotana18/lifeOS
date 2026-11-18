@@ -123,20 +123,23 @@ export function sumMinorUnits(values: Iterable<bigint>): bigint {
 
 /** Locale formatting that keeps the amount exact even beyond Number precision. */
 export function formatMinorUnits(minorUnits: bigint, currencyCode: string, locale?: string): string {
+  // The system-default currency for LifeOS is INR; Indian grouping is its
+  // expected home-market display even when the device language is English-US.
+  const resolvedLocale = locale ?? (currencyCode.toUpperCase() === 'INR' ? 'en-IN' : undefined);
   const { fractionDigits } = getCurrencyMetadata(currencyCode);
   const negative = minorUnits < 0n;
   const magnitude = negative ? -minorUnits : minorUnits;
   const divisor = pow10(fractionDigits);
   const whole = magnitude / divisor;
   const fraction = magnitude % divisor;
-  const groupedWhole = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(whole);
+  const groupedWhole = new Intl.NumberFormat(resolvedLocale, { maximumFractionDigits: 0 }).format(whole);
   const assemble = (parts: Intl.NumberFormatPart[]) => parts.map(part => {
     if (part.type === 'integer') return groupedWhole;
     if (part.type === 'fraction') return String(fraction).padStart(fractionDigits, '0');
     return part.value;
   }).join('');
   try {
-    const parts = new Intl.NumberFormat(locale, {
+    const parts = new Intl.NumberFormat(resolvedLocale, {
       style: 'currency', currency: currencyCode, minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,
     }).formatToParts(negative ? -1n : 1n);
@@ -144,7 +147,7 @@ export function formatMinorUnits(minorUnits: bigint, currencyCode: string, local
   } catch {
     // Older Android ICU data may predate a valid code in this frozen catalog.
     // Retain exact localized digits and visibly include the code as a fallback.
-    const parts = new Intl.NumberFormat(locale, {
+    const parts = new Intl.NumberFormat(resolvedLocale, {
       minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits,
     }).formatToParts(negative ? -1n : 1n);
     return `${currencyCode}\u00a0${assemble(parts)}`;
@@ -231,7 +234,7 @@ export interface SavingsProjection {
  * amount remains integer minor units; monthly interest rounds half up.
  * Inflation is also applied monthly at annual rate/12 and is an estimate.
  */
-export function projectSavings(input: SavingsProjectionInput): SavingsProjection {
+export function projectSavings(input: SavingsProjectionInput, onMonth?: (month: number, balance: bigint) => void): SavingsProjection {
   const { startingMinorUnits, monthlyContributionMinorUnits, months } = input;
   const stepMonths = input.contributionStepUpMonths || 0;
   const stepBps = input.contributionStepUpBasisPoints || 0;
@@ -251,6 +254,7 @@ export function projectSavings(input: SavingsProjectionInput): SavingsProjection
   for (let month = 1; month <= months; month++) {
     balance = divideHalfUp(balance * returnNumerator, RATE_DENOMINATOR) + contribution;
     contributed += contribution;
+    onMonth?.(month, balance);
     if (stepMonths > 0 && month % stepMonths === 0 && month < months) {
       contribution = divideHalfUp(contribution * BigInt(10_000 + stepBps), 10_000n);
     }

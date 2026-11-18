@@ -1,8 +1,7 @@
 apply plugin: 'com.android.application'
 
-// package.json is the authoritative app version. CI adds its monotonically
-// increasing workflow run number so every distributable build gets a higher
-// Android versionCode while local builds remain reproducible.
+// package.json is the authoritative app version. An optional build number can
+// distinguish automated artifacts; ordinary local builds remain reproducible.
 def lifeosPackage = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
 def lifeosVersion = lifeosPackage.version
 def lifeosVersionMatch = (lifeosVersion =~ /^(\d+)\.(\d+)\.(\d+)$/)
@@ -26,12 +25,6 @@ def lifeosReleaseSigningReady =
      'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'].every {
         System.getenv(it)?.trim()
     }
-def lifeosDebugSigningReady =
-    ['LIFEOS_DEBUG_KEYSTORE_PATH', 'LIFEOS_DEBUG_KEYSTORE_PASSWORD',
-     'LIFEOS_DEBUG_KEY_ALIAS', 'LIFEOS_DEBUG_KEY_PASSWORD'].every {
-        System.getenv(it)?.trim()
-    }
-
 android {
     signingConfigs {
         if (lifeosReleaseSigningReady) {
@@ -40,14 +33,6 @@ android {
                 storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
                 keyAlias System.getenv('ANDROID_KEY_ALIAS')
                 keyPassword System.getenv('ANDROID_KEY_PASSWORD')
-            }
-        }
-        if (lifeosDebugSigningReady) {
-            lifeosDebug {
-                storeFile file(System.getenv('LIFEOS_DEBUG_KEYSTORE_PATH'))
-                storePassword System.getenv('LIFEOS_DEBUG_KEYSTORE_PASSWORD')
-                keyAlias System.getenv('LIFEOS_DEBUG_KEY_ALIAS')
-                keyPassword System.getenv('LIFEOS_DEBUG_KEY_PASSWORD')
             }
         }
     }
@@ -66,18 +51,28 @@ android {
     }
     buildTypes {
         debug {
-            applicationIdSuffix ".dev"
-            versionNameSuffix "-dev"
-            if (!lifeosDebugSigningReady) {
-                throw new GradleException('Debug APK signing requires LIFEOS_DEBUG_KEYSTORE_PATH, LIFEOS_DEBUG_KEYSTORE_PASSWORD, LIFEOS_DEBUG_KEY_ALIAS, and LIFEOS_DEBUG_KEY_PASSWORD.')
-            }
-            signingConfig signingConfigs.lifeosDebug
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
         }
         release {
             if (lifeosReleaseSigningReady) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+// Release artifacts require the production signer. The standard Debug type
+// remains isolated by package ID and uses Android's local debug signer.
+gradle.taskGraph.whenReady { graph ->
+    def lifeosAppProject = project
+    def artifactTaskPrefixes = ['assemble', 'package', 'bundle', 'install', 'sign', 'validatesigning']
+    def requestsRelease = graph.allTasks.any { task ->
+        task.project == lifeosAppProject && artifactTaskPrefixes.any { prefix -> task.name.toLowerCase().startsWith(prefix) }
+            && task.name.toLowerCase().contains('release')
+    }
+    if (requestsRelease && !lifeosReleaseSigningReady) {
+        throw new GradleException('Release artifacts require the configured production signing identity; debug signing is never used for Release.')
     }
 }
 

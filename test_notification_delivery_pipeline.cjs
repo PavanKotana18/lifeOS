@@ -9,8 +9,9 @@ const nativeScheduler = fs.readFileSync('node_modules/@capacitor/local-notificat
 const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
 const bootstrap = fs.readFileSync('src/services/encryptedStorageIntegration.ts', 'utf8');
 const taskSave = app.slice(app.indexOf('const saveNewRecord'), app.indexOf('const formatMoney'));
-assert.match(service, /return isNative\(\) && await this\.checkPermission\(\) === 'granted'/, 'notification display permission gates scheduling');
-assert.match(nativeScheduler, /Notification scheduled with non-exact alarm/);
+assert.match(service, /this\.checkPermission\(\), LocalNotifications\.areEnabled\(\), LocalNotifications\.listChannels\(\)/, 'runtime app and channel availability gate scheduling as well as permission');
+assert.match(service, /Number\(reminderChannel\.importance\) > 0/, 'a blocked reminders channel cannot be misreported as scheduled for delivery');
+assert.match(nativeScheduler, /setAndAllowWhileIdle\(AlarmManager\.RTC_WAKEUP/);
 assert.match(nativeScheduler, /alarmManager\.setAndAllowWhileIdle/, 'native plugin falls back to inexact allow-while-idle delivery');
 assert.doesNotMatch(service, /body: task\.title/, 'scheduled reminder body must not expose the task title');
 assert.match(service, /permission-denied-or-revoked/, 'permission loss is diagnostically distinguishable');
@@ -20,8 +21,12 @@ assert.match(service, /getDeliveredNotifications\(\)/, 'diagnostics separate per
 assert.match(service, /lateCatchUp/, 'resume recovery retains a delayed still-persisted reminder instead of cancelling it as past');
 assert.match(service, /delivery-not-observable/, 'a missing pending record is not misreported as a confirmed delivery');
 assert.match(service, /setAndAllowWhileIdle|approximate/, 'denied exact-alarm access is explicitly approximate');
-assert.match(service, /allowWhileIdle: plan\.kind === 'taskReminders'/, 'only explicit task reminders consume the per-app idle-aware alarm quota');
+assert.match(service, /allowWhileIdle: plan\.kind === 'dueTime' \|\| plan\.kind === 'taskReminders'/, 'due-time and early task notifications use idle-aware scheduling');
 assert.match(service, /lifeos\.notificationLifecycle\.v1/, 'per-reminder request/acceptance/observation evidence survives pending-row removal');
+assert.match(service, /reminderLifecycle: readReminderLifecycleSummary\(\)/, 'diagnostics expose a bounded content-free reminder lifecycle');
+assert.match(app, /developerToolsEnabled && notificationDiagnostics\.reminderLifecycle\.length/, 'the delivery timeline is limited to developer diagnostics');
+assert.match(app, /Android posted:/, 'the timeline displays the OS post timestamp separately from schedule acceptance');
+assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationDeliveryDiagnosticsPlugin.java', 'utf8'), /getPostTime\(\)/, 'the reminder timeline uses Android post time for actual OS delivery evidence');
 assert.match(service, /delivery-unconfirmed/, 'an elapsed reminder without active delivery evidence remains unconfirmed');
 assert.match(service, /localNotificationReceived/, 'native plugin receipt events are recorded separately from schedule acceptance');
 assert.match(service, /taskSyncQueue\.then\(run, run\)/, 'task schedule updates are serialized');
@@ -30,12 +35,16 @@ assert.match(service, /visibility: 0/, 'new channel requests private lock-screen
 assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
 assert.match(manifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
 assert.match(app, /const exactAlarm = await NotificationService\.checkExactAlarmPermission\(\);[\s\S]*?status: exactAlarm === 'granted' \? 'granted' : 'approximate'/, 'exact alarm access is reported as precision, not a hard delivery prerequisite');
-assert.match(permissionFlow, /setOnboardingComplete\(true\)[\s\S]*?requestAnimationFrame\(\(\) => requestAnimationFrame/, 'welcome permission waits until after onboarding has committed to Today');
-assert.match(permissionFlow, /checkPermission\(\)[\s\S]*?permission === 'prompt' \|\| permission === 'prompt-with-rationale'[\s\S]*?requestPermission\(\)/, 'already-granted and previously-denied states do not trigger duplicate prompts');
+const onboarding = fs.readFileSync('src/components/Onboarding.tsx', 'utf8');
+assert.match(onboarding, /run\(props\.onNotifications\)\}>Allow notifications/, 'first-launch notification permission remains explicit');
+
+assert.match(onboarding, /run\(props\.onPrecise\)\}>Enable precise reminders/, 'exact alarm special access is separate and user-invoked when reminder categories are active');
+assert.match(app, /const toggleNotificationCategory[\s\S]*?askNotificationPermission\(\)/, 'permission is requested when a notification category is enabled');
+assert.match(app, /const setNotificationsMaster[\s\S]*?askNotificationPermission\(\)/, 'the notification master switch is a second explicit opt-in path');
 assert.match(notificationService, /sendImmediateTestNotification/);
 assert.match(notificationService, /schedule-verification-missing:test-notification/, 'test actions distinguish scheduling acceptance from delivery');
-assert.match(app, /taskReminders: true, upcomingDeadlines: true, overdueAlerts: true, habitReminders: true, milestoneReminders: true/, 'new users who grant permission receive defaults for supported categories');
-assert.match(bootstrap, /'notificationPreferences'[\s\S]*?'notificationDefaultsPending'/, 'permission preference initialization is recoverable before first encrypted record');
+assert.match(service, /taskReminders: false,[\s\S]*?overdueAlerts: false/, 'notification categories stay off until Android permission is granted on a fresh install');
+assert.match(bootstrap, /'notificationPreferences'[\s\S]*?'notificationsEnabled'/, 'opt-in notification preferences remain available before the first encrypted record');
 assert.match(notificationService, /localNotificationActionPerformed/);
 assert.match(notificationService, /getInitialTapAction/);
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationTapLaunchPlugin.java', 'utf8'), /LocalNotficationObject[\s\S]*?getInitialAction[\s\S]*?acknowledgeInitialAction/, 'cold-start tap actions are held until JS routes them');
@@ -46,14 +55,14 @@ assert.match(app, /isEncryptedStorageActivated\(\)[\s\S]*?processPendingTaskNoti
 assert.match(app, /getInitialTapAction[\s\S]*?handleAction\(initialAction\)/, 'cold-start taps are processed after action listener registration');
 assert.match(app, /if \(handledNotificationIds\.current\.has\(id\)\) return/, 'duplicate tap delivery is ignored');
 assert.match(app, /if \(!isLocked && sessionManager\.isUnlocked\(\) && isEncryptedStorageActivated\(\)\)/, 'task routing requires an unlocked encrypted session');
-assert.match(app, /const task = \(await StorageService\.tasks\.getAll\(\)\)\.find\(item => item\.id === taskId\)/, 'the task is loaded through the encrypted storage facade');
-assert.match(app, /That reminder no longer has an available task/, 'deleted destinations have a graceful fallback');
+assert.match(app, /const task = \(await StorageService\.tasks\.getAll\(\)\)\.find\(item => item\.id === extra\.taskId\)/, 'the task is loaded through the encrypted storage facade');
+assert.match(app, /That reminder no longer has an available record/, 'deleted destinations have a graceful fallback');
 assert.match(app, /processPendingTaskNotification\(\)/, 'pending task taps are retried after session restoration');
 assert.match(service, /diagnoseTaskReminder/);
 assert.match(app, /Check reminder status/);
 assert.match(app, /sessionReady: sessionManager\.isUnlocked\(\) && isEncryptedStorageActivated\(\)/, 'task diagnostic reports the encrypted-session prerequisite without record content');
 assert.match(app, /capability: 'initializing'/, 'initial diagnostics do not claim that the native plugin is absent before a probe');
-assert.match(app, /notificationDiagnostics\.capability === 'unavailable'/, 'unavailable state is only rendered after the asynchronous capability probe');
+
 assert.match(app, /if \(safeFirstRunState\)[\s\S]*?setAppReady\(true\);\s*return;/, 'fresh-install browse remains unblocked while diagnostics initialize');
 assert.match(app, /useEffect\(\(\) => \{\s*if \(!appReady\) return;\s*void refreshNotificationDiagnostics\(\);/, 'capability is refreshed asynchronously once the React app is available');
 assert.match(service, /for \(let attempt = 0; attempt < 5; attempt\+\+\)/, 'native registration probe is bounded');
@@ -65,3 +74,8 @@ assert.match(fs.readFileSync('android/app/src/androidTest/java/com/lifeos/person
 assert.match(fs.readFileSync('android/app/src/androidTest/java/com/lifeos/personal/LocalNotificationBridgeAcceptanceTest.java', 'utf8'), /backgroundedSyntheticTaskReminderIsActuallyPosted/, 'native test waits for a synthetic task notification after backgrounding');
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/RuntimeInfoPlugin.java', 'utf8'), /isIgnoringBatteryOptimizations/, 'diagnostics inspect OS power allowlisting without requesting exemption');
 console.log('NOTIFICATION DELIVERY CONTRACT: Android permission, inexact fallback, queue verification, privacy and reboot manifest checks passed (source contract only; no delivery test).');
+
+assert.match(nativeScheduler, /Reminder time has already passed/, 'expired requests are rejected before reaching the pending store');
+assert.match(nativeScheduler, /FLAG_NO_CREATE/, 'cancellation searches for the existing Android token');
+
+assert.match(service, /async sendImmediateTestNotification\(\)[\s\S]*?id: immediateTestId,[^\n]*extra: \{ kind: 'test' \}/, 'immediate test posts directly instead of using an alarm');

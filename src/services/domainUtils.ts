@@ -111,7 +111,8 @@ export function sortTasksByDeadline<T extends Pick<Task, 'dueDate' | 'dueTime' |
 /** Chronological ordering for upcoming-task summaries using the saved local schedule. */
 export function sortTasksBySchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'createdAt' | 'id'>>(tasks: T[]): T[] {
   const scheduleKey = (task: T) => {
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(task.dueDate || '') ? task.dueDate : '9999-12-31';
+    const dueDate = task.dueDate || '';
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(dueDate) ? dueDate : '9999-12-31';
     const time = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(task.dueTime || '') ? task.dueTime! : '23:59';
     return `${date}T${time}`;
   };
@@ -317,13 +318,25 @@ export function buildFinanceEntry(localDateTime: string, savedAt = new Date()) {
   if (Number.isNaN(parsed.getTime())) throw new Error('Invalid local transaction date/time');
   return { date: formatLocalDate(parsed), occurredAt: parsed.toISOString(), createdAt: savedAt.toISOString() };
 }
-export function buildTaskNotificationPlan(task: Task, preferences: NotificationPreferences, now = new Date()) {
-  if (task.completed) return [] as { kind: keyof NotificationPreferences; at: Date }[];
-  const plan: { kind: keyof NotificationPreferences; at: Date }[] = [];
+export type TaskAlertKind = 'dueTime' | 'taskReminders' | 'upcomingDeadlines' | 'overdueAlerts';
+
+export function buildTaskNotificationPlan(task: Task, preferences: NotificationPreferences, now = new Date(), dateOnlyAlertTime?: string) {
+  const plan: { kind: TaskAlertKind; at: Date }[] = [];
+  if (task.completed || !task.dueDate || task.id?.startsWith('lifeos-demo-v2:') || task.title?.startsWith('[PREVIEW SAMPLE]') || task.recurrenceRootId?.startsWith('lifeos-demo-v2:')) return plan;
   const deadline = getTaskDeadline(task);
-  const add = (kind: keyof NotificationPreferences, at: Date | null) => { if (at && !Number.isNaN(at.getTime()) && at > now) plan.push({ kind, at }); };
-  if (preferences.taskReminders && task.reminderAt) add('taskReminders', new Date(task.reminderAt));
-  if (deadline && preferences.upcomingDeadlines) add('upcomingDeadlines', task.dueTime ? new Date(deadline.getTime() - 60 * 60_000) : parseLocalDateTime(task.dueDate, '09:00'));
-  if (deadline && preferences.overdueAlerts) add('overdueAlerts', new Date(deadline.getTime() + 60_000));
+  const alertTime = task.dueTime || dateOnlyAlertTime;
+  const dueAt = alertTime ? parseLocalDateTime(task.dueDate, alertTime) : null;
+  const add = (kind: TaskAlertKind, at: Date | null) => {
+    if (at && at > now && !plan.some(item => +item.at === +at)) plan.push({ kind, at });
+  };
+  if (preferences.taskReminders) {
+    if (!task.dueAlertDisabled) add('dueTime', dueAt);
+    const lead = task.reminderLeadMinutes;
+    const reminder = lead && dueAt ? new Date(+dueAt - lead * 60_000) : task.reminderAt ? new Date(task.reminderAt) : null;
+    if (!dueAt || !reminder || +reminder !== +dueAt) add('taskReminders', reminder);
+  }
+  if (deadline && preferences.upcomingDeadlines) add('upcomingDeadlines', task.dueTime ? new Date(+deadline - 60 * 60_000) : parseLocalDateTime(task.dueDate, '09:00'));
+  // Never create a new overdue alert for a task already overdue when reconciled.
+  if (deadline && deadline > now && preferences.overdueAlerts) add('overdueAlerts', new Date(+deadline + 60_000));
   return plan;
 }

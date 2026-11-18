@@ -72,14 +72,15 @@ Build a debug APK:
     cd android
     gradle assembleDebug
 
-## Continuous integration
+## Android build types
 
-The GitHub Actions workflow runs application tests, dependency auditing,
-Sentinel verification, TypeScript checks, the web build and Capacitor
-synchronisation. Eligible branch and pull-request builds also produce an
-Android debug APK artifact.
-
-The workflow does not currently produce a signed production release APK.
+Use the standard `:app:assembleDebug` variant for local development. It is
+labelled **LifeOS Debug**, uses the isolated package `com.lifeos.personal.debug`
+and the standard Android debug signing key. It does not replace existing Dev,
+Preview or production installations. Release keeps the production package
+`com.lifeos.personal` and requires the production signing identity. Release
+artifact builds are manual and require an explicit workflow dispatch choice.
+See `RELEASING.md` for the commands and release controls.
 
 ## Security
 

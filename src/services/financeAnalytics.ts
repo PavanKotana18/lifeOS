@@ -34,6 +34,8 @@ export function buildFinanceAnalytics(
   });
   const periodRows = periodMinorRows.map(({ incomeMinor, expensesMinor, ...row }) => ({
     ...row,
+    incomeMinor: incomeMinor?.toString() ?? null,
+    expensesMinor: expensesMinor?.toString() ?? null,
     income: incomeMinor === null ? null : fromMinorUnits(incomeMinor, currencyCode),
     expenses: expensesMinor === null ? null : fromMinorUnits(expensesMinor, currencyCode),
   }));
@@ -55,8 +57,9 @@ export function buildFinanceAnalytics(
   for (const [category, amountMinor] of Object.entries(categoryExpenseMinor)) {
     categoryExpenses[category] = fromMinorUnits(amountMinor, currencyCode);
   }
-  const categories = Object.entries(categoryExpenses).sort((a, b) => b[1] - a[1]).map(([name, amount]) => ({
-    name, amount, percentage: totalExpenses ? amount / totalExpenses * 100 : 0,
+  const categories = Object.entries(categoryExpenseMinor).sort((a, b) => a[1] === b[1] ? a[0].localeCompare(b[0]) : a[1] > b[1] ? -1 : 1).map(([name, amountMinor]) => ({
+    name, amountMinor: amountMinor.toString(), amount: categoryExpenses[name],
+    percentage: totalExpensesMinor > 0n ? Number(amountMinor * 10_000n / totalExpensesMinor) / 100 : 0,
   }));
   const monthBudgets = budgets.filter(budget => (!budget.monthYear || budget.monthYear === month) && (!budget.currencyCode || budget.currencyCode === currencyCode));
   const budgetRows = monthBudgets.map(budget => {
@@ -70,6 +73,9 @@ export function buildFinanceAnalytics(
       : totalExpensesMinor;
     return {
       category: budget.categoryId ? (categoryName || 'Unknown category') : 'Overall',
+      allocatedMinor: allocatedMinor.toString(),
+      spentMinor: spentMinor.toString(),
+      remainingMinor: (allocatedMinor - spentMinor).toString(),
       allocated: fromMinorUnits(allocatedMinor, currencyCode),
       spent: fromMinorUnits(spentMinor, currencyCode),
       remaining: fromMinorUnits(allocatedMinor - spentMinor, currencyCode),
@@ -84,6 +90,10 @@ export function buildFinanceAnalytics(
   const netSavingsMinor = totalIncomeMinor - totalExpensesMinor;
   return {
     periodRows, categories, budgetRows, totalIncome, totalExpenses,
+    currencyCode,
+    totalIncomeMinor: totalIncomeMinor.toString(),
+    totalExpensesMinor: totalExpensesMinor.toString(),
+    netSavingsMinor: netSavingsMinor.toString(),
     netSavings: fromMinorUnits(netSavingsMinor, currencyCode),
     savingsRate: totalIncomeMinor > 0n ? Number(netSavingsMinor * 1_000_000n / totalIncomeMinor) / 10_000 : null,
     expenseChange, previousMonthHasRecords: previous.hasRecords,

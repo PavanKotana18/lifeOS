@@ -30,12 +30,12 @@ assert.match(shell, /onClick=\{triggerBiometricAuth\}/, 'lock screen retains the
 assert.match(shell, /onClick=\{\(\) => \{ void openRecovery\(\); \}\}/, 'lock recovery opens through the protection gate');
 assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await setSensitiveScreenshotState\(true\);\s*setRecoveryOpen\(true\);/, 'recovery secrets are not rendered before native screenshot protection is acknowledged');
 assert.doesNotMatch(shell, /theme-toggle-btn|onClick=\{toggleTheme\}/, 'header has no duplicate theme shortcut');
-assert.match(fsSource, /id="color-theme-title"/, 'curated theme selection remains in Settings appearance');
+assert.match(fsSource, /aria-label="Theme previews"/, 'curated theme selection remains in Settings appearance');
 assert.match(fsSource, /aria-label="Open profile and settings"/, 'profile remains the header settings entry point');
 assert.match(fsSource, /lifeos-mark/, 'LifeOS mark uses its semantic shell class');
 assert.match(fsSource, /BrandMark/, 'App shell renders the shared original vector brand mark');
-assert.match(fsSource, /Daily consistency monitor<\/p>/, 'habit heading remains in the semantic palette');
-assert.match(fsSource, /Reminder · \{h\.reminderTime\} local<\/p>/, 'habit reminder remains in the semantic palette');
+assert.match(fsSource, /todayOverview\.routinesCompleted\} of \{todayOverview\.routinesDue\} done today/, 'habit heading remains in the semantic palette');
+assert.match(fsSource, /habit\.reminderTime/, 'habit details retain their reminder time');
 assert.match(footer, /onClick=\{\(\) => void CapacitorApp\.exitApp\(\)\}/, 'exit action remains connected');
 assert.match(footer, /role="status" aria-live="polite"/, 'toast remains announced to assistive technology');
 assert.match(styles, /\.lifeos-warning \{ color: var\(--warning\); \}/, 'warning text maps to the active theme');
@@ -47,11 +47,10 @@ const setup = render(React.createElement(SecureSetupDialog, {
   prepared: { recoveryCode: 'SYNTHETIC-RECOVERY-CODE', envelope: 'SYNTHETIC-ENVELOPE' }, onDecision: () => {},
 }));
 assert.match(setup, /role="dialog" aria-modal="true"/);
-assert.match(setup, /SYNTHETIC-RECOVERY-CODE/);
+assert.doesNotMatch(setup, /SYNTHETIC-RECOVERY-CODE/, 'code stays hidden until native save succeeds');
 assert.doesNotMatch(setup, /SYNTHETIC-ENVELOPE/, 'the key envelope is exported, not rendered in the page');
-assert.match(setup, /Save complete recovery kit/);
-assert.match(setup, /Paste your recovery code to confirm/);
-assert.match(setup, /Continue to LifeOS/);
+assert.match(setup, /Save recovery file/);
+assert.doesNotMatch(setup, /Paste your recovery code to confirm|Confirm recovery file/);
 assert.match(setup, /aria-live="polite"/);
 assert.doesNotMatch(setup, /I saved the complete recovery kit|Complete private recovery kit|type="checkbox"/);
 const lockedSetup = render(React.createElement(SecureSetupDialog, {
@@ -73,7 +72,8 @@ assert.match(setupSource, /contents:\s*JSON\.stringify\(file\)/);
 assert.match(setupSource, /recoveryCode:\s*prepared\.recoveryCode/);
 assert.match(setupSource, /envelope:\s*prepared\.envelope/);
 assert.match(setupSource, /result\.status === 'cancelled'/, 'a cancelled file-save does not count as exported');
-assert.match(setupSource, /if \(result\.status === 'cancelled'\) \{\s*announce\('Save cancelled\. Save the complete kit to continue\.'\);\s*\} else if \(result\.status === 'saved'\)/, 'file-picker cancellation keeps continuation locked');
+assert.match(setupSource, /if \(result\.status === 'cancelled'\) \{\s*announce\('Save cancelled/, 'picker cancellation stays on the save step');
+assert.match(setupSource, /if \(result\.status === 'saved'\)[\s\S]*?setKitExportState\('saved'\)/, 'only a saved recovery file confirms the kit');
 assert.match(setupSource, /matchesRecoveryCode\(code, prepared\.recoveryCode\)/, 'only a format-valid normalized exact match confirms recovery');
 assert.match(setupSource, /kitExportState === 'saved'/, 'only a completed native save enables recovery continuation');
 assert.match(setupSource, /preservePendingRecovery: true/, 'the Android recovery-kit save uses the narrowly scoped lifecycle marker');

@@ -23,7 +23,7 @@ const props = {
   onCheckIn: noop, onCreateHabit: noop, onCreateGoal: noop, onHabits: noop, onGoals: noop, onInsights: noop,
 };
 const markup = renderToStaticMarkup(React.createElement(LifeHub, props));
-assert.match(markup, /Habits are things you repeat\. Goals are outcomes you build toward\./);
+assert.doesNotMatch(markup, /Habits are things you repeat\. Goals are outcomes you build toward\./);
 assert.match(markup, /aria-label="Routine progress"/);
 assert.match(markup, /1 of 2 check-ins/);
 assert.match(markup, /4 of 7 routines/);
@@ -35,19 +35,20 @@ assert.match(markup, /Finish a course/);
 assert.match(markup, /45%/);
 assert.match(markup, /role="progressbar" aria-label="Finish a course progress"/);
 assert.match(markup, /1 of 3 milestones/);
-assert.match(markup, /Life insights/);
-assert.match(markup, /View all habits/);
+assert.match(markup, /Your progress/);
+assert.match(markup, />Habits</);
 assert.doesNotMatch(markup, /lazy|failure|behind|missed/i, 'Life copy stays considerate and nonjudgmental');
 
 const empty = renderToStaticMarkup(React.createElement(LifeHub, { ...props, habits: [], goals: [], routinesDue: 0, completedRoutines: 0, weeklyTotal: 0, weeklyCompleted: 0 }));
 assert.match(empty, /No routines yet/);
 assert.match(empty, /No goals yet/);
 assert.match(empty, /Add a goal/);
-assert.match(empty, /All goals and milestones/);
+assert.match(empty, /Add a goal/);
 assert.doesNotMatch(empty, /Routine progress/, 'empty profiles do not show fabricated zero-progress summaries');
 
 const app = fs.readFileSync('src/App.tsx', 'utf8');
-assert.match(app, /onCheckIn=\{habit =>[\s\S]*handleHabitCompletion\(original\.id, original\.name, todayKey, habit\.completedToday\)/);
-assert.match(app, /onCreateGoal=\{\(\) => openCreateForm\('goal'\)\}/);
-assert.match(app, /progress: getGoalProgress\(goal\.currentValue, goal\.targetValue\)/);
+assert.match(app, /handleHabitCompletion\(h\.id, h\.name, todayStr, stats\.completedToday\)/);
+assert.match(app, /handleHabitQuantity\(h, todayStr, 1\)/);
+assert.match(app, /onClick=\{\(\) => openCreateForm\('goal'\)\}/);
+assert.match(app, /goalProgress\(goal\)/);
 console.log('LIFE UI 2.0: daily check-ins, streaks, goal progress/milestones, empty states, and existing handler wiring passed.');

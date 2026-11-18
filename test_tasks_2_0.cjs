@@ -26,7 +26,7 @@ const detail = fs.readFileSync('src/components/TaskDetailScreen.tsx', 'utf8');
 assert.match(types, /subtasks\?: TaskSubtask\[\]/, 'subtasks remain optional for older task records');
 assert.match(detail, /role="dialog" aria-modal="true" aria-labelledby="task-detail-title"/, 'detail is presented as a focused screen');
 assert.match(detail, /screenRef\.current\?\.focus\(\)/, 'opening detail moves keyboard focus into the screen');
-assert.match(app, /taskDetailReturnFocusRef\.current\.focus\(\)/, 'closing detail returns keyboard focus');
+assert.match(app, /taskDetailReturnFocusRef\.current\.focus\(\{ preventScroll: true \}\)/, 'closing detail returns keyboard focus');
 assert.match(app, /StorageService\.tasks\.update\(plannerDetailTask\.id, \{ subtasks \}\)/, 'subtask changes use the existing protected storage facade');
 assert.match(app, /upcomingTaskGroups\.find\(group => group\.tasks\[0\]\?\.id === t\.id\)/, 'upcoming tasks render grouped date headers');
 for (const behavior of ['Complete', 'Edit subtask', 'Delete subtask', 'Add a step']) assert.ok(component.includes(behavior), `subtask UI exposes ${behavior}`);

@@ -1,7 +1,9 @@
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
-  ResponsiveContainer, Tooltip, XAxis, YAxis
+  ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
+import { formatMinorUnits } from '../services/financeCore';
+import InfoTip from './InfoTip';
 
 type FinanceAnalytics = ReturnType<typeof import('../services/financeAnalytics').buildFinanceAnalytics>;
 
@@ -24,32 +26,35 @@ export default function FinanceCharts({
     borderColor: 'var(--stroke)',
     borderRadius: 12
   };
+  const maxAmount = Math.max(0, ...analytics.periodRows.flatMap(row => [row.income || 0, row.expenses || 0]));
+  const axisWidth = Math.min(132, Math.max(54, Math.ceil(Math.max(formatMoney(maxAmount).length, formatMoney(0).length) * 7.5 + 12)));
 
   return (
     <>
       <section className="lifeos-panel rounded-2xl border p-4">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div>
-            <h4 className="text-sm font-semibold">Income & expenses</h4>
-            <p className="text-xs text-secondary">Monthly totals</p>
-          </div>
-          <select aria-label="Analytics time range" value={range}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1"><h4 className="text-sm font-semibold">Monthly trends</h4><InfoTip label="Monthly trends">Only recorded income and spending are included. Gaps mean no transactions that month.</InfoTip></div>
+          <div className="flex items-center gap-2"><label className="shrink-0 text-[11px] text-secondary"><span className="sr-only">Period</span><select aria-label="Time period" value={range}
             onChange={event => onRangeChange(Number(event.target.value) as 3 | 6 | 12)}
             className="lifeos-input min-h-11 rounded-lg px-3 py-2 text-xs">
-            <option value={3}>3 months</option>
-            <option value={6}>6 months</option>
-            <option value={12}>12 months</option>
-          </select>
+            <option value={3}>Last 3 months</option>
+            <option value={6}>Last 6 months</option>
+            <option value={12}>Last 12 months</option>
+          </select></label></div>
         </div>
-        <p className="sr-only">Monthly chart data: {analytics.periodRows.map(row => `${row.month}: ${row.hasRecords ? `income ${formatMoney(row.income)}, expenses ${formatMoney(row.expenses)}` : 'no saved records'}`).join('; ')}.</p>
+        <p className="sr-only">Monthly chart data in posted {analytics.currencyCode}: {analytics.periodRows.map(row => `${row.month}: ${row.hasRecords ? `income ${row.incomeMinor === null ? formatMoney(row.income) : formatMinorUnits(BigInt(row.incomeMinor), analytics.currencyCode, locale)}, expenses ${row.expensesMinor === null ? formatMoney(row.expenses) : formatMinorUnits(BigInt(row.expensesMinor), analytics.currencyCode, locale)}` : 'no saved records'}`).join('; ')}. Planned amounts are excluded.</p>
         {analytics.periodRows.some(row => row.hasRecords) ? (
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={analytics.periodRows} margin={{ top: 8, right: 4, left: -18, bottom: 2 }}>
+              <BarChart data={analytics.periodRows} margin={{ top: 8, right: 4, left: 4, bottom: 2 }}>
                 <CartesianGrid vertical={false} stroke="var(--stroke)" />
-                <XAxis dataKey="month" tick={{ fill: 'var(--ink-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={value => Number(value).toLocaleString(locale)} tick={{ fill: 'var(--ink-secondary)', fontSize: 10 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(value: number | null, name: string) => [value === null ? 'No records' : formatMoney(value), name]} labelFormatter={(_, rows) => rows?.[0]?.payload?.key || ''} />
+                <XAxis dataKey="key" tickFormatter={(_, index) => analytics.periodRows[index]?.month || ''} tick={{ fill: 'var(--ink-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={value => formatMoney(Number(value))} width={axisWidth} tick={{ fill: 'var(--ink-secondary)', fontSize: 10 }} tickLine={false} axisLine={false} />
+                {analytics.periodRows.some(row => row.key === month) && <ReferenceArea x1={month} x2={month} fill="var(--accent)" fillOpacity={0.12} strokeOpacity={0} ifOverflow="hidden" />}
+                <Tooltip contentStyle={tooltipStyle} formatter={(value: number | null, name: string, item: { payload?: { incomeMinor?: string | null; expensesMinor?: string | null } }) => {
+                  const exact = name === 'Income' ? item.payload?.incomeMinor : item.payload?.expensesMinor;
+                  return [value === null ? 'No records' : exact == null ? formatMoney(value) : formatMinorUnits(BigInt(exact), analytics.currencyCode, locale), name];
+                }} labelFormatter={(_, rows) => rows?.[0]?.payload?.key || ''} />
                 <Legend />
                 <Bar dataKey="income" name="Income" fill="var(--success)" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="expenses" name="Expenses" fill="var(--danger)" radius={[4, 4, 0, 0]} />
@@ -59,13 +64,12 @@ export default function FinanceCharts({
         ) : (
           <div role="status" className="finance-chart-empty"><strong>No monthly pattern yet</strong><span>Record income or spending to see how it changes over time.</span></div>
         )}
-        <p className="mt-2 text-[11px] text-secondary">Months without transactions are shown as missing data; a recorded month with zero income or expenses is a real zero.</p>
       </section>
 
       <section className="lifeos-panel rounded-2xl border p-4">
         <div className="mb-2">
           <h4 className="text-sm font-semibold">Expense categories</h4>
-          <p className="text-xs text-secondary">{month} · {formatMoney(analytics.totalExpenses)} total</p>
+          <p className="text-xs text-secondary">{monthLabel(month)}</p>
         </div>
         {analytics.categories.length === 0 ? (
           <div role="status" className="finance-chart-empty"><strong>No expense categories for {monthLabel(month)}.</strong><span>Category comparisons appear after you record spending.</span></div>
@@ -80,7 +84,7 @@ export default function FinanceCharts({
                       <Cell key={entry.name} fill={['var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'][index % 4]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value: number) => formatMoney(value)} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value: number, _name: string, item: { payload?: { amountMinor?: string } }) => item.payload?.amountMinor == null ? formatMoney(value) : formatMinorUnits(BigInt(item.payload.amountMinor), analytics.currencyCode, locale)} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -89,7 +93,7 @@ export default function FinanceCharts({
                 <div key={entry.name} className="finance-category-row">
                   <div className="finance-category-label"><span className="finance-category-dot" style={{ backgroundColor: ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'][index % 5] }} aria-hidden="true" /><strong>{entry.name}</strong><span>{entry.percentage.toFixed(1)}%</span></div>
                   <div className="finance-category-track" role="progressbar" aria-label={`${entry.name} share of expenses`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, entry.percentage))}><span style={{ width: `${Math.min(100, Math.max(0, entry.percentage))}%`, backgroundColor: ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'][index % 5] }} /></div>
-                  <span className="finance-category-amount">{formatMoney(entry.amount)}</span>
+                  <span className="finance-category-amount">{formatMinorUnits(BigInt(entry.amountMinor), analytics.currencyCode, locale)}</span>
                 </div>
               ))}
             </div>

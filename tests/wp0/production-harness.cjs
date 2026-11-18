@@ -217,8 +217,9 @@ async function fixture({ activate = true } = {}) {
   const pending = new Map();
   const delivered = new Map();
   const notificationListeners = new Map();
+  const channels = new Map();
   const notifications = {
-    async createChannel() {}, async listChannels() { return { channels: [] }; },
+    async createChannel(channel) { channels.set(channel.id, channel); }, async listChannels() { return { channels: [...channels.values()] }; },
     async areEnabled() { return { value: true }; },
     async checkPermissions() { return { display: 'granted' }; },
     async requestPermissions() { return { display: 'granted' }; },
@@ -255,9 +256,10 @@ async function fixture({ activate = true } = {}) {
   const state = { startupComplete: { current: true }, biometricAuthenticated: { current: false }, safeFirstRunBrowse: { current: false }, visualThemeId: 'soft-ivory-sage' };
   function appDeps() {
     const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...load('src/services/todayLayout.ts'), ...db, ...notificationModule, ...state,
-      ...load('src/services/csvExportService.ts'), ...load('src/services/onboardingJourney.ts'),
+      ...load('src/services/csvExportService.ts'), ...load('src/services/onboardingJourney.ts'), ...load('src/services/notificationCopy.ts'), ...load('src/services/customAccent.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       reconcileNotificationPreferences: async () => {},
+      setDateOnlyAlertTime: () => {}, setNotificationTone: () => {}, setDeviceCredentialOnly: () => {},
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
       ensurePrivateStorageBeforeWrite: async () => {
         if (!db.isEncryptedStorageActivated() || !db.sessionManager.isUnlocked()) {

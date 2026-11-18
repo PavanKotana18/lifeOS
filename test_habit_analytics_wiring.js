@@ -204,7 +204,7 @@ check(
   'Habit deletion failures are visible to the user'
 );
 check(
-  app.includes('handleHabitDeletion(h)'),
+  app.includes('handleHabitDeletion(habit)'),
   'Habits tab uses the shared deletion handler'
 );
 

@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const ts = require('typescript');
@@ -14,23 +14,23 @@ const { renderToStaticMarkup } = require('react-dom/server');
 const Progress = require('./src/components/SavingsGoalProgress.tsx').default;
 const noop = () => {};
 const render = (currentAmount, targetAmount) => renderToStaticMarkup(React.createElement(Progress, {
-  goal: { id: 'synthetic', title: 'Emergency fund', category: 'Safety', targetAmount, currentAmount, targetDate: '2027-01-01', createdAt: '2026-11-01T00:00:00.000Z' },
+  goal: { id: 'synthetic', title: 'Emergency fund', category: 'Safety', targetAmount, currentAmount, currencyCode: 'USD', targetDate: '2027-01-01', createdAt: '2026-11-01T00:00:00.000Z' },
   formatMoney: value => `$${value.toFixed(2)}`, formatDate: value => value, onContribute: noop, onDelete: noop,
 }));
 
 const empty = render(0, 1000);
-assert.match(empty, /0% of \$1000\.00 saved/);
-assert.match(empty, /\$0\.00 saved · \$1000\.00 to go/);
+assert.match(empty, /0% of \$1,000\.00 saved/);
+assert.match(empty, /\$0\.00 saved \u00b7 \$1,000\.00 to go/);
 const quarter = render(250, 1000);
 assert.match(quarter, /aria-valuenow="25"/);
 assert.match(quarter, /stroke-dasharray="61\.26 245\.04"/);
 const reached = render(1250, 1000);
-assert.match(reached, /Target reached · \$1250\.00 saved/);
+assert.match(reached, /Target reached \u00b7 \$1,250\.00 saved/);
 assert.match(reached, />125%<\/span>/, 'displayed total can exceed target while visual gauge remains capped');
-assert.match(reached, /aria-valuenow="100" aria-valuetext="125% of \$1000\.00 saved"/);
+assert.match(reached, /aria-valuenow="100" aria-valuetext="125% of \$1,000\.00 saved"/);
 const invalid = render(10, 0);
 assert.match(invalid, /Savings progress unavailable/);
-assert.match(invalid, /Target · Unavailable/);
+assert.match(invalid, /Target \u00b7 Unavailable/);
 assert.doesNotMatch(invalid, /NaN/);
 const invalidSaved = render(-4, 1000);
 assert.match(invalidSaved, /Review the saved target and amount/);
@@ -42,7 +42,7 @@ assert.match(component, /aria-live="polite"/);
 assert.match(component, /onDelete/);
 assert.match(styles, /\.savings-goal-actions button \{[^}]*min-height: 44px/s);
 assert.match(styles, /\.savings-goal-fill \{[^}]*var\(--accent\)/s);
-assert.match(app, /confirmAction\(\{ title: 'Delete this savings goal\?', message: `“\$\{goal\.title\}” and its recorded contributions will be removed\.`/,
+assert.ok(app.includes('message: `\u201c${goal.title}\u201d and its recorded contributions will be removed.`'),
   'savings deletion explains that the goal and contributions are removed before asking for confirmation');
 assert.match(app, /StorageService\.savings\.deleteGoal\(goal\.id\)/,
   'the confirmed action still deletes through the savings storage service');

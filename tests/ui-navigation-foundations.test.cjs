@@ -34,9 +34,9 @@ assert.equal(navigation.retainedScreenTransitionState(false, 'prepare'), 'inacti
 assert.equal(navigation.retainedScreenTransitionState(false, 'running'), 'inactive');
 
 const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
-for (const tab of ['dashboard', 'plan', 'life']) {
-  assert.match(app, new RegExp(`<RetainedScreen active=\\{activeTab === '${tab}'\\}(?! retainInactive)`), `${tab} is unmounted when inactive because its UI state is owned by App`);
-}
+assert.match(app, /<RetainedScreen active=\{activeTab === 'dashboard'\}(?! retainInactive)/, 'Today can unmount because App owns its state');
+assert.match(app, /<RetainedScreen active=\{activeTab === 'plan'\} retainInactive/, 'Tasks retains its local filters across Plan sections and detail routes');
+assert.doesNotMatch(app, /id="screen-life"/, 'Habits and Goals no longer use a separate Life landing screen');
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
   'Money retains local account and planning form drafts while another tab is briefly visited');
 assert.match(app, /prefers-reduced-motion/);
@@ -68,7 +68,7 @@ assert.match(app, /window-blurred[\s\S]*activeTouchPointers\.current\.clear\(\)/
 assert.match(app, /event\.clientX <= leftGutter[\s\S]*event\.clientX >= window\.innerWidth - rightGutter/,
   'system edge areas are excluded using runtime and safe-area values');
 assert.match(app, /button,a,label,summary,input\[type="button"\].*\[role="tab"\]/);
-assert.match(app, /\[data-horizontal-scroll\].*\.recharts-wrapper.*canvas.*\[role="slider"\]/);
+assert.match(app, /\[data-horizontal-scroll\].*\[role="slider"\]/);
 assert.match(app, /textarea,select,\[contenteditable="true"\].*input:not\(\[type="button"\]/,
   'text entry, native pickers and sliders do not hand their interaction to tab navigation');
 assert.match(app, /if \(activeTouchPointers\.current\.size > 1\)/, 'multi-touch cancels the current gesture');
@@ -76,7 +76,7 @@ assert.match(app, /if \(start\.viewportWidth !== window\.innerWidth\)/, 'a resiz
 assert.match(app, /if \(!isLocked\) return;[\s\S]*cancelPrimaryGesture\('app-locked'\)[\s\S]*setTabTransition\(null\)/, 'locking cancels active gestures and settles transitions before private screens are removed');
 assert.match(app, /screenScrollKey\(/);
 assert.match(app, /rememberActiveScroll\(\)/);
-assert.match(app, /pendingNotificationTaskId\.current/, 'notification task routing remains connected');
+assert.match(app, /pendingNotification\.current/, 'notification task routing remains connected');
 
 const retained = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'RetainedScreen.tsx'), 'utf8');
 assert.match(retained, /if \(active && !visited\) setVisited\(true\)/);

@@ -1,8 +1,8 @@
-'use strict';
+﻿'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 require('./scripts/register-ts-test-loader.cjs');
-const { getBudgetDisplayStatus } = require('./src/services/budgetDisplay.ts');
+const { getBudgetDisplayStatus, getExactBudgetDisplayStatus } = require('./src/services/budgetDisplay.ts');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 
 assert.deepEqual(getBudgetDisplayStatus(40, 100), { percentUsed: 40, barPercent: 40, remaining: 60, overBy: 0, isOver: false });
@@ -12,15 +12,18 @@ assert.equal(getBudgetDisplayStatus(0, 0).percentUsed, null);
 assert.equal(getBudgetDisplayStatus(30, 0).isOver, false, 'an absent limit is not presented as an exceeded budget');
 assert.equal(getBudgetDisplayStatus(-1, 10).percentUsed, null);
 assert.equal(getBudgetDisplayStatus(Number.NaN, 10).percentUsed, null);
-assert.match(app, /getBudgetDisplayStatus\(categoryMissing \? Number\.NaN : spent, b\.monthlyAmount\)/);
+assert.deepEqual(getExactBudgetDisplayStatus(4000n, 10000n), { percentUsed: 40, barPercent: 40, isOver: false, remainingMinor: 6000n, overByMinor: 0n });
+assert.deepEqual(getExactBudgetDisplayStatus(10001n, 10000n), { percentUsed: 100, barPercent: 100, isOver: true, remainingMinor: 0n, overByMinor: 1n });
+assert.equal(getExactBudgetDisplayStatus(undefined, 10000n).percentUsed, null);
+assert.match(app, /getExactBudgetDisplayStatus\(categoryMissing \? undefined : spentMinor, allocatedMinor\)/);
 assert.match(app, /aria-valuetext=\{budgetStatus\.isOver \? overAccessibleLabel : budgetLabel\}/);
-assert.match(app, /\$\{budgetStatus\.percentUsed\.toFixed\(0\)\}% used · \$\{formatMoney\(budgetStatus\.overBy\)\} over plan/);
+assert.match(app, /const overByLabel = formatMinorUnits\(budgetStatus\.overByMinor, budgetCurrency/);
 assert.match(app, /Set a limit to track remaining/);
-assert.match(app, /getBudgetDisplayStatus\(categoryMissing \? Number\.NaN : spent, b\.monthlyAmount\)/, 'orphaned category budgets do not present zero spend as verified');
+assert.match(app, /getExactBudgetDisplayStatus\(categoryMissing \? undefined : spentMinor, allocatedMinor\)/, 'orphaned category budgets do not present zero spend as verified');
 assert.match(app, /Restore category to track this plan/);
 assert.match(app, /aria-label=\{`\$\{budgetName\} usage`\}/, 'missing categories are not announced as overall budgets');
 assert.match(app, /confirmAction\(\{ title: 'Delete this budget\?', message: `\$\{budgetName\} will be removed\. Saved transactions will remain unchanged\.`/,
   'budget deletion explains that recorded transactions remain unchanged before the user confirms');
 assert.match(app, /Budget deletion could not be confirmed\. Refresh before retrying\./);
 assert.match(app, /Budget deleted\. Reopen Finance to refresh the latest data\./, 'post-delete refresh failure is not reported as delete failure');
-console.log('BUDGET DISPLAY: 17 arithmetic, status, deletion and accessibility assertions passed with synthetic amounts.');
+console.log('BUDGET DISPLAY: 20 arithmetic, status, deletion and accessibility assertions passed with synthetic amounts.');

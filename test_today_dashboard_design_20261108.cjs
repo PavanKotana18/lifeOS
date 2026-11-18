@@ -13,13 +13,13 @@ assert.match(today, /data-testid="today-overview"/);
 assert.match(today, /todayOverview\.tasksCompleted} of \{todayOverview\.tasksDue\}/, 'focus summarizes task progress without duplicating the routines list');
 assert.match(today, /onClick=\{\(\) => openCreateForm\('task'\)\}[^>]*>\+ Task/);
 assert.match(today, /today-habit-summary[\s\S]*onClick=\{\(\) => openCreateForm\('habit'\)\}/, 'habit creation is grouped with the habits section');
-assert.match(today, /onClick=\{\(\) => \{ taskDetailReturnFocusRef\.current = plannerHeadingRef\.current; setPlannerDetailTaskId\(t\.id\);[\s\S]*aria-label=\{`Open \$\{t\.title\} details`\}/, 'a Today task opens details and retains a visible focus return target');
+assert.match(today, /onClick=\{event => \{ taskDetailReturnTabRef\.current = 'dashboard'; taskDetailReturnFocusRef\.current = event\.currentTarget; setPlannerDetailTaskId\(t\.id\);[\s\S]*aria-label=\{`Open \$\{t\.title\} details`\}/, 'a Today task opens details and retains a visible focus return target');
 assert.match(today, /Open Plan/);
 assert.match(today, /role="progressbar" aria-label="Today’s tasks complete"/);
 assert.match(today, /handleHabitCompletion\(h\.id, h\.name, todayStr, stats\.completedToday\)/, 'habit check-ins still use the existing completion flow');
 assert.match(today, /persistTodayLayout\(setTodaySectionVisible/);
 assert.match(today, /persistTodayLayout\(moveTodaySection/);
-assert.match(app, /tasks\.filter\(task => !task\.completed && task\.dueDate > todayKey\)/, 'the existing upcoming-task definition remains intact');
+assert.match(app, /tasks\.filter\(task => !task\.completed && Boolean\(task\.dueDate\) && task\.dueDate > todayKey\)/, 'upcoming excludes completed, undated and non-future tasks');
 assert.match(css, /\.today-focus-progress span[^\n]*transition: width 180ms ease-out/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/, 'progress respects the global reduced-motion rule');
 

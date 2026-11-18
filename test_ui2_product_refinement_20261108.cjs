@@ -21,13 +21,14 @@ assert.match(app, /Discard unsaved changes\?/, 'edited forms clearly explain the
 assert.match(app, /onChange=\{\(\) => setCreateFormDirty\(true\)\}/, 'form changes mark the draft dirty through normal input events');
 assert.match(app, /if \(isLocked && confirmation\) settleConfirmation\(false\)/, 'a pending generic confirmation is dismissed when the session locks');
 
-const actionIndex = moneyHome.indexOf('data-testid="money-quick-actions"');
+const actionIndex = moneyHome.indexOf('data-testid="money-add-transaction"');
 const balanceIndex = moneyHome.indexOf('aria-labelledby="money-cashflow-title"');
-assert.ok(actionIndex >= 0 && actionIndex < balanceIndex, 'Expense, Income and Transfer are available before the overview detail');
-assert.equal((moneyHome.match(/className="money-action money-action-/g) || []).length, 3, 'Money has three equally presented primary actions');
-assert.match(accounts, /record income and spending without an account/, 'account tracking remains optional in the first-use state');
+assert.ok(actionIndex >= 0 && actionIndex < balanceIndex, 'One transaction action appears before the overview detail');
+assert.match(moneyHome, /onClick=\{onAddTransaction\}/, 'income and expense are contextual options within transaction entry');
+assert.equal((moneyHome.match(/className="money-add-transaction"/g) || []).length, 1, 'Money has one primary transaction action');
+assert.match(accounts, /No accounts yet[\s\S]*Add an account to track its balance and transfers\./, 'the first-use state explains the purpose of optional accounts');
 assert.doesNotMatch(moneyHome, /money-account-nudge/, 'the overview does not repeat an account-creation prompt');
-assert.match(app, /money-destination-control[^]*<select id="money-destination"/, 'nested Money selection is themeable while retaining native select accessibility');
+assert.match(app, /<MoneyDetailHeader section=\{financeSubtab\}[^]*onBack=\{\(\) => \{[^]*rememberActiveScroll\(\); financeSubtabHistory\.current = \[\]; setFinanceSubtab\('overview'\)/, 'Money overview restores its scroll and clears the nested history');
 assert.match(accounts, /confirmAction\(\{ title: 'Reverse this transfer\?'/, 'transfer reversal remains explicitly confirmed');
 assert.match(accounts, /closeAccountDraft/, 'account edits have a shared dirty-form close path');
 assert.match(planning, /closeCommitment[\s\S]*closeRate/, 'planned commitment and manual-rate drafts protect unsaved edits');
@@ -42,7 +43,7 @@ const plannerStart = app.indexOf('id="screen-planner"');
 const plannerEnd = app.indexOf('id="screen-settings"', plannerStart);
 const planner = app.slice(plannerStart, plannerEnd > plannerStart ? plannerEnd : plannerStart + 40000);
 assert.match(planner, /Tasks by date/, 'the nested planner leads with tasks rather than its calendar');
-assert.match(planner, /Choose task range[\s\S]*\['today', 'tomorrow', 'upcoming'\][\s\S]*Next 7 days/, 'Today, Tomorrow and the next seven days are one tap away');
+assert.match(planner, /Choose task range[\s\S]*\['today', 'tomorrow', 'upcoming', 'unscheduled'\][\s\S]*Next 7 days/, 'Today, Tomorrow, the next seven days and Unscheduled are one tap away');
 assert.ok(planner.indexOf('Choose task range') < planner.indexOf('Monthly task calendar'), 'task ranges precede the supporting calendar');
 assert.match(planner, /<details className="planner-calendar-disclosure"/, 'the month grid is disclosed on demand');
 assert.doesNotMatch(planner, />Quick add</, 'the planner no longer repeats its header Add task action');

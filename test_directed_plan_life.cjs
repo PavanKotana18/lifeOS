@@ -30,21 +30,30 @@ const tasks = [
 const planProps = {
   tasks, today: '2026-11-09', now: new Date('2026-11-09T09:00:00'),
   onNavigatePlanner: () => calls.push('planner'), onOpenTask: item => calls.push(`task:${item.id}`),
-  onToggleTask: noop, onCreateTask: () => calls.push('create-task'),
+  onToggleTask: noop, onQuickAdd: async title => calls.push(`create-task:${title}`),
   onSelectRange: range => calls.push(`range:${range}`), onOpenGoals: () => calls.push('goals'),
 };
 const planMarkup = renderToStaticMarkup(React.createElement(PlanHub, planProps));
-assert.match(planMarkup, /See what’s next, then choose one thing to do/);
-assert.match(planMarkup, /Go to a date in your planner/);
-assert.match(planMarkup, /role="group" aria-label="Open tasks by date"/);
+assert.match(planMarkup, /Search tasks/);
+assert.doesNotMatch(planMarkup, /Open calendar/);
+assert.match(planMarkup, /role="group" aria-label="Task views"/);
 assert.match(planMarkup, /Overdue · Today/);
 assert.match(planMarkup, /Call the dentist/);
 assert.doesNotMatch(planMarkup, /2026-11-11/, 'dates are presented in a readable local format rather than raw storage format');
 assert.match(planMarkup, /Repeats daily/);
 assert.match(planMarkup, /No due date/);
-assert.match(planMarkup, /See all tasks in planner/);
+assert.match(planMarkup, /Create Task/);
+assert.match(planMarkup, /Create Task/, 'task creation has one direct submit action');
+assert.match(planMarkup, /All statuses/);
 assert.doesNotMatch(planMarkup, /Open planner/);
-const planElement = PlanHub(planProps);
+const state = []; let cursor = 0;
+function renderPlan() {
+  const useState = React.useState, useId = React.useRef;
+  React.useState = initial => { const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], value => { state[index] = value; }]; };
+  React.useRef = value => ({ current: value }); cursor = 0;
+  try { return PlanHub(planProps); } finally { React.useState = useState; React.useRef = useId; }
+}
+const planElement = renderPlan();
 function walk(node, visit) {
   if (!node || typeof node !== 'object') return;
   if (React.isValidElement(node)) {
@@ -55,15 +64,18 @@ function walk(node, visit) {
 function clickButtonContaining(element, text) {
   let button;
   walk(element, node => {
-    if (node.type === 'button' && String(node.props.children).includes(text)) button = node;
+    if (node.type === 'button' && (String(node.props.children).includes(text) || node.props['aria-label'] === text)) button = node;
   });
   assert.ok(button, `button containing ${text} exists`);
   button.props.onClick();
 }
-clickButtonContaining(planElement, 'Add task');
-clickButtonContaining(planElement, 'Tomorrow');
-clickButtonContaining(planElement, 'See all tasks');
-assert.deepEqual(calls, ['create-task', 'range:tomorrow', 'planner'], 'Plan actions preserve their existing navigation and creation callbacks');
+clickButtonContaining(planElement, 'Upcoming');
+assert.equal(state[0], 'upcoming', 'Upcoming selects a local view instead of navigating away');
+const upcoming = renderToStaticMarkup(renderPlan());
+assert.match(upcoming, /Call the dentist/);
+assert.doesNotMatch(upcoming, /class="plan-hub-row-title">Sort the paperwork/);
+
+assert.deepEqual(calls, [], 'Task view selection stays local');
 const emptyPlan = renderToStaticMarkup(React.createElement(PlanHub, { ...planProps, tasks: [] }));
 assert.match(emptyPlan, /No tasks yet/);
 assert.match(emptyPlan, /Start with one thing you want to remember/);
@@ -79,8 +91,8 @@ const lifeProps = {
   onHabits: noop, onGoals: noop, onInsights: noop,
 };
 const lifeMarkup = renderToStaticMarkup(React.createElement(LifeHub, lifeProps));
-assert.match(lifeMarkup, /Habits are things you repeat/);
-assert.match(lifeMarkup, /Your routine, at a glance/);
+assert.doesNotMatch(lifeMarkup, /Habits are things you repeat/);
+assert.match(lifeMarkup, /life-rhythm-title/);
 assert.match(lifeMarkup, /1 of 2 check-ins/);
 assert.match(lifeMarkup, /4 of 7 routines/);
 assert.match(lifeMarkup, /1 of 3 milestones/);
@@ -95,9 +107,9 @@ checkButton.props.onClick();
 assert.equal(calls.at(-1), 'check:h1', 'habit check-in retains the original callback');
 const emptyLife = renderToStaticMarkup(React.createElement(LifeHub, { ...lifeProps, habits: [], goals: [], routinesDue: 0, completedRoutines: 0, weeklyTotal: 0, weeklyCompleted: 0 }));
 assert.match(emptyLife, /No routines yet/);
-assert.match(emptyLife, /Start with one small habit/);
+assert.match(emptyLife, /Add a habit/);
 assert.match(emptyLife, /No goals yet/);
-assert.doesNotMatch(emptyLife, /Your routine, at a glance/, 'an empty Life screen does not fabricate zero activity');
+assert.doesNotMatch(emptyLife, /life-rhythm-title/, 'an empty Life screen does not fabricate zero activity');
 
 const goal = { id: 'g2', title: 'Read more', currentValue: 5, targetValue: 10, category: 'Personal Development', unit: 'pages', startDate: '2026-11-01', targetDate: '2026-12-01', priority: 'Medium', status: 'In Progress', createdAt: '2026-11-01T00:00:00.000Z' };
 const insightProps = {

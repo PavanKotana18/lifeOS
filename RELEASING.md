@@ -14,25 +14,51 @@ Keep branches current with their base before opening a pull request. Resolve con
 
 `package.json` is the authoritative Semantic Version (`MAJOR.MINOR.PATCH`). `package-lock.json` is updated with it by npm. The Profile screen reads the package version, and Android Gradle reads the same package version for `versionName`.
 
-Android `versionCode` uses `MAJOR * 1,000,000 + MINOR * 1,000 + PATCH + GITHUB_RUN_NUMBER`. The workflow run number increases for each run of this workflow, so distributable APKs from later runs receive higher codes. MINOR and PATCH must each remain below 1000. Produce distributable APKs through GitHub Actions; local Gradle builds without a run number use only the SemVer-derived base code.
+Android `versionCode` uses `MAJOR * 1,000,000 + MINOR * 1,000 + PATCH + GITHUB_RUN_NUMBER`. Local builds without that environment value use the SemVer-derived base code. MINOR and PATCH must each remain below 1000.
 
 Use a PATCH bump for compatible fixes, MINOR for backward-compatible features, and MAJOR for breaking changes. Do not change the Android application ID (`com.lifeos.personal`).
 
 ## Release checklist
 
-1. Merge reviewed feature and bug-fix pull requests into `develop`; wait for its integration build and tests.
+1. Merge reviewed feature and bug-fix pull requests into `develop` only after the local verification steps below pass and the change has been reviewed.
 2. Create `release/<version>` from the tested `develop` commit and push it.
 3. Set the release version with `npm version <version> --no-git-tag-version` (this updates `package.json` and `package-lock.json`). Update `CHANGELOG.md` with the date and the `Added`, `Changed`, `Fixed`, `Security`, and `Removed` sections. Commit these release-preparation changes on the release branch.
-4. Run and review the `Automated checks` and `Android integration and release verification` jobs on the release branch. Confirm Debug and Release APK artifacts exist, inspect them on the target device, and complete release QA. Do not publish merely because CI passed.
-5. Open a pull request from the release branch to `main`. Merge only after review, required checks, and QA approval.
-6. On the resulting production commit, create an annotated tag `v<version>` (for example, `v1.2.0`) and push the tag. Publish a GitHub Release manually from that tag, attach the reviewed APKs, and use the changelog entry as release notes. The current workflow builds artifacts; it does not automatically publish releases or sign APKs.
+4. Run the local verification steps below on the release branch. Build and inspect the Debug APK. Complete release QA through the approved manual process; do not treat a local debug APK as a production release.
+5. Open a pull request from the release branch to `main`. Merge only after review, required repository protections, and QA approval.
+6. On the resulting production commit, create an annotated tag `v<version>` (for example, `v1.2.0`) and push the tag. Publish a GitHub Release manually from that tag only after release signing and QA are completed.
 7. Merge the release branch back into `develop` through a pull request so version and changelog updates are retained. Delete the release branch only after both merges and the published release are verified.
 
 For a hotfix, use a PATCH release unless the correction requires a different SemVer increment; apply the production fix to `develop` after the main merge.
 
-## CI behavior
+## Local verification and APK build
 
-`.github/workflows/build-apk.yml` runs checks (tests, TypeScript, web build, and Capacitor sync) on `feature/**`, `bugfix/**`, `develop`, `release/**`, `hotfix/**`, and `main` pushes. Pull requests targeting `develop` or `main` run checks. Android Debug and Release builds run on `develop`, `release/**`, `hotfix/**`, and `main`, and for pull requests into `develop` or `main`. Artifacts are uploaded for 30 days. No job merges branches, creates tags, or publishes a release.
+Run these checks from the repository root:
+
+```powershell
+npm test
+npm run test:sentinel
+npx tsc --noEmit
+npm run build
+npx cap sync android
+```
+
+Build the local development APK with:
+
+```powershell
+gradle -p android --no-daemon :app:assembleDebug
+```
+
+The APK is `android/app/build/outputs/apk/debug/app-debug.apk`. It must identify
+as `com.lifeos.personal.debug` and `LifeOS Debug`. Android's standard debug key
+is used for this isolated package; no signing secret is stored in source
+control. Do not install it over the old `.dev` or `.preview` packages.
+
+Do not build a Release APK or AAB without explicit approval. Release uses only
+the production signing identity (`ANDROID_KEYSTORE_PATH`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`). The
+GitHub workflow builds Debug on ordinary checks; it builds and uploads Release
+only when manually dispatched with `build_release` selected and valid
+production signing secrets. It never falls back to a debug key.
 
 ## Recommended GitHub protection
 

@@ -9,8 +9,6 @@ const localAppData = process.env.LOCALAPPDATA || path.join(require('node:os').ho
 const toolsDir = path.join(localAppData, 'Programs', 'LifeOS-Tools');
 const defaultSdk = path.join(localAppData, 'Android', 'Sdk');
 const defaultAvdHome = 'D:\\LifeOS-Android-QA\\avd';
-const defaultKeystore = path.join(localAppData, 'LifeOS', 'signing', 'local-debug.p12');
-const defaultAlias = 'lifeos-local-debug';
 const parts = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -26,25 +24,17 @@ function add(label, status, detail, evidence) {
   checks.push({ label, status, detail, evidence: evidence || '' });
 }
 
-function redactedOutput(chunks, secrets = []) {
-  let output = Buffer.concat(chunks).toString('utf8');
-  for (const secret of secrets.filter(value => typeof value === 'string' && value.length > 0)) {
-    output = output.split(secret).join('[REDACTED]');
-  }
-  return output;
-}
-
 function environmentWithoutSigning() {
   const env = { ...process.env };
-  for (const name of Object.keys(env)) if (name.startsWith('LIFEOS_DEBUG_KEY_')) delete env[name];
+  for (const name of Object.keys(env)) {
+    if (name.startsWith('LIFEOS_DEBUG_KEY') || name.startsWith('ANDROID_KEY')) delete env[name];
+  }
   return env;
 }
 
 function run(label, command, args, logName, timeoutMs = 30 * 60 * 1000, options = {}) {
   const logPath = path.join(out, logName);
   const log = fs.createWriteStream(logPath, { flags: 'w' });
-  const captured = [];
-  const secretValues = options.redact || [];
   return new Promise(resolve => {
     let settled = false;
     const child = spawn(command, args, {
@@ -63,7 +53,7 @@ function run(label, command, args, logName, timeoutMs = 30 * 60 * 1000, options 
       log.write('\nQA timeout reached.\n');
       finish({ status: 'FAIL', detail: `Timed out after ${Math.round(timeoutMs / 60000)} minutes.` });
     }, timeoutMs);
-    const save = chunk => { if (secretValues.length) captured.push(Buffer.from(chunk)); else log.write(chunk); };
+    const save = chunk => log.write(chunk);
     child.stdout.on('data', save);
     child.stderr.on('data', save);
     child.on('error', error => {
@@ -73,7 +63,6 @@ function run(label, command, args, logName, timeoutMs = 30 * 60 * 1000, options 
     });
     child.on('close', code => {
       clearTimeout(timer);
-      if (secretValues.length) log.write(redactedOutput(captured, secretValues));
       finish({ status: code === 0 ? 'PASS' : 'FAIL', detail: `Exit code ${code}.` });
     });
   });
@@ -168,7 +157,10 @@ async function main() {
   await commandCheck('Automated JavaScript suite', 'npm', ['test'], 'npm-test.log');
   await commandCheck('Sentinel security and resilience suite', 'npm', ['run', 'test:sentinel'], 'sentinel.log');
   await commandCheck('TypeScript', 'npx', ['--no-install', 'tsc', '--noEmit'], 'typescript.log');
-  await commandCheck('Vite web build', 'npm', ['run', 'build'], 'web-build.log');
+  const webBuild = await commandCheck('Vite web build', 'npm', ['run', 'build'], 'web-build.log');
+  const capacitorSync = webBuild.status === 'PASS'
+    ? await commandCheck('Capacitor Android sync', 'npx', ['--no-install', 'cap', 'sync', 'android'], 'cap-sync.log')
+    : null;
   await commandCheck('Android instrumentation parser self-test', 'node', ['scripts/android-instrumentation-to-junit.cjs', '--self-test'], 'android-parser.log');
 
   const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || defaultSdk;
@@ -242,47 +234,28 @@ async function main() {
     }
   }
 
-  const configuredKeystore = process.env.LIFEOS_DEBUG_KEYSTORE_PATH?.trim() || defaultKeystore;
-  const configuredAlias = process.env.LIFEOS_DEBUG_KEY_ALIAS?.trim() || defaultAlias;
-  const keystoreExists = fs.existsSync(configuredKeystore);
-  const secretNames = ['LIFEOS_DEBUG_KEYSTORE_PASSWORD', 'LIFEOS_DEBUG_KEY_PASSWORD'];
-  const missingSecrets = secretNames.filter(name => !process.env[name]?.trim());
-  const signingReady = keystoreExists && missingSecrets.length === 0;
-  const signingEnv = { ...androidToolsEnv };
-  if (keystoreExists) signingEnv.LIFEOS_DEBUG_KEYSTORE_PATH = configuredKeystore;
-  signingEnv.LIFEOS_DEBUG_KEY_ALIAS = configuredAlias;
-  for (const name of secretNames) if (process.env[name]?.trim()) signingEnv[name] = process.env[name];
-  const signingDetail = !keystoreExists
-    ? `BLOCKED: configured Dev keystore was not found at ${configuredKeystore}.`
-    : missingSecrets.length
-      ? `BLOCKED: keystore file exists at ${configuredKeystore}; alias ${configuredAlias} is configured but cannot be validated without the password. ${missingSecrets.join(' and ')} are absent from this PowerShell process. In that same PowerShell session, set $secure = Read-Host 'LIFEOS_DEBUG_KEYSTORE_PASSWORD' -AsSecureString; set $env:LIFEOS_DEBUG_KEYSTORE_PASSWORD = [Net.NetworkCredential]::new('', $secure).Password; repeat with LIFEOS_DEBUG_KEY_PASSWORD for the second prompt; then run npm.cmd run qa. Do not put password values on a command line, in a file, or in the report.`
-      : `Dev keystore file and alias ${configuredAlias} are available; password values will be passed only to the Gradle child process and redacted from its log.`;
-  add('Local Dev signing configuration', signingReady ? 'PASS' : 'BLOCKED', signingDetail, '');
-  if (!signingReady) console.log(`BLOCKED: Dev signing (${signingDetail})`);
-
   const preBuildBlockers = [];
+  if (capacitorSync?.status !== 'PASS') preBuildBlockers.push('fresh Capacitor Android assets unavailable');
   if (!gradleReady) preBuildBlockers.push('Gradle 8.2.1 unavailable or failed version validation');
   if (!javaReady) preBuildBlockers.push('Java 17 unavailable or failed version validation');
   if (!sdkReady) preBuildBlockers.push('Android SDK 34 incomplete');
-  if (!signingReady) preBuildBlockers.push('Dev signing credentials are unavailable');
   if (preBuildBlockers.length) {
     const reason = preBuildBlockers.join('; ');
-    add('Android Dev APK build', 'BLOCKED', reason, '');
-    add('Android instrumentation', 'BLOCKED', 'No freshly built Dev app and instrumentation APKs; no install was attempted.', '');
+    add('Android Debug APK build', 'BLOCKED', reason, '');
+    add('Android instrumentation', 'BLOCKED', 'No freshly built Debug app and instrumentation APKs; no install was attempted.', '');
     add('Native notification OS post and tap', 'BLOCKED', 'Instrumentation did not run; permission-dependent checks remain unexecuted.', '');
     console.log(`BLOCKED: Android build/instrumentation (${reason})`);
   } else {
     const gradleCommand = gradle;
     const gradleArgs = ['-p', path.join(root, 'android'), '--no-daemon', ':app:assembleDebug', ':app:assembleDebugAndroidTest'];
-    const build = await run('Android Dev APK build', gradleCommand, gradleArgs, 'android-build.log', 45 * 60 * 1000, {
-      env: signingEnv,
-      redact: [signingEnv.LIFEOS_DEBUG_KEYSTORE_PASSWORD, signingEnv.LIFEOS_DEBUG_KEY_PASSWORD],
+    const build = await run('Android Debug APK build', gradleCommand, gradleArgs, 'android-build.log', 45 * 60 * 1000, {
+      env: androidToolsEnv,
     });
     if (build.status !== 'PASS') {
-      add('Android Dev APK build', 'FAIL', build.detail, path.basename(build.logPath));
+      add('Android Debug APK build', 'FAIL', build.detail, path.basename(build.logPath));
       add('Android instrumentation', 'BLOCKED', 'APK build did not complete.', '');
       add('Native notification OS post and tap', 'BLOCKED', 'Instrumentation did not run.', '');
-      console.log(`FAIL: Android Dev APK build (${build.detail})`);
+      console.log(`FAIL: Android Debug APK build (${build.detail})`);
     } else {
       const appApk = path.join(root, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
       const testApk = path.join(root, 'android', 'app', 'build', 'outputs', 'apk', 'androidTest', 'debug', 'app-debug-androidTest.apk');
@@ -296,8 +269,8 @@ async function main() {
       const testId = (testText.match(/^package: name='([^']+)'/m) || [])[1] || '';
       const testTarget = (targetText.match(/android:targetPackage[^=]*="([^"]+)"/) || [])[1] || '';
       fs.writeFileSync(path.join(out, 'apk-package.txt'), `app=${appId}\ninstrumentation_apk=${testId}\ninstrumentation_target=${testTarget}\n`);
-      if (appId !== 'com.lifeos.personal.dev' || testId !== 'com.lifeos.personal.dev.test' || testTarget !== 'com.lifeos.personal.dev') {
-        add('Android Dev APK identity', 'FAIL', `Expected app ID and instrumentation target com.lifeos.personal.dev; found app=${appId || 'unknown'}, test APK=${testId || 'unknown'}, target=${testTarget || 'unknown'}. No APK was installed.`, 'apk-package.txt');
+      if (appId !== 'com.lifeos.personal.debug' || testId !== 'com.lifeos.personal.debug.test' || testTarget !== 'com.lifeos.personal.debug') {
+        add('Android Debug APK identity', 'FAIL', `Expected app ID and instrumentation target com.lifeos.personal.debug; found app=${appId || 'unknown'}, test APK=${testId || 'unknown'}, target=${testTarget || 'unknown'}. No APK was installed.`, 'apk-package.txt');
         add('Android instrumentation', 'BLOCKED', 'APK package identity verification failed; no install was attempted.', '');
         add('Native notification OS post and tap', 'BLOCKED', 'Instrumentation did not run.', '');
         console.log(`FAIL: APK identity check (app=${appId || 'unknown'}, test=${testId || 'unknown'}); no install attempted.`);
@@ -314,11 +287,12 @@ async function main() {
           console.log('BLOCKED: Android instrumentation (selected serial is no longer connected).');
         } else {
           const env = {
-            ...process.env, ANDROID_HOME: sdk, ANDROID_SERIAL: serial,
-            LIFEOS_QA_DEVICE_MODE: deviceMode,
-            ANDROID_AVD_HOME: avdHome,
-            PATH: `${path.dirname(aapt)}${path.delimiter}${path.join(sdk, 'emulator')}${path.delimiter}${process.env.PATH || ''}`,
-            ANDROID_TEST_FILTER: 'com.lifeos.personal.LocalNotificationBridgeAcceptanceTest,com.lifeos.personal.NotificationTapLaunchAcceptanceTest',
+            ...androidToolsEnv, ANDROID_SERIAL: serial, LIFEOS_QA_DEVICE_MODE: deviceMode,
+            ANDROID_TEST_FILTER: [
+              'com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder',
+              'com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#backgroundedSyntheticTaskReminderIsActuallyPosted',
+              'com.lifeos.personal.NotificationTapLaunchAcceptanceTest#coldStartTaskActionIsAvailableUntilJavascriptAcknowledgesIt',
+            ].join(','),
             ANDROID_REQUIRED_TEST: 'NotificationTapLaunchAcceptanceTest#coldStartTaskActionIsAvailableUntilJavascriptAcknowledgesIt',
             ANDROID_EXPECTED_TESTS: '3',
           };

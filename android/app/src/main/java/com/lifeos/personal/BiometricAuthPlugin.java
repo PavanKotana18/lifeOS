@@ -1,6 +1,8 @@
 package com.lifeos.personal;
 
+import android.app.KeyguardManager;
 import android.content.Context;
+import android.os.Build;
 import androidx.annotation.NonNull;
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
@@ -18,15 +20,24 @@ import java.util.concurrent.Executor;
 @CapacitorPlugin(name = "BiometricAuth")
 public class BiometricAuthPlugin extends Plugin {
 
+    private int authenticators() {
+        int strong = BiometricManager.Authenticators.BIOMETRIC_STRONG;
+        return Build.VERSION.SDK_INT >= 30 ? strong | BiometricManager.Authenticators.DEVICE_CREDENTIAL : strong;
+    }
+
     @PluginMethod
     public void isAvailable(PluginCall call) {
         Context context = getContext();
         BiometricManager biometricManager = BiometricManager.from(context);
-        int canAuthenticate = biometricManager.canAuthenticate(
-            BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL
-        );
+        int canAuthenticate = biometricManager.canAuthenticate(authenticators());
 
+        KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
+        boolean deviceCredentialAvailable = Build.VERSION.SDK_INT >= 30 && keyguard != null && keyguard.isDeviceSecure();
+        boolean strongBiometricAvailable = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            == BiometricManager.BIOMETRIC_SUCCESS;
         JSObject ret = new JSObject();
+        ret.put("deviceCredentialAvailable", deviceCredentialAvailable);
+        ret.put("strongBiometricAvailable", strongBiometricAvailable);
         if (canAuthenticate == BiometricManager.BIOMETRIC_SUCCESS) {
             ret.put("isAvailable", true);
             ret.put("biometricsSupported", true);
@@ -80,15 +91,12 @@ public class BiometricAuthPlugin extends Plugin {
                 String title = call.getString("title", "Unlock LifeOS");
                 String subtitle = call.getString("subtitle", "Authenticate using fingerprint or device credential");
 
-                BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                BiometricPrompt.PromptInfo.Builder prompt = new BiometricPrompt.PromptInfo.Builder()
                     .setTitle(title)
                     .setSubtitle(subtitle)
-                    .setAllowedAuthenticators(
-                        BiometricManager.Authenticators.BIOMETRIC_STRONG | BiometricManager.Authenticators.DEVICE_CREDENTIAL
-                    )
-                    .build();
-
-                biometricPrompt.authenticate(promptInfo);
+                    .setAllowedAuthenticators(authenticators());
+                if (Build.VERSION.SDK_INT < 30) prompt.setNegativeButtonText("Cancel");
+                biometricPrompt.authenticate(prompt.build());
             } catch (Exception e) {
                 call.reject("Biometric authentication invocation failed: " + e.getMessage());
             }

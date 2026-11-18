@@ -14,7 +14,7 @@ function check(condition, message) {
 
 // F-01: Demo budget must use a seeded category ID.
 check(
-  db.includes("categoryId: 'cat_food'") &&
+  fs.readFileSync("src/services/sampleData.ts", "utf8").includes("categoryId: 'cat_food'") &&
   db.includes("id: 'cat_food'"),
   'Demo Food budget references the seeded Food category ID'
 );
@@ -49,28 +49,25 @@ check(
   'Category budget resolves its ID to the category display name'
 );
 
-// F-03: Spending lookup must use the resolved category name.
+// F-03: Exact posted spending lookup must use the resolved category name.
 check(
-  app.includes(
-    "financeMetrics.categoryExpenses[budgetCategoryName]"
-  ),
-  'Category budget spending uses the transaction category name'
+  app.includes("tx.category === budgetCategoryName") &&
+    app.includes('spentTransactions.reduce((total, tx) => total +') &&
+    app.includes('BigInt(tx.amountMinor)'),
+  'Category budget spending uses the transaction category and stored exact minor units'
 );
 
-// F-03: Missing category must not be attributed to overall expenses.
+// F-03: Missing category must remain unavailable instead of fabricating zero spend.
 check(
-  app.includes(
-    "budgetCategoryName ? financeMetrics.categoryExpenses[budgetCategoryName] || 0 : 0"
-  ),
-  'Missing category reference safely produces zero category spending'
+  app.includes('categoryMissing ? undefined : spentMinor') &&
+    app.includes("categoryMissing ? 'Unavailable' : formatMinorUnits(spentMinor, budgetCurrency"),
+  'Missing category reference remains unavailable instead of presenting fabricated zero spending'
 );
 
 // F-03: Overall budget must still use total expenses.
 check(
-  app.includes(
-    "b.categoryId ? (budgetCategoryName ? financeMetrics.categoryExpenses[budgetCategoryName] || 0 : 0) : financeMetrics.totalExpenses"
-  ),
-  'Overall budget continues to calculate against total expenses'
+  app.includes("(!b.categoryId || tx.category === budgetCategoryName)"),
+  'Overall budget continues to include every posted expense in its currency'
 );
 
 // F-04: Transaction categories must be checked against stored categories.

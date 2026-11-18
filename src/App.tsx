@@ -1,4 +1,10 @@
+import { useInterfaceMotion } from './hooks/useInterfaceMotion';
+import MotionPreferences from './components/MotionPreferences';
+import MoneyDetailHeader from './components/MoneyDetailHeader';
+import InfoTip from './components/InfoTip';
+import { resistDrag } from './services/interfaceMotion';
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
@@ -12,6 +18,7 @@ import { encryptBackup, MAX_BACKUP_FILE_BYTES } from './services/backupCryptoSer
 import { decodeBackupForRestore } from './services/backupImportService';
 import BackupPassphraseDialog from './components/BackupPassphraseDialog';
 import RecoveryDialog from './components/RecoveryDialog';
+import HabitHistory from './components/HabitHistory';
 import SecureSetupDialog from './components/SecureSetupDialog';
 import FirstRecordSecurityDialog from './components/FirstRecordSecurityDialog';
 import { createRecoveryController } from './services/recoveryService';
@@ -20,61 +27,73 @@ import { exportBackupFile } from './services/backupExportService';
 import { confirmScreenshotResume, isSensitiveScreenshotState, setSensitiveScreenshotState } from './services/screenshotProtection';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
-import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
+import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, formatHabitQuantity, normalizeHabitUnit, type UserPreferences } from './services/userPreferences';
 import { createMoneyRecordAmount, decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
-import { calculateAccountBalances } from './services/financialAccounting';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
-import { getBudgetDisplayStatus } from './services/budgetDisplay';
+import { getExactBudgetDisplayStatus } from './services/budgetDisplay';
 import { buildDuplicateTransactionDraft } from './services/transactionDraft';
 import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodaySectionVisible, TODAY_SECTION_LABELS, type TodayLayout, type TodaySectionId } from './services/todayLayout';
 import { groupUpcomingTasks } from './services/taskViews';
 import TaskDetailScreen from './components/TaskDetailScreen';
 import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
+import { buildCustomAccentOverrides, normalizeCustomAccent } from './services/customAccent';
+import CustomAccentPicker from './components/CustomAccentPicker';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
 import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
+import type { QuickTaskDetails } from './components/QuickTaskEntry';
+import PlannedCashFlow from './components/PlannedCashFlow';
+import { buildSpringSettle, readTranslateX } from './services/springMotion';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
-import { ProfileHome, ProfileSubpage, type ProfileSection } from './components/ProfileSettings';
-import ProfilePreferences from './components/ProfilePreferences';
+import { ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, type ProfileSection } from './components/ProfileSettings';
+import ProfilePreferences, { PreferenceChoice } from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
 import { useRecordDialog } from './hooks/useRecordDialog';
 import { useBottomNavigationInset } from './hooks/useBottomNavigationInset';
-import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from './services/navigationCatalog';
+import { PRIMARY_NAVIGATION, primaryDestinationForTab, resolvePlanPath, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
 import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
-import { DEFAULT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
+import { normalizeNotificationTone, NOTIFICATION_TONES, reminderCopy, type NotificationTone } from './services/notificationCopy';
+import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics, type ReminderAction } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
-import { INITIAL_ONBOARDING_JOURNEY, normalizeOnboardingJourney, type OnboardingJourney } from './services/onboardingJourney';
+import { INITIAL_ONBOARDING_JOURNEY, ONBOARDING_NOTIFICATIONS_STEP, normalizeOnboardingJourney, resumeOnboardingStep, type OnboardingJourney } from './services/onboardingJourney';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
-const LifeHub = React.lazy(() => import('./components/LifeHub'));
 const PlanHub = React.lazy(() => import('./components/PlanHub'));
 const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
 
 const RuntimeInfo = registerPlugin<{ getSystemGestureInsets: () => Promise<{ left: number; right: number }> }>('LifeOSRuntimeInfo');
+
+function formatMonthYear(month: string, long = false) {
+  const date = /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? new Date(`${month}-01T12:00:00`) : new Date();
+  return date.toLocaleDateString(undefined, { month: long ? 'long' : 'short', year: 'numeric' });
+}
 
 function ScreenLoading({ label }: { label: string }) {
   return <div className="ui-loading-state p-6 text-center text-sm" role="status" aria-live="polite">{label}</div>;
 }
 
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
-const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID) => {
+const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID, customAccent?: string) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
   applyThemeTokens(themeId, theme);
+  for (const [name, value] of Object.entries(buildCustomAccentOverrides(normalizeCustomAccent(customAccent), themeId, theme))) {
+    document.documentElement.style.setProperty(name, value);
+  }
   document.documentElement.style.colorScheme = theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#101712' : '#FAFAF7');
 };
 
 const notificationLabels: Record<keyof NotificationPreferences, string> = {
-  taskReminders: 'Task reminders',
+  taskReminders: 'Due-time and early task alerts',
   upcomingDeadlines: 'Upcoming task deadlines',
   overdueAlerts: 'Overdue task alerts',
   habitReminders: 'Habit reminders',
@@ -95,12 +114,21 @@ import {
 } from './types';
 
 export default function App() {
+  const interfaceMotion = useInterfaceMotion();
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const activeTabRef = useRef<MainTab>('dashboard');
   const [tabTransition, setTabTransition] = useState<{ id: number; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right' } | null>(null);
   const tabTransitionSequence = useRef(0);
   const activeTransitionId = useRef<number | null>(null);
+  const tabTransitionStarted = useRef(0);
+  const releaseGestureCapture = (pointerId?: number) => {
+    if (pointerId == null) return;
+    const surface = gestureSurfaceElement.current;
+    if (surface?.hasPointerCapture?.(pointerId)) {
+      try { surface.releasePointerCapture(pointerId); } catch { /* Pointer may already have ended. */ }
+    }
+  };
   const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
     const outgoing = document.getElementById(`screen-${previous}`);
@@ -108,8 +136,10 @@ export default function App() {
     outgoing?.style.removeProperty('--gesture-x');
     swipeSettleAnimation.current?.cancel();
     swipeSettleAnimation.current = null;
+    const pointerId = swipePointer.current?.pointerId;
     swipePointer.current = null;
     swipeOriginAction.current = null;
+    releaseGestureCapture(pointerId);
     activeTabRef.current = tab;
     if (previous === tab) { setActiveTab(tab); return; }
     const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -121,6 +151,7 @@ export default function App() {
     }
     const id = ++tabTransitionSequence.current;
     activeTransitionId.current = id;
+    tabTransitionStarted.current = performance.now();
     setTabTransition({ id, to: tab, phase: 'prepare', direction });
     setActiveTab(tab);
   };
@@ -134,9 +165,10 @@ export default function App() {
   const [plannerDisplayedMonth, setPlannerDisplayedMonth] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); });
   const [plannerDetailTaskId, setPlannerDetailTaskId] = useState<string | null>(null);
   const taskDetailReturnFocusRef = useRef<HTMLElement | null>(null);
+  const taskDetailReturnTabRef = useRef<MainTab | null>(null);
   const plannerHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const pendingNotificationTaskId = useRef<string | null>(null);
-  const pendingNotificationActionId = useRef<number | null>(null);
+  const pendingNotification = useRef<ReminderAction | null>(null);
+  const reminderProcessing = useRef(false);
   const handledNotificationIds = useRef(new Set<number>());
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
   const swipePointer = useRef<PrimaryGestureSession | null>(null);
@@ -161,6 +193,10 @@ export default function App() {
     try { return resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { return DEFAULT_THEME_ID; }
   });
   const [themePreviewId, setThemePreviewId] = useState<ThemeId | null>(null);
+  const [customAccent, setCustomAccent] = useState<string | undefined>(() => {
+    try { return normalizeCustomAccent(localStorage.getItem('lifeos-custom-accent')); } catch { return undefined; }
+  });
+  const customAccentSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [displayName, setDisplayName] = useState('');
   const [clockNow, setClockNow] = useState(() => new Date());
@@ -169,6 +205,7 @@ export default function App() {
   const logoIntroPlayed = useRef(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
+  const [notificationTone, setNotificationTone] = useState<NotificationTone>('warm');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({
     capability: 'initializing', platform: 'initializing', supported: false, permission: 'checking',
@@ -176,12 +213,14 @@ export default function App() {
     visibleNotificationCount: 0, visibleNotificationIds: [], batteryOptimizationExempt: null,
     androidApi: null, packageName: null, versionName: null, versionCode: null, build: __LIFEOS_BUILD_INFO__,
     lastScheduleAttempt: null, lastScheduleResult: 'unknown', lastCancellationReason: null,
-    lastActionEvent: null, lastError: '',
+    lastActionEvent: null, reminderLifecycle: [], lastError: '',
   });
+  const developerToolsEnabled = import.meta.env.DEV || notificationDiagnostics.packageName === 'com.lifeos.personal.debug';
   const [taskReminderDiagnostics, setTaskReminderDiagnostics] = useState<Record<string, unknown> | null>(null);
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
+  const [dateOnlyAlertTime, setDateOnlyAlertTime] = useState('');
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingJourney, setOnboardingJourney] = useState<OnboardingJourney>(INITIAL_ONBOARDING_JOURNEY);
   const [startupError, setStartupError] = useState('');
@@ -263,6 +302,7 @@ export default function App() {
   // Biometric Lock State
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
+  const [deviceCredentialOnly, setDeviceCredentialOnly] = useState(false);
   const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
   const [biometricMessage, setBiometricMessage] = useState('');
   const [biometricAuthActive, setBiometricAuthActive] = useState(false);
@@ -391,7 +431,6 @@ export default function App() {
   const [transferFormDirty, setTransferFormDirty] = useState(false);
   const [planningDrafts, setPlanningDrafts] = useState<MoneyPlanningDraftState>({ commitment: null, rate: null, commitmentDirty: false, rateDirty: false });
   const [financeWriteBusy, setFinanceWriteBusy] = useState(false);
-  const [projectionExpanded, setProjectionExpanded] = useState(false);
   const financeWriteOperation = useRef(false);
   const [accountTransfers, setAccountTransfers] = useState<AccountTransfer[]>([]);
   const [manualExchangeRates, setManualExchangeRates] = useState<ManualExchangeRate[]>([]);
@@ -403,7 +442,14 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
 
   // Subtab & Filter States
-  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
+  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics' | 'projection'>('overview');
+  const [transactionDetailId, setTransactionDetailId] = useState<string | null>(null);
+  const transactionDetailDialog = useRef<HTMLDialogElement>(null);
+  const transactionDetail = activeTab === 'finance' ? transactions.find(row => row.id === transactionDetailId) : undefined;
+  useEffect(() => {
+    const dialog = transactionDetailDialog.current;
+    if (transactionDetail && dialog && !dialog.open) dialog.showModal();
+  }, [transactionDetail]);
   const [openMoneyTransferOnAccounts, setOpenMoneyTransferOnAccounts] = useState(false);
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
@@ -417,12 +463,14 @@ export default function App() {
 
   const [habitsSubtab, setHabitsSubtab] = useState<'checklist' | 'weekly' | 'monthly'>('checklist');
   const [habitsSelectedDate, setHabitsSelectedDate] = useState<string>(formatLocalDate(new Date()));
+  const [historicalQuantityUnit, setHistoricalQuantityUnit] = useState('');
 
   const [goalsSubtab, setGoalsSubtab] = useState<'active' | 'paused' | 'completed'>('active');
+  const [lifeDetail, setLifeDetail] = useState<{ kind: 'habit' | 'goal'; id: string } | null>(null);
   const [goalsCategoryFilter, setGoalsCategoryFilter] = useState<string>('all');
 
   const [plannerSubtab, setPlannerSubtab] = useState<'agenda' | 'weekly' | 'all'>('agenda');
-  const [plannerFilter, setPlannerFilter] = useState<'all' | 'pending' | 'overdue' | 'completed' | 'today' | 'tomorrow' | 'upcoming'>('all');
+  const [plannerFilter, setPlannerFilter] = useState<'all' | 'pending' | 'overdue' | 'completed' | 'today' | 'tomorrow' | 'upcoming' | 'unscheduled'>('all');
   const [plannerSearch, setPlannerSearch] = useState('');
   const [plannerPriority, setPlannerPriority] = useState('all');
 
@@ -442,28 +490,65 @@ export default function App() {
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [editingContributionId, setEditingContributionId] = useState<string | null>(null);
   const [editingSavingsGoalId, setEditingSavingsGoalId] = useState<string | null>(null);
+  const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
 
-  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts });
-  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts };
+  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail });
+  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail };
 
-  const navigateTo = (tab: MainTab, direction?: 'left' | 'right') => {
+  const navigateTo = (destination: MainTab, direction?: 'left' | 'right') => {
+    const tab = destination === 'life' ? 'plan' : destination;
     const previous = activeTabRef.current;
     if (previous === tab) return;
-    scrollPositions.current[activeScreenKey] = window.scrollY;
+    rememberActiveScroll();
     if (tab === 'settings') navigateProfileSection('home');
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     setShowExitConfirmation(false);
     transitionToTab(tab, direction);
   };
 
-  const clearGestureDrag = (animateBack: boolean) => {
+  const planPathHandler = useRef<(path: string) => void>(() => undefined);
+  planPathHandler.current = path => {
+    const destination = resolvePlanPath(path);
+    if (!destination) return;
+    setLifeDetail(null);
+    navigateTo(destination);
+  };
+  useEffect(() => {
+    if (!appReady || !onboardingComplete || isLocked) return;
+    const handlePath = () => planPathHandler.current(window.location.hash || window.location.pathname);
+    handlePath();
+    window.addEventListener('hashchange', handlePath);
+    return () => window.removeEventListener('hashchange', handlePath);
+  }, [appReady, onboardingComplete, isLocked]);
+
+  const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals') => (
+    <header className="plan-destination-header">
+      <h1 className="type-page-title">Plan</h1>
+      <nav aria-label="Plan destinations" className="plan-destinations">
+        {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }] as const).map(({ tab, label }) =>
+          <button key={tab} type="button" aria-current={selected === tab ? 'page' : undefined} onClick={() => {
+            if (tab === selected) return;
+            setLifeDetail(null);
+            setHabitsSubtab('checklist');
+            setGoalsSubtab('active');
+            setGoalsCategoryFilter('all');
+            navigateTo(tab);
+          }}>{label}</button>
+        )}
+      </nav>
+    </header>
+  );
+
+  const clearGestureDrag = (animateBack: boolean, velocity = 0) => {
     const screen = document.getElementById(`screen-${activeTabRef.current}`);
     if (!screen?.hasAttribute('data-gesture-dragging')) return;
     const transform = getComputedStyle(screen).transform;
     screen.removeAttribute('data-gesture-dragging');
     screen.style.removeProperty('--gesture-x');
     if (!animateBack || !shouldAnimatePrimaryGestureSettlement(window.matchMedia('(prefers-reduced-motion: reduce)').matches) || typeof screen.animate !== 'function') return;
-    const animation = screen.animate([{ transform }, { transform: 'none' }], { duration: 110, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+    const settle = buildSpringSettle(readTranslateX(transform), velocity, interfaceMotion.preset);
+    if (!settle.duration) return;
+    const animation = screen.animate(settle.keyframes, { duration: settle.duration, easing: 'linear' });
     swipeSettleAnimation.current = animation;
     void animation.finished.catch(() => undefined).finally(() => {
       if (swipeSettleAnimation.current === animation) swipeSettleAnimation.current = null;
@@ -474,6 +559,7 @@ export default function App() {
     const session = swipePointer.current;
     if (session) recordGestureTrace({ event: 'interrupted', pointerId, deltaX: 0, deltaY: 0, state: session.axis, reason }, import.meta.env.DEV);
     swipePointer.current = null;
+    releaseGestureCapture(pointerId);
     swipeOriginAction.current = null;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
     clearGestureDrag(false);
@@ -543,7 +629,7 @@ export default function App() {
 
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    const hardExcluded = target.closest('[data-no-tab-swipe],[data-swipe-exclude],[data-gesture-owner="native"],[role="dialog"],[aria-modal="true"],.ui-bottom-sheet,[data-horizontal-scroll],.recharts-wrapper,[data-chart],canvas,[role="slider"],input[type="range"]');
+    const hardExcluded = target.closest('[data-no-tab-swipe],[data-swipe-exclude],[data-gesture-owner="native"],[role="dialog"],[aria-modal="true"],.ui-bottom-sheet,[data-horizontal-scroll],[role="slider"],input[type="range"]');
     const textEntry = target.closest('textarea,select,[contenteditable="true"],[role="textbox"],input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"])');
     const nativePicker = target.closest('[data-native-picker],input[type="date"],input[type="time"],input[type="month"],input[type="file"],input[type="color"]');
     const interactive = target.closest('button,a,label,summary,input[type="button"],input[type="submit"],input[type="reset"],input[type="checkbox"],input[type="radio"],[role="button"],[role="switch"],[role="checkbox"],[role="tab"]');
@@ -610,7 +696,7 @@ export default function App() {
       swipeMoveFrame.current = null;
       if (swipePointer.current?.pointerId !== start.pointerId || swipePointer.current.axis !== 'horizontal') return;
       screen.setAttribute('data-gesture-dragging', 'true');
-      screen.style.setProperty('--gesture-x', `${swipePointer.current.latestOffsetX}px`);
+      screen.style.setProperty('--gesture-x', `${resistDrag(swipePointer.current.latestOffsetX, window.innerWidth, interfaceMotion.preset)}px`);
     });
   };
 
@@ -642,7 +728,7 @@ export default function App() {
         swipeClickSuppression.current = { pointerId: event.pointerId, target: swipeOriginAction.current, expiresAt: performance.now() + 500 };
       }
       swipeOriginAction.current = null;
-      clearGestureDrag(true);
+      clearGestureDrag(true, deltaX * 1000 / Math.max(1, performance.now() - start.startedAt));
     }
   };
 
@@ -720,28 +806,49 @@ export default function App() {
     };
   }, []);
 
+  const closeTaskDetail = () => {
+    rememberActiveScroll();
+    setPlannerDetailTaskId(null);
+    const destination = taskDetailReturnTabRef.current;
+    taskDetailReturnTabRef.current = null;
+    if (!destination) return;
+    if (navigationHistory.current[navigationHistory.current.length - 1] === destination) navigationHistory.current = navigationHistory.current.slice(0, -1);
+    transitionToTab(destination);
+  };
+
   const navigateBack = () => {
     const state = backState.current;
+    if (typeof document !== 'undefined') {
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open]');
+      if (filterSheet) { filterSheet.close(); return; }
+      const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
+      if (contextualInfo) { contextualInfo.close(); return; }
+    }
     if (confirmationResolver.current) { settleConfirmation(false); return; }
     if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(false).catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
     if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
       void requestCloseFinanceDraft(); return;
     }
-    const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileSection !== 'home') }, navigationHistory.current.length > 0);
+    if (!state.isLocked && state.appReady && !(state.onboardingRequired && !state.onboardingComplete) && state.activeTab === 'dashboard' && state.todayCustomizationOpen && !state.createKind && !state.modalContent) {
+      closeTodayCustomization(); return;
+    }
+    if (!state.isLocked && state.appReady && !state.createKind && !state.modalContent && state.lifeDetail && (state.activeTab === 'habits' || state.activeTab === 'goals')) { showLifeDetail(null); return; }
+    const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: state.activeTab === 'planner' && Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileSection !== 'home') }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
     if (action === 'exit-app') { void CapacitorApp.exitApp(); return; }
     if (action === 'dismiss-dialog') { requestCloseForm(); setModalContent(null); return; }
     if (action === 'dismiss-exit-dialog') { setShowExitConfirmation(false); return; }
-    if (action === 'close-task-details') { setPlannerDetailTaskId(null); return; }
+    if (action === 'close-task-details') { closeTaskDetail(); return; }
     if (action === 'close-child-view') {
       if (state.activeTab === 'finance') {
+        rememberActiveScroll();
         const previous = popTabHistory(financeSubtabHistory.current, 'overview');
         financeSubtabHistory.current = previous.history;
         setFinanceSubtab(previous.next);
       }
-      if (state.activeTab === 'habits') setHabitsSubtab('checklist');
-      if (state.activeTab === 'goals') setGoalsSubtab('active');
-      if (state.activeTab === 'settings') navigateProfileSection('home');
+      if (state.activeTab === 'habits') { rememberActiveScroll(); setHabitsSubtab('checklist'); }
+      if (state.activeTab === 'goals') { rememberActiveScroll(); setGoalsSubtab('active'); }
+      if (state.activeTab === 'settings') navigateProfileSection(profileParent(state.profileSection));
       return;
     }
     const history = popTabHistory(navigationHistory.current, 'dashboard');
@@ -877,11 +984,13 @@ export default function App() {
     };
   }, []);
 
+  const navigateBackRef = useRef(navigateBack);
+  navigateBackRef.current = navigateBack;
   useEffect(() => {
     let disposed = false;
     let listener: { remove: () => Promise<void> } | undefined;
     void CapacitorApp.addListener('backButton', () => {
-      if (!disposed) navigateBack();
+      if (!disposed) navigateBackRef.current();
     }).then(async value => {
       if (disposed) await value.remove();
       else listener = value;
@@ -896,14 +1005,18 @@ export default function App() {
 
   useEffect(() => {
     if (appearance !== 'system') return;
-    const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved, themePreviewId || visualThemeId); };
+    const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved, themePreviewId || visualThemeId, customAccent); };
     const nativeTheme = (event: Event) => update((event as CustomEvent<{ dark: boolean }>).detail.dark ? 'dark' : 'light');
     window.addEventListener('lifeos:system-appearance', nativeTheme);
     const stopMedia = typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
       ? () => {}
       : watchSystemTheme(window.matchMedia('(prefers-color-scheme: dark)'), update);
     return () => { stopMedia(); window.removeEventListener('lifeos:system-appearance', nativeTheme); };
-  }, [appearance, visualThemeId, themePreviewId]);
+  }, [appearance, visualThemeId, themePreviewId, customAccent]);
+
+  useEffect(() => {
+    applyDomTheme(theme, themePreviewId || visualThemeId, customAccent);
+  }, [theme, visualThemeId, themePreviewId, customAccent]);
 
   useEffect(() => {
     if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
@@ -919,19 +1032,16 @@ export default function App() {
     profileSection,
     goalsSubtab,
     habitsSubtab,
+    detailKey: lifeDetail?.kind === (activeTab === 'habits' ? 'habit' : 'goal') ? lifeDetail.id : undefined,
   });
 
   const rememberActiveScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
+  const showLifeDetail = (detail: typeof lifeDetail) => { rememberActiveScroll(); setLifeDetail(detail); };
   const navigateProfileSection = (section: ProfileSection) => {
+    if (profileSection === 'themes' && section !== 'themes' && themePreviewId) cancelVisualThemePreview();
     rememberActiveScroll();
     setProfileSection(section);
   };
-
-  useEffect(() => {
-    const rememberScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
-    window.addEventListener('scroll', rememberScroll, { passive: true });
-    return () => window.removeEventListener('scroll', rememberScroll);
-  }, [activeScreenKey]);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -944,6 +1054,10 @@ export default function App() {
   const finishTabTransition = (id: number) => {
     if (activeTransitionId.current !== id) return;
     activeTransitionId.current = null;
+    if (import.meta.env.DEV) {
+      performance.clearMeasures('lifeos-tab-transition');
+      performance.measure('lifeos-tab-transition', { start: tabTransitionStarted.current, end: performance.now() });
+    }
     setTabTransition(current => current?.id === id ? null : current);
   };
 
@@ -966,6 +1080,8 @@ export default function App() {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const settleImmediately = () => {
       if (!preference.matches) return;
+      swipeSettleAnimation.current?.cancel();
+      swipeSettleAnimation.current = null;
       activeTransitionId.current = null;
       setTabTransition(null);
     };
@@ -1026,16 +1142,24 @@ export default function App() {
       .catch(() => showToast('Today layout could not be saved. Your previous layout will return after restart.', 'danger'));
   };
 
+  const closeTodayCustomization = () => setTodayCustomizationOpen(false);
+  const dismissTodayCustomizationBackdrop = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) closeTodayCustomization();
+  };
+  useEffect(() => {
+    if (activeTab !== 'dashboard' || isLocked) setTodayCustomizationOpen(false);
+  }, [activeTab, isLocked]);
+
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
     order: todayLayout.order.indexOf(id) + 2,
-    display: todayLayout.hidden.includes(id) ? 'none' : undefined,
+    display: todayLayout.hidden.includes(id) || (id === 'habits' && !habits.length) || (id === 'goals' && !goals.some(goal => goal.status === 'In Progress')) || (id === 'upcoming' && !tasks.some(task => !task.completed && task.dueDate && task.dueDate > formatLocalDate(clockNow))) || (id === 'agenda' && !tasks.some(task => task.dueDate === formatLocalDate(clockNow) || getTaskStatus(task, clockNow) === 'Overdue')) || (id === 'money' && !transactions.length) ? 'none' : undefined,
   });
 
   const requestCloseForm = () => {
     if (createOperation.current) return;
     if (!backState.current.createKind) return;
     const close = () => {
-      setCreateKind(null); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null); setCreateFormDirty(false);
+      setCreateKind(null); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null); setEditingBudgetId(null); setEditingBudgetId(null); setCreateFormDirty(false);
     };
     if (!createFormDirty) { close(); return; }
     void confirmAction({ title: 'Discard unsaved changes?', message: 'Your edits have not been saved.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', destructive: true }).then(confirmed => { if (confirmed) close(); });
@@ -1058,6 +1182,8 @@ export default function App() {
     : planningDrafts.commitment ? 'money-commitment-dialog' : 'money-rate-dialog';
   useRecordDialog(Boolean(createKind || financeDialogOpen) && !isLocked && !firstRecordSecurityOpen && secureSetup === null,
     () => { if (createKind) requestCloseForm(); else void requestCloseFinanceDraft(); }, recordDialogId);
+  useRecordDialog(todayCustomizationOpen && activeTab === 'dashboard' && !isLocked && !createKind && !modalContent && !firstRecordSecurityOpen && secureSetup === null,
+    closeTodayCustomization, 'today-customization');
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
     if (next === financeSubtab) return;
@@ -1068,28 +1194,49 @@ export default function App() {
 
   const saveUserPreference = async <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
     const updated = { ...userPrefs, [key]: value };
-    setUserPrefs(updated);
-    await StorageService.settings.set('userPreferences', updated);
-    if (key === 'currency') await StorageService.settings.set('currency', value);
+    try {
+      await StorageService.settings.set('userPreferences', updated);
+      setUserPrefs(updated);
+    } catch { showToast('Could not save this preference.', 'danger'); }
   };
 
   const initApp = async () => {
     // Bootstrap-safe preferences only.
     const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'system');
     const savedVisualTheme = await resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', visualThemeId));
+    let cachedAccent: string | undefined;
+    try { cachedAccent = normalizeCustomAccent(localStorage.getItem('lifeos-custom-accent')); } catch { /* Cosmetic cache is optional. */ }
+    let accentTimer: ReturnType<typeof setTimeout> | number | undefined;
+    let storedAccent: unknown;
+    try {
+      storedAccent = await Promise.race([
+        Promise.resolve().then(() => StorageService.settings.get('customAccent', null)),
+        new Promise<undefined>(resolve => { accentTimer = setTimeout(resolve, 1500); }),
+      ]);
+    } catch { storedAccent = undefined; }
+    finally { if (accentTimer !== undefined) clearTimeout(accentTimer); }
+    const savedAccent = storedAccent === undefined ? cachedAccent : normalizeCustomAccent(storedAccent);
+    setCustomAccent(savedAccent);
     setVisualThemeId(savedVisualTheme);
     setAppearancePreference(savedTheme);
     const resolvedTheme = resolveAppearance(savedTheme, systemDarkPreference());
     setTheme(resolvedTheme);
-    applyDomTheme(resolvedTheme, savedVisualTheme);
+    applyDomTheme(resolvedTheme, savedVisualTheme, savedAccent);
     try { localStorage.setItem('lifeos-theme-id', savedVisualTheme); } catch { /* Cosmetic cache is optional. */ }
+    try {
+      if (savedAccent) localStorage.setItem('lifeos-custom-accent', savedAccent);
+      else localStorage.removeItem('lifeos-custom-accent');
+    } catch { /* Cosmetic cache is optional. */ }
     localStorage.setItem('lifeos-appearance', savedTheme);
 
+    setDateOnlyAlertTime(await StorageService.settings.get<string>('dateOnlyAlertTime', ''));
+    setNotificationTone(normalizeNotificationTone(await StorageService.settings.get('notificationTone', 'warm')));
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
     setBiometricEnabled(lockSetting);
     setIsLocked(lockSetting);
 
     const availability = await BiometricService.isAvailable();
+    setDeviceCredentialOnly(availability.isAvailable && availability.deviceCredentialAvailable === true && availability.strongBiometricAvailable === false);
     setBiometricAvailability(
       availability.isAvailable
         ? 'Available'
@@ -1104,7 +1251,10 @@ export default function App() {
     const storedOnboardingJourney = await StorageService.settings.get<unknown>('onboardingJourney', null);
     const normalizedJourney = normalizeOnboardingJourney(storedOnboardingJourney);
     setOnboardingJourney(normalizedJourney);
-    let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
+    const legacyStep = await StorageService.settings.get<number>('onboardingStep', 0);
+    const previousVersion = (storedOnboardingJourney as { version?: number } | null)?.version;
+    const savedOnboardingStep = resumeOnboardingStep(legacyStep, previousVersion);
+    if (!completed && started && savedOnboardingStep !== legacyStep) await StorageService.settings.set('onboardingStep', savedOnboardingStep);
 
     const nativeState = await CryptoService.getKeyState();
     const hasCiphertext = await hasEncryptedRecords();
@@ -1130,13 +1280,9 @@ export default function App() {
       setDisplayName(await StorageService.settings.get<string>('onboardingNameDraft', ''));
       setOnboardingRequired(!completed);
       setOnboardingComplete(completed);
-      setOnboardingStep(0);
-      if (!completed && await StorageService.settings.get<boolean>('notificationDefaultsPending', false) === false) {
-        await StorageService.settings.set('notificationDefaultsPending', true);
-      }
+      setOnboardingStep(savedOnboardingStep);
       if (!started && !completed) await StorageService.settings.set('onboardingStarted', true);
-      const notificationPermission = await NotificationService.checkPermission();
-      await reconcileNotificationPreferences(notificationPermission);
+      await reconcileNotificationPreferences();
       setAppReady(true);
       return;
     }
@@ -1182,9 +1328,8 @@ export default function App() {
       'notificationsEnabled',
       undefined
     );
-    const notificationsOn =
-      savedNotificationsEnabled ?? Object.values(savedNotificationPreferences).some(Boolean);
-
+    const hasEnabledCategory = Object.values(savedNotificationPreferences).some(Boolean);
+    const notificationsOn = savedNotificationsEnabled ?? hasEnabledCategory;
     setNotificationsEnabled(notificationsOn);
     setNotificationPreferences({
       ...DEFAULT_NOTIFICATION_PREFERENCES,
@@ -1199,7 +1344,7 @@ export default function App() {
 
     setOnboardingRequired(needsOnboarding);
     setOnboardingComplete(completed || !needsOnboarding);
-    setOnboardingStep(Math.max(0, Math.min(4, savedOnboardingStep)));
+    setOnboardingStep(savedOnboardingStep);
 
     if (!completed && !needsOnboarding) {
       await StorageService.settings.set('onboardingCompleted', true);
@@ -1237,19 +1382,19 @@ export default function App() {
     setAppearancePreference(preference);
     const resolved = resolveAppearance(preference, systemDarkPreference());
     setTheme(resolved);
-    applyDomTheme(resolved, themePreviewId || visualThemeId);
+    applyDomTheme(resolved, themePreviewId || visualThemeId, customAccent);
     await StorageService.settings.set('theme', preference);
     localStorage.setItem('lifeos-appearance', preference);
   };
 
   const previewVisualTheme = (themeId: ThemeId) => {
     setThemePreviewId(themeId);
-    applyDomTheme(theme, themeId);
+    applyDomTheme(theme, themeId, customAccent);
   };
 
   const cancelVisualThemePreview = () => {
     setThemePreviewId(null);
-    applyDomTheme(theme, visualThemeId);
+    applyDomTheme(theme, visualThemeId, customAccent);
   };
 
   const applyVisualTheme = async () => {
@@ -1259,12 +1404,33 @@ export default function App() {
       setVisualThemeId(themePreviewId);
       try { localStorage.setItem('lifeos-theme-id', themePreviewId); } catch { /* Persistent setting remains authoritative. */ }
       setThemePreviewId(null);
-      applyDomTheme(theme, themePreviewId);
+      applyDomTheme(theme, themePreviewId, customAccent);
       showToast('Color theme applied', 'success');
     } catch (error) {
       cancelVisualThemePreview();
       showToast(error instanceof Error ? error.message : 'Could not save this theme.', 'danger');
     }
+  };
+
+  const applyCustomAccent = async (color: string | undefined) => {
+    const normalized = normalizeCustomAccent(color);
+    if (color !== undefined && !normalized) {
+      showToast('Choose a color in #RRGGBB format.', 'danger');
+      return;
+    }
+    const save = customAccentSaveQueue.current.then(async () => {
+      await StorageService.settings.set('customAccent', normalized ?? null);
+      setCustomAccent(normalized);
+      try {
+        if (normalized) localStorage.setItem('lifeos-custom-accent', normalized);
+        else localStorage.removeItem('lifeos-custom-accent');
+      } catch { /* Persistent cosmetic setting remains authoritative. */ }
+      showToast(normalized ? 'Accent color applied' : 'Palette accent restored', 'success');
+    });
+    // Keep later choices usable after a failed write without applying it.
+    customAccentSaveQueue.current = save.catch(() => {});
+    try { await save; }
+    catch { showToast('Could not save this accent color. Try again.', 'danger'); }
   };
 
   const refreshNotificationDiagnostics = async () => {
@@ -1320,7 +1486,8 @@ export default function App() {
         // Android owns prior-denial policy. Only request while the native plugin
         // reports a promptable state; never persist an unsafe pre-encryption flag.
         setNotificationPermissionRequested(true);
-        status = await NotificationService.requestPermission();
+        await NotificationService.requestPermission();
+        status = await NotificationService.checkPermission();
         if (status !== 'granted') {
           return { granted: false, status, message: 'Notifications remain off. You can allow them later in Settings → Notifications.' };
         }
@@ -1339,18 +1506,30 @@ export default function App() {
     }
   };
 
-  const saveNotificationSelection = async (preferences: NotificationPreferences, enabled = Object.values(preferences).some(Boolean)) => {
-    setNotificationPreferences(preferences);
-    setNotificationsEnabled(enabled);
-    await StorageService.settings.set('notificationPreferences', preferences);
-    await StorageService.settings.set('notificationsEnabled', enabled);
+  const acceptOnboardingNotifications = async () => {
+    const permission = await askNotificationPermission();
+    await refreshNotificationDiagnostics();
+    if (!permission.granted) throw new Error(permission.message || 'Android has not allowed notifications.');
+    const saved = await StorageService.settings.get<NotificationPreferences | undefined>('notificationPreferences', undefined);
+    const preferences = saved ? { ...DEFAULT_NOTIFICATION_PREFERENCES, ...saved } : FIRST_CONSENT_NOTIFICATION_PREFERENCES;
+    await saveNotificationSelection(preferences, true);
+    await syncNotificationSchedules(tasks, habits, goals, milestones, preferences);
   };
 
-  const syncNotificationSchedules = async (taskRows: Task[], habitRows: Habit[], goalRows: Goal[], milestoneRows: Milestone[], preferences = notificationPreferences) => {
+  const saveNotificationSelection = async (preferences: NotificationPreferences, enabled = Object.values(preferences).some(Boolean)) => {
+    await StorageService.settings.set('notificationPreferences', preferences);
+    await StorageService.settings.set('notificationsEnabled', enabled);
+    setNotificationPreferences(preferences);
+    setNotificationsEnabled(enabled);
+  };
+
+  const syncNotificationSchedules = async (taskRows: Task[], habitRows: Habit[], goalRows: Goal[], milestoneRows: Milestone[], preferences = effectiveNotificationPreferences(notificationPreferences, notificationsEnabled)) => {
+    const dateOnlyAlertTime = typeof StorageService.settings.get === 'function' ? await StorageService.settings.get<string>('dateOnlyAlertTime', '') : undefined;
+    const tone = normalizeNotificationTone(await StorageService.settings.get?.('notificationTone', 'warm'));
     const results = await Promise.allSettled([
-      NotificationService.syncTasks(taskRows, preferences),
-      NotificationService.syncHabits(habitRows, preferences),
-      NotificationService.syncMilestones(goalRows, milestoneRows, preferences),
+      NotificationService.syncTasks(taskRows, preferences, dateOnlyAlertTime, tone),
+      NotificationService.syncHabits(habitRows, preferences, tone),
+      NotificationService.syncMilestones(goalRows, milestoneRows, preferences, tone),
     ]);
     if (results.some(result => result.status === 'rejected')) {
       console.warn('One or more local notification schedules could not be updated.', results.filter(result => result.status === 'rejected'));
@@ -1363,8 +1542,8 @@ export default function App() {
 
   const updateDisplayName = async (name: string) => {
     const normalized = name.slice(0, 48).trim();
-    setDisplayName(name.slice(0, 48));
     await StorageService.settings.set('displayName', normalized);
+    setDisplayName(normalized);
   };
 
   const toggleNotificationCategory = async (key: keyof NotificationPreferences) => {
@@ -1374,13 +1553,11 @@ export default function App() {
       if (!permission.granted) { showToast(permission.message || `Notification permission: ${permission.status}`, 'danger'); return; }
     }
     const next = { ...notificationPreferences, [key]: enabled };
-    setNotificationPreferences(next);
-    const master = enabled || (notificationsEnabled && Object.entries(next).some(([category, value]) => category !== key && value));
-    setNotificationsEnabled(master);
-    await StorageService.settings.set('notificationPreferences', next);
-    await StorageService.settings.set('notificationsEnabled', master);
-    await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(next, master));
-    showToast(`${enabled ? 'Enabled' : 'Disabled'} ${notificationLabels[key].toLowerCase()}`, 'success');
+    try {
+      await saveNotificationSelection(next, notificationsEnabled);
+      const synchronized = await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(next, notificationsEnabled));
+      if (!synchronized) showToast('Saved, but Android could not update some alerts.', 'danger');
+    } catch { showToast('Could not save this notification preference.', 'danger'); }
   };
 
   const setNotificationsMaster = async (enabled: boolean) => {
@@ -1388,16 +1565,36 @@ export default function App() {
       const permission = await askNotificationPermission();
       if (!permission.granted) { showToast(permission.message || `Notification permission: ${permission.status}`, 'danger'); return; }
     }
-    setNotificationsEnabled(enabled);
-    await StorageService.settings.set('notificationsEnabled', enabled);
-    await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(notificationPreferences, enabled));
-    await refreshNotificationDiagnostics();
-    showToast(enabled ? 'Notifications enabled' : 'Notifications paused', 'success');
+    try {
+      const saved = await StorageService.settings.get<NotificationPreferences | undefined>('notificationPreferences', undefined);
+      const preferences = enabled && !saved ? FIRST_CONSENT_NOTIFICATION_PREFERENCES : notificationPreferences;
+      await saveNotificationSelection(preferences, enabled);
+      const synchronized = await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(preferences, enabled));
+      if (!synchronized) showToast('Saved, but Android could not update some alerts.', 'danger');
+      else showToast(enabled ? 'Notifications enabled' : 'Notifications paused', 'success');
+    } catch { showToast('Could not save notifications.', 'danger'); }
   };
 
   const openNotificationSettings = async () => {
     try { await NotificationService.openSettings(); }
     catch (error) { showToast(error instanceof Error ? error.message : 'Could not open Android notification settings', 'danger'); }
+  };
+
+  const requestExactAlarmAccess = async () => {
+    try {
+      const result = await NotificationService.requestExactAlarmPermission();
+      await refreshNotificationDiagnostics();
+      if (result === 'granted') {
+        const synchronized = await syncNotificationSchedules(tasks, habits, goals, milestones);
+        if (!synchronized) { showToast('Precise access is on, but some reminders could not be updated.', 'danger'); return; }
+        showToast('Exact alarm access is available for eligible reminders.', 'success');
+      } else {
+        showToast('Exact alarm access is off. Android may delay reminders; your saved reminders remain in place.', 'info');
+      }
+    } catch (error) {
+      await refreshNotificationDiagnostics();
+      showToast(error instanceof Error ? error.message : 'Could not open exact alarm access settings.', 'danger');
+    }
   };
 
   const handleEnableBiometric = async () => {
@@ -1488,11 +1685,7 @@ export default function App() {
       }
       const prepared = await CryptoService.prepareRecovery();
       if (!(await requestSecureSetup(prepared))) {
-        await encryptedSession.lock();
-        setBiometricVerified(false); biometricAuthenticated.current = false;
-        // The onboarding gate remains visible. A retry will authenticate and
-        // recreate a temporary kit; no private workspace is opened.
-        setIsLocked(false);
+        await CryptoService.cancelPendingRecovery();
         return false;
       }
       await CryptoService.confirmRecovery();
@@ -1550,91 +1743,109 @@ export default function App() {
     }
   };
 
-  const reconcileNotificationPreferences = async (permission: string) => {
-    const pendingNewUserDefaults = await StorageService.settings.get<boolean>('notificationDefaultsPending', false);
+  const reconcileNotificationPreferences = async () => {
     const saved = await StorageService.settings.get<NotificationPreferences | undefined>('notificationPreferences', undefined);
-    if (permission === 'granted' && pendingNewUserDefaults && !saved) {
-      const defaults: NotificationPreferences = { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true, habitReminders: true, milestoneReminders: true };
-      await StorageService.settings.set('notificationPreferences', defaults);
-      await StorageService.settings.set('notificationsEnabled', true);
-      await StorageService.settings.set('notificationDefaultsPending', false);
-      setNotificationPreferences(defaults);
-      setNotificationsEnabled(true);
-      return defaults;
-    }
-    if (permission === 'granted' && pendingNewUserDefaults && saved) {
-      await StorageService.settings.set('notificationDefaultsPending', false);
-    }
     if (saved) setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...saved });
-    const enabled = permission === 'granted' && await StorageService.settings.get<boolean>('notificationsEnabled', false);
+    const enabled = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(saved || {}).some(Boolean));
     setNotificationsEnabled(Boolean(enabled));
-    return saved || DEFAULT_NOTIFICATION_PREFERENCES;
+    return { ...DEFAULT_NOTIFICATION_PREFERENCES, ...saved };
   };
 
   const finishOnboarding = async () => {
-    const [state, savedJourney, savedName] = await Promise.all([
+    if (!safeFirstRunBrowse.current && !sessionManager.isUnlocked()) await encryptedSession.open();
+    const [state, savedJourney, nameDraft] = await Promise.all([
       CryptoService.getKeyState(),
       StorageService.settings.get<OnboardingJourney>('onboardingJourney', INITIAL_ONBOARDING_JOURNEY),
-      StorageService.settings.get<string>('displayName', '')
+      StorageService.settings.get<string>('onboardingNameDraft', '')
     ]);
-    if (!state.metadataConsistent || !state.keyProvisioned || !state.recoveryProvisioned ||
-        state.recoveryDeferred || state.recoveryNeedsRebind || !state.unlocked ||
-        !sessionManager.isUnlocked() || !isEncryptedStorageActivated() || !savedName.trim() ||
-        normalizeOnboardingJourney(savedJourney).protection !== 'enabled' ||
-        normalizeOnboardingJourney(savedJourney).recovery !== 'confirmed') {
-      throw new Error('LifeOS has not verified every security step yet. Your private workspace remains closed.');
+    const safeToBrowse = !state.keyProvisioned && safeFirstRunBrowse.current && !state.recoveryNeedsRebind;
+    const secureWorkspaceOpen = state.metadataConsistent && state.keyProvisioned && state.unlocked &&
+      !state.recoveryNeedsRebind && (state.recoveryProvisioned || state.recoveryDeferred) &&
+      sessionManager.isUnlocked() && isEncryptedStorageActivated();
+    const savedName = secureWorkspaceOpen
+      ? await StorageService.settings.get<string>('displayName', '')
+      : '';
+    const identityName = nameDraft.trim() || savedName.trim();
+    if ((!safeToBrowse && !secureWorkspaceOpen) || !identityName)
+      throw new Error('LifeOS could not verify the workspace state. No protected records were opened.');
+    if (secureWorkspaceOpen && nameDraft.trim()) {
+      await StorageService.settings.set('displayName', identityName);
+      await StorageService.settings.delete('onboardingNameDraft');
     }
+    const completedJourney: OnboardingJourney = {
+      ...normalizeOnboardingJourney(savedJourney),
+      stage: 'recovery',
+      protection: state.keyProvisioned ? 'enabled' : 'pending',
+      recovery: state.recoveryProvisioned ? 'confirmed' : 'pending',
+    };
+    await StorageService.settings.set('onboardingJourney', completedJourney);
+    setOnboardingJourney(completedJourney);
+    await StorageService.settings.set('notificationDefaultsPending', false);
     await StorageService.settings.set('onboardingCompleted', true);
     await StorageService.settings.set('onboardingStarted', false);
     await StorageService.settings.set('onboardingStep', 0);
     setOnboardingStep(0);
     setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; transitionToTab('dashboard');
-    // Let React commit Today and ensure the Android Activity is foregrounded
-    // before invoking the native permission API. Denial never blocks entry.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      void (async () => {
-        try {
-          if (!NotificationService.isSupported()) return;
-          await NotificationService.ensureChannel();
-          const permission = await NotificationService.checkPermission();
-          if (permission === 'prompt' || permission === 'prompt-with-rationale') {
-            setNotificationPermissionRequested(true);
-            const granted = await NotificationService.requestPermission();
-            await reconcileNotificationPreferences(granted);
-          } else {
-            await reconcileNotificationPreferences(permission);
-          }
-        } catch (error) {
-          console.warn('Welcome notification permission request did not complete.', error);
-        } finally {
-          await refreshNotificationDiagnostics();
-        }
-      })();
-    }));
   };
 
   const processPendingTaskNotification = async () => {
-    const taskId = pendingNotificationTaskId.current;
-    if (!taskId || isLocked || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
-    pendingNotificationTaskId.current = null;
-    const task = (await StorageService.tasks.getAll()).find(item => item.id === taskId);
-    rememberActiveScroll();
-    transitionToTab('planner');
-    if (!task) {
-      setPlannerDetailTaskId(null);
-      showToast('That reminder no longer has an available task.', 'info');
-      const actionId = pendingNotificationActionId.current;
-      pendingNotificationActionId.current = null;
-      if (actionId !== null) await NotificationService.acknowledgeInitialTapAction(actionId);
-      return;
+    const action = pendingNotification.current;
+    if (!action || reminderProcessing.current || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
+    reminderProcessing.current = true;
+    const extra = action.notification.extra || {};
+    try {
+      let opened = false;
+      if (typeof extra.taskId === 'string') {
+        const task = (await StorageService.tasks.getAll()).find(item => item.id === extra.taskId);
+        if (task) {
+          opened = true;
+          if (action.actionId === 'lifeos-task-done') {
+            if (!task.completed) await StorageService.tasks.toggleCompleted(task.id, true);
+            const records = await reloadAllData();
+            const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+            const master = await StorageService.settings.get('notificationsEnabled', Object.values(preferences).some(Boolean));
+            await NotificationService.cancelTask(task);
+            const refreshed = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
+              effectiveNotificationPreferences(preferences, master));
+            showToast(refreshed ? 'Task marked done' : 'Task marked done. Some reminders could not refresh.', refreshed ? 'success' : 'danger');
+          } else if (action.actionId === 'lifeos-task-snooze') {
+            const enabled = await StorageService.settings.get('notificationsEnabled', false);
+            const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+            if (!enabled || !preferences.taskReminders) throw new Error('Turn on task reminders before snoozing.');
+            const tone = normalizeNotificationTone(await StorageService.settings.get('notificationTone', 'warm'));
+            if (await NotificationService.snoozeTask(task, tone)) showToast('Reminder snoozed for 10 minutes', 'success');
+          } else {
+            taskDetailReturnTabRef.current = activeTabRef.current === 'planner' ? null : activeTabRef.current;
+            taskDetailReturnFocusRef.current = null;
+            navigateTo('planner');
+            setPlannerSelectedDate(task.dueDate || formatLocalDate(new Date()));
+            setPlannerDetailTaskId(task.id);
+          }
+        }
+      } else if (typeof extra.habitId === 'string') {
+        const habit = (await StorageService.habits.getAll()).find(item => item.id === extra.habitId);
+        if (habit) { setHabitsSelectedDate(formatLocalDate(new Date())); setLifeDetail({ kind: 'habit', id: habit.id }); navigateTo('habits'); opened = true; }
+      } else if (extra.kind === 'milestoneReminder') {
+        const milestone = (await StorageService.goals.getAllMilestones()).find(item => item.id === extra.milestoneId);
+        if (milestone && (await StorageService.goals.getAll()).some(goal => goal.id === milestone.goalId)) {
+          setLifeDetail({ kind: 'goal', id: milestone.goalId }); navigateTo('goals'); opened = true;
+        }
+      }
+      if (!opened) showToast('That reminder no longer has an available record.', 'info');
+      await NotificationService.acknowledgeInitialTapAction(action.notification.id);
+    } catch (error) {
+      handledNotificationIds.current.delete(action.notification.id);
+      showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger');
+    } finally {
+      reminderProcessing.current = false;
+      if (pendingNotification.current === action) pendingNotification.current = null;
+      else if (pendingNotification.current) void processPendingTaskNotification();
     }
-    setPlannerSelectedDate(task.dueDate);
-    taskDetailReturnFocusRef.current = plannerHeadingRef.current;
-    setPlannerDetailTaskId(task.id);
-    const actionId = pendingNotificationActionId.current;
-    pendingNotificationActionId.current = null;
-    if (actionId !== null) await NotificationService.acknowledgeInitialTapAction(actionId);
   };
+
+  useEffect(() => {
+    if (appReady && !isLocked && typeof processPendingTaskNotification === 'function') void processPendingTaskNotification();
+  }, [appReady, isLocked]);
 
   const diagnosePlannerTaskReminder = async (task: Task) => {
     let synchronizationFailed = false;
@@ -1662,7 +1873,7 @@ export default function App() {
     let disposed = false;
     let listener: { remove: () => Promise<void> } | null = null;
     let receivedListener: { remove: () => Promise<void> } | null = null;
-    const handleAction = (action: { notification: { id: number; extra?: Record<string, unknown> } }) => {
+    const handleAction = (action: ReminderAction) => {
       const extra = action.notification.extra || {};
       const id = action.notification.id;
       if (handledNotificationIds.current.has(id)) return;
@@ -1674,10 +1885,7 @@ export default function App() {
         void NotificationService.acknowledgeInitialTapAction(id);
         return;
       }
-      const taskId = typeof extra.taskId === 'string' ? extra.taskId : '';
-      if (!taskId) { navigateTo('planner'); void NotificationService.acknowledgeInitialTapAction(id); return; }
-      pendingNotificationTaskId.current = taskId;
-      pendingNotificationActionId.current = id;
+      pendingNotification.current = action;
       if (!isLocked && sessionManager.isUnlocked() && isEncryptedStorageActivated()) {
         void processPendingTaskNotification().catch(error => showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger'));
       }
@@ -1835,6 +2043,16 @@ export default function App() {
     showToast(currentlyCompleted ? 'Habit unmarked' : 'Habit finished!', 'success');
   };
 
+  const handleHabitQuantity = async (habit: Habit, date: string, delta: number) => {
+    try {
+      const next = await StorageService.habits.adjustQuantity(habit.id, date, delta);
+      await reloadAllData();
+      showToast(`${habit.name}: ${formatHabitQuantity(next, habit.quantityUnit)} / ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not update habit progress.', 'danger');
+    }
+  };
+
   const handleHabitDeletion = async (habit: Habit) => {
     try {
       await StorageService.habits.delete(habit.id);
@@ -1870,10 +2088,10 @@ export default function App() {
     const today = formatLocalDate(now);
     setCreateFormDirty(false);
     setCreateDraft({
-      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
+      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: kind === 'task' ? taskDate || '' : taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       currencyCode: userPrefs.currency, accountId: '', type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
-      goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
+      goalId: goalId || '', recurring: 'None', reminderWeekday: '2', trackingMode: 'binary', quantityUnit: '',
     });
     setEditingTaskId(null);
     setEditingHabitId(null);
@@ -1881,14 +2099,22 @@ export default function App() {
     setEditingGoalId(null);
     setEditingContributionId(null);
     setEditingSavingsGoalId(null);
+    setEditingBudgetId(null);
     setTransactionDetailsOpen(false);
     setCreateKind(kind);
+  };
+
+  const openEditBudget = (budget: Budget) => {
+    setCreateFormDirty(false);
+    setEditingBudgetId(budget.id);
+    setCreateDraft({ categoryId: budget.categoryId || '', amount: budget.amountMinor && budget.currencyCode ? minorUnitsToDecimal(BigInt(budget.amountMinor), budget.currencyCode) : String(budget.monthlyAmount), month: budget.monthYear, currencyCode: budget.currencyCode || userPrefs.currency });
+    setCreateKind('budget');
   };
 
   const openEditTransaction = (transaction: Transaction) => {
     setCreateFormDirty(false);
     setCreateDraft({
-      title: transaction.description || '', amount: String(transaction.amount), category: transaction.category,
+      title: transaction.description || '', amount: transaction.amountMinor !== undefined && transaction.currencyCode ? minorUnitsToDecimal(BigInt(transaction.amountMinor), transaction.currencyCode) : String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
       currencyCode: transaction.currencyCode || userPrefs.currency, accountId: transaction.accountId || '',
       dateTime: transaction.occurredAt ? formatLocalDateTime(new Date(transaction.occurredAt)) : '',
@@ -1900,7 +2126,7 @@ export default function App() {
 
   const openEditSavingsGoal = (goal: SavingsGoal) => {
     setCreateFormDirty(false);
-    setCreateDraft({ title: goal.title, target: String(goal.targetAmount), current: String(goal.currentAmount), category: goal.category || '', date: goal.targetDate });
+    setCreateDraft({ title: goal.title, target: goal.targetAmountMinor && goal.currencyCode ? minorUnitsToDecimal(BigInt(goal.targetAmountMinor), goal.currencyCode) : String(goal.targetAmount), current: goal.currentAmountMinor && goal.currencyCode ? minorUnitsToDecimal(BigInt(goal.currentAmountMinor), goal.currencyCode) : String(goal.currentAmount), currencyCode: goal.currencyCode || userPrefs.currency, category: goal.category || '', date: goal.targetDate });
     setEditingSavingsGoalId(goal.id); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setCreateKind('savings');
   };
 
@@ -1932,8 +2158,8 @@ export default function App() {
   const openEditTask = (task: Task) => {
     setCreateFormDirty(false);
     setCreateDraft({
-      title: task.title, description: task.description || task.notes || '', date: task.dueDate,
-      time: task.dueTime || '', reminderAt: task.reminderAt ? formatLocalDateTime(new Date(task.reminderAt)) : '',
+      title: task.title, description: task.description || task.notes || '', date: task.dueDate || '',
+      time: task.dueTime || '', dueAlert: task.dueAlertDisabled ? 'off' : 'on', reminderLead: task.reminderLeadMinutes ? String(task.reminderLeadMinutes) : task.reminderAt ? 'legacy' : '', reminderAt: task.reminderAt ? formatLocalDateTime(new Date(task.reminderAt)) : '',
       priority: task.priority, category: task.category || '', recurring: task.recurring || 'None',
     });
     setEditingTaskId(task.id);
@@ -1949,7 +2175,7 @@ export default function App() {
 
   const openEditHabit = (habit: Habit) => {
     setCreateFormDirty(false);
-    setCreateDraft({ title: habit.name, description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
+    setCreateDraft({ title: habit.name, description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), trackingMode: habit.trackingMode || 'binary', quantityUnit: habit.quantityUnit || '', frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
     setEditingHabitId(habit.id);
     setEditingTaskId(null);
     setCreateKind('habit');
@@ -1969,6 +2195,11 @@ export default function App() {
     }
     if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
       throw new Error('Encrypted storage could not be verified. No private record was saved.');
+    }
+    const pendingName = await StorageService.settings.get<string>('onboardingNameDraft', '');
+    if (pendingName.trim()) {
+      await StorageService.settings.set('displayName', pendingName.trim());
+      await StorageService.settings.delete('onboardingNameDraft');
     }
     safeFirstRunBrowse.current = false;
     setIsLocked(false);
@@ -2001,6 +2232,35 @@ export default function App() {
     } finally { financeWriteOperation.current = false; setFinanceWriteBusy(false); }
   };
 
+  const quickTaskOperation = useRef(false);
+  const addUnscheduledTask = async (title: string, details: QuickTaskDetails = {}) => {
+    const nextTitle = title.trim();
+    if (!nextTitle || nextTitle.length > 200) throw new Error('Enter a task title of 1 to 200 characters.');
+    if (!details.dueDate && (details.dueTime || details.reminderAt)) throw new Error('Add a due date before choosing a time or reminder.');
+    if (details.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(details.dueDate)) throw new Error('Choose a valid due date.');
+    if (details.dueTime && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(details.dueTime)) throw new Error('Choose a valid task time.');
+    if (quickTaskOperation.current) throw new Error('A task is already being saved.');
+    quickTaskOperation.current = true;
+    try {
+      let committed = false;
+      await ensurePrivateStorageBeforeWrite();
+      const reminderAt = details.reminderAt ? new Date(details.reminderAt).toISOString() : undefined;
+      await StorageService.tasks.add({ title: nextTitle, dueDate: details.dueDate, dueTime: details.dueTime,
+        reminderAt, priority: details.priority || 'Medium', recurring: 'None', completed: false });
+      committed = true;
+      try {
+        const records = await reloadAllData();
+        const synchronized = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
+          effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
+        const scheduleFailed = notificationsEnabled && notificationPreferences.taskReminders && Boolean(details.dueDate) && !synchronized;
+        showToast(scheduleFailed ? 'Task saved, but Android scheduling could not be confirmed.' : 'Task saved', scheduleFailed ? 'danger' : 'success');
+      } catch {
+        if (!committed) throw new Error('Task could not be confirmed after saving. Retry from the Plan screen.');
+        showToast('Task saved, but Plan could not refresh. Reopen it to verify.', 'info');
+      }
+    } finally { quickTaskOperation.current = false; }
+  };
+
   const saveNewRecord = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!createKind || createOperation.current) return;
@@ -2008,8 +2268,8 @@ export default function App() {
     setRecordSaving(true);
     let committed = false;
     const value = (key: string) => (createDraft[key] || '').trim();
-    let reminderCouldNotEnable = false;
     try {
+      if (createKind === 'task' && !value('date') && (value('time') || value('reminderLead') || value('reminderAt') || (value('recurring') && value('recurring') !== 'None'))) throw new Error('Add a due date before setting a time, reminder or repeat.');
       await ensurePrivateStorageBeforeWrite();
       // A fresh user may begin with Money. Categories are private and are only
       // loaded after explicit secure provisioning; never post an unclassified
@@ -2018,19 +2278,10 @@ export default function App() {
         showToast('Choose a category to finish saving your transaction.', 'info');
         return;
       }
-      if (createKind === 'task' && value('reminderAt') && (!notificationsEnabled || !notificationPreferences.taskReminders)) {
-        const permission = await askNotificationPermission();
-        if (permission.granted) {
-          const nextPreferences = { ...notificationPreferences, taskReminders: true };
-          setNotificationPreferences(nextPreferences); setNotificationsEnabled(true);
-          await StorageService.settings.set('notificationPreferences', nextPreferences);
-          await StorageService.settings.set('notificationsEnabled', true);
-        } else reminderCouldNotEnable = true;
-      }
       if (createKind === 'transaction') {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
         const preserveUnknownTime = Boolean(existingTransaction && !existingTransaction.occurredAt && !value('dateTime'));
-        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: value('accountId') || existingTransaction?.accountId };
+        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
         const accountId = values.accountId;
         if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
@@ -2038,12 +2289,16 @@ export default function App() {
       } else if (createKind === 'habit') {
         const targetPerDay = value('targetPerDay') ? Number(value('targetPerDay')) : undefined;
         if (targetPerDay !== undefined && (!Number.isFinite(targetPerDay) || targetPerDay <= 0)) throw new Error('Habit target must be greater than zero.');
+        const trackingMode = value('trackingMode') === 'quantity' ? 'quantity' : 'binary';
         const existingHabit = editingHabitId ? habits.find(habit => habit.id === editingHabitId) : undefined;
-        const habit: Partial<Habit> = { name: value('title'), description: value('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
+        if (editingHabitId && habitLogs.some(log => log.habitId === editingHabitId) && trackingMode !== (existingHabit?.trackingMode || 'binary')) throw new Error('Tracking mode cannot change after check-in history exists. Create another habit to use a different tracking mode.');
+        if (trackingMode === 'quantity' && (!targetPerDay || !value('quantityUnit').trim())) throw new Error('Quantity tracking needs a daily target and unit.');
+        const habit: Partial<Habit> = { name: value('title'), description: value('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, trackingMode, quantityUnit: trackingMode === 'quantity' ? normalizeHabitUnit(value('quantityUnit')) : undefined, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
         if (editingHabitId) await StorageService.habits.update(editingHabitId, habit);
         else await StorageService.habits.add({ ...habit, name: habit.name!, frequency: habit.frequency!, color: habit.color! });
       } else if (createKind === 'budget') {
-        const money = createMoneyRecordAmount(value('amount'), userPrefs.currency);
+        const code = editingBudgetId ? budgets.find(row => row.id === editingBudgetId)?.currencyCode || userPrefs.currency : userPrefs.currency;
+        const money = createMoneyRecordAmount(value('amount'), code);
         await StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month') });
       } else if (createKind === 'savings') {
         const target = createMoneyRecordAmount(value('target'), editingSavingsGoalId ? savingsGoals.find(goal => goal.id === editingSavingsGoalId)?.currencyCode || userPrefs.currency : userPrefs.currency);
@@ -2102,12 +2357,13 @@ export default function App() {
         if (editingGoalId) await StorageService.goals.update(editingGoalId, goalFields);
         else await StorageService.goals.add(goalFields);
       } else {
-        const reminderAt = value('reminderAt') ? new Date(value('reminderAt')).toISOString() : undefined;
+        const reminderAt = value('reminderLead') === 'legacy' && value('reminderAt') ? new Date(value('reminderAt')).toISOString() : undefined;
+        const reminderLeadMinutes = value('reminderLead') && value('reminderLead') !== 'legacy' ? Number(value('reminderLead') === 'custom' ? value('reminderCustom') : value('reminderLead')) : undefined;
         const taskUpdates: Partial<Task> = {
           title: value('title'), description: value('description') || undefined, notes: value('description') || undefined,
-          dueDate: value('date'), dueTime: value('time') || undefined, reminderAt,
+          dueDate: value('date') || undefined, dueTime: value('time') || undefined, reminderAt, reminderLeadMinutes, dueAlertDisabled: value('dueAlert') === 'off',
           priority: value('priority') as Task['priority'], category: value('category') || undefined,
-          recurring: value('recurring') as Task['recurring'],
+          recurring: (value('recurring') || 'None') as Task['recurring'],
         };
         if (editingTaskId) await StorageService.tasks.update(editingTaskId, taskUpdates);
         else await StorageService.tasks.add({ ...taskUpdates, title: taskUpdates.title!, dueDate: taskUpdates.dueDate!, priority: taskUpdates.priority!, recurring: taskUpdates.recurring!, completed: false });
@@ -2119,23 +2375,19 @@ export default function App() {
       setEditingTaskId(null); setEditingHabitId(null);
       setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null);
       const records = await reloadAllData();
-      const reminderOptedIn = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable;
-      const schedulePreferences = { ...notificationPreferences, taskReminders: reminderOptedIn || notificationPreferences.taskReminders };
-      const schedulesUpdated = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(schedulePreferences, notificationsEnabled || reminderOptedIn));
+      const schedulesUpdated = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
       const wasEditingTask = editingTaskId;
       const wasEditingHabit = editingHabitId;
       const wasEditingTransaction = editingTransactionId;
       const wasEditingGoal = editingGoalId;
       const wasEditingContribution = editingContributionId;
-      const reminderSyncFailed = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable && !schedulesUpdated;
-      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable || reminderSyncFailed ? 'danger' : 'success');
+      const reminderSyncFailed = createKind === 'task' && Boolean(value('date')) && notificationsEnabled && notificationPreferences.taskReminders && !schedulesUpdated;
+      showToast(reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderSyncFailed ? 'danger' : 'success');
     } catch (error) {
       showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
     } finally { createOperation.current = false; setRecordSaving(false); }
   };
 
-  const accountBalances = useMemo(() => calculateAccountBalances(financialAccounts, transactions, accountTransfers), [financialAccounts, transactions, accountTransfers]);
-  const accountSummaries = financialAccounts.filter(account => account.isActive).map(account => ({ id: account.id, name: account.name, type: account.type, currencyCode: account.currencyCode, balanceMinor: (accountBalances.get(account.id) || 0n).toString() }));
 
   const formatMoney = (amount: number, currencyCode: string = userPrefs.currency) => {
     return formatCurrency(Number(amount) || 0, currencyCode, userPrefs.locale);
@@ -2254,14 +2506,6 @@ export default function App() {
     () => getTodayOverview(tasks, habits, habitLogs, todayKey),
     [tasks, habits, habitLogs, todayKey]
   );
-  const lifeHubHabits = useMemo(() => habits.map(habit => {
-    const stats = getHabitStreaks(habit.id, todayKey);
-    return { id: habit.id, name: habit.name, completedToday: stats.completedToday, currentStreak: stats.currentStreak };
-  }), [habits, habitLogs, todayKey]);
-  const lifeHubGoals = useMemo(() => goals.filter(goal => goal.status === 'In Progress').map(goal => {
-    const goalMilestones = milestones.filter(milestone => milestone.goalId === goal.id);
-    return { id: goal.id, title: goal.title, progress: getGoalProgress(goal.currentValue, goal.targetValue), current: displayGoalMeasure(goal.currentValue, goal.unit), target: displayGoalMeasure(goal.targetValue, goal.unit), targetDate: formatDate(goal.targetDate), completedMilestones: goalMilestones.filter(milestone => milestone.completed).length, milestoneCount: goalMilestones.length };
-  }), [goals, milestones, userPrefs.dateFormat, userPrefs.distance, userPrefs.volume, userPrefs.speed]);
   const tomorrowDate = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 1);
   const tomorrowKey = formatLocalDate(tomorrowDate);
   const calendarDays = useMemo(() => getMonthCalendarDays(plannerDisplayedMonth.getFullYear(), plannerDisplayedMonth.getMonth(), userPrefs.firstDayOfWeek === 'monday'), [plannerDisplayedMonth, userPrefs.firstDayOfWeek]);
@@ -2275,18 +2519,18 @@ export default function App() {
     return byDate;
   }, [tasks]);
   const selectedPlannerDateLabel = new Date(`${plannerSelectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-  const dashboardTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => getTaskStatus(task, clockNow) === 'Overdue' || task.dueDate === todayKey), clockNow).slice(0, 5), [tasks, clockNow, todayKey]);
-  const dashboardUpcomingTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => !task.completed && task.dueDate > todayKey), clockNow).slice(0, 4), [tasks, clockNow, todayKey]);
+  const dashboardTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => getTaskStatus(task, clockNow) === 'Overdue' || task.dueDate === todayKey), clockNow).slice(0, 3), [tasks, clockNow, todayKey]);
+  const dashboardUpcomingTasks = useMemo(() => sortTasksByDeadline(tasks.filter(task => !task.completed && Boolean(task.dueDate) && task.dueDate > todayKey), clockNow).slice(0, 2), [tasks, clockNow, todayKey]);
   const visiblePlannerTasks = useMemo(() => {
-    const dateScopedTasks = ['today', 'tomorrow', 'upcoming'].includes(plannerFilter) ? tasks : getTasksForDate(tasks, plannerSelectedDate);
+    const dateScopedTasks = ['today', 'tomorrow', 'upcoming', 'unscheduled'].includes(plannerFilter) ? tasks : getTasksForDate(tasks, plannerSelectedDate);
     return sortTasksByDeadline(dateScopedTasks.filter(task => {
     const status = getTaskStatus(task, clockNow);
-    const dateScope = ['today', 'tomorrow', 'upcoming'].includes(plannerFilter);
+    const dateScope = ['today', 'tomorrow', 'upcoming', 'unscheduled'].includes(plannerFilter);
     const statusMatch = dateScope || plannerFilter === 'all' ? true : status.toLowerCase() === plannerFilter;
     const dateMatch = plannerFilter === 'today' ? task.dueDate === todayKey
       : plannerFilter === 'tomorrow' ? task.dueDate === tomorrowKey
-        : plannerFilter === 'upcoming' ? task.dueDate > todayKey && task.dueDate <= formatLocalDate(new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 7))
-          : task.dueDate === plannerSelectedDate;
+        : plannerFilter === 'upcoming' ? Boolean(task.dueDate) && task.dueDate > todayKey && task.dueDate <= formatLocalDate(new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 7))
+          : plannerFilter === 'unscheduled' ? !task.dueDate : task.dueDate === plannerSelectedDate;
     const query = plannerSearch.trim().toLowerCase();
     const searchMatch = !query || `${task.title} ${task.description || ''} ${task.notes || ''} ${task.category || ''}`.toLowerCase().includes(query);
     return statusMatch && dateMatch && searchMatch && (plannerPriority === 'all' || task.priority === plannerPriority);
@@ -2295,8 +2539,34 @@ export default function App() {
   const plannerDetailTask = plannerDetailTaskId ? tasks.find(task => task.id === plannerDetailTaskId) : undefined;
   const upcomingTaskGroups = useMemo(() => groupUpcomingTasks(visiblePlannerTasks, todayKey), [visiblePlannerTasks, todayKey]);
   useEffect(() => {
-    if (!plannerDetailTaskId && taskDetailReturnFocusRef.current?.isConnected) taskDetailReturnFocusRef.current.focus();
+    if (!plannerDetailTaskId && taskDetailReturnFocusRef.current?.isConnected) taskDetailReturnFocusRef.current.focus({ preventScroll: true });
   }, [plannerDetailTaskId]);
+
+  const changeGoalStatus = async (goal: Goal, status: Goal['status']) => {
+    try {
+      if (status === 'Completed' && (goal.currentValue < goal.targetValue || milestones.some(item => item.goalId === goal.id && !item.completed))) {
+        showToast('Reach the target and finish its milestones to complete this goal.', 'info');
+        return;
+      }
+      await StorageService.goals.update(goal.id, { status });
+      const records = await reloadAllData();
+      const saved = records.goals.find(item => item.id === goal.id);
+      if (saved?.status !== status) { showToast('The goal status did not change. Review its progress and milestones.', 'info'); return; }
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+      showToast(status === 'Paused' ? 'Goal paused' : status === 'Completed' ? 'Goal completed' : 'Goal resumed', 'success');
+    } catch { showToast('Could not update the goal status.', 'danger'); }
+  };
+
+  const deleteGoalFromDetails = async (goal: Goal) => {
+    if (!(await confirmAction({ title: 'Delete this goal?', message: 'The goal and its milestones will be removed.', confirmLabel: 'Delete goal', destructive: true }))) return;
+    try {
+      await StorageService.goals.delete(goal.id);
+      const records = await reloadAllData();
+      setLifeDetail(null);
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+      showToast('Goal deleted', 'success');
+    } catch { showToast('Could not delete the goal.', 'danger'); }
+  };
 
   const goalProgress = (goal: Goal) => getGoalProgress(goal.currentValue, goal.targetValue);
   const editingLegacyDateOnly = Boolean(createKind === 'transaction' && editingTransactionId
@@ -2317,9 +2587,11 @@ export default function App() {
     [transactions, financeMonth]
   );
 
-  if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared}
+  const recoveryInline = onboardingRequired && !onboardingComplete && onboardingStep === 2 && Boolean(secureSetup?.prepared);
+  const recoverySetup = secureSetup && <SecureSetupDialog prepared={secureSetup.prepared} inline={recoveryInline}
     onRecoveryExportStart={beginRecoveryExportActivity}
     recoveryExportResumeReady={recoveryExportResumeReady}
+    cancelLabel={onboardingRequired && !onboardingComplete && secureSetup.prepared ? 'Back to recovery options' : undefined}
     onRetryRecoveryExportResume={() => { void resumeRecoveryAfterPicker(); }}
     onDecision={accepted => {
       if (!accepted && recoveryExportReturnPending.current) {
@@ -2332,6 +2604,7 @@ export default function App() {
           });
       } else secureSetupResolver.current?.(accepted);
     }} />;
+  if (recoverySetup && !recoveryInline) return recoverySetup;
 
   if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit).then(async () => { setRecoveryOpen(false); setStartupError(''); await initApp(); }); }} onClose={() => setRecoveryOpen(false)} />;
 
@@ -2344,13 +2617,36 @@ export default function App() {
     firstRecordSecurityResolver.current?.(choice);
   }} />;
 
-  if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
+  if (onboardingRequired && !onboardingComplete && (!isLocked || recoveryInline)) return <Onboarding
     initialName={displayName}
-    initialJourney={onboardingJourney}
-    onSaveJourney={async journey => { const safe = normalizeOnboardingJourney(journey); await StorageService.settings.set('onboardingJourney', safe); setOnboardingJourney(safe); }}
-    onProvisionProtection={provisionOnboardingProtection}
-    onConfirmRecovery={confirmOnboardingRecovery}
+    step={onboardingStep}
+    protectionAvailable={biometricAvailability === 'Available'}
+    deviceCredentialOnly={deviceCredentialOnly}
+    protectionReady={!safeFirstRunBrowse.current}
+    recoveryReady={recoveryProvisioned}
+    recoveryContent={recoveryInline ? recoverySetup : null}
+    notificationsSupported={NotificationService.isSupported()}
+    notificationsGranted={notificationDiagnostics.permission === 'granted'}
+    notificationsEnabled={notificationsEnabled}
+    preciseGranted={notificationDiagnostics.exactAlarm === 'granted'}
+    onNotifications={acceptOnboardingNotifications}
+    onPrecise={async () => {
+      await NotificationService.requestExactAlarmPermission();
+      const diagnostics = await refreshNotificationDiagnostics();
+      if (diagnostics.exactAlarm === 'granted') await syncNotificationSchedules(tasks, habits, goals, milestones);
+    }}
+    onNotificationSettings={openNotificationSettings}
     onSaveIdentity={saveOnboardingIdentity}
+    onStep={async step => {
+      const journey: OnboardingJourney = { ...onboardingJourney, version: 2,
+        stage: step === ONBOARDING_NOTIFICATIONS_STEP ? 'notifications' : step === 1 ? 'protection' : 'recovery' };
+      await StorageService.settings.set('onboardingStep', step);
+      await StorageService.settings.set('onboardingJourney', journey);
+      setOnboardingJourney(journey);
+      setOnboardingStep(step);
+    }}
+    onProtect={provisionOnboardingProtection}
+    onRecover={() => confirmOnboardingRecovery('')}
     onFinish={finishOnboarding}
   />;
 
@@ -2390,7 +2686,7 @@ export default function App() {
           <h1 className="app-brand-name">LifeOS</h1>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
+          <button type="button" onClick={() => activeTab === 'settings' ? navigateProfileSection('home') : navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
         </div>
       </header>
 
@@ -2407,17 +2703,18 @@ export default function App() {
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
-          <div className="today-sections" data-testid="today-dashboard">
-            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
+          <div className="today-sections command-centre" data-testid="today-dashboard">
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
-            {todayCustomizationOpen && <section id="today-customization" aria-labelledby="today-customization-title" className="today-customization lifeos-panel rounded-2xl border p-4" style={{ order: 1 }}>
-              <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order.</p></div>
+            {todayCustomizationOpen && createPortal(<div className="ui-sheet-backdrop" onMouseDown={dismissTodayCustomizationBackdrop}>
+            <section id="today-customization" role="dialog" aria-modal="true" aria-labelledby="today-customization-title" aria-describedby="today-customization-description" className="today-customization ui-sheet-motion ui-bottom-sheet lifeos-panel max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border p-4">
+              <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p id="today-customization-description" className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order. Changes save as you make them.</p></div>
               <ul className="today-customization-list">{todayLayout.order.map((id, index) => <li key={id}>
                 <label className="today-section-toggle"><input type="checkbox" checked={!todayLayout.hidden.includes(id)} disabled={id === 'focus'} onChange={event => persistTodayLayout(setTodaySectionVisible(todayLayoutRef.current, id, event.target.checked))} /><span>{TODAY_SECTION_LABELS[id]}</span></label>
                 <div className="today-order-actions"><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} up`} disabled={index === 0} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, -1))}>↑</button><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} down`} disabled={index === todayLayout.order.length - 1} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, 1))}>↓</button></div>
               </li>)}</ul>
-              <button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="mt-3 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button>
-            </section>}
+              <div className="ui-form-actions mt-3"><button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="min-h-11 flex-1 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button><button type="button" onClick={closeTodayCustomization} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold">Done</button></div>
+            </section></div>, document.body)}
 
             {/* Keep the first panel focused: one useful progress cue and fast ways to act. */}
             <section className="today-focus lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
@@ -2444,7 +2741,7 @@ export default function App() {
               </div>
               {goals.filter(goal => goal.status === 'In Progress').length === 0 ? (
                 <div className="today-inline-empty"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
-              ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => {
+              ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress').slice(0, 1).map(goal => {
                 const progress = goalProgress(goal);
                 return <button key={goal.id} onClick={() => navigateTo('goals')} className="lifeos-raised block min-h-11 w-full rounded-xl p-3 text-left">
                   <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{goal.title}</span><span className="shrink-0 text-xs font-bold lifeos-accent-text">{progress}%</span></div>
@@ -2471,7 +2768,7 @@ export default function App() {
                 </div>
               </div>
               <div className="flex justify-between gap-3 text-xs text-secondary">
-                <span>Net this month: <strong className="text-primary tabular-nums">{formatMoney(financeAnalytics.netSavings)}</strong></span>
+                <span>Net cash flow: <strong className="text-primary tabular-nums">{formatMoney(financeAnalytics.netSavings)}</strong></span>
                 <span>Savings rate: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
               </div>
             </div>
@@ -2486,7 +2783,7 @@ export default function App() {
                 <div className="today-inline-empty"><p>No habits to check in yet. Add one when you’re ready.</p></div>
               ) : (
                 <div className="space-y-2">
-                  {habits.slice(0, 4).map(h => {
+                  {habits.slice(0, 2).map(h => {
                     const todayStr = todayKey;
                     const stats = getHabitStreaks(h.id, todayStr);
                     return (
@@ -2549,7 +2846,7 @@ export default function App() {
                             style={{ accentColor: 'var(--accent)' }}
                           />
                         </label>
-                        <button type="button" onClick={() => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
+                        <button type="button" onClick={event => { taskDetailReturnTabRef.current = 'dashboard'; taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
                           <span className={`today-task-title${t.completed ? ' is-complete' : ''}`}>{t.title}</span>
                           <span className="today-task-meta">{t.dueTime ? formatClockTime(t.dueTime) : 'Due today'} · {status} · {t.priority} priority</span>
                         </button>
@@ -2562,28 +2859,10 @@ export default function App() {
         )} />
 
         {/* VIEW 2: FINANCE */}
-        <RetainedScreen active={activeTab === 'life'} id="screen-life" {...transitionPropsFor('life')} render={() => <Suspense fallback={<ScreenLoading label="Loading your life overview…" />}><LifeHub
-          habits={lifeHubHabits}
-          goals={lifeHubGoals}
-          routinesDue={todayOverview.routinesDue}
-          completedRoutines={todayOverview.routinesCompleted}
-          weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
-          weeklyTotal={todayOverview.weeklyRoutinesTotal}
-          onCheckIn={habit => { const original = habits.find(item => item.id === habit.id); if (original) void handleHabitCompletion(original.id, original.name, todayKey, habit.completedToday); }}
-          onCreateHabit={() => openCreateForm('habit')}
-          onCreateGoal={() => openCreateForm('goal')}
-          onHabits={() => { setHabitsSubtab('checklist'); navigateTo('habits'); }}
-          onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
-          onInsights={() => navigateTo('insights')}
-        /></Suspense>} />
-
-        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub tasks={tasks} today={todayKey} now={clockNow}
-          onNavigatePlanner={() => navigateTo('planner')}
-          onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }}
+        <RetainedScreen active={activeTab === 'plan'} retainInactive id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><div className="space-y-4">{renderPlanNavigation('plan')}<PlanHub onCreate={() => openCreateForm('task')} tasks={tasks} today={todayKey} now={clockNow}
+          onOpenTask={(task, trigger) => { taskDetailReturnTabRef.current = 'plan'; taskDetailReturnFocusRef.current = trigger; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter(task.dueDate ? 'all' : 'unscheduled'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
-          onCreateTask={() => openCreateForm('task')}
-          onSelectRange={range => { setPlannerFilter(range); if (range === 'today') setPlannerSelectedDate(todayKey); if (range === 'tomorrow') setPlannerSelectedDate(tomorrowKey); navigateTo('planner'); }}
-          onOpenGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }} /></Suspense>} />
+          /></div></Suspense>} />
 
         <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
           month={financeMonth}
@@ -2599,58 +2878,41 @@ export default function App() {
           hasHistory={transactions.length > 0 || habits.length > 0 || goals.length > 0}
           formatMoney={formatMoney}
           onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
-          onHabits={() => { setHabitsSubtab('weekly'); navigateTo('habits'); }}
-          onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
+          onHabits={() => { setLifeDetail(null); setHabitsSubtab('weekly'); navigateTo('habits'); }}
+          onGoals={() => { setLifeDetail(null); setGoalsSubtab('active'); navigateTo('goals'); }}
         /></Suspense>} />
 
         <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
-          <div className="money-page space-y-5">
-            {financeSubtab !== 'overview' && <div className="money-page-toolbar">
-              <button type="button" onClick={() => navigateFinanceSubtab('overview')} className="money-back-button" aria-label="Back to Money home"><ChevronLeft size={18} aria-hidden="true" /> Money</button>
-              <div className="money-destination-control"><label className="sr-only" htmlFor="money-destination">Money section</label><select id="money-destination" value={financeSubtab} onChange={event => navigateFinanceSubtab(event.target.value as typeof financeSubtab)}>
-                {(['transactions', 'accounts', 'budgets', 'savings', 'planning', 'analytics'] as const).map(sub => <option key={sub} value={sub}>{sub === 'planning' ? 'Planning' : sub[0].toUpperCase() + sub.slice(1)}</option>)}
-              </select><ChevronDown size={16} aria-hidden="true" /></div>
-            </div>}
+          <div className="money-page space-y-5" data-detail={financeSubtab}>
+            {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => { if (financeSubtab === 'projection') { navigateBack(); return; } rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }} />}
 
             {/* Money home: recorded cash flow, never an inferred account balance. */}
-            {financeSubtab === 'overview' && (
+            {(financeSubtab === 'overview' || financeSubtab === 'monthly') && (
               <MoneyHome
                 month={financeMonth}
+                monthly={financeSubtab === 'monthly'}
+                onMonthly={() => navigateFinanceSubtab('monthly')}
+                monthSavings={financeSubtab === 'monthly' ? formatMinorUnits(savingsContributions.filter(row => row.date.startsWith(financeMonth) && (row.currencyCode || userPrefs.currency) === userPrefs.currency).reduce((total, row) => total + (row.amountMinor ? BigInt(row.amountMinor) : decimalToMinorUnits(row.amount, userPrefs.currency)), 0n), userPrefs.currency, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : undefined}
                 income={financeAnalytics.totalIncome}
                 expenses={financeAnalytics.totalExpenses}
                 netCashFlow={financeAnalytics.netSavings}
                 budgetRows={financeAnalytics.budgetRows}
-                largestCategory={financeAnalytics.largestCategory}
                 expenseChange={financeAnalytics.expenseChange}
-                hasPreviousMonthRecords={financeAnalytics.previousMonthHasRecords}
                 excludedCurrencyCount={financeAnalytics.excludedCurrencyCount}
                 transactions={financeOverviewTransactions}
                 formatMoney={formatMoney}
                 formatDate={formatDate}
                 formatTime={formatTime}
                 onMonthChange={setFinanceMonth}
-                onAddExpense={() => openCreateForm('transaction')}
-                onAddIncome={() => {
-                  openCreateForm('transaction');
-                  setCreateDraft(current => ({ ...current, type: 'income', category: categories.find(category => category.type === 'income')?.name || '' }));
-                }}
-                onTransfer={() => { setOpenMoneyTransferOnAccounts(true); navigateFinanceSubtab('accounts'); }}
-                onMoveToSavings={() => {
-                  navigateFinanceSubtab('savings');
-                  if (savingsGoals.length === 1) {
-                    openCreateForm('contribution', savingsGoals[0].id);
-                  }
-                }}
+                onAddTransaction={() => openCreateForm('transaction')}
                 onTransactions={() => navigateFinanceSubtab('transactions')}
                 onBudgets={() => navigateFinanceSubtab('budgets')}
                 onSavings={() => navigateFinanceSubtab('savings')}
                 onAnalytics={() => navigateFinanceSubtab('analytics')}
                 onPlanning={() => navigateFinanceSubtab('planning')}
                 onAccounts={() => navigateFinanceSubtab('accounts')}
-                accountSummaries={accountSummaries}
-                savingsGoals={savingsGoals}
-                legacyCurrency={userPrefs.currency}
-                onEditTransaction={openEditTransaction}
+                legacyCurrency={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
+                onEditTransaction={row => setTransactionDetailId(row.id)}
               />
             )}
 
@@ -2672,14 +2934,14 @@ export default function App() {
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Search description, category..."
+                    aria-label="Search transactions" placeholder="Search description, category..."
                     value={financeSearch}
                     onChange={(e) => setFinanceSearch(e.target.value)}
                     className="lifeos-input min-h-11 flex-1 rounded-xl px-3 py-2.5 text-xs"
                   />
                   <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
                 </div>
-                <div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
+                <details className="money-detail-filters"><summary>Filters</summary><div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
 
                 {/* Filters */}
                 <div role="group" aria-label="Filter transactions by type" className="flex flex-wrap gap-2 text-xs pb-1">
@@ -2696,30 +2958,23 @@ export default function App() {
                 </div>
                 <label className="flex items-center justify-between text-[10px] text-secondary">Sort<select value={financeSort} onChange={e => setFinanceSort(e.target.value)} className="lifeos-input min-h-11 rounded-lg px-2 py-2 text-xs"><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="amount-desc">Largest amount</option></select></label>
 
+                </details>
+                <div className="money-detail-results"><span role="status">{filteredTransactions.length} posted transaction{filteredTransactions.length === 1 ? '' : 's'}</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); }}>Clear filters</button></div>
                 {/* Transactions List */}
                 <div className="space-y-2">
                   {filteredTransactions.length === 0 ? (
                     <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
                   ) : (
                     filteredTransactions.map(t => (
-                      <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border p-3.5">
+                      <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border px-3 py-1">
                         <div className="transaction-history-main">
-                          <button type="button" onClick={() => openEditTransaction(t)} aria-label={`Edit transaction ${t.description || t.category}`} className="transaction-history-copy">
+                          <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={`View transaction ${t.description || t.category}`} className="transaction-history-copy">
                             <strong>{t.description || t.category}</strong>
                             <span>{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ' · time not recorded'} &bull; {t.category} ({t.paymentMethod || 'Other'}){t.accountId ? ` · ${financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'}` : ''}</span>
                           </button>
                           <span className={`transaction-history-amount ${t.type === 'income' ? 'is-income' : 'is-expense'}`}>
-                            {t.type === 'income' ? '+' : '−'}{formatMoney(t.amount, t.currencyCode || userPrefs.currency)}
+                            {t.type === 'income' ? '+' : '−'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(t.amount, t.currencyCode || userPrefs.currency)}
                           </span>
-                        </div>
-                        <div className="transaction-history-actions">
-                          <button type="button" onClick={() => openDuplicateTransaction(t)} aria-label={`Duplicate transaction ${t.description || t.category}`}>Duplicate</button>
-                          <button type="button" onClick={async () => {
-                            if (!(await confirmAction({ title: 'Delete this transaction?', message: `“${t.description || t.category}” will be removed from your transaction history.`, confirmLabel: 'Delete transaction', destructive: true }))) return;
-                            await StorageService.transactions.delete(t.id);
-                            await reloadAllData();
-                            showToast('Transaction deleted', 'info');
-                          }} aria-label={`Delete transaction ${t.description || t.category}`}>Delete</button>
                         </div>
                       </article>
                     ))
@@ -2729,33 +2984,39 @@ export default function App() {
             )}
 
             {financeSubtab === 'budgets' && <div className="space-y-3">
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Monthly budgets</h3><p className="text-xs text-secondary">Track spending against a monthly limit</p></div><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add budget</button></div>
+              <div className="flex justify-end"><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Add budget</button></div>
               {budgets.some(b => (!b.monthYear || b.monthYear === financeMonth) && b.currencyCode && b.currencyCode !== userPrefs.currency) && <p role="status" className="rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary">Budgets in another currency are hidden until a dated exchange rate is available.</p>}
               {budgets.filter(b => (!b.monthYear || b.monthYear === financeMonth) && (!b.currencyCode || b.currencyCode === userPrefs.currency)).length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No budget set for {financeMonth}.</div> : budgets.filter(b => (!b.monthYear || b.monthYear === financeMonth) && (!b.currencyCode || b.currencyCode === userPrefs.currency)).map(b => {
                 const budgetCategoryName = b.categoryId ? categories.find(category => category.id === b.categoryId)?.name : undefined;
                 const budgetName = b.categoryId ? (budgetCategoryName || 'Unavailable category') : 'Overall budget';
                 const categoryMissing = Boolean(b.categoryId && !budgetCategoryName);
-                const spent = b.categoryId ? (budgetCategoryName ? financeMetrics.categoryExpenses[budgetCategoryName] || 0 : 0) : financeMetrics.totalExpenses;
-                const budgetStatus = getBudgetDisplayStatus(categoryMissing ? Number.NaN : spent, b.monthlyAmount);
+                const budgetCurrency = b.currencyCode || userPrefs.currency;
+                const allocatedMinor = b.amountMinor && /^(0|[1-9]\d*)$/.test(b.amountMinor) ? BigInt(b.amountMinor) : decimalToMinorUnits(String(b.monthlyAmount), budgetCurrency);
+                const spentTransactions = transactions.filter(tx => tx.type === 'expense' && tx.date?.startsWith(financeMonth) && (!tx.currencyCode || tx.currencyCode === budgetCurrency) && (!b.categoryId || tx.category === budgetCategoryName));
+                const spentMinor = spentTransactions.reduce((total, tx) => total + (tx.amountMinor && tx.currencyCode === budgetCurrency && /^(0|[1-9]\d*)$/.test(tx.amountMinor) ? BigInt(tx.amountMinor) : decimalToMinorUnits(String(tx.amount), budgetCurrency)), 0n);
+                const budgetStatus = getExactBudgetDisplayStatus(categoryMissing ? undefined : spentMinor, allocatedMinor);
                 const budgetLabel = categoryMissing ? 'Usage unavailable' : budgetStatus.percentUsed === null ? 'No monthly limit set' : `${budgetStatus.percentUsed.toFixed(0)}% used`;
-                const overLabel = budgetStatus.percentUsed === null ? `${formatMoney(budgetStatus.overBy)} over plan · no monthly limit` : `${budgetStatus.percentUsed.toFixed(0)}% used · ${formatMoney(budgetStatus.overBy)} over plan`;
-                const overAccessibleLabel = budgetStatus.percentUsed === null ? `${formatMoney(budgetStatus.overBy)} over plan with no monthly limit` : `${budgetStatus.percentUsed.toFixed(0)}% used, ${formatMoney(budgetStatus.overBy)} over plan`;
-                const amountLabel = categoryMissing ? 'Unavailable' : formatMoney(spent);
-                const remainingLabel = categoryMissing ? 'Restore category to track this plan' : budgetStatus.isOver ? 'Above plan' : budgetStatus.percentUsed === null ? 'Set a limit to track remaining' : `${formatMoney(budgetStatus.remaining)} remaining in plan`;
-                return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{budgetName}</strong><span>{amountLabel} / {formatMoney(b.monthlyAmount)}</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetName} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetStatus.barPercent)} aria-valuetext={budgetStatus.isOver ? overAccessibleLabel : budgetLabel}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${budgetStatus.barPercent}%`, backgroundColor: budgetStatus.isOver ? 'var(--warning)' : undefined }} /></div><div className="mt-2 flex flex-wrap justify-between gap-1 text-xs text-secondary"><span>{budgetStatus.isOver ? overLabel : budgetLabel}</span><span>{remainingLabel}</span></div><button aria-label={`Delete ${budgetName}`} onClick={async () => {
+                const overByLabel = formatMinorUnits(budgetStatus.overByMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
+                const remainingAmountLabel = formatMinorUnits(budgetStatus.remainingMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
+                const overLabel = budgetStatus.percentUsed === null ? `${overByLabel} over plan · no monthly limit` : `${budgetStatus.percentUsed.toFixed(0)}% used · ${overByLabel} over plan`;
+                const overAccessibleLabel = budgetStatus.percentUsed === null ? `${overByLabel} over plan with no monthly limit` : `${budgetStatus.percentUsed.toFixed(0)}% used, ${overByLabel} over plan`;
+                const amountLabel = categoryMissing ? 'Unavailable' : formatMinorUnits(spentMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
+                const allocationLabel = formatMinorUnits(allocatedMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
+                const remainingLabel = categoryMissing ? 'Restore category to track this plan' : budgetStatus.isOver ? 'Above plan' : budgetStatus.percentUsed === null ? 'Set a limit to track remaining' : `${remainingAmountLabel} remaining in plan`;
+                return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{budgetName}</strong><span>{amountLabel} / {allocationLabel}</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetName} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetStatus.barPercent)} aria-valuetext={budgetStatus.isOver ? overAccessibleLabel : budgetLabel}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${budgetStatus.barPercent}%`, backgroundColor: budgetStatus.isOver ? 'var(--warning)' : undefined }} /></div><div className="mt-2 flex flex-wrap justify-between gap-1 text-xs text-secondary"><span>{budgetStatus.isOver ? overLabel : budgetLabel}</span><span>{remainingLabel}</span></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => openEditBudget(b)} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text">Edit budget</button><button aria-label={`Delete ${budgetName}`} onClick={async () => {
                   if (!(await confirmAction({ title: 'Delete this budget?', message: `${budgetName} will be removed. Saved transactions will remain unchanged.`, confirmLabel: 'Delete budget', destructive: true }))) return;
                   try { await StorageService.budgets.delete(b.id); }
                   catch { showToast('Budget deletion could not be confirmed. Refresh before retrying.', 'danger'); return; }
                   setBudgets(current => current.filter(item => item.id !== b.id));
                   try { await reloadAllData(); showToast('Budget plan deleted', 'success'); }
                   catch { showToast('Budget deleted. Reopen Finance to refresh the latest data.', 'info'); }
-                }} className="mt-2 min-h-11 rounded-lg px-2 text-xs text-secondary">Delete plan</button></div>;
+                }} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Delete plan</button></div></div>;
               })}
             </div>}
 
             {financeSubtab === 'savings' && <div className="space-y-3">
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
-              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
+              {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
                   if (!(await confirmAction({ title: 'Delete this contribution?', message: `${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} will be removed and the saved goal total will be adjusted.`, confirmLabel: 'Delete contribution', destructive: true }))) return;
                   try { await StorageService.savings.deleteContribution(contribution.id); await reloadAllData(); showToast('Contribution deleted and savings total updated', 'success'); }
                   catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); }
@@ -2778,54 +3039,84 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5"><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+            {financeSubtab === 'planning' && <div className="space-y-5"><PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
               onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
+              onRecordOccurrence={async row => { await runPreparedFinanceWrite(() => StorageService.commitments.postOccurrence(row.id, row)); }}
               onDeleteCommitment={async id => { await StorageService.commitments.delete(id); await reloadAllData(); }}
               onAddRate={async input => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.add(input)); }}
               onUpdateRate={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.update(id, input)); }}
-              onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /><details className="lifeos-panel rounded-2xl border p-4" onToggle={event => setProjectionExpanded(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer font-semibold">Explore a savings projection</summary><p className="mt-2 text-sm text-secondary">Compare savings scenarios using your own assumptions. This does not change your accounts or planned bills.</p>{activeTab === 'finance' && projectionExpanded && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}</details></div>}
+              onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} />
+              <button type="button" onClick={() => navigateFinanceSubtab('projection')} className="money-month-link lifeos-panel">Savings projection <ChevronRight size={16} aria-hidden="true" /></button>
+            </div>}
+            {financeSubtab === 'projection' && <Suspense fallback={<ScreenLoading label="Loading savings projection" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
-              <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-secondary">Based on transactions saved on this device</p></div><label className="text-[10px] text-secondary">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="lifeos-input mt-1 block min-h-11 rounded-lg px-2 py-2 text-xs" /></label></div>
-              <div className="grid grid-cols-2 gap-2.5">
-                {[['Income', financeAnalytics.totalIncome, 'text-[var(--success)]'], ['Expenses', financeAnalytics.totalExpenses, 'text-[var(--danger)]'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-[var(--danger)]' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'lifeos-accent-text']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><p className="text-xs text-secondary">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
-              </div>
               {activeTab === 'finance' && (hasFinanceChartData ? <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
                 <FinanceCharts analytics={financeAnalytics} theme={theme} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatMoney={formatMoney} month={financeMonth} range={financeAnalyticsRange} onRangeChange={setFinanceAnalyticsRange} />
               </Suspense> : <section className="finance-chart-empty lifeos-panel" aria-label="Financial chart empty state"><strong>No recorded patterns yet</strong><span>Charts appear after you save income or spending. No sample numbers are shown.</span></section>)}
-              <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">Budget status</h4>{financeAnalytics.budgetRows.length === 0 ? <p className="mt-2 text-xs text-secondary">No budgets are set for this month.</p> : <div className="mt-3 space-y-3">{financeAnalytics.budgetRows.map(row => { const pct = row.allocated ? row.spent / row.allocated * 100 : 0; return <div key={row.category}><div className="flex justify-between gap-2 text-xs"><span>{row.category}</span><span>{formatMoney(row.spent)} / {formatMoney(row.allocated)}</span></div><div className="lifeos-progress-track mt-1.5 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${row.category} budget used`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, pct)}><div className={`h-full rounded-full ${pct >= 100 ? 'bg-[var(--danger)]' : pct >= 80 ? 'bg-[var(--warning)]' : 'bg-[var(--accent)]'}`} style={{ width: `${Math.min(100, pct)}%` }} /></div><div className="mt-1 flex justify-between text-[11px] text-secondary"><span>{pct.toFixed(0)}% used</span><span className={row.remaining < 0 ? 'text-[var(--danger)]' : 'text-secondary'}>{formatMoney(row.remaining)} {row.remaining < 0 ? 'over budget' : 'remaining'}</span></div></div>; })}</div>}</section>
-              <section className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><h4 className="text-sm font-semibold">What stands out</h4><div className="mt-2 space-y-2 text-sm text-secondary">{financeAnalytics.largestCategory ? <p>Largest expense category: <strong className="text-primary">{financeAnalytics.largestCategory.name}</strong> at {formatMoney(financeAnalytics.largestCategory.amount)} ({financeAnalytics.largestCategory.percentage.toFixed(1)}%).</p> : <p>No category insight yet; add expense records to build a comparison.</p>}{financeAnalytics.expenseChange === null ? <p>{financeAnalytics.previousMonthHasRecords ? 'No expense baseline in the previous month for a percentage comparison.' : 'Previous-month comparison is unavailable because there are no saved records for that month.'}</p> : <p>Expenses {financeAnalytics.expenseChange > 0 ? 'increased' : financeAnalytics.expenseChange < 0 ? 'decreased' : 'were unchanged'} {Math.abs(financeAnalytics.expenseChange).toFixed(1)}% from last month.</p>}{financeAnalytics.budgetRows.filter(row => row.allocated > 0 && row.spent / row.allocated >= 0.8).map(row => <p key={row.category}>{row.category} budget is {Math.round(row.spent / row.allocated * 100)}% used.</p>)}</div></section>
+              {(financeAnalytics.largestCategory || financeAnalytics.expenseChange !== null) && <section className="lifeos-panel space-y-2 rounded-2xl border p-4">
+                <div className="flex items-center gap-1"><h3 className="type-section-title">What stands out</h3><InfoTip label="Monthly comparison">This compares recorded expenses in the selected month with the preceding month.</InfoTip></div>
+                {financeAnalytics.largestCategory && <p className="text-sm"><strong>{financeAnalytics.largestCategory.name}</strong> accounted for {financeAnalytics.largestCategory.percentage.toFixed(1)}% of spending.</p>}
+                {financeAnalytics.expenseChange !== null && <p className="text-sm">{financeAnalytics.expenseChange === 0 ? 'Spending matched the previous month.' : 'Spending was ' + Math.abs(financeAnalytics.expenseChange).toFixed(1) + '% ' + (financeAnalytics.expenseChange > 0 ? 'higher' : 'lower') + ' than the previous month.'}</p>}
+              </section>}
             </div>}
           </div>
         )} />
 
         {/* VIEW 3: HABITS */}
         <RetainedScreen active={activeTab === 'habits'} id="screen-habits" {...transitionPropsFor('habits')} render={() => (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
+          <div className="space-y-4">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
+            {!lifeDetail && <div className="life-section-heading">
               <div>
-                <h2 className="text-lg font-bold">Habit Tracker</h2>
-                <p className="text-xs text-secondary">Daily consistency monitor</p>
+                <h2 className="text-lg font-bold">Habits</h2>
+                <p className="text-xs text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>
               </div>
               <button onClick={() => openCreateForm('habit')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add habit</button>
-            </div>
-            <label className="block text-xs text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => setHabitsSelectedDate(e.target.value)} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>
+            </div>}
+            {lifeDetail?.kind === 'habit' && <label className="life-history block text-sm text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => { setHabitsSelectedDate(e.target.value); setHistoricalQuantityUnit(''); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>}
+
+            {lifeDetail?.kind === 'habit' && habits.find(item => item.id === lifeDetail.id) && (() => {
+              const habit = habits.find(item => item.id === lifeDetail.id)!;
+              const stats = getHabitStreaks(habit.id, habitsSelectedDate);
+              const weekly = calculateWeeklyHabitRate(habitLogs, habit.id, clockNow, habit.frequency);
+              const quantityLog = habitLogs.find(log => log.habitId === habit.id && log.date === habitsSelectedDate && log.quantity !== undefined);
+              const quantity = quantityLog?.quantity ?? 0;
+              return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="habit-detail-title">
+                <div><h3 id="habit-detail-title" className="type-page-title safe-wrap">{habit.name}</h3>{habit.description && <p className="mt-1 text-sm text-secondary">{habit.description}</p>}</div>
+                <div className="grid grid-cols-2 gap-3"><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">Current streak</p><p className="mt-1 text-xl font-semibold">{stats.currentStreak} days</p></div><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">This week</p><p className="mt-1 text-xl font-semibold">{weekly.completed}/{weekly.scheduled} · {weekly.rate}%</p></div></div>
+                {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{quantityLog?.quantityUnit ? `${formatHabitQuantity(quantity, quantityLog.quantityUnit)}${quantityLog.quantityUnit === habit.quantityUnit ? ' / ' : ' - target '}${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : quantityLog ? `${formatHabitQuantity(quantity)} · target ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : `0 / ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}`}</p>{quantityLog && !quantityLog.quantityUnit && <div className="mt-3 rounded-xl border border-[var(--stroke)] p-3"><p className="text-xs text-secondary">This older entry has no saved unit. Choose the unit it used before displaying it with a unit.</p><div className="mt-2 flex gap-2"><select aria-label="Historical quantity unit" value={historicalQuantityUnit} onChange={event => setHistoricalQuantityUnit(event.target.value)} className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm"><option value="">Choose unit…</option>{[...new Set([habit.quantityUnit, 'glass', 'litre', 'minute', 'page', 'item'].filter(Boolean) as string[])].map(unit => <option key={unit} value={unit}>{unit}</option>)}</select><button type="button" disabled={!historicalQuantityUnit} onClick={async () => { try { await StorageService.habits.setQuantityLogUnit(quantityLog.id, historicalQuantityUnit); setHistoricalQuantityUnit(''); await reloadAllData(); showToast('Historical unit saved', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Could not update this entry.', 'danger'); } }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Save unit</button></div></div>}<div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
+                <HabitHistory habit={habit} logs={habitLogs} date={habitsSelectedDate} today={todayKey} onSelect={date => { setHabitsSelectedDate(date); setHistoricalQuantityUnit(''); }} formatDate={formatDate} />
+                <p className="text-xs text-secondary">Best streak: {stats.longestStreak} days{habit.reminderTime ? ` · Reminder ${habit.reminderTime} local` : ' · No reminder set'}</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditHabit(habit)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit habit</button><button type="button" onClick={() => void confirmAction({ title: 'Delete this habit?', message: `“${habit.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(habit); })} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm text-[var(--danger)]">Delete habit</button></div>
+              </section>;
+            })()}
 
             <div className="space-y-2">
               {habits.length === 0 ? (
-                <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary"><p>No habits yet.</p><p className="mt-1 text-xs">Create a routine that fits your day.</p><button onClick={() => openCreateForm('habit')} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Create a habit</button></div>
+                <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary"><p>No habits yet.</p></div>
               ) : (
-                habits.map(h => {
-                  const todayStr = habitsSelectedDate;
+                habits.filter(h => lifeDetail?.kind !== 'habit').map(h => {
+                  const todayStr = todayKey;
+                  const logged = h.trackingMode === 'quantity' ? habitLogs.find(log => log.habitId === h.id && log.date === todayStr && log.quantity !== undefined) : undefined;
                   const stats = getHabitStreaks(h.id, todayStr);
                   const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency);
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
-                      <div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={event => { event.stopPropagation(); void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday); }} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold ${stats.completedToday ? 'border-[var(--success)] text-[var(--surface)]' : 'border-[var(--stroke)] text-secondary'}`} style={stats.completedToday ? { backgroundColor: 'var(--success)' } : undefined}>{stats.completedToday ? '✓' : ''}</button><button onClick={() => openEditHabit(h)} className="min-w-0 text-left"><span className={`block truncate font-semibold text-sm ${stats.completedToday ? 'line-through text-secondary' : ''}`}>{h.name}</span><span className="block text-[10px] text-[var(--warning)]">🔥 {stats.currentStreak} day streak · best {stats.longestStreak}</span></button></div><button type="button" onClick={event => { event.stopPropagation(); void confirmAction({ title: 'Delete this habit?', message: `“${h.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(h); }); }} className="min-h-11 rounded-lg px-3 text-xs text-secondary">Delete</button></div>
+                      <div className="flex items-center gap-3">
+                        <button type="button" className="min-h-11 min-w-0 flex-1 text-left" onClick={() => { setHistoricalQuantityUnit(''); setHabitsSelectedDate(todayKey); showLifeDetail({ kind: 'habit', id: h.id }); }}>
+                          <span className="block safe-wrap text-sm font-semibold">{h.name}</span>
+                                                    <span className="block text-xs text-secondary">{h.trackingMode === 'quantity' ?
+                            (logged?.quantityUnit && logged.quantityUnit !== h.quantityUnit ? formatHabitQuantity(logged.quantity || 0, logged.quantityUnit) :
+                              logged && !logged.quantityUnit ? formatHabitQuantity(logged.quantity || 0) :
+                              formatHabitQuantity(logged?.quantity || 0, h.quantityUnit) + ' / ' + formatHabitQuantity(h.targetPerDay || 0, h.quantityUnit))
+                            : stats.completedToday ? 'Checked in today' : 'Ready to check in'}</span>
+                          {stats.currentStreak > 0 && <span className="block text-xs text-secondary">{stats.currentStreak} day streak</span>}
+                        </button>
+                        {h.trackingMode === 'quantity' ? <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-label={`Add one ${h.quantityUnit} to ${h.name}`} onClick={() => void handleHabitQuantity(h, todayStr, 1)}>+1</button>
+                          : <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? 'Done' : 'Check in'}</button>}
+                      </div>
                       <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
-                      {h.reminderTime && <p className="mt-2 text-[10px] text-secondary">Reminder · {h.reminderTime} local</p>}
                     </div>
                   );
                 })
@@ -2836,36 +3127,50 @@ export default function App() {
 
         {/* VIEW 4: GOALS */}
         <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center"><h2 className="text-lg font-bold">Personal Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
+          <div className="space-y-4">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
+            <div className="flex justify-between items-center"><h2 className="type-section-title">Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
+            {!lifeDetail && goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
             <div className="grid grid-cols-3 gap-2">{(['active', 'paused', 'completed'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
-            {goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
-              <div className="goal-empty-state"><div><p className="type-eyebrow">{goalsCategoryFilter === 'all' ? goalsSubtab.toUpperCase() : goalsCategoryFilter.toUpperCase()}</p><h3 className="type-section-title">{goalsSubtab === 'completed' ? 'No completed goals yet' : goalsSubtab === 'paused' ? 'No paused goals' : goalsCategoryFilter === 'all' ? 'A goal when you’re ready' : `No ${goalsCategoryFilter.toLowerCase()} goals yet`}</h3><p className="mt-1 text-sm text-secondary">{goalsSubtab === 'completed' ? 'Completed goals will stay here as a record of what you reached.' : goalsSubtab === 'paused' ? 'If plans change, you can pause an active goal and return to it later.' : 'Choose a longer-term outcome and add milestones when they help.'}</p></div>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-xs font-semibold">Create a goal</button>}</div>
-            ) : (
-              goals.filter(goal => (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).map(g => {
+            {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-secondary">{goal.category} &middot; {goal.status}</p><h3 id="goal-detail-title" className="type-page-title safe-wrap">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div><p className="text-sm font-medium">{displayGoalMeasure(goal.currentValue, goal.unit)} of {displayGoalMeasure(goal.targetValue, goal.unit)}</p><div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{formatDate(goal.targetDate)}</p><p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p></div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button><button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button><button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">+ Milestone</button>              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, goal.status === 'Paused' ? 'In Progress' : 'Paused')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Paused' ? 'Resume goal' : 'Pause goal'}</button>}
+              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, 'Completed')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">Complete goal</button>}
+              <button type="button" className="lifeos-danger min-h-11 rounded-xl px-4 text-sm" onClick={() => void deleteGoalFromDetails(goal)}>Delete goal</button></div><div><h4 className="text-sm font-semibold">Milestones</h4>{rows.length === 0 ? <p className="mt-2 text-xs text-secondary">No milestones yet.</p> : <ul className="mt-2 divide-y divide-[var(--stroke)]">{rows.map(row => <li key={row.id}><label className="flex min-h-12 cursor-pointer items-center gap-3 py-2"><input type="checkbox" checked={row.completed} onChange={async () => { await StorageService.goals.toggleMilestone(row.id, !row.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-sm ${row.completed ? 'line-through text-secondary' : ''}`}>{row.title}</span>{row.targetDate && <span className="text-xs text-secondary">{formatDate(row.targetDate)} · {getDaysRemainingText(row.targetDate)}</span>}</span></label></li>)}</ul>}</div><details className="border-t border-[var(--stroke)]"><summary className="min-h-11 content-center cursor-pointer text-sm font-semibold">History</summary><ul className="space-y-2 text-sm text-secondary"><li>Created {formatDate(goal.createdAt.slice(0, 10))}</li>{goal.updatedAt && <li>Updated {formatDate(goal.updatedAt.slice(0, 10))}</li>}{rows.filter(row => row.completed && row.completedAt).sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || '')).map(row =><li key={row.id}>{formatDate((row.completedAt || '').slice(0, 10))} &middot; {row.title}</li>)}</ul></details></section>; })()}
+            {lifeDetail?.kind !== 'goal' && (() => {
+              const visibleGoals = goals.filter(goal => goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed') && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter));
+              if (!visibleGoals.length) return <p className="goal-empty-state text-sm text-secondary">{goalsCategoryFilter !== 'all' ? 'No goals in this category.' : goalsSubtab === 'completed' ? 'No completed goals yet.' : goalsSubtab === 'paused' ? 'No paused goals.' : 'No active goals yet.'}</p>;
+              return <div className="goal-list">{visibleGoals.map(g => {
                 const pct = goalProgress(g);
-                const goalMilestones = milestones.filter(milestone => milestone.goalId === g.id);
-                return <div key={g.id} className="lifeos-panel space-y-3 rounded-2xl border p-4">
-                  <div className="flex items-start justify-between gap-3"><div><button onClick={() => openEditGoal(g)} className="min-h-11 text-left font-semibold text-sm lifeos-accent-text">{g.title}</button><p className="text-[10px] text-secondary">{g.category} · target {formatDate(g.targetDate)} · {getDaysRemainingText(g.targetDate)}</p></div><span className="text-sm font-bold lifeos-accent-text">{pct}%</span></div>
-                  <div className="lifeos-progress-track h-2 w-full overflow-hidden rounded-full" role="progressbar" aria-label={`${g.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div>
-                  <div className="flex justify-between text-xs text-secondary"><span>{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</span><span>{goalMilestones.filter(milestone => milestone.completed).length}/{goalMilestones.length} milestones</span></div>
-                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="lifeos-tint lifeos-accent-text min-h-11 rounded-xl px-3 text-xs font-semibold">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-xs font-semibold">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--warning)]">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--success)]">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!(await confirmAction({ title: 'Delete this goal?', message: `“${g.title}” and its milestones will be removed.`, confirmLabel: 'Delete goal', destructive: true }))) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="lifeos-raised lifeos-danger min-h-11 rounded-xl px-3 text-xs">Delete</button></div>
-                  {goalMilestones.length > 0 && <div className="space-y-2 border-t border-[var(--stroke)] pt-3">{goalMilestones.map(milestone => <label key={milestone.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5 shrink-0" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-xs ${milestone.completed ? 'text-secondary line-through' : ''}`}>{milestone.title}</span>{milestone.targetDate && <span className="block text-[10px] text-secondary">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</span>}</span></label>)}</div>}
-                </div>;
-              })
-            )}
+                return <article key={g.id} className="lifeos-panel goal-journey-card">
+                  <button type="button" onClick={() => showLifeDetail({ kind: 'goal', id: g.id })} className="goal-card-open">
+                    <span className="min-w-0 safe-wrap"><strong>{g.title}</strong><small>{g.category} &middot; {formatDate(g.targetDate)}</small></span>
+                    <span className="goal-percent tabular-nums">{pct}%</span>
+                  </button>
+                  <div className="lifeos-progress-track h-2 overflow-hidden rounded-full" role="progressbar" aria-label={g.title + ' progress'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: pct + '%' }} /></div>
+                  <p className="text-sm text-secondary safe-wrap">{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</p>
+                </article>;
+              })}</div>;
+            })()}
           </div>
         )} />
 
         {/* VIEW 5: PLANNER */}
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <>
-          {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={`${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}`} reminderLabel={plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={<details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No reminder is set. Edit this task to add one.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
+            {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={[!plannerDetailTask.dueAlertDisabled && plannerDetailTask.dueDate && (plannerDetailTask.dueTime || dateOnlyAlertTime) ? 'At due time' : '', plannerDetailTask.reminderLeadMinutes ? plannerDetailTask.reminderLeadMinutes + ' min before' : plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : ''].filter(Boolean).join(' / ') || 'No alert'} onBack={closeTaskDetail} onEdit={() => openEditTask(plannerDetailTask)} onDelete={async () => {
+              if (!await confirmAction({ title: 'Delete this task?', message: 'This will remove the task and its alerts.', confirmLabel: 'Delete task', destructive: true })) return;
+              try {
+                await StorageService.tasks.delete(plannerDetailTask.id);
+                closeTaskDetail();
+                const records = await reloadAllData();
+                await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
+                showToast('Task removed', 'info');
+              } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
+            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
-            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
+
+            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
             <div className="planner-range-nav" role="group" aria-label="Choose task range" data-no-tab-swipe>
-              {(['today', 'tomorrow', 'upcoming'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
+              {(['today', 'tomorrow', 'upcoming', 'unscheduled'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
             </div>
             <details className="planner-calendar-disclosure" data-no-tab-swipe>
               <summary><span>Calendar</span><span>{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span></summary>
@@ -2893,22 +3198,22 @@ export default function App() {
             </section>
             </details>
             <section className="space-y-3" aria-label="Selected day agenda">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div></div>
+              <div className="flex items-center justify-between gap-3"><div><h3 className="text-base font-semibold">{plannerFilter === 'today' ? 'Today' : plannerFilter === 'tomorrow' ? 'Tomorrow' : plannerFilter === 'upcoming' ? 'Upcoming' : plannerFilter === 'unscheduled' ? 'Unscheduled' : selectedPlannerDateLabel}</h3><p className="text-xs text-secondary">{visiblePlannerTasks.length} task{visiblePlannerTasks.length === 1 ? '' : 's'}</p></div></div>
               <details className="planner-filters">
                 <summary><Search size={15} aria-hidden="true" />Search and filters</summary>
                 <div className="planner-filter-fields"><input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" />
-                  <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
+                  <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'unscheduled', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
                 </div>
               </details>
 
             {visiblePlannerTasks.length === 0 ? (
-              <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
+              <div className="lifeos-panel rounded-2xl border px-5 py-9 text-center"><div className="lifeos-raised mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-secondary"><CalendarDays size={20} /></div><p className="text-sm font-medium">Nothing planned for this view</p><p className="mt-1 text-xs text-secondary">Choose another day or add a task when you’re ready.</p><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button mt-4 min-h-11 rounded-xl px-4 text-xs font-semibold">Add a task</button></div>
             ) : (
               <div className="space-y-2">
                 {visiblePlannerTasks.map(t => {
                   const status = getTaskStatus(t, clockNow);
                   const dateGroup = upcomingTaskGroups.find(group => group.tasks[0]?.id === t.id);
-                  return <React.Fragment key={t.id}>{plannerFilter === 'upcoming' && dateGroup && <h4 className="planner-date-group-title" aria-label={`${dateGroup.label}, ${dateGroup.tasks.length} task${dateGroup.tasks.length === 1 ? '' : 's'}`}>{dateGroup.label}<span>{dateGroup.tasks.length}</span></h4>}<div role="button" tabIndex={0} aria-label={`Open task ${t.title}`} onClick={event => { taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); } }} className="lifeos-panel flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3.5 transition hover:border-[var(--accent)]" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : undefined }}>
+                  return <React.Fragment key={t.id}>{plannerFilter === 'upcoming' && dateGroup && <h4 className="planner-date-group-title" aria-label={`${dateGroup.label}, ${dateGroup.tasks.length} task${dateGroup.tasks.length === 1 ? '' : 's'}`}>{dateGroup.label}<span>{dateGroup.tasks.length}</span></h4>}<div role="button" tabIndex={0} aria-label={`Open task ${t.title}`} onClick={event => { taskDetailReturnTabRef.current = null; taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); taskDetailReturnTabRef.current = null; taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); } }} className="lifeos-panel flex cursor-pointer items-center justify-between gap-2 rounded-xl border p-3.5 transition hover:border-[var(--accent)]" style={{ borderColor: status === 'Overdue' ? 'var(--danger)' : undefined }}>
                     <div className="flex items-center gap-3">
                       <input
                         type="checkbox"
@@ -2927,7 +3232,7 @@ export default function App() {
                       <div>
                         <span className={`text-sm font-medium ${t.completed ? 'line-through text-secondary' : ''}`}>{t.title}</span>
                         {t.description && <p className="mt-0.5 text-xs text-secondary">{t.description}</p>}
-                        <p className="text-xs text-secondary">Due {formatDate(t.dueDate)}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : ' · end of day'}</p>
+                        <p className="text-xs text-secondary">{t.dueDate ? `Due ${formatDate(t.dueDate)}` : 'No due date'}{t.dueTime ? ` · ${formatClockTime(t.dueTime)}` : t.dueDate ? ' · end of day' : ''}</p>
                         <div className="mt-1 flex gap-1"><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.priority}</span><span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px]" style={{ color: status === 'Overdue' ? 'var(--danger)' : status === 'Completed' ? 'var(--success)' : 'var(--accent)' }}>{status}</span>{t.recurring !== 'None' && <span className="lifeos-raised rounded px-1.5 py-0.5 text-[10px] text-secondary">{t.recurring}</span>}</div>
                       </div>
                     </div>
@@ -2944,24 +3249,39 @@ export default function App() {
         {/* VIEW 6: SETTINGS */}
         <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
           <div className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
-            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" description="Keep your personal records protected on this device." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
-              <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-secondary">Device-level authentication for the app.</p></div>
-              <p className="text-xs text-secondary">LifeOS asks Android to verify your fingerprint or device credential. Biometric data is handled by Android and is never stored by LifeOS.</p>
-              <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
+            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
+              <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
+                <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} /></div>
+            </ProfileSubpage>}
+            {profileSection === 'app-lock' && <ProfileSubpage title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+              <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. LifeOS does not store your fingerprint.</InfoTip></div>
+              <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
+
+              </div>
+            </ProfileSubpage>}
+            {profileSection === 'recovery' && <ProfileSubpage title="Recovery" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+              <div className="preference-group py-3">
               {onboardingJourney.recoveryName && <p className="text-xs text-secondary">Recovery name: <strong>{onboardingJourney.recoveryName}</strong>. This label cannot restore data without your separate recovery kit.</p>}
               {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
-            </section></ProfileSubpage>}
 
-            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" description="Choose how LifeOS looks. Your theme is saved on this device." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
-              <h3 className="text-base font-semibold">Appearance</h3><p className="text-xs text-secondary">Choose a theme or follow Android's system setting.</p>
+                {!recoveryProvisioned && !recoveryDeferred && <p className="py-2 text-sm">Set up device protection before preparing a recovery file.</p>}
+              </div>
+            </ProfileSubpage>}
+
+            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" onBack={() => navigateProfileSection('home')}>
+              <section className="lifeos-panel rounded-2xl border p-4 space-y-3" aria-label="Display mode"><h2 className="text-sm font-semibold">Display mode</h2>
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
-            </section>
 
-            <section className="lifeos-panel rounded-2xl border p-5 space-y-4" aria-labelledby="color-theme-title">
-              <div><h3 id="color-theme-title" className="text-base font-semibold">Color theme</h3><p className="mt-1 text-xs text-secondary">Preview a coordinated palette. Apply to save it, or cancel to restore your current theme.</p></div>
+              </section>
+              <div className="preference-group"><ProfileSettingRow title="Themes" value={THEME_CATALOG[visualThemeId].label} onClick={() => navigateProfileSection('themes')} />
+                <ProfileSettingRow title="Accent color" value={customAccent ? 'Custom' : 'Theme default'} onClick={() => navigateProfileSection('accent')} />
+                <ProfileSettingRow title="Motion" onClick={() => navigateProfileSection('motion')} /></div>
+            </ProfileSubpage>}
+            {profileSection === 'themes' && <ProfileSubpage title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+              <section className="lifeos-panel rounded-2xl border p-4 space-y-3" aria-label="Theme previews">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {(Object.entries(THEME_CATALOG) as Array<[ThemeId, typeof THEME_CATALOG[ThemeId]]>).map(([id, option]) => {
                   const previewTokens = option[theme];
@@ -2977,45 +3297,75 @@ export default function App() {
                 <button type="button" disabled={!themePreviewId} onClick={cancelVisualThemePreview} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50">Cancel</button>
                 <button type="button" disabled={!themePreviewId} onClick={() => void applyVisualTheme()} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">Apply theme</button>
               </div>
-            </section></ProfileSubpage>}
 
-            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
+              </section>
+            </ProfileSubpage>}
+            {profileSection === 'motion' && <ProfileSubpage title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+              <MotionPreferences value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
+            </ProfileSubpage>}
+            {profileSection === 'accent' && <ProfileSubpage title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+              <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
+            </ProfileSubpage>}
 
-            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" description="Choose which local reminders LifeOS may send." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <p className="text-xs text-secondary">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
-              <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
-              <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
-              {notificationDiagnostics.capability === 'initializing' && <p role="status" className="text-[11px] text-secondary">Checking Android notification support…</p>}
-              {notificationDiagnostics.capability === 'unavailable' && <p className="text-[11px] text-[var(--warning)]">Android notification support is unavailable in this app build. Your reminder definitions remain saved.</p>}
-              {notificationDiagnostics.capability === 'error' && <p className="text-[11px] text-[var(--warning)]">Android notification diagnostics could not be read. Refresh to retry.</p>}
-              {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--stroke)] pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
-              <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-[10px] text-secondary"><p>Capability: <span className={notificationDiagnostics.capability === 'available' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.capability}</span> · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor core / local notifications: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p>{notificationDiagnostics.exactAlarm !== 'granted' && <p>Timing: approximate; Android may defer while idle or under device power management.</p>}<p>Power allowlist exemption: {notificationDiagnostics.batteryOptimizationExempt === null ? 'unknown' : String(notificationDiagnostics.batteryOptimizationExempt)} · OEM controls may differ</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending scheduled records: {notificationDiagnostics.pendingCount}</p><p>Currently visible in notification shade: {notificationDiagnostics.visibleNotificationCount} · IDs {notificationDiagnostics.visibleNotificationIds.join(', ') || 'none'}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation reason: {notificationDiagnostics.lastCancellationReason || 'none recorded'}</p><p>Last action event: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-[var(--danger)]' : 'text-[var(--success)]'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
-              <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android settings</button></div>
-              <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button>
-              <button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
-            </section></ProfileSubpage>}
+            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
+              try {
+                await StorageService.settings.set('dateOnlyAlertTime', time);
+                setDateOnlyAlertTime(time);
+                if (!await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled))) showToast('Saved, but Android could not update some alerts.', 'danger');
+              } catch { showToast('Could not save alert time.', 'danger'); }
+            }} preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
 
-            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
-            {/* Kept available, but disclosed because these records are added to the live local database. */}
-            <details className="profile-demo-disclosure">
-              <summary>Sample data for demonstrations</summary>
-              <div className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Add demonstration records</h3>
-              <p className="text-xs text-secondary">This adds sample transactions, habits, goals, and tasks alongside your records. Export a backup first if you need to preserve the current state. LifeOS does not automatically remove these records later.</p>
-              <button
-                onClick={async () => {
-                  if (!(await confirmAction({ title: 'Add sample records to this device?', message: 'Demonstration transactions, habits, goals, and tasks will be added alongside your existing records. They are not automatically removed.', confirmLabel: 'Add sample records', cancelLabel: 'Cancel' }))) return;
-                  await StorageService.backup.seedDemoData();
-                  await reloadAllData();
-                  showToast('Sample demonstration data loaded', 'success');
-                }}
-                className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold transition"
-              >
-                Add sample records
-              </button>
-              </div>
-            </details>
+            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" onBack={() => navigateProfileSection('home')}>
+              <section className="preference-group">
+                <button type="button" className="preference-row" role="switch" aria-label="All notifications" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)}><span>All notifications</span><span className="preference-toggle" aria-hidden="true" /></button>
+                {(notificationDiagnostics.permission === 'denied' || notificationDiagnostics.appNotifications === 'disabled' || notificationDiagnostics.channel.startsWith('blocked')) ?
+                  <ProfileSettingRow title="Notifications blocked by Android" value="Resolve" onClick={() => void openNotificationSettings()} />
+                  : notificationsEnabled && notificationDiagnostics.permission === 'granted' && (notificationDiagnostics.exactAlarm !== 'granted' ?
+                    <ProfileSettingRow title="Precise reminders are off" value="Enable" onClick={() => void requestExactAlarmAccess()} />
+                    : <p className="preference-row">Precise reminders <span className="text-secondary">Enabled</span></p>)}
+              </section>
+              <section className="preference-group" aria-label="Reminder style">
+                <PreferenceChoice label="Notification tone" value={notificationTone} options={NOTIFICATION_TONES.map(tone => [tone, tone[0].toUpperCase() + tone.slice(1)])} onSelect={async value => {
+                  const tone = normalizeNotificationTone(value);
+                  try {
+                    await StorageService.settings.set('notificationTone', tone);
+                    setNotificationTone(tone);
+                    if (!await syncNotificationSchedules(tasks, habits, goals, milestones)) showToast('Tone saved. Some reminders could not refresh.', 'danger');
+                  } catch { showToast('Could not save notification tone.', 'danger'); }
+                }} />
+                <p className="pb-3 text-sm text-secondary">{reminderCopy('habitReminder', notificationTone, 0).body}</p>
+                <ProfileSettingRow title="Sound and vibration" value="Android settings" onClick={() => void openNotificationSettings()} />
+              </section>
+              <section className="preference-group" aria-label="Notification categories">
+                {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <button type="button" key={key} role="switch" aria-label={notificationLabels[key]} aria-checked={notificationsEnabled && notificationPreferences[key]} disabled={!notificationsEnabled} onClick={() => void toggleNotificationCategory(key)} className="preference-row"><span>{notificationLabels[key]}</span><span className="preference-toggle" aria-hidden="true" /></button>)}
+              </section>
+            </ProfileSubpage>}
 
+            {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
+              <section className="lifeos-panel rounded-xl border p-4 space-y-3"><h2 className="text-sm font-semibold">Notification diagnostics</h2>
+                <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary"><p>Capability: {notificationDiagnostics.capability} · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Exact alarms: {notificationDiagnostics.exactAlarm} · Channel: {notificationDiagnostics.channel}</p><p>Pending records: {notificationDiagnostics.pendingCount} · Visible: {notificationDiagnostics.visibleNotificationCount} · IDs {notificationDiagnostics.visibleNotificationIds.join(', ') || 'none'}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation: {notificationDiagnostics.lastCancellationReason || 'none'} · Last action: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: {notificationDiagnostics.lastError || 'none'}</p></div>
+                {developerToolsEnabled && notificationDiagnostics.reminderLifecycle.length > 0 && <details className="rounded-xl border border-[var(--stroke)] p-3"><summary className="min-h-11 cursor-pointer text-xs font-semibold">Reminder timeline · no task titles</summary><ol className="mt-2 space-y-2">{notificationDiagnostics.reminderLifecycle.map(item => <li key={item.notificationId} className="border-t border-[var(--stroke)] pt-2 text-[10px] leading-5 text-secondary"><strong>Reminder {item.notificationId}</strong> · {item.deliveryState}<br />Scheduled: {item.reminderAt}<br />Accepted: {item.nativeAcceptedAt || 'not observed'} · Pending: {item.pendingObservedAt || 'not observed'}<br />Android posted: {item.androidPostedAt || 'not observed'} · Receiver event: {item.receiverEventAt || 'not observed'} · Tapped: {item.tappedAt || 'not observed'}</li>)}</ol></details>}
+                <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android notification settings</button></div>
+                <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button><button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
+              </section>
+<button onClick={async () => { if (!(await confirmAction({ title: 'Reset onboarding for testing?', message: 'Your records will remain untouched. Choices made during onboarding may update your name, appearance, security, and notification preferences.', confirmLabel: 'Restart tour' }))) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Reset onboarding for testing</button>
+              <section className="lifeos-panel rounded-xl p-4 space-y-3">
+                <h2 className="text-sm font-semibold">Sample data</h2>
+                <p className="text-xs text-secondary">Six months of activity for exploring LifeOS. Sample task reminders are silent.</p>
+                <button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => {
+                  if (!await confirmAction({ title: 'Add six months of sample data?', message: 'Sample records will appear alongside records in this Debug workspace. You can remove them here.', confirmLabel: 'Add sample data' })) return;
+                  try { await StorageService.backup.seedDemoData(); await reloadAllData(); showToast('Sample data is ready', 'success'); }
+                  catch (error) { showToast(error instanceof Error ? error.message : 'Could not add sample data', 'danger'); }
+                }} className="lifeos-accent-button min-h-11 w-full rounded-xl px-3 text-sm disabled:opacity-50">Add sample data</button>
+                <button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => {
+                  if (!await confirmAction({ title: 'Remove sample data?', message: 'Removes the sample set and activity linked to its habits and goals.', confirmLabel: 'Remove sample data' })) return;
+                  try { await StorageService.backup.removeSampleData(); await reloadAllData(); showToast('Sample data removed', 'success'); }
+                  catch (error) { showToast(error instanceof Error ? error.message : 'Could not remove sample data', 'danger'); }
+                }} className="lifeos-input min-h-11 w-full rounded-xl px-3 text-sm disabled:opacity-50">Remove sample data</button>
+              </section>
+            </ProfileSubpage>}
+
+            {profileSection === 'data' && <ProfileSubpage title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
             {/* Backup & Restore */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Backup & Restore</h3>
@@ -3105,30 +3455,51 @@ export default function App() {
               </button>
             </div>
             </ProfileSubpage>}
-            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => navigateProfileSection('home')}>
-            <section className="lifeos-panel rounded-xl border p-4 space-y-2">
-              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
-              <button onClick={async () => { if (!(await confirmAction({ title: 'Restart the welcome tour?', message: 'Your records will remain untouched. Choices made during onboarding may update your name, appearance, security, and notification preferences.', confirmLabel: 'Restart tour' }))) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
-            </section>
+            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" onBack={() => navigateProfileSection('home')}>
+              <div className="preference-group"><div className="preference-row"><span>Version</span><span className="text-secondary">{packageInfo.version}</span></div>
+                <ProfileSettingRow title="Open-source licenses" onClick={() => navigateProfileSection('licenses')} /></div>
+            </ProfileSubpage>}
+            {profileSection === 'licenses' && <ProfileSubpage title="Open-source licenses" backLabel="About LifeOS" onBack={() => navigateProfileSection('about')}>
+              <div className="preference-group"><a href="./licenses/capacitor-local-notifications.txt" target="_blank" rel="noreferrer" className="preference-row lifeos-accent-text">Capacitor Local Notifications</a></div>
             </ProfileSubpage>}
           </div>
         )} />
         </div>
       </main>
 
+      {transactionDetail && <dialog ref={transactionDetailDialog} data-transaction-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transaction-detail-title" onClose={() => setTransactionDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
+        <section>
+          <header className="flex items-center justify-between gap-3"><h2 id="transaction-detail-title" className="text-xl font-semibold">{transactionDetail.description || transactionDetail.category}</h2><button type="button" className="min-h-11 px-3" onClick={() => transactionDetailDialog.current?.close()}>Close</button></header>
+          <strong className="type-display-amount tabular-nums">{transactionDetail.type === 'income' ? '+' : '-'}{transactionDetail.amountMinor != null && transactionDetail.currencyCode ? formatMinorUnits(BigInt(transactionDetail.amountMinor), transactionDetail.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(transactionDetail.amount, transactionDetail.currencyCode)}</strong>
+          <dl className="grid grid-cols-2 gap-3"><div><dt className="text-xs text-secondary">Date</dt><dd>{formatDate(transactionDetail.date)}</dd></div><div><dt className="text-xs text-secondary">Category</dt><dd>{transactionDetail.category}</dd></div><div><dt className="text-xs text-secondary">Payment</dt><dd>{transactionDetail.paymentMethod || 'Other'}</dd></div>{transactionDetail.accountId && <div><dt className="text-xs text-secondary">Account</dt><dd>{financialAccounts.find(account => account.id === transactionDetail.accountId)?.name || 'Archived account'}</dd></div>}</dl>
+          {transactionDetail.notes && <p className="whitespace-pre-wrap break-words text-sm">{transactionDetail.notes}</p>}
+          <div className="flex flex-wrap gap-3"><button type="button" className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 font-semibold" onClick={() => { transactionDetailDialog.current?.close(); openEditTransaction(transactionDetail); }}>Edit transaction</button><details className="lifeos-input rounded-xl px-3"><summary className="min-h-11 content-center cursor-pointer">More actions</summary><button type="button" className="block min-h-11 w-full text-left" onClick={() => { transactionDetailDialog.current?.close(); openDuplicateTransaction(transactionDetail); }}>Duplicate</button><button type="button" className="block min-h-11 w-full text-left text-[var(--danger)]" onClick={async () => {
+            const id = transactionDetail.id;
+            transactionDetailDialog.current?.close();
+            if (!await confirmAction({ title: 'Delete this transaction?', message: 'It will be removed from your history.', confirmLabel: 'Delete transaction', destructive: true })) return;
+            try { await StorageService.transactions.delete(id); await reloadAllData(); showToast('Transaction deleted', 'info'); }
+            catch { showToast('Could not finish deleting the transaction. Refresh before retrying.', 'danger'); }
+          }}>Delete transaction</button></details></div>
+        </section>
+      </dialog>}
       {createKind && (
-        <div className="ui-sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+        <div className="ui-sheet-backdrop record-composer-backdrop" data-full-composer={!["contribution","milestone","goal-progress"].includes(createKind)} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
+          <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
-              <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? 'Set monthly budget' : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
+              <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
             </div>
-            <p id="record-form-description" className="record-form-description">{createKind === 'task' ? 'Start with a title and date. Reminders and repeat options are below.' : createKind === 'transaction' ? 'Enter the amount and category. An account is optional.' : createKind === 'habit' ? 'Choose a routine and how often you want to check in.' : createKind === 'goal' ? 'Name the outcome, then choose a measurable target.' : 'Complete the details below. Your changes are saved only when you confirm.'}</p>
+            <p id="record-form-description" className="sr-only">Enter the record details and save your changes.</p>
             {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
               {createKind === 'transaction' ? 'Merchant or description (optional)' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
               <input autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {createKind === 'transaction' && <>
+              {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
+                if (createOperation.current || (createFormDirty && !await confirmAction({ title: 'Discard this transaction draft?', message: 'Transfers use a separate form.', confirmLabel: 'Open transfer', cancelLabel: 'Keep editing' }))) return;
+                setCreateKind(null); setCreateFormDirty(false);
+                navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
+              }}>Transfer between accounts</button>}
               <label className="mb-3 block text-xs text-secondary">Type<select value={createDraft.type} onChange={e => {
                 const type = e.target.value as 'income' | 'expense';
                 const category = categories.find(item => item.type === type)?.name || '';
@@ -3158,7 +3529,9 @@ export default function App() {
             {createKind === 'habit' && <>
               <label className="mb-3 block text-xs text-secondary">How often?<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
               <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Daily target (optional)<input type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Progress tracking<select disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))} value={createDraft.trackingMode || 'binary'} onChange={e => setCreateDraft({ ...createDraft, trackingMode: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="binary">Completed / not completed</option><option value="quantity">Count a daily quantity</option></select>{editingHabitId && habitLogs.some(log => log.habitId === editingHabitId) && <span className="mt-1 block">Tracking mode is kept so saved check-in history stays unchanged.</span>}</label>
+              <label className="mb-3 block text-xs text-secondary">{createDraft.trackingMode === 'quantity' ? 'Daily quantity target' : 'Daily target (optional)'}<input required={createDraft.trackingMode === 'quantity'} type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              {createDraft.trackingMode === 'quantity' && <label className="mb-3 block text-xs text-secondary">Unit<input required maxLength={24} value={createDraft.quantityUnit || ''} onChange={e => setCreateDraft({ ...createDraft, quantityUnit: e.target.value })} placeholder="glasses, minutes, pages" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
               <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
             </>}
@@ -3171,9 +3544,10 @@ export default function App() {
               <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'budget' && <>
-              <label className="mb-3 block text-xs text-secondary">Budget category (optional)<select value={createDraft.categoryId || ''} onChange={e => setCreateDraft({ ...createDraft, categoryId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="">Overall budget</option>{categories.filter(category => category.type === 'expense').map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-              <label className="mb-3 block text-xs text-secondary">Monthly limit · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-4 block text-xs text-secondary">Month<input required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              {editingBudgetId && <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs text-secondary">Editing keeps this plan’s category, month and currency. Create a separate plan to change those details.</p>}
+              <label className="mb-3 block text-xs text-secondary">Budget category (optional)<select disabled={Boolean(editingBudgetId)} value={createDraft.categoryId || ''} onChange={e => setCreateDraft({ ...createDraft, categoryId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="">Overall budget</option>{categories.filter(category => category.type === 'expense').map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+              {(() => { const code = editingBudgetId ? budgets.find(row => row.id === editingBudgetId)?.currencyCode || userPrefs.currency : userPrefs.currency; const digits = getCurrencyMetadata(code).fractionDigits; return <label className="mb-3 block text-xs text-secondary">Monthly limit · {code}<input required type="number" min={10 ** -digits} step={10 ** -digits} inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>; })()}
+              <label className="mb-4 block text-xs text-secondary">Month<input disabled={Boolean(editingBudgetId)} required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'savings' && <>
               <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target amount · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>{!editingSavingsGoalId && <label className="text-xs text-secondary">Already saved<input type="number" min="0" step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}</div>
@@ -3188,19 +3562,25 @@ export default function App() {
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date<input required type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', reminderLead: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
               <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              <details className="ui-optional-form-details" open={Boolean(editingTaskId && (createDraft.description || createDraft.category || createDraft.reminderAt || (createDraft.recurring && createDraft.recurring !== 'None')))}><summary>More task details</summary>
+<label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={!createDraft.date || !(createDraft.time || dateOnlyAlertTime)} checked={createDraft.dueAlert !== 'off'} onChange={event => setCreateDraft({ ...createDraft, dueAlert: event.target.checked ? 'on' : 'off' })} /> Alert at due time</label>
+              <details className="ui-optional-form-details" open={Boolean(editingTaskId && (createDraft.description || createDraft.category || createDraft.reminderLead || (createDraft.recurring && createDraft.recurring !== 'None')))}><summary>More task details</summary>
                 <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
-                <label className="mb-3 block text-xs text-secondary">Repeat<select value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
+                <label className="mb-3 block text-sm">Extra reminder
+                  <select disabled={!createDraft.date || (!createDraft.time && !dateOnlyAlertTime && !createDraft.reminderAt)} value={['', '5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead || '') ? createDraft.reminderLead || '' : 'custom'} onChange={event => setCreateDraft({ ...createDraft, reminderLead: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3">
+                    <option value="">None</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="custom">Custom lead time</option>{createDraft.reminderAt && <option value="legacy">Keep saved reminder</option>}
+                  </select>
+                </label>
+                {createDraft.reminderLead && !['5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead) && <label className="mb-3 block text-sm">Minutes before<input type="number" min="1" max="10080" required value={createDraft.reminderCustom || (createDraft.reminderLead === 'custom' ? '' : createDraft.reminderLead)} onChange={event => setCreateDraft({ ...createDraft, reminderLead: 'custom', reminderCustom: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
+                <label className="mb-3 block text-xs text-secondary">Repeat<select disabled={!createDraft.date} value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
               </details>
             </>}
             {!['habit', 'budget', 'task', 'transaction', 'goal-progress'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">{createKind === 'goal' || createKind === 'savings' ? 'Target date' : createKind === 'milestone' ? 'Target date (optional)' : 'Date'}<input type="date" required={createKind !== 'milestone'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
             {editingTransactionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this transaction?', message: 'This transaction will be removed from your history. This cannot be undone.', confirmLabel: 'Delete transaction', destructive: true }))) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setCreateFormDirty(false); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
             {editingContributionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this contribution?', message: 'The contribution will be removed and subtracted from the saved goal total.', confirmLabel: 'Delete contribution', destructive: true }))) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setCreateFormDirty(false); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
-            <div className="ui-form-actions"><button type="button" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-raised min-h-12 flex-1 rounded-xl text-sm font-semibold">Cancel</button><button type="submit" disabled={recordSaving} className="lifeos-accent-button min-h-12 flex-1 rounded-xl px-3 text-sm font-semibold">{recordSaving ? 'Saving…' : editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button></div>
+            <div className="ui-form-actions"><button type="button" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-raised min-h-12 flex-1 rounded-xl text-sm font-semibold">Cancel</button><button type="submit" disabled={recordSaving} className="lifeos-accent-button min-h-12 flex-1 rounded-xl px-3 text-sm font-semibold">{recordSaving ? 'Saving…' : editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : editingBudgetId ? 'Save budget' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button></div>
           </form>
         </div>
       )}
@@ -3209,7 +3589,7 @@ export default function App() {
       <nav ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
         <div className="app-nav-items">
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
-          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, life: Leaf })[icon];
+          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays })[icon];
           const isSelected = primaryDestinationForTab(activeTab) === tab;
           return (
           <button
@@ -3218,8 +3598,7 @@ export default function App() {
             onClick={() => {
               if (isSelected) {
                 if (activeTab !== tab) { navigateTo(tab); return; }
-                if (tab === 'finance') setFinanceSubtab('overview');
-                if (tab === 'life') { setHabitsSubtab('checklist'); setGoalsSubtab('active'); }
+                if (tab === 'finance' && financeSubtab !== 'overview') { rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }
                 return;
               }
               navigateTo(tab);

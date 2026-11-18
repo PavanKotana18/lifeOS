@@ -75,39 +75,42 @@ public class DirectedVisualAcceptanceTest {
     private void mandatoryOnboardingVisuals() throws Exception {
         until("!!document.querySelector('input[autocomplete=nickname]')");
         captureProtectedSyntheticOnboarding("onboarding-name");
+        openKeyboard("input[autocomplete=nickname]", "document.activeElement?.autocomplete==='nickname'");
+        assertTrue("The name field should open the Android keyboard", keyboardVisible());
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+        long deadline=SystemClock.elapsedRealtime()+10000;
+        while(keyboardVisible()&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(50);
+        assertFalse("Back closes the keyboard without advancing setup", keyboardVisible());
+        captureProtectedSyntheticOnboarding("onboarding-name-keyboard-dismissed");
         js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android synthetic owner');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
         click("Continue");
-        until("!!document.querySelector('[aria-label=\"Protect your LifeOS space\"]')");
+        until("document.querySelector('.initial-setup h1')?.textContent==='Notifications'");
+        captureProtectedSyntheticOnboarding("onboarding-notifications");
+        click("Not now");
+        until("!![...document.querySelectorAll('button')].find(button=>button.innerText.startsWith('Continue'))");
+        js("[...document.querySelectorAll('button')].find(button=>button.innerText.startsWith('Continue')).click()");
+        String protection = "document.querySelector('.initial-setup h1')?.textContent==='Biometric setup'";
+        until(protection);
         assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
-        assertEquals("false",js("!![...document.querySelectorAll('button')].some(b=>b.innerText.includes('Not now'))"));
         captureProtectedSyntheticOnboarding("onboarding-protection");
-        scenario.recreate();WebViewTestSupport.awaitReactRoot(scenario);
-        until("!!document.querySelector('[aria-label=\"Protect your LifeOS space\"]')");
+        scenario.recreate();
+        WebViewTestSupport.awaitReactRoot(scenario);
+        until(protection);
         for(int zoom:new int[]{130,200}) {
             scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(zoom));
             until("document.documentElement.scrollWidth<=innerWidth+1");
             captureProtectedSyntheticOnboarding("onboarding-protection-text-"+zoom);
         }
         scenario.onActivity(a->a.getBridge().getWebView().getSettings().setTextZoom(100));
-        // Render the recovery screen for visual QA only by advancing disposable
-        // bootstrap progress through IndexedDB. evaluateJavascript executes
-        // injected code without a module base URL, so importing /src/db.ts
-        // here fails in a packaged WebView. No native key is provisioned and
-        // the app remains gated; this does not simulate authentication or
-        // recovery success.
-        WebViewTestSupport.evaluateAsync(scenario,
-            "new Promise((resolve,reject)=>{const r=indexedDB.open('LifeOS_Database');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result;let tx;try{tx=db.transaction('settings','readwrite');tx.objectStore('settings').put({key:'onboardingJourney',value:{version:1,stage:'recovery',protection:'enabled',recovery:'pending',recoveryName:''}});}catch(e){db.close();reject(e);return;}tx.oncomplete=()=>{db.close();resolve(true);};tx.onerror=()=>{db.close();reject(tx.error);};tx.onabort=()=>{db.close();reject(tx.error||new Error('Bootstrap progress transaction aborted'));};};})");
-        scenario.recreate();WebViewTestSupport.awaitReactRoot(scenario);
-        until("!!document.querySelector('[aria-label=\"Set up your recovery kit\"]')");
+        click("Not now");
+        until("document.querySelector('.initial-setup h1')?.textContent==='Recovery setup'");
         assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
-        assertEquals("false",js("!!document.querySelector('[aria-label=\"Complete private recovery kit\"]')"));
+        assertEquals("false",js("!!document.querySelector('[data-sensitive-recovery-code]')"));
         captureProtectedSyntheticOnboarding("onboarding-recovery");
-        openKeyboard("input[placeholder=\"My LifeOS recovery\"]", "document.activeElement?.placeholder==='My LifeOS recovery'");
-        assertTrue("Optional recovery label should open the Android keyboard",keyboardVisible());
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
-        long deadline=SystemClock.elapsedRealtime()+10000;while(keyboardVisible()&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(50);
-        assertFalse("Keyboard Back must not discard the recovery stage",keyboardVisible());
-        captureProtectedSyntheticOnboarding("onboarding-recovery-keyboard-dismissed");
+        click("Review deferral");
+        until("!![...document.querySelectorAll('button')].find(button=>button.innerText==='Do this later')");
+        assertEquals("false",js("!!document.querySelector('[data-sensitive-recovery-code]')"));
+        captureProtectedSyntheticOnboarding("onboarding-recovery-deferral");
         JSONObject report=new JSONObject();
         report.put("environment","Real packaged React UI on hosted Android emulator; native authentication/recovery not invoked");
         report.put("screenshots",captures);report.put("privateWrites",0);
@@ -312,7 +315,8 @@ public class DirectedVisualAcceptanceTest {
                 WebViewTestSupport.awaitReactRoot(scenario);
                 mandatoryOnboardingVisuals();
                 assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
-                assertEquals("true",js("!!document.querySelector('[aria-label=\"Set up your recovery kit\"]')"));
+                assertEquals("Recovery deferral must remain inside onboarding", "true",
+                    js("document.querySelector('.initial-setup .recovery-stage h1')?.textContent==='Recovery setup'"));
                 JSONObject key=new JSONObject(WebViewTestSupport.evaluateAsync(scenario,"window.Capacitor.Plugins.LifeOSCrypto.getKeyState()"));
                 assertFalse("Visual-only screenshots must not provision a key",key.getBoolean("keyProvisioned"));
                 scenario.onActivity(a->assertTrue("Onboarding remains screenshot protected",(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)!=0));

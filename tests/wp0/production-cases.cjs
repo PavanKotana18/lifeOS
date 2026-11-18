@@ -306,8 +306,9 @@ const cases = [
     async run() { await usingFixture(async f => {
       await seed(f);
       const s = f.StorageService, ns = f.NotificationService;
-      const habit = (await s.habits.getAll())[0];
-      await s.habits.update(habit.id, { reminderTime: '09:00' });
+      const sample = (await s.habits.getAll())[0];
+      await s.habits.update(sample.id, { reminderTime: '09:00' });
+      const habit = await s.habits.add({ name: 'WP0 private habit', frequency: 'daily', reminderTime: '09:00' });
       const reminderGoal = await s.goals.add({ title: 'WP0 reminder goal', category: 'Fitness',
         targetValue: 10, currentValue: 0, unit: 'km', startDate: '2026-11-01',
         targetDate: '2026-12-31', priority: 'Medium', status: 'In Progress' });
@@ -316,7 +317,9 @@ const cases = [
       const enabled = Object.fromEntries(Object.keys(f.DEFAULT_NOTIFICATION_PREFERENCES).map(k => [k, true]));
       await ns.syncHabits(await s.habits.getAll(), enabled);
       await ns.syncMilestones(await s.goals.getAll(), await s.goals.getAllMilestones(), enabled);
-      h.check([...f.pending.values()].some(n => n.extra.kind === 'habitReminder'), 'Real service scheduled fixture habit');
+      h.check([...f.pending.values()].some(n => n.extra.kind === 'habitReminder' && n.extra.habitId === habit.id), 'Real service scheduled a personal fixture habit');
+      h.check(![...f.pending.values()].some(n => n.extra.habitId === sample.id), 'Sample habits remain silent');
+      h.check(![...f.pending.values()].some(n => n.body?.includes('WP0')), 'Notification copy does not disclose record titles');
       h.check([...f.pending.values()].some(n => n.extra.kind === 'milestoneReminder'), 'Real service scheduled fixture milestone');
       f.pending.set(-7, { id: -7, extra: { kind: 'unrelated-fixture' } });
       const expression = h.buttonHandler('Clear All Application Data');
