@@ -30,7 +30,7 @@ export function ProfileIdentityCard({ name, initial, onChange }: { name: string;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return <section className="profile-identity-card lifeos-panel rounded-2xl border" aria-labelledby="profile-identity-title">
-    <div className="flex items-center gap-3">
+    <div className="profile-identity-row flex items-center gap-3">
       <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-lg font-semibold" aria-hidden="true">{initial || <UserRound size={21} />}</div>
       <h2 id="profile-identity-title" className="min-w-0 flex-1 safe-wrap text-xl font-semibold">{name.trim() || 'Your profile'}</h2>
       {!editing && <button type="button" className="min-h-11 text-sm lifeos-accent-text" onClick={() => { setDraft(name); setEditing(true); }}>Edit name</button>}

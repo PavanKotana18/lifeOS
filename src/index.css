@@ -976,3 +976,11 @@ html.dark .text-amber-400 { color: var(--warning); }
 .profile-subpage > header > h1 { overflow-wrap: anywhere; min-width: 0; }
 .transaction-history-amount { max-inline-size: 100%; overflow-wrap: anywhere; }
 .record-composer label, .record-composer select, .record-composer input { min-width: 0; max-width: 100%; }
+
+.profile-identity-card { container: profile-identity / inline-size; }
+.money-detail-filters label { min-width: 0; }
+@container profile-identity (max-width: 17em) {
+  .profile-identity-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .5rem .7rem; }
+  .profile-identity-row > h2 { font-size: 1rem; }
+  .profile-identity-row > button { grid-column: 2; justify-self: start; }
+}

@@ -900,6 +900,7 @@ async function main() {
       await clickButton('Save name');
       await page.getByRole('heading', { name: 'AlexandriaWithAnUnusuallyLongUnbrokenDisplayName' }).waitFor();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      await page.evaluate(() => window.scrollTo(0, 0));
       await capture('profile-large-text-320');
       await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
       await page.emulateMedia({ reducedMotion: 'reduce' });
