@@ -35,9 +35,10 @@ assert.match(service, /visibility: 0/, 'new channel requests private lock-screen
 assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
 assert.match(manifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
 assert.match(app, /const exactAlarm = await NotificationService\.checkExactAlarmPermission\(\);[\s\S]*?status: exactAlarm === 'granted' \? 'granted' : 'approximate'/, 'exact alarm access is reported as precision, not a hard delivery prerequisite');
-assert.match(app, /notificationDefaultsPending[\s\S]*?Enable notifications/, "Today offers an explicit opt-in");
+const onboarding = fs.readFileSync('src/components/Onboarding.tsx', 'utf8');
+assert.match(onboarding, /run\(props\.onNotifications\)\}>Allow notifications/, 'first-launch notification permission remains explicit');
 
-assert.match(app, /requestExactAlarmPermission\(\)[\s\S]*?Enable precise reminders/, 'exact alarm special access is separate and user-invoked when reminder categories are active');
+assert.match(onboarding, /run\(props\.onPrecise\)\}>Enable precise reminders/, 'exact alarm special access is separate and user-invoked when reminder categories are active');
 assert.match(app, /const toggleNotificationCategory[\s\S]*?askNotificationPermission\(\)/, 'permission is requested when a notification category is enabled');
 assert.match(app, /const setNotificationsMaster[\s\S]*?askNotificationPermission\(\)/, 'the notification master switch is a second explicit opt-in path');
 assert.match(notificationService, /sendImmediateTestNotification/);
@@ -54,8 +55,8 @@ assert.match(app, /isEncryptedStorageActivated\(\)[\s\S]*?processPendingTaskNoti
 assert.match(app, /getInitialTapAction[\s\S]*?handleAction\(initialAction\)/, 'cold-start taps are processed after action listener registration');
 assert.match(app, /if \(handledNotificationIds\.current\.has\(id\)\) return/, 'duplicate tap delivery is ignored');
 assert.match(app, /if \(!isLocked && sessionManager\.isUnlocked\(\) && isEncryptedStorageActivated\(\)\)/, 'task routing requires an unlocked encrypted session');
-assert.match(app, /const task = \(await StorageService\.tasks\.getAll\(\)\)\.find\(item => item\.id === taskId\)/, 'the task is loaded through the encrypted storage facade');
-assert.match(app, /That reminder no longer has an available task/, 'deleted destinations have a graceful fallback');
+assert.match(app, /const task = \(await StorageService\.tasks\.getAll\(\)\)\.find\(item => item\.id === extra\.taskId\)/, 'the task is loaded through the encrypted storage facade');
+assert.match(app, /That reminder no longer has an available record/, 'deleted destinations have a graceful fallback');
 assert.match(app, /processPendingTaskNotification\(\)/, 'pending task taps are retried after session restoration');
 assert.match(service, /diagnoseTaskReminder/);
 assert.match(app, /Check reminder status/);

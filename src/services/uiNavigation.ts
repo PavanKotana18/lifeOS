@@ -6,6 +6,7 @@ export type ScreenLocation = {
   profileSection?: string;
   goalsSubtab?: string;
   habitsSubtab?: string;
+  detailKey?: string;
 };
 
 export type RetainedScreenTransition = 'prepare' | 'running' | null;
@@ -22,6 +23,7 @@ export function retainedScreenTransitionState(
 export function screenScrollKey(location: ScreenLocation): string {
   if (location.tab === 'finance') return `finance:${location.financeSubtab || 'overview'}`;
   if (location.tab === 'settings') return `settings:${location.profileSection || 'home'}`;
+  if ((location.tab === 'goals' || location.tab === 'habits') && location.detailKey) return location.tab + ':' + location.detailKey;
   if (location.tab === 'goals') return `goals:${location.goalsSubtab || 'active'}`;
   if (location.tab === 'habits') return `habits:${location.habitsSubtab || 'checklist'}`;
   return location.tab;

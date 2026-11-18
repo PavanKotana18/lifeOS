@@ -11,6 +11,7 @@ const config: CapacitorConfig = {
     captureInput: false,
     webContentsDebuggingEnabled: false
   },
+  plugins: { LocalNotifications: { smallIcon: 'ic_lifeos_notification', iconColor: '#54785C' } },
   server: {
     androidScheme: 'https'
   }

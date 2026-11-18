@@ -76,7 +76,7 @@ assert.match(app, /if \(start\.viewportWidth !== window\.innerWidth\)/, 'a resiz
 assert.match(app, /if \(!isLocked\) return;[\s\S]*cancelPrimaryGesture\('app-locked'\)[\s\S]*setTabTransition\(null\)/, 'locking cancels active gestures and settles transitions before private screens are removed');
 assert.match(app, /screenScrollKey\(/);
 assert.match(app, /rememberActiveScroll\(\)/);
-assert.match(app, /pendingNotificationTaskId\.current/, 'notification task routing remains connected');
+assert.match(app, /pendingNotification\.current/, 'notification task routing remains connected');
 
 const retained = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'RetainedScreen.tsx'), 'utf8');
 assert.match(retained, /if \(active && !visited\) setVisited\(true\)/);

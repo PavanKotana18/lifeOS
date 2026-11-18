@@ -1,5 +1,6 @@
 package com.lifeos.personal;
 
+import android.app.KeyguardManager;
 import android.content.Context;
 import android.os.Build;
 import androidx.annotation.NonNull;
@@ -30,7 +31,13 @@ public class BiometricAuthPlugin extends Plugin {
         BiometricManager biometricManager = BiometricManager.from(context);
         int canAuthenticate = biometricManager.canAuthenticate(authenticators());
 
+        KeyguardManager keyguard = context.getSystemService(KeyguardManager.class);
+        boolean deviceCredentialAvailable = Build.VERSION.SDK_INT >= 30 && keyguard != null && keyguard.isDeviceSecure();
+        boolean strongBiometricAvailable = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+            == BiometricManager.BIOMETRIC_SUCCESS;
         JSObject ret = new JSObject();
+        ret.put("deviceCredentialAvailable", deviceCredentialAvailable);
+        ret.put("strongBiometricAvailable", strongBiometricAvailable);
         if (canAuthenticate == BiometricManager.BIOMETRIC_SUCCESS) {
             ret.put("isAvailable", true);
             ret.put("biometricsSupported", true);

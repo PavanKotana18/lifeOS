@@ -218,6 +218,21 @@ async function main() {
       await page.locator('input[autocomplete="nickname"]').fill('Synthetic acceptance user');
       await capture('welcome-390');
       await clickButton('Continue');
+      await page.getByRole('heading', { name: 'Notifications', exact: true }).waitFor();
+      await capture('onboarding-notifications-390');
+      assert.equal(await page.evaluate(() => sessionStorage.getItem('qa-notification-consent')), null);
+      await clickButton('Allow notifications');
+      await page.getByText('Notifications allowed', { exact: true }).waitFor();
+      await capture('onboarding-precise-reminders-390');
+      await clickButton('Enable precise reminders');
+      await page.getByText(/Without it, reminders may arrive late/).waitFor();
+      await clickButton('Enable precise reminders');
+      await page.evaluate(() => {
+        sessionStorage.setItem('qa-exact-alarm', 'true');
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await page.getByText('Precise reminders enabled', { exact: true }).waitFor();
+      await clickButton('Continue');
       await page.getByRole('heading', { name: 'Biometric setup' }).waitFor();
       await capture('biometric-390');
       await clickButton('Not now');
@@ -227,21 +242,6 @@ async function main() {
       await capture('recovery-deferral-390');
       await clickButton('Do this later');
       await page.getByTestId('today-dashboard').waitFor();
-      await page.getByRole('dialog', { name: 'Allow notifications' }).waitFor();
-      await capture('today-notification-opt-in-390');
-      assert.equal(await page.evaluate(() => sessionStorage.getItem('qa-notification-consent')), null);
-      await clickButton('Enable notifications');
-      const precise = page.getByRole('dialog', { name: 'Make reminders precise' });
-      await precise.waitFor();
-      await capture('today-precise-reminders-390');
-      await clickButton('Enable precise reminders');
-      await precise.getByText('Reminders may arrive late without precise access.').waitFor();
-      await clickButton('Enable precise reminders');
-      await page.evaluate(() => {
-        sessionStorage.setItem('qa-exact-alarm', 'true');
-        document.dispatchEvent(new Event('visibilitychange'));
-      });
-      await precise.waitFor({ state: 'hidden' });
       const categories = await page.evaluate(async () => {
         const { StorageService } = await import('/src/db.ts');
         return StorageService.settings.get('notificationPreferences', null);
@@ -445,6 +445,10 @@ async function main() {
       await page.getByRole('button', { name: 'Add one glass to QA acceptance: drink water' }).click();
       await page.getByText('1 glass / 4 glasses', { exact: true }).waitFor();
       await capture('life-quantity-habit-detail-390');
+      await page.getByRole('button', { name: 'Decrease QA acceptance: drink water quantity' }).click();
+      await page.getByText(/^0(?: glasses?)? \/ 4 glasses$/).waitFor();
+      await page.getByRole('button', { name: 'Add one glass to QA acceptance: drink water' }).click();
+      await page.getByText('1 glass / 4 glasses', { exact: true }).waitFor();
       completed.add('create and check in a habit');
     });
 
@@ -479,6 +483,10 @@ async function main() {
       await saveDialog('Save progress');
       await page.getByRole('progressbar', { name: 'QA acceptance: finish one course progress' }).waitFor();
       await capture('life-goal-detail-390');
+      await clickButton('Pause goal');
+      await page.getByRole('button', { name: 'Resume goal', exact: true }).waitFor();
+      await clickButton('Resume goal');
+      await page.getByRole('button', { name: 'Pause goal', exact: true }).waitFor();
       completed.add('create a goal, milestone and progress update');
     });
 
@@ -580,7 +588,7 @@ async function main() {
       await page.getByTestId('profile-settings-home').waitFor();
       await capture('profile-390');
       for (const name of ['Appearance', 'Preferences', 'Notifications', 'Privacy & Security', 'Backup & Restore', 'About', 'Developer tools']) {
-        await clickButton(name);
+        await clickButton(new RegExp('^' + name));
         await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true, level: 1 }).waitFor();
         await inspectVisiblePage(name);
         await capture(name.toLowerCase().replaceAll(' ', '-') + '-390');
@@ -622,7 +630,7 @@ async function main() {
     });
 
     await journey('all Money destinations render on narrow screens', async () => {
-      for (const width of [320, 390, 768, 1280]) {
+      for (const width of [320, 360, 390, 412, 768, 1280]) {
         await page.setViewportSize({ width, height: 844 });
         await activeTab('finance');
         const menu = page.getByRole('navigation', { name: 'Money destinations' });
@@ -644,7 +652,7 @@ async function main() {
     });
 
     await journey('responsive layouts and live accessibility audit', async () => {
-      for (const width of [320, 390, 768, 1280]) {
+      for (const width of [320, 360, 390, 412, 768, 1280]) {
         await page.setViewportSize({ width, height: 844 });
         for (const [tab, label] of [['dashboard', 'today'], ['finance', 'money'], ['plan', 'plan'], ['Habits', 'habits'], ['Goals', 'goals']]) {
           if (tab === 'Habits' || tab === 'Goals') await planDestination(tab);
@@ -770,12 +778,33 @@ async function main() {
       await clickButton(/Back to tasks/);
     });
 
+    await journey('synthetic Mark done persists the selected task only', async () => {
+      await activeTab('plan');
+      await planDestination('Tasks');
+      await clickButton('Create Task');
+      await fillDialogField('Title', 'QA notification action task');
+      await saveDialog('Save task');
+      const completed = page.getByRole('checkbox', { name: 'Mark QA notification action task incomplete' });
+      await page.evaluate(async () => {
+        const { StorageService } = await import('/src/db.ts');
+        const task = (await StorageService.tasks.getAll()).find(row => row.title === 'QA notification action task');
+        if (!task) throw new Error('Synthetic action task missing');
+        const detail = { actionId: 'lifeos-task-done', notification: { id: 2147000051, extra: { kind: 'dueTime', taskId: task.id } } };
+        window.dispatchEvent(new CustomEvent('qa-notification-tap', { detail }));
+        window.dispatchEvent(new CustomEvent('qa-notification-tap', { detail }));
+      });
+      await completed.waitFor();
+      assert.ok(await completed.isChecked());
+    });
+
     await journey('dedicated savings projection calculates, breaks down and resets', async () => {
       await activeTab('finance');
       if (await page.getByRole('button', { name: 'Money overview' }).isVisible()) await clickButton('Money overview');
       await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Plans', exact: true }).click();
+      assert.equal(await page.getByText('Currency converter', { exact: true }).count(), 0);
       await clickButton('Savings projection');
       const projection = page.getByTestId('savings-projection');
+      assert.equal(await page.getByText('Currency converter', { exact: true }).count(), 0);
       await projection.getByLabel('Starting savings').fill('1000');
       await projection.getByLabel('Monthly contribution').fill('100');
       await projection.getByLabel('Duration in months').fill('12');
@@ -804,7 +833,7 @@ async function main() {
         ['Privacy & Security', 'Privacy & security', ['App lock', 'Recovery']],
         ['About', 'About LifeOS', ['Open-source licenses']],
       ]) {
-        await clickButton(parent);
+        await clickButton(new RegExp('^' + parent));
         for (const name of children) {
           await clickButton(new RegExp('^' + name));
           await page.getByRole('heading', { name, level: 1, exact: true }).waitFor();
@@ -814,6 +843,10 @@ async function main() {
         await clickButton('Profile');
       }
       await clickButton('Notifications');
+      await clickButton(/^Notification tone/);
+      await page.getByRole('dialog', { name: 'Notification tone' }).getByRole('button', { name: 'Playful', exact: true }).click();
+      await page.getByRole('button', { name: 'Notification tone Playful', exact: true }).waitFor();
+      await capture('notification-tone-playful-390');
       const category = page.getByRole('switch', { name: 'Habit reminders' });
       assert.equal(await category.getAttribute('aria-checked'), 'true');
       await category.click();
@@ -824,10 +857,52 @@ async function main() {
       await clickButton('Open profile and settings');
       await clickButton('Notifications');
       assert.equal(await category.getAttribute('aria-checked'), 'false');
+      await page.getByRole('button', { name: 'Notification tone Playful', exact: true }).waitFor();
       assert.equal(await page.getByRole('switch', { name: 'All notifications' }).getAttribute('aria-checked'), 'true');
       await page.evaluate(() => { window.location.hash = '/life/goals'; });
       await page.getByRole('navigation', { name: 'Plan destinations' }).getByRole('button', { name: 'Goals' }).waitFor();
       assert.equal(await page.getByRole('navigation', { name: 'Plan destinations' }).getByRole('button', { name: 'Goals' }).getAttribute('aria-current'), 'page');
+    });
+
+    await journey('rapid navigation settles with measured timing and larger text', async () => {
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await page.setViewportSize({ width: 320, height: 844 });
+      await page.evaluate(async () => {
+        document.documentElement.style.fontSize = '125%';
+        window.__qaNavigationFrames = [];
+        let last = performance.now();
+        await new Promise(resolve => {
+          const sample = time => {
+            window.__qaNavigationFrames.push(time - last);
+            last = time;
+            if (window.__qaNavigationFrames.length < 24) requestAnimationFrame(sample);
+            else resolve();
+          };
+          requestAnimationFrame(sample);
+          const destinations = ['dashboard', 'finance', 'plan', 'dashboard', 'finance'];
+          const advance = () => {
+            const next = destinations.shift();
+            if (next) { document.querySelector('[data-tab="' + next + '"]').click(); requestAnimationFrame(advance); }
+          };
+          advance();
+        });
+      });
+      await page.waitForFunction(() => document.querySelector('#screen-finance')?.dataset.transitionState === 'active' && !document.querySelector('[data-gesture-dragging]'));
+      report.navigationTiming = await page.evaluate(() => ({
+        lastTransitionMs: performance.getEntriesByName('lifeos-tab-transition').slice(-1)[0]?.duration || 0,
+        samples: window.__qaNavigationFrames.length,
+        longestSampleMs: Math.max(...window.__qaNavigationFrames),
+      }));
+      assert.ok(report.navigationTiming.lastTransitionMs > 0 && report.navigationTiming.samples === 24);
+      await clickButton('Open profile and settings');
+      await clickButton('Edit name');
+      await page.getByLabel('Display name').fill('AlexandriaWithAnUnusuallyLongUnbrokenDisplayName');
+      await clickButton('Save name');
+      await page.getByRole('heading', { name: 'AlexandriaWithAnUnusuallyLongUnbrokenDisplayName' }).waitFor();
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+      await capture('profile-large-text-320');
+      await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+      await page.emulateMedia({ reducedMotion: 'reduce' });
     });
 
     await journey('protected recovery save cancellation and confirmation', async () => {
@@ -839,6 +914,9 @@ async function main() {
         await page.goto(origin + '/tests/browser/index.html?onboarding-auth=success');
         await page.getByLabel('Your name').fill('Synthetic recovery profile');
         await clickButton('Continue');
+        await page.getByRole('heading', { name: 'Notifications', exact: true }).waitFor();
+        await clickButton('Not now');
+        await clickButton('Continue without precise reminders');
         await clickButton('Enable biometrics');
         await page.getByRole('heading', { name: 'Recovery setup' }).waitFor();
         await clickButton('Prepare recovery');

@@ -35,7 +35,7 @@ assert.match(fsSource, /aria-label="Open profile and settings"/, 'profile remain
 assert.match(fsSource, /lifeos-mark/, 'LifeOS mark uses its semantic shell class');
 assert.match(fsSource, /BrandMark/, 'App shell renders the shared original vector brand mark');
 assert.match(fsSource, /todayOverview\.routinesCompleted\} of \{todayOverview\.routinesDue\} done today/, 'habit heading remains in the semantic palette');
-assert.match(fsSource, /Reminder · \{h\.reminderTime\} local<\/p>/, 'habit reminder remains in the semantic palette');
+assert.match(fsSource, /habit\.reminderTime/, 'habit details retain their reminder time');
 assert.match(footer, /onClick=\{\(\) => void CapacitorApp\.exitApp\(\)\}/, 'exit action remains connected');
 assert.match(footer, /role="status" aria-live="polite"/, 'toast remains announced to assistive technology');
 assert.match(styles, /\.lifeos-warning \{ color: var\(--warning\); \}/, 'warning text maps to the active theme');

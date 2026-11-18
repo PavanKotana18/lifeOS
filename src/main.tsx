@@ -47,12 +47,43 @@ function BootstrappedApp({ coldStart }: { coldStart: boolean }) {
     void LaunchExperience.releaseNativeSplash().catch(() => {});
     let elapsed = false;
     let ready = (window as Window & { lifeosStartupReady?: boolean }).lifeosStartupReady === true;
-    const finishIfReady = () => { if (elapsed && ready) setShowReveal(false); };
+    let frame = 0;
+    let finishing = false;
+    let handoff: Animation | undefined;
+    let fade: Animation | undefined;
+    let fallback: number | undefined;
+    let disposed = false;
+    const finishIfReady = () => {
+      if (!elapsed || !ready || finishing) return;
+      finishing = true;
+      frame = window.requestAnimationFrame(() => {
+        const cover = document.querySelector<HTMLElement>('.lifeos-launch-reveal');
+        const mark = cover?.querySelector<HTMLElement>('.lifeos-launch-mark');
+        const destination = document.querySelector<HTMLElement>('[data-launch-destination] .lifeos-onboarding-mark');
+        if (reducedMotion || !cover?.animate || !mark || !destination) { setShowReveal(false); return; }
+        const source = mark.getBoundingClientRect();
+        const target = destination.getBoundingClientRect();
+        if (!source.width || !target.width) { setShowReveal(false); return; }
+        const x = target.left + target.width / 2 - source.left - source.width / 2;
+        const y = target.top + target.height / 2 - source.top - source.height / 2;
+        handoff = mark.animate([{ transform: 'none' }, { transform: 'translate(' + x + 'px,' + y + 'px) scale(' + (target.width / source.width) + ')' }],
+          { duration: 280, easing: 'cubic-bezier(.22,.68,.26,1)', fill: 'forwards' });
+        fade = cover.animate([{ opacity: 1 }, { opacity: 1, offset: .62 }, { opacity: 0 }], { duration: 280, fill: 'forwards' });
+        const complete = () => { if (!disposed) setShowReveal(false); };
+        void fade.finished.then(complete, complete);
+        fallback = window.setTimeout(complete, 360);
+      });
+    };
     const onReady = () => { ready = true; finishIfReady(); };
     window.addEventListener('lifeos:startup-ready', onReady);
-    const timer = window.setTimeout(() => { elapsed = true; finishIfReady(); }, reducedMotion ? 0 : 1600);
+    const timer = window.setTimeout(() => { elapsed = true; finishIfReady(); }, reducedMotion ? 0 : 850);
     finishIfReady();
-    return () => { window.clearTimeout(timer); window.removeEventListener('lifeos:startup-ready', onReady); };
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer); window.clearTimeout(fallback); window.cancelAnimationFrame(frame);
+      handoff?.cancel(); fade?.cancel();
+      window.removeEventListener('lifeos:startup-ready', onReady);
+    };
   }, [coldStart, reducedMotion]);
   return <React.StrictMode><App />{showReveal && <LifeOSLaunchReveal reducedMotion={reducedMotion} />}</React.StrictMode>;
 }

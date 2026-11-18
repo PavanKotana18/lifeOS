@@ -32,6 +32,7 @@ export const BOOTSTRAP_SETTING_KEYS = new Set([
   'onboardingNameDraft',
   // Notification controls are non-content preferences needed before first unlock.
   'notificationPreferences',
+  'notificationTone',
   'notificationsEnabled',
   'notificationPermissionRequested',
   'notificationDefaultsPending',

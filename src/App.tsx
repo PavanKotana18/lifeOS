@@ -18,6 +18,7 @@ import { encryptBackup, MAX_BACKUP_FILE_BYTES } from './services/backupCryptoSer
 import { decodeBackupForRestore } from './services/backupImportService';
 import BackupPassphraseDialog from './components/BackupPassphraseDialog';
 import RecoveryDialog from './components/RecoveryDialog';
+import HabitHistory from './components/HabitHistory';
 import SecureSetupDialog from './components/SecureSetupDialog';
 import FirstRecordSecurityDialog from './components/FirstRecordSecurityDialog';
 import { createRecoveryController } from './services/recoveryService';
@@ -48,7 +49,7 @@ import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
 import { ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, type ProfileSection } from './components/ProfileSettings';
-import ProfilePreferences from './components/ProfilePreferences';
+import ProfilePreferences, { PreferenceChoice } from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
 import { useRecordDialog } from './hooks/useRecordDialog';
@@ -57,15 +58,15 @@ import { PRIMARY_NAVIGATION, primaryDestinationForTab, resolvePlanPath, type Mai
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
 import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
-import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics } from './services/notificationService';
+import { normalizeNotificationTone, NOTIFICATION_TONES, reminderCopy, type NotificationTone } from './services/notificationCopy';
+import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics, type ReminderAction } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
-import { INITIAL_ONBOARDING_JOURNEY, normalizeOnboardingJourney, type OnboardingJourney } from './services/onboardingJourney';
+import { INITIAL_ONBOARDING_JOURNEY, ONBOARDING_NOTIFICATIONS_STEP, normalizeOnboardingJourney, resumeOnboardingStep, type OnboardingJourney } from './services/onboardingJourney';
 import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
-const FinanceCurrencyConverter = React.lazy(() => import('./components/FinanceCurrencyConverter'));
 const PlanHub = React.lazy(() => import('./components/PlanHub'));
 const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
 
@@ -120,6 +121,14 @@ export default function App() {
   const [tabTransition, setTabTransition] = useState<{ id: number; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right' } | null>(null);
   const tabTransitionSequence = useRef(0);
   const activeTransitionId = useRef<number | null>(null);
+  const tabTransitionStarted = useRef(0);
+  const releaseGestureCapture = (pointerId?: number) => {
+    if (pointerId == null) return;
+    const surface = gestureSurfaceElement.current;
+    if (surface?.hasPointerCapture?.(pointerId)) {
+      try { surface.releasePointerCapture(pointerId); } catch { /* Pointer may already have ended. */ }
+    }
+  };
   const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
     const outgoing = document.getElementById(`screen-${previous}`);
@@ -127,8 +136,10 @@ export default function App() {
     outgoing?.style.removeProperty('--gesture-x');
     swipeSettleAnimation.current?.cancel();
     swipeSettleAnimation.current = null;
+    const pointerId = swipePointer.current?.pointerId;
     swipePointer.current = null;
     swipeOriginAction.current = null;
+    releaseGestureCapture(pointerId);
     activeTabRef.current = tab;
     if (previous === tab) { setActiveTab(tab); return; }
     const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -140,6 +151,7 @@ export default function App() {
     }
     const id = ++tabTransitionSequence.current;
     activeTransitionId.current = id;
+    tabTransitionStarted.current = performance.now();
     setTabTransition({ id, to: tab, phase: 'prepare', direction });
     setActiveTab(tab);
   };
@@ -155,8 +167,8 @@ export default function App() {
   const taskDetailReturnFocusRef = useRef<HTMLElement | null>(null);
   const taskDetailReturnTabRef = useRef<MainTab | null>(null);
   const plannerHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const pendingNotificationTaskId = useRef<string | null>(null);
-  const pendingNotificationActionId = useRef<number | null>(null);
+  const pendingNotification = useRef<ReminderAction | null>(null);
+  const reminderProcessing = useRef(false);
   const handledNotificationIds = useRef(new Set<number>());
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
   const swipePointer = useRef<PrimaryGestureSession | null>(null);
@@ -193,6 +205,7 @@ export default function App() {
   const logoIntroPlayed = useRef(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
+  const [notificationTone, setNotificationTone] = useState<NotificationTone>('warm');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationDiagnostics, setNotificationDiagnostics] = useState<NotificationDiagnostics>({
     capability: 'initializing', platform: 'initializing', supported: false, permission: 'checking',
@@ -208,12 +221,6 @@ export default function App() {
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
   const [dateOnlyAlertTime, setDateOnlyAlertTime] = useState('');
-  const [notificationOffer, setNotificationOffer] = useState(false);
-  const notificationOfferBack = useRef<(() => void) | null>(null);
-  const [notificationOfferBusy, setNotificationOfferBusy] = useState(false);
-  const [notificationOfferError, setNotificationOfferError] = useState('');
-  const [notificationOfferStep, setNotificationOfferStep] = useState<'display' | 'precise'>('display');
-  const [returningFromAlarmSettings, setReturningFromAlarmSettings] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingJourney, setOnboardingJourney] = useState<OnboardingJourney>(INITIAL_ONBOARDING_JOURNEY);
   const [startupError, setStartupError] = useState('');
@@ -295,6 +302,7 @@ export default function App() {
   // Biometric Lock State
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
+  const [deviceCredentialOnly, setDeviceCredentialOnly] = useState(false);
   const [biometricAvailability, setBiometricAvailability] = useState('Checking device support');
   const [biometricMessage, setBiometricMessage] = useState('');
   const [biometricAuthActive, setBiometricAuthActive] = useState(false);
@@ -491,7 +499,7 @@ export default function App() {
     const tab = destination === 'life' ? 'plan' : destination;
     const previous = activeTabRef.current;
     if (previous === tab) return;
-    scrollPositions.current[activeScreenKey] = window.scrollY;
+    rememberActiveScroll();
     if (tab === 'settings') navigateProfileSection('home');
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     setShowExitConfirmation(false);
@@ -551,6 +559,7 @@ export default function App() {
     const session = swipePointer.current;
     if (session) recordGestureTrace({ event: 'interrupted', pointerId, deltaX: 0, deltaY: 0, state: session.axis, reason }, import.meta.env.DEV);
     swipePointer.current = null;
+    releaseGestureCapture(pointerId);
     swipeOriginAction.current = null;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
     clearGestureDrag(false);
@@ -798,6 +807,7 @@ export default function App() {
   }, []);
 
   const closeTaskDetail = () => {
+    rememberActiveScroll();
     setPlannerDetailTaskId(null);
     const destination = taskDetailReturnTabRef.current;
     taskDetailReturnTabRef.current = null;
@@ -807,10 +817,6 @@ export default function App() {
   };
 
   const navigateBack = () => {
-    if (notificationOfferBack.current) {
-      notificationOfferBack.current();
-      return;
-    }
     const state = backState.current;
     if (typeof document !== 'undefined') {
       const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open]');
@@ -826,7 +832,7 @@ export default function App() {
     if (!state.isLocked && state.appReady && !(state.onboardingRequired && !state.onboardingComplete) && state.activeTab === 'dashboard' && state.todayCustomizationOpen && !state.createKind && !state.modalContent) {
       closeTodayCustomization(); return;
     }
-    if (!state.isLocked && state.appReady && !state.createKind && !state.modalContent && state.lifeDetail && (state.activeTab === 'habits' || state.activeTab === 'goals')) { setLifeDetail(null); return; }
+    if (!state.isLocked && state.appReady && !state.createKind && !state.modalContent && state.lifeDetail && (state.activeTab === 'habits' || state.activeTab === 'goals')) { showLifeDetail(null); return; }
     const action = resolveBackAction({ appReady: state.appReady, onboarding: state.onboardingRequired && !state.onboardingComplete, locked: state.isLocked, dialogOpen: Boolean(state.createKind || state.modalContent), exitDialogOpen: state.showExitConfirmation, taskDetailsOpen: state.activeTab === 'planner' && Boolean(state.plannerDetailTaskId), tab: state.activeTab, childViewOpen: (state.activeTab === 'finance' && state.financeSubtab !== 'overview') || (state.activeTab === 'habits' && state.habitsSubtab !== 'checklist') || (state.activeTab === 'goals' && state.goalsSubtab !== 'active') || (state.activeTab === 'settings' && state.profileSection !== 'home') }, navigationHistory.current.length > 0);
     if (action === 'ignore') return;
     if (action === 'exit-app') { void CapacitorApp.exitApp(); return; }
@@ -840,8 +846,8 @@ export default function App() {
         financeSubtabHistory.current = previous.history;
         setFinanceSubtab(previous.next);
       }
-      if (state.activeTab === 'habits') setHabitsSubtab('checklist');
-      if (state.activeTab === 'goals') setGoalsSubtab('active');
+      if (state.activeTab === 'habits') { rememberActiveScroll(); setHabitsSubtab('checklist'); }
+      if (state.activeTab === 'goals') { rememberActiveScroll(); setGoalsSubtab('active'); }
       if (state.activeTab === 'settings') navigateProfileSection(profileParent(state.profileSection));
       return;
     }
@@ -1026,20 +1032,16 @@ export default function App() {
     profileSection,
     goalsSubtab,
     habitsSubtab,
+    detailKey: lifeDetail?.kind === (activeTab === 'habits' ? 'habit' : 'goal') ? lifeDetail.id : undefined,
   });
 
   const rememberActiveScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
+  const showLifeDetail = (detail: typeof lifeDetail) => { rememberActiveScroll(); setLifeDetail(detail); };
   const navigateProfileSection = (section: ProfileSection) => {
     if (profileSection === 'themes' && section !== 'themes' && themePreviewId) cancelVisualThemePreview();
     rememberActiveScroll();
     setProfileSection(section);
   };
-
-  useEffect(() => {
-    const rememberScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
-    window.addEventListener('scroll', rememberScroll, { passive: true });
-    return () => window.removeEventListener('scroll', rememberScroll);
-  }, [activeScreenKey]);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -1052,6 +1054,10 @@ export default function App() {
   const finishTabTransition = (id: number) => {
     if (activeTransitionId.current !== id) return;
     activeTransitionId.current = null;
+    if (import.meta.env.DEV) {
+      performance.clearMeasures('lifeos-tab-transition');
+      performance.measure('lifeos-tab-transition', { start: tabTransitionStarted.current, end: performance.now() });
+    }
     setTabTransition(current => current?.id === id ? null : current);
   };
 
@@ -1224,11 +1230,13 @@ export default function App() {
     localStorage.setItem('lifeos-appearance', savedTheme);
 
     setDateOnlyAlertTime(await StorageService.settings.get<string>('dateOnlyAlertTime', ''));
+    setNotificationTone(normalizeNotificationTone(await StorageService.settings.get('notificationTone', 'warm')));
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
     setBiometricEnabled(lockSetting);
     setIsLocked(lockSetting);
 
     const availability = await BiometricService.isAvailable();
+    setDeviceCredentialOnly(availability.isAvailable && availability.deviceCredentialAvailable === true && availability.strongBiometricAvailable === false);
     setBiometricAvailability(
       availability.isAvailable
         ? 'Available'
@@ -1243,7 +1251,10 @@ export default function App() {
     const storedOnboardingJourney = await StorageService.settings.get<unknown>('onboardingJourney', null);
     const normalizedJourney = normalizeOnboardingJourney(storedOnboardingJourney);
     setOnboardingJourney(normalizedJourney);
-    let savedOnboardingStep = await StorageService.settings.get<number>('onboardingStep', 0);
+    const legacyStep = await StorageService.settings.get<number>('onboardingStep', 0);
+    const previousVersion = (storedOnboardingJourney as { version?: number } | null)?.version;
+    const savedOnboardingStep = resumeOnboardingStep(legacyStep, previousVersion);
+    if (!completed && started && savedOnboardingStep !== legacyStep) await StorageService.settings.set('onboardingStep', savedOnboardingStep);
 
     const nativeState = await CryptoService.getKeyState();
     const hasCiphertext = await hasEncryptedRecords();
@@ -1269,7 +1280,7 @@ export default function App() {
       setDisplayName(await StorageService.settings.get<string>('onboardingNameDraft', ''));
       setOnboardingRequired(!completed);
       setOnboardingComplete(completed);
-      setOnboardingStep(savedOnboardingStep === 1 || savedOnboardingStep === 2 ? savedOnboardingStep : 0);
+      setOnboardingStep(savedOnboardingStep);
       if (!started && !completed) await StorageService.settings.set('onboardingStarted', true);
       await reconcileNotificationPreferences();
       setAppReady(true);
@@ -1333,7 +1344,7 @@ export default function App() {
 
     setOnboardingRequired(needsOnboarding);
     setOnboardingComplete(completed || !needsOnboarding);
-    setOnboardingStep(Math.max(0, Math.min(4, savedOnboardingStep)));
+    setOnboardingStep(savedOnboardingStep);
 
     if (!completed && !needsOnboarding) {
       await StorageService.settings.set('onboardingCompleted', true);
@@ -1495,83 +1506,14 @@ export default function App() {
     }
   };
 
-  const dismissNotificationOffer = async () => {
-    await StorageService.settings.set('notificationDefaultsPending', false);
-    setNotificationOffer(false);
-    setReturningFromAlarmSettings(false);
-  };
-
-  const skipNotificationOffer = async () => {
-    try {
-      await dismissNotificationOffer();
-      if (notificationOfferStep === 'precise') showToast('Notifications enabled. Reminders may arrive late.', 'info');
-    } catch {
-      setNotificationOfferError('Could not save your choice. Try again.');
-    }
-  };
-
-  notificationOfferBack.current = notificationOffer && activeTab === 'dashboard' && !createKind && !modalContent
-    ? () => { if (!notificationOfferBusy) void skipNotificationOffer(); } : null;
-
-  const acceptNotificationOffer = async () => {
-    if (notificationOfferBusy) return;
-    setNotificationOfferBusy(true);
-    setNotificationOfferError('');
-    try {
-      const permission = await askNotificationPermission();
-      if (!permission.granted) {
-        setNotificationOfferError(permission.message || 'Allow notifications in Android settings.');
-        return;
-      }
-      const saved = await StorageService.settings.get<NotificationPreferences | undefined>('notificationPreferences', undefined);
-      const preferences = saved ? { ...DEFAULT_NOTIFICATION_PREFERENCES, ...saved } : FIRST_CONSENT_NOTIFICATION_PREFERENCES;
-      await saveNotificationSelection(preferences, true);
-      setNotificationOfferStep('precise');
-      await syncNotificationSchedules(tasks, habits, goals, milestones, preferences);
-    } catch {
-      setNotificationOfferError('Could not enable reminders. Try again in Notifications.');
-    } finally {
-      setNotificationOfferBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!appReady || !onboardingComplete || isLocked || activeTab !== 'dashboard' || !NotificationService.isSupported()) return;
-    let active = true;
-    const timer = window.setTimeout(() => {
-      setNotificationOfferError('');
-      void Promise.all([
-        StorageService.settings.get<boolean>('notificationDefaultsPending', false),
-        StorageService.settings.get<boolean>('notificationsEnabled', false),
-        NotificationService.checkPermission(),
-      ]).then(([pending, enabled, permission]) => {
-        if (!active || !pending) return;
-        setNotificationOfferStep(enabled && permission === 'granted' ? 'precise' : 'display');
-        setNotificationOffer(true);
-        void refreshNotificationDiagnostics();
-      }).catch(() => {});
-    }, 450);
-    return () => { active = false; window.clearTimeout(timer); };
-  }, [appReady, onboardingComplete, isLocked, activeTab]);
-
-  useEffect(() => {
-    if (!notificationOffer || notificationOfferStep !== 'precise' || notificationOfferBusy || isLocked ||
-        notificationDiagnostics.permission !== 'granted' || notificationDiagnostics.exactAlarm !== 'granted') return;
-    void dismissNotificationOffer().then(() => showToast('Notifications enabled', 'success'))
-      .catch(() => setNotificationOfferError('Could not save your setup. Try again.'));
-  }, [notificationOffer, notificationOfferStep, notificationOfferBusy, isLocked, notificationDiagnostics.permission, notificationDiagnostics.exactAlarm]);
-
-  const openPreciseReminderSetup = async () => {
-    setNotificationOfferBusy(true);
-    setNotificationOfferError('');
-    try {
-      await NotificationService.requestExactAlarmPermission();
-      const diagnostics = await refreshNotificationDiagnostics();
-      setReturningFromAlarmSettings(diagnostics.exactAlarm !== 'granted');
-      if (diagnostics.exactAlarm === 'granted') await syncNotificationSchedules(tasks, habits, goals, milestones);
-    } catch {
-      setNotificationOfferError('Could not open Android Alarms & Reminders.');
-    } finally { setNotificationOfferBusy(false); }
+  const acceptOnboardingNotifications = async () => {
+    const permission = await askNotificationPermission();
+    await refreshNotificationDiagnostics();
+    if (!permission.granted) throw new Error(permission.message || 'Android has not allowed notifications.');
+    const saved = await StorageService.settings.get<NotificationPreferences | undefined>('notificationPreferences', undefined);
+    const preferences = saved ? { ...DEFAULT_NOTIFICATION_PREFERENCES, ...saved } : FIRST_CONSENT_NOTIFICATION_PREFERENCES;
+    await saveNotificationSelection(preferences, true);
+    await syncNotificationSchedules(tasks, habits, goals, milestones, preferences);
   };
 
   const saveNotificationSelection = async (preferences: NotificationPreferences, enabled = Object.values(preferences).some(Boolean)) => {
@@ -1583,10 +1525,11 @@ export default function App() {
 
   const syncNotificationSchedules = async (taskRows: Task[], habitRows: Habit[], goalRows: Goal[], milestoneRows: Milestone[], preferences = effectiveNotificationPreferences(notificationPreferences, notificationsEnabled)) => {
     const dateOnlyAlertTime = typeof StorageService.settings.get === 'function' ? await StorageService.settings.get<string>('dateOnlyAlertTime', '') : undefined;
+    const tone = normalizeNotificationTone(await StorageService.settings.get?.('notificationTone', 'warm'));
     const results = await Promise.allSettled([
-      NotificationService.syncTasks(taskRows, preferences, dateOnlyAlertTime),
-      NotificationService.syncHabits(habitRows, preferences),
-      NotificationService.syncMilestones(goalRows, milestoneRows, preferences),
+      NotificationService.syncTasks(taskRows, preferences, dateOnlyAlertTime, tone),
+      NotificationService.syncHabits(habitRows, preferences, tone),
+      NotificationService.syncMilestones(goalRows, milestoneRows, preferences, tone),
     ]);
     if (results.some(result => result.status === 'rejected')) {
       console.warn('One or more local notification schedules could not be updated.', results.filter(result => result.status === 'rejected'));
@@ -1837,9 +1780,7 @@ export default function App() {
     };
     await StorageService.settings.set('onboardingJourney', completedJourney);
     setOnboardingJourney(completedJourney);
-    if (NotificationService.isSupported() && !await StorageService.settings.get<boolean>('notificationsEnabled', false)) {
-      await StorageService.settings.set('notificationDefaultsPending', true);
-    }
+    await StorageService.settings.set('notificationDefaultsPending', false);
     await StorageService.settings.set('onboardingCompleted', true);
     await StorageService.settings.set('onboardingStarted', false);
     await StorageService.settings.set('onboardingStep', 0);
@@ -1848,28 +1789,60 @@ export default function App() {
   };
 
   const processPendingTaskNotification = async () => {
-    const taskId = pendingNotificationTaskId.current;
-    if (!taskId || isLocked || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
-    pendingNotificationTaskId.current = null;
-    const task = (await StorageService.tasks.getAll()).find(item => item.id === taskId);
-    rememberActiveScroll();
-    transitionToTab('planner');
-    if (!task) {
-      setPlannerDetailTaskId(null);
-      showToast('That reminder no longer has an available task.', 'info');
-      const actionId = pendingNotificationActionId.current;
-      pendingNotificationActionId.current = null;
-      if (actionId !== null) await NotificationService.acknowledgeInitialTapAction(actionId);
-      return;
+    const action = pendingNotification.current;
+    if (!action || reminderProcessing.current || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
+    reminderProcessing.current = true;
+    const extra = action.notification.extra || {};
+    try {
+      let opened = false;
+      if (typeof extra.taskId === 'string') {
+        const task = (await StorageService.tasks.getAll()).find(item => item.id === extra.taskId);
+        if (task) {
+          opened = true;
+          if (action.actionId === 'lifeos-task-done') {
+            if (!task.completed) await StorageService.tasks.toggleCompleted(task.id, true);
+            const records = await reloadAllData();
+            await NotificationService.cancelTask(task);
+            await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+            showToast('Task marked done', 'success');
+          } else if (action.actionId === 'lifeos-task-snooze') {
+            const enabled = await StorageService.settings.get('notificationsEnabled', false);
+            const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+            if (!enabled || !preferences.taskReminders) throw new Error('Turn on task reminders before snoozing.');
+            const tone = normalizeNotificationTone(await StorageService.settings.get('notificationTone', 'warm'));
+            if (await NotificationService.snoozeTask(task, tone)) showToast('Reminder snoozed for 10 minutes', 'success');
+          } else {
+            taskDetailReturnTabRef.current = activeTabRef.current === 'planner' ? null : activeTabRef.current;
+            taskDetailReturnFocusRef.current = null;
+            navigateTo('planner');
+            setPlannerSelectedDate(task.dueDate || formatLocalDate(new Date()));
+            setPlannerDetailTaskId(task.id);
+          }
+        }
+      } else if (typeof extra.habitId === 'string') {
+        const habit = (await StorageService.habits.getAll()).find(item => item.id === extra.habitId);
+        if (habit) { setHabitsSelectedDate(formatLocalDate(new Date())); setLifeDetail({ kind: 'habit', id: habit.id }); navigateTo('habits'); opened = true; }
+      } else if (extra.kind === 'milestoneReminder') {
+        const milestone = (await StorageService.goals.getAllMilestones()).find(item => item.id === extra.milestoneId);
+        if (milestone && (await StorageService.goals.getAll()).some(goal => goal.id === milestone.goalId)) {
+          setLifeDetail({ kind: 'goal', id: milestone.goalId }); navigateTo('goals'); opened = true;
+        }
+      }
+      if (!opened) showToast('That reminder no longer has an available record.', 'info');
+      await NotificationService.acknowledgeInitialTapAction(action.notification.id);
+    } catch (error) {
+      handledNotificationIds.current.delete(action.notification.id);
+      showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger');
+    } finally {
+      reminderProcessing.current = false;
+      if (pendingNotification.current === action) pendingNotification.current = null;
+      else if (pendingNotification.current) void processPendingTaskNotification();
     }
-    setPlannerSelectedDate(task.dueDate || formatLocalDate(new Date()));
-    taskDetailReturnTabRef.current = null;
-    taskDetailReturnFocusRef.current = plannerHeadingRef.current;
-    setPlannerDetailTaskId(task.id);
-    const actionId = pendingNotificationActionId.current;
-    pendingNotificationActionId.current = null;
-    if (actionId !== null) await NotificationService.acknowledgeInitialTapAction(actionId);
   };
+
+  useEffect(() => {
+    if (appReady && !isLocked && typeof processPendingTaskNotification === 'function') void processPendingTaskNotification();
+  }, [appReady, isLocked]);
 
   const diagnosePlannerTaskReminder = async (task: Task) => {
     let synchronizationFailed = false;
@@ -1897,7 +1870,7 @@ export default function App() {
     let disposed = false;
     let listener: { remove: () => Promise<void> } | null = null;
     let receivedListener: { remove: () => Promise<void> } | null = null;
-    const handleAction = (action: { notification: { id: number; extra?: Record<string, unknown> } }) => {
+    const handleAction = (action: ReminderAction) => {
       const extra = action.notification.extra || {};
       const id = action.notification.id;
       if (handledNotificationIds.current.has(id)) return;
@@ -1909,10 +1882,7 @@ export default function App() {
         void NotificationService.acknowledgeInitialTapAction(id);
         return;
       }
-      const taskId = typeof extra.taskId === 'string' ? extra.taskId : '';
-      if (!taskId) { navigateTo('planner'); void NotificationService.acknowledgeInitialTapAction(id); return; }
-      pendingNotificationTaskId.current = taskId;
-      pendingNotificationActionId.current = id;
+      pendingNotification.current = action;
       if (!isLocked && sessionManager.isUnlocked() && isEncryptedStorageActivated()) {
         void processPendingTaskNotification().catch(error => showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger'));
       }
@@ -2566,8 +2536,34 @@ export default function App() {
   const plannerDetailTask = plannerDetailTaskId ? tasks.find(task => task.id === plannerDetailTaskId) : undefined;
   const upcomingTaskGroups = useMemo(() => groupUpcomingTasks(visiblePlannerTasks, todayKey), [visiblePlannerTasks, todayKey]);
   useEffect(() => {
-    if (!plannerDetailTaskId && taskDetailReturnFocusRef.current?.isConnected) taskDetailReturnFocusRef.current.focus();
+    if (!plannerDetailTaskId && taskDetailReturnFocusRef.current?.isConnected) taskDetailReturnFocusRef.current.focus({ preventScroll: true });
   }, [plannerDetailTaskId]);
+
+  const changeGoalStatus = async (goal: Goal, status: Goal['status']) => {
+    try {
+      if (status === 'Completed' && (goal.currentValue < goal.targetValue || milestones.some(item => item.goalId === goal.id && !item.completed))) {
+        showToast('Reach the target and finish its milestones to complete this goal.', 'info');
+        return;
+      }
+      await StorageService.goals.update(goal.id, { status });
+      const records = await reloadAllData();
+      const saved = records.goals.find(item => item.id === goal.id);
+      if (saved?.status !== status) { showToast('The goal status did not change. Review its progress and milestones.', 'info'); return; }
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+      showToast(status === 'Paused' ? 'Goal paused' : status === 'Completed' ? 'Goal completed' : 'Goal resumed', 'success');
+    } catch { showToast('Could not update the goal status.', 'danger'); }
+  };
+
+  const deleteGoalFromDetails = async (goal: Goal) => {
+    if (!(await confirmAction({ title: 'Delete this goal?', message: 'The goal and its milestones will be removed.', confirmLabel: 'Delete goal', destructive: true }))) return;
+    try {
+      await StorageService.goals.delete(goal.id);
+      const records = await reloadAllData();
+      setLifeDetail(null);
+      await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+      showToast('Goal deleted', 'success');
+    } catch { showToast('Could not delete the goal.', 'danger'); }
+  };
 
   const goalProgress = (goal: Goal) => getGoalProgress(goal.currentValue, goal.targetValue);
   const editingLegacyDateOnly = Boolean(createKind === 'transaction' && editingTransactionId
@@ -2588,7 +2584,8 @@ export default function App() {
     [transactions, financeMonth]
   );
 
-  if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared}
+  const recoveryInline = onboardingRequired && !onboardingComplete && onboardingStep === 2 && Boolean(secureSetup?.prepared);
+  const recoverySetup = secureSetup && <SecureSetupDialog prepared={secureSetup.prepared} inline={recoveryInline}
     onRecoveryExportStart={beginRecoveryExportActivity}
     recoveryExportResumeReady={recoveryExportResumeReady}
     cancelLabel={onboardingRequired && !onboardingComplete && secureSetup.prepared ? 'Back to recovery options' : undefined}
@@ -2604,6 +2601,7 @@ export default function App() {
           });
       } else secureSetupResolver.current?.(accepted);
     }} />;
+  if (recoverySetup && !recoveryInline) return recoverySetup;
 
   if (recoveryOpen) return <RecoveryDialog onRecover={kit => { setIsLocked(true); biometricAuthenticated.current = false; authCoordinator.resetForBackground(); return recoveryController.recover(kit).then(async () => { setRecoveryOpen(false); setStartupError(''); await initApp(); }); }} onClose={() => setRecoveryOpen(false)} />;
 
@@ -2616,15 +2614,32 @@ export default function App() {
     firstRecordSecurityResolver.current?.(choice);
   }} />;
 
-  if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
+  if (onboardingRequired && !onboardingComplete && (!isLocked || recoveryInline)) return <Onboarding
     initialName={displayName}
     step={onboardingStep}
     protectionAvailable={biometricAvailability === 'Available'}
+    deviceCredentialOnly={deviceCredentialOnly}
     protectionReady={!safeFirstRunBrowse.current}
     recoveryReady={recoveryProvisioned}
+    recoveryContent={recoveryInline ? recoverySetup : null}
+    notificationsSupported={NotificationService.isSupported()}
+    notificationsGranted={notificationDiagnostics.permission === 'granted'}
+    notificationsEnabled={notificationsEnabled}
+    preciseGranted={notificationDiagnostics.exactAlarm === 'granted'}
+    onNotifications={acceptOnboardingNotifications}
+    onPrecise={async () => {
+      await NotificationService.requestExactAlarmPermission();
+      const diagnostics = await refreshNotificationDiagnostics();
+      if (diagnostics.exactAlarm === 'granted') await syncNotificationSchedules(tasks, habits, goals, milestones);
+    }}
+    onNotificationSettings={openNotificationSettings}
     onSaveIdentity={saveOnboardingIdentity}
     onStep={async step => {
+      const journey: OnboardingJourney = { ...onboardingJourney, version: 2,
+        stage: step === ONBOARDING_NOTIFICATIONS_STEP ? 'notifications' : step === 1 ? 'protection' : 'recovery' };
       await StorageService.settings.set('onboardingStep', step);
+      await StorageService.settings.set('onboardingJourney', journey);
+      setOnboardingJourney(journey);
       setOnboardingStep(step);
     }}
     onProtect={provisionOnboardingProtection}
@@ -2923,7 +2938,7 @@ export default function App() {
                   />
                   <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
                 </div>
-                <details className="money-detail-filters"><summary>Refine transactions</summary><div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
+                <details className="money-detail-filters"><summary>Filters</summary><div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
 
                 {/* Filters */}
                 <div role="group" aria-label="Filter transactions by type" className="flex flex-wrap gap-2 text-xs pb-1">
@@ -3029,7 +3044,6 @@ export default function App() {
               onAddRate={async input => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.add(input)); }}
               onUpdateRate={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.update(id, input)); }}
               onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} />
-              <details className="lifeos-panel rounded-xl border px-4"><summary className="min-h-11 content-center cursor-pointer font-semibold">Currency converter</summary><Suspense fallback={<ScreenLoading label="Loading currency converter" />}><FinanceCurrencyConverter currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense></details>
               <button type="button" onClick={() => navigateFinanceSubtab('projection')} className="money-month-link lifeos-panel">Savings projection <ChevronRight size={16} aria-hidden="true" /></button>
             </div>}
             {financeSubtab === 'projection' && <Suspense fallback={<ScreenLoading label="Loading savings projection" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}
@@ -3049,15 +3063,15 @@ export default function App() {
 
         {/* VIEW 3: HABITS */}
         <RetainedScreen active={activeTab === 'habits'} id="screen-habits" {...transitionPropsFor('habits')} render={() => (
-          <div className="space-y-4">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
-            <div className="flex justify-between items-center">
+          <div className="space-y-4">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
+            {!lifeDetail && <div className="life-section-heading">
               <div>
-                <h2 className="text-lg font-bold">Habit Tracker</h2>
+                <h2 className="text-lg font-bold">Habits</h2>
                 <p className="text-xs text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>
               </div>
               <button onClick={() => openCreateForm('habit')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add habit</button>
-            </div>
-            <label className="block text-xs text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => { setHabitsSelectedDate(e.target.value); setHistoricalQuantityUnit(''); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>
+            </div>}
+            {lifeDetail?.kind === 'habit' && <label className="life-history block text-sm text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => { setHabitsSelectedDate(e.target.value); setHistoricalQuantityUnit(''); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>}
 
             {lifeDetail?.kind === 'habit' && habits.find(item => item.id === lifeDetail.id) && (() => {
               const habit = habits.find(item => item.id === lifeDetail.id)!;
@@ -3066,9 +3080,10 @@ export default function App() {
               const quantityLog = habitLogs.find(log => log.habitId === habit.id && log.date === habitsSelectedDate && log.quantity !== undefined);
               const quantity = quantityLog?.quantity ?? 0;
               return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="habit-detail-title">
-                <div><p className="type-eyebrow">HABIT DETAIL</p><h3 id="habit-detail-title" className="type-section-title">{habit.name}</h3>{habit.description && <p className="mt-1 text-sm text-secondary">{habit.description}</p>}</div>
+                <div><h3 id="habit-detail-title" className="type-page-title safe-wrap">{habit.name}</h3>{habit.description && <p className="mt-1 text-sm text-secondary">{habit.description}</p>}</div>
                 <div className="grid grid-cols-2 gap-3"><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">Current streak</p><p className="mt-1 text-xl font-semibold">{stats.currentStreak} days</p></div><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">This week</p><p className="mt-1 text-xl font-semibold">{weekly.completed}/{weekly.scheduled} · {weekly.rate}%</p></div></div>
-                {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{quantityLog?.quantityUnit ? `${formatHabitQuantity(quantity, quantityLog.quantityUnit)} / ${formatHabitQuantity(habit.targetPerDay || 0, quantityLog.quantityUnit)}` : quantityLog ? `${formatHabitQuantity(quantity)} · target ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : `0 / ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}`}</p>{quantityLog && !quantityLog.quantityUnit && <div className="mt-3 rounded-xl border border-[var(--stroke)] p-3"><p className="text-xs text-secondary">This older entry has no saved unit. Choose the unit it used before displaying it with a unit.</p><div className="mt-2 flex gap-2"><select aria-label="Historical quantity unit" value={historicalQuantityUnit} onChange={event => setHistoricalQuantityUnit(event.target.value)} className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm"><option value="">Choose unit…</option>{[...new Set([habit.quantityUnit, 'glass', 'litre', 'minute', 'page', 'item'].filter(Boolean) as string[])].map(unit => <option key={unit} value={unit}>{unit}</option>)}</select><button type="button" disabled={!historicalQuantityUnit} onClick={async () => { try { await StorageService.habits.setQuantityLogUnit(quantityLog.id, historicalQuantityUnit); setHistoricalQuantityUnit(''); await reloadAllData(); showToast('Historical unit saved', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Could not update this entry.', 'danger'); } }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Save unit</button></div></div>}<div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
+                {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{quantityLog?.quantityUnit ? `${formatHabitQuantity(quantity, quantityLog.quantityUnit)}${quantityLog.quantityUnit === habit.quantityUnit ? ' / ' : ' - target '}${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : quantityLog ? `${formatHabitQuantity(quantity)} · target ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : `0 / ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}`}</p>{quantityLog && !quantityLog.quantityUnit && <div className="mt-3 rounded-xl border border-[var(--stroke)] p-3"><p className="text-xs text-secondary">This older entry has no saved unit. Choose the unit it used before displaying it with a unit.</p><div className="mt-2 flex gap-2"><select aria-label="Historical quantity unit" value={historicalQuantityUnit} onChange={event => setHistoricalQuantityUnit(event.target.value)} className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm"><option value="">Choose unit…</option>{[...new Set([habit.quantityUnit, 'glass', 'litre', 'minute', 'page', 'item'].filter(Boolean) as string[])].map(unit => <option key={unit} value={unit}>{unit}</option>)}</select><button type="button" disabled={!historicalQuantityUnit} onClick={async () => { try { await StorageService.habits.setQuantityLogUnit(quantityLog.id, historicalQuantityUnit); setHistoricalQuantityUnit(''); await reloadAllData(); showToast('Historical unit saved', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Could not update this entry.', 'danger'); } }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Save unit</button></div></div>}<div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
+                <HabitHistory habit={habit} logs={habitLogs} date={habitsSelectedDate} today={todayKey} onSelect={date => { setHabitsSelectedDate(date); setHistoricalQuantityUnit(''); }} formatDate={formatDate} />
                 <p className="text-xs text-secondary">Best streak: {stats.longestStreak} days{habit.reminderTime ? ` · Reminder ${habit.reminderTime} local` : ' · No reminder set'}</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditHabit(habit)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit habit</button><button type="button" onClick={() => void confirmAction({ title: 'Delete this habit?', message: `“${habit.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(habit); })} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm text-[var(--danger)]">Delete habit</button></div>
               </section>;
             })()}
@@ -3078,22 +3093,27 @@ export default function App() {
                 <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary"><p>No habits yet.</p></div>
               ) : (
                 habits.filter(h => lifeDetail?.kind !== 'habit').map(h => {
-                  const todayStr = habitsSelectedDate;
+                  const todayStr = todayKey;
+                  const logged = h.trackingMode === 'quantity' ? habitLogs.find(log => log.habitId === h.id && log.date === todayStr && log.quantity !== undefined) : undefined;
                   const stats = getHabitStreaks(h.id, todayStr);
                   const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency);
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
                       <div className="flex items-center gap-3">
-                        <button type="button" className="min-h-11 min-w-0 flex-1 text-left" onClick={() => { setHistoricalQuantityUnit(''); setLifeDetail({ kind: 'habit', id: h.id }); }}>
-                          <span className="block truncate text-sm font-semibold">{h.name}</span>
-                          <span className="block text-xs text-secondary">{stats.currentStreak} day streak</span>
+                        <button type="button" className="min-h-11 min-w-0 flex-1 text-left" onClick={() => { setHistoricalQuantityUnit(''); setHabitsSelectedDate(todayKey); showLifeDetail({ kind: 'habit', id: h.id }); }}>
+                          <span className="block safe-wrap text-sm font-semibold">{h.name}</span>
+                                                    <span className="block text-xs text-secondary">{h.trackingMode === 'quantity' ?
+                            (logged?.quantityUnit && logged.quantityUnit !== h.quantityUnit ? formatHabitQuantity(logged.quantity || 0, logged.quantityUnit) :
+                              logged && !logged.quantityUnit ? formatHabitQuantity(logged.quantity || 0) :
+                              formatHabitQuantity(logged?.quantity || 0, h.quantityUnit) + ' / ' + formatHabitQuantity(h.targetPerDay || 0, h.quantityUnit))
+                            : stats.completedToday ? 'Checked in today' : 'Ready to check in'}</span>
+                          {stats.currentStreak > 0 && <span className="block text-xs text-secondary">{stats.currentStreak} day streak</span>}
                         </button>
                         {h.trackingMode === 'quantity' ? <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-label={`Add one ${h.quantityUnit} to ${h.name}`} onClick={() => void handleHabitQuantity(h, todayStr, 1)}>+1</button>
                           : <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? 'Done' : 'Check in'}</button>}
                       </div>
                       <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
-                      {h.reminderTime && <p className="mt-2 text-[10px] text-secondary">Reminder · {h.reminderTime} local</p>}
                     </div>
                   );
                 })
@@ -3109,22 +3129,24 @@ export default function App() {
             {!lifeDetail && goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
             <div className="grid grid-cols-3 gap-2">{(['active', 'paused', 'completed'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
-            {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div><p className="type-eyebrow">{goal.category.toUpperCase()} GOAL</p><h3 id="goal-detail-title" className="type-section-title">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div><p className="text-sm font-medium">{displayGoalMeasure(goal.currentValue, goal.unit)} of {displayGoalMeasure(goal.targetValue, goal.unit)}</p><div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{formatDate(goal.targetDate)}</p><p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p></div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button><button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button><button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">+ Milestone</button><button type="button" onClick={async () => { const status = goal.status === 'Completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(goal.id, { status }); await reloadAllData(); showToast(status === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Completed' ? 'Reopen goal' : 'Complete goal'}</button></div><div><h4 className="text-sm font-semibold">Milestones</h4>{rows.length === 0 ? <p className="mt-2 text-xs text-secondary">No milestones yet. Add one concrete next step if it would help.</p> : <ul className="mt-2 divide-y divide-[var(--stroke)]">{rows.map(row => <li key={row.id}><label className="flex min-h-12 cursor-pointer items-center gap-3 py-2"><input type="checkbox" checked={row.completed} onChange={async () => { await StorageService.goals.toggleMilestone(row.id, !row.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-sm ${row.completed ? 'line-through text-secondary' : ''}`}>{row.title}</span>{row.targetDate && <span className="text-xs text-secondary">{formatDate(row.targetDate)} · {getDaysRemainingText(row.targetDate)}</span>}</span></label></li>)}</ul>}</div><details className="border-t border-[var(--stroke)]"><summary className="min-h-11 content-center cursor-pointer text-sm font-semibold">History</summary><ul className="space-y-2 text-sm text-secondary"><li>Created {formatDate(goal.createdAt.slice(0, 10))}</li>{goal.updatedAt && <li>Updated {formatDate(goal.updatedAt.slice(0, 10))}</li>}{rows.filter(row => row.completed && row.completedAt).sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || '')).map(row =><li key={row.id}>{formatDate((row.completedAt || '').slice(0, 10))} &middot; {row.title}</li>)}</ul></details></section>; })()}
-            {goals.filter(goal => (!lifeDetail || lifeDetail.kind !== 'goal' || goal.id === lifeDetail.id) && (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).length === 0 ? (
-              <p className="goal-empty-state text-sm text-secondary">{goalsSubtab === 'completed' ? 'No completed goals yet.' : goalsSubtab === 'paused' ? 'No paused goals.' : goalsCategoryFilter === 'all' ? 'No active goals yet.' : 'No goals in this category.'}</p>
-            ) : (
-              goals.filter(goal => lifeDetail?.kind !== 'goal' && (goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter)).map(g => {
+            {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-secondary">{goal.category} &middot; {goal.status}</p><h3 id="goal-detail-title" className="type-page-title safe-wrap">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div><p className="text-sm font-medium">{displayGoalMeasure(goal.currentValue, goal.unit)} of {displayGoalMeasure(goal.targetValue, goal.unit)}</p><div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{formatDate(goal.targetDate)}</p><p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p></div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button><button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button><button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">+ Milestone</button>              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, goal.status === 'Paused' ? 'In Progress' : 'Paused')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Paused' ? 'Resume goal' : 'Pause goal'}</button>}
+              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, 'Completed')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">Complete goal</button>}
+              <button type="button" className="lifeos-danger min-h-11 rounded-xl px-4 text-sm" onClick={() => void deleteGoalFromDetails(goal)}>Delete goal</button></div><div><h4 className="text-sm font-semibold">Milestones</h4>{rows.length === 0 ? <p className="mt-2 text-xs text-secondary">No milestones yet.</p> : <ul className="mt-2 divide-y divide-[var(--stroke)]">{rows.map(row => <li key={row.id}><label className="flex min-h-12 cursor-pointer items-center gap-3 py-2"><input type="checkbox" checked={row.completed} onChange={async () => { await StorageService.goals.toggleMilestone(row.id, !row.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-sm ${row.completed ? 'line-through text-secondary' : ''}`}>{row.title}</span>{row.targetDate && <span className="text-xs text-secondary">{formatDate(row.targetDate)} · {getDaysRemainingText(row.targetDate)}</span>}</span></label></li>)}</ul>}</div><details className="border-t border-[var(--stroke)]"><summary className="min-h-11 content-center cursor-pointer text-sm font-semibold">History</summary><ul className="space-y-2 text-sm text-secondary"><li>Created {formatDate(goal.createdAt.slice(0, 10))}</li>{goal.updatedAt && <li>Updated {formatDate(goal.updatedAt.slice(0, 10))}</li>}{rows.filter(row => row.completed && row.completedAt).sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || '')).map(row =><li key={row.id}>{formatDate((row.completedAt || '').slice(0, 10))} &middot; {row.title}</li>)}</ul></details></section>; })()}
+            {lifeDetail?.kind !== 'goal' && (() => {
+              const visibleGoals = goals.filter(goal => goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed') && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter));
+              if (!visibleGoals.length) return <p className="goal-empty-state text-sm text-secondary">{goalsCategoryFilter !== 'all' ? 'No goals in this category.' : goalsSubtab === 'completed' ? 'No completed goals yet.' : goalsSubtab === 'paused' ? 'No paused goals.' : 'No active goals yet.'}</p>;
+              return <div className="goal-list">{visibleGoals.map(g => {
                 const pct = goalProgress(g);
-                const goalMilestones = milestones.filter(milestone => milestone.goalId === g.id);
-                return <div key={g.id} className="lifeos-panel space-y-3 rounded-2xl border p-4">
-                  <div className="flex items-start justify-between gap-3"><div><button onClick={() => setLifeDetail({ kind: 'goal', id: g.id })} className="min-h-11 text-left font-semibold text-sm lifeos-accent-text">{g.title}</button><p className="text-[10px] text-secondary">{g.category} · target {formatDate(g.targetDate)} · {getDaysRemainingText(g.targetDate)}</p></div><span className="text-sm font-bold lifeos-accent-text">{pct}%</span></div>
-                  <div className="lifeos-progress-track h-2 w-full overflow-hidden rounded-full" role="progressbar" aria-label={`${g.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div>
-                  <div className="flex justify-between text-xs text-secondary"><span>{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</span><span>{goalMilestones.filter(milestone => milestone.completed).length}/{goalMilestones.length} milestones</span></div>
-                  <div className="flex flex-wrap gap-2"><button onClick={() => openGoalProgressForm(g)} className="lifeos-tint lifeos-accent-text min-h-11 rounded-xl px-3 text-xs font-semibold">Update progress</button>{goalsSubtab === 'active' && <button onClick={() => openCreateForm('milestone', g.id)} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-xs font-semibold">+ Milestone</button>}{goalsSubtab !== 'completed' && <button onClick={async () => { const nextStatus = goalsSubtab === 'active' ? 'Paused' : 'In Progress'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Paused' ? 'Goal paused' : 'Goal resumed', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--warning)]">{goalsSubtab === 'active' ? 'Pause' : 'Resume'}</button>}<button onClick={async () => { const nextStatus = goalsSubtab === 'completed' ? 'In Progress' : 'Completed'; await StorageService.goals.update(g.id, { status: nextStatus }); await reloadAllData(); showToast(nextStatus === 'Completed' ? 'Goal completed' : 'Goal reopened', 'success'); }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--success)]">{goalsSubtab === 'completed' ? 'Reopen' : 'Complete'}</button><button onClick={async () => { if (!(await confirmAction({ title: 'Delete this goal?', message: `“${g.title}” and its milestones will be removed.`, confirmLabel: 'Delete goal', destructive: true }))) return; await NotificationService.cancelMilestones(goalMilestones); await StorageService.goals.delete(g.id); await reloadAllData(); showToast('Goal deleted', 'info'); }} className="lifeos-raised lifeos-danger min-h-11 rounded-xl px-3 text-xs">Delete</button></div>
-                  {goalMilestones.length > 0 && <div className="space-y-2 border-t border-[var(--stroke)] pt-3">{goalMilestones.map(milestone => <label key={milestone.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl px-2"><input aria-label={`Mark ${milestone.title} complete`} type="checkbox" checked={milestone.completed} onChange={async () => { await StorageService.goals.toggleMilestone(milestone.id, !milestone.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5 shrink-0" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-xs ${milestone.completed ? 'text-secondary line-through' : ''}`}>{milestone.title}</span>{milestone.targetDate && <span className="block text-[10px] text-secondary">{formatDate(milestone.targetDate)} · {getDaysRemainingText(milestone.targetDate)}</span>}</span></label>)}</div>}
-                </div>;
-              })
-            )}
+                return <article key={g.id} className="lifeos-panel goal-journey-card">
+                  <button type="button" onClick={() => showLifeDetail({ kind: 'goal', id: g.id })} className="goal-card-open">
+                    <span className="min-w-0 safe-wrap"><strong>{g.title}</strong><small>{g.category} &middot; {formatDate(g.targetDate)}</small></span>
+                    <span className="goal-percent tabular-nums">{pct}%</span>
+                  </button>
+                  <div className="lifeos-progress-track h-2 overflow-hidden rounded-full" role="progressbar" aria-label={g.title + ' progress'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: pct + '%' }} /></div>
+                  <p className="text-sm text-secondary safe-wrap">{displayGoalMeasure(g.currentValue, g.unit)} / {displayGoalMeasure(g.targetValue, g.unit)}</p>
+                </article>;
+              })}</div>;
+            })()}
           </div>
         )} />
 
@@ -3224,7 +3246,7 @@ export default function App() {
         {/* VIEW 6: SETTINGS */}
         <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
           <div className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} onNameChange={updateDisplayName} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
@@ -3232,7 +3254,7 @@ export default function App() {
             </ProfileSubpage>}
             {profileSection === 'app-lock' && <ProfileSubpage title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
               <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. LifeOS does not store your fingerprint.</InfoTip></div>
-              <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-[10px] text-secondary">{biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
+              <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
 
               </div>
@@ -3298,6 +3320,18 @@ export default function App() {
                   : notificationsEnabled && notificationDiagnostics.permission === 'granted' && (notificationDiagnostics.exactAlarm !== 'granted' ?
                     <ProfileSettingRow title="Precise reminders are off" value="Enable" onClick={() => void requestExactAlarmAccess()} />
                     : <p className="preference-row">Precise reminders <span className="text-secondary">Enabled</span></p>)}
+              </section>
+              <section className="preference-group" aria-label="Reminder style">
+                <PreferenceChoice label="Notification tone" value={notificationTone} options={NOTIFICATION_TONES.map(tone => [tone, tone[0].toUpperCase() + tone.slice(1)])} onSelect={async value => {
+                  const tone = normalizeNotificationTone(value);
+                  try {
+                    await StorageService.settings.set('notificationTone', tone);
+                    setNotificationTone(tone);
+                    if (!await syncNotificationSchedules(tasks, habits, goals, milestones)) showToast('Tone saved. Some reminders could not refresh.', 'danger');
+                  } catch { showToast('Could not save notification tone.', 'danger'); }
+                }} />
+                <p className="pb-3 text-sm text-secondary">{reminderCopy('habitReminder', notificationTone, 0).body}</p>
+                <ProfileSettingRow title="Sound and vibration" value="Android settings" onClick={() => void openNotificationSettings()} />
               </section>
               <section className="preference-group" aria-label="Notification categories">
                 {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <button type="button" key={key} role="switch" aria-label={notificationLabels[key]} aria-checked={notificationsEnabled && notificationPreferences[key]} disabled={!notificationsEnabled} onClick={() => void toggleNotificationCategory(key)} className="preference-row"><span>{notificationLabels[key]}</span><span className="preference-toggle" aria-hidden="true" /></button>)}
@@ -3430,19 +3464,6 @@ export default function App() {
         </div>
       </main>
 
-      {notificationOffer && activeTab === 'dashboard' && !createKind && !modalContent &&
-        <div className="ui-sheet-backdrop" onClick={event => { if (event.currentTarget === event.target && !notificationOfferBusy) void skipNotificationOffer(); }}>
-          <section className="ui-bottom-sheet lifeos-panel w-full max-w-md rounded-2xl p-5" role="dialog" aria-modal="true" aria-labelledby="notification-offer-title">
-            <h2 id="notification-offer-title" className="text-xl font-semibold">{notificationOfferStep === 'display' ? 'Allow notifications' : 'Make reminders precise'}</h2>
-            <p className="mt-2 text-sm text-secondary">{notificationOfferStep === 'display' ? 'Get alerts for tasks, habits, and milestones.' : 'Allow precise reminders so scheduled task alerts can arrive at the intended time.'}</p>
-            {returningFromAlarmSettings && notificationDiagnostics.exactAlarm === 'denied' && <p role="status" className="mt-2 text-sm text-secondary">Reminders may arrive late without precise access.</p>}
-            {notificationOfferError && <p role="alert" className="mt-3 text-sm text-secondary">{notificationOfferError}</p>}
-            <button autoFocus type="button" disabled={notificationOfferBusy} className="lifeos-accent-button mt-5 min-h-12 w-full rounded-xl" onClick={() => void (notificationOfferStep === 'display' ? acceptNotificationOffer() : openPreciseReminderSetup())}>{notificationOfferStep === 'display' ? 'Enable notifications' : 'Enable precise reminders'}</button>
-            {notificationOfferStep === 'display' && notificationOfferError && <button type="button" className="mt-2 min-h-11 w-full text-sm" onClick={() => void openNotificationSettings()}>Android notification settings</button>}
-            <button type="button" disabled={notificationOfferBusy} className="mt-2 min-h-11 w-full text-sm" onClick={() => void skipNotificationOffer()}>{notificationOfferStep === 'display' ? 'Maybe later' : 'Continue without precise reminders'}</button>
-          </section>
-        </div>}
-
       {transactionDetail && <dialog ref={transactionDetailDialog} data-transaction-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transaction-detail-title" onClose={() => setTransactionDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
         <section>
           <header className="flex items-center justify-between gap-3"><h2 id="transaction-detail-title" className="text-xl font-semibold">{transactionDetail.description || transactionDetail.category}</h2><button type="button" className="min-h-11 px-3" onClick={() => transactionDetailDialog.current?.close()}>Close</button></header>
@@ -3574,7 +3595,7 @@ export default function App() {
             onClick={() => {
               if (isSelected) {
                 if (activeTab !== tab) { navigateTo(tab); return; }
-                if (tab === 'finance') setFinanceSubtab('overview');
+                if (tab === 'finance' && financeSubtab !== 'overview') { rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }
                 return;
               }
               navigateTo(tab);

@@ -1,3 +1,4 @@
+import { reminderCopy, type NotificationTone } from './notificationCopy';
 import { isSampleRecord } from './sampleData';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalNotifications, Weekday, type LocalNotificationSchema } from '@capacitor/local-notifications';
@@ -30,7 +31,7 @@ const isNative = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailab
 const NativeRuntimeInfo = registerPlugin<{ getInfo(): Promise<{ androidApi: number; packageName: string; versionName: string; versionCode: number; batteryOptimizationExempt?: boolean | null }> }>('LifeOSRuntimeInfo');
 const NativeNotificationSettings = registerPlugin<{ open(): Promise<void> }>('NotificationSettings');
 const NativeNotificationTapLaunch = registerPlugin<{
-  getInitialAction(): Promise<{ action?: { notification?: { id?: number; extra?: Record<string, unknown> } } }>;
+  getInitialAction(): Promise<{ action?: { actionId?: string; notification?: { id?: number; extra?: Record<string, unknown> } } }>;
   acknowledgeInitialAction(options: { id: number }): Promise<void>;
 }>('NotificationTapLaunch');
 const NativeNotificationDeliveryDiagnostics = registerPlugin<{
@@ -38,6 +39,20 @@ const NativeNotificationDeliveryDiagnostics = registerPlugin<{
 }>('LifeOSNotificationDeliveryDiagnostics');
 const diagnosticKey = 'lifeos.notificationDiagnostics';
 const lifecycleKey = 'lifeos.notificationLifecycle.v1';
+export type ReminderAction = { actionId?: string; notification: { id: number; extra?: Record<string, unknown> } };
+const taskActionType = 'lifeos-task-actions-v1';
+const snoozeId = (task: Task) => notificationId('task:snoozed:' + task.id);
+let taskActions: Promise<void> | null = null;
+async function ensureTaskActions() {
+  if (typeof LocalNotifications.registerActionTypes !== 'function') return undefined;
+  if (!taskActions) taskActions = LocalNotifications.registerActionTypes({ types: [{ id: taskActionType, actions: [
+    { id: 'lifeos-task-done', title: 'Mark done', foreground: true },
+    { id: 'lifeos-task-snooze', title: 'Snooze 10 min', foreground: true },
+  ] }] }).catch(error => { taskActions = null; throw error; });
+  try { await taskActions; return taskActionType; }
+  catch { return undefined; }
+}
+
 let ensureChannelPromise: Promise<void> | null = null;
 let taskSyncQueue: Promise<void> = Promise.resolve();
 const taskScheduleStatus = new Map<string, 'pending' | 'schedule-failed'>();
@@ -198,7 +213,7 @@ export const NotificationService = {
   isSupported: isNative,
 
   async cancelAllRecordReminders() {
-    await cancelPendingKinds(['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts', 'habitReminder', 'milestoneReminder']);
+    await cancelPendingKinds(['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts', 'taskSnooze', 'habitReminder', 'milestoneReminder']);
   },
 
   async checkPermission() {
@@ -238,7 +253,7 @@ export const NotificationService = {
     return permission === 'granted' && appEnabled.value && Boolean(reminderChannel && Number(reminderChannel.importance) > 0);
   },
 
-  async syncTasks(tasks: Task[], preferences: NotificationPreferences, dateOnlyAlertTime?: string) {
+  async syncTasks(tasks: Task[], preferences: NotificationPreferences, dateOnlyAlertTime?: string, tone: NotificationTone = 'warm') {
     if (!requireNativeNotifications()) return;
     const run = async () => {
       updateDiagnostics({ lastScheduleAttempt: new Date().toISOString(), lastScheduleResult: 'running', lastCancellationReason: '' });
@@ -268,19 +283,19 @@ export const NotificationService = {
       const exactAlarm = await this.checkExactAlarmPermission();
       const scheduleMode = exactAlarm === 'granted' ? 'exact' as const : 'inexact-allowWhileIdle' as const;
       const taskKinds = new Set(['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts']);
+      const actionTypeId = await ensureTaskActions();
+      await cancelIds(pending.notifications.filter(item => item.extra?.kind === 'taskSnooze' && (!preferences.taskReminders || !tasks.some(task => task.id === item.extra?.taskId && !task.completed))).map(item => item.id));
       const oldTaskNotifications = pending.notifications.filter(item => taskKinds.has(String(item.extra?.kind || '')));
 
-      const labels: Record<string, string> = {
-        dueTime: 'Task due now', taskReminders: 'Task reminder', upcomingDeadlines: 'Upcoming deadline', overdueAlerts: 'Task overdue',
-      };
       const now = new Date();
       const notifications = tasks.filter(task => !isSampleRecord(task.id) && !isSampleRecord(task.recurrenceRootId ?? '')).flatMap(task => buildTaskNotificationPlan(task, preferences, now, dateOnlyAlertTime).map(plan => ({
-        id: taskNotificationId(task, plan.kind), title: labels[plan.kind] || 'LifeOS reminder', body: 'Unlock LifeOS to view your reminder.',
+        id: taskNotificationId(task, plan.kind), actionTypeId,
+        ...reminderCopy(plan.kind, tone, taskNotificationId(task, plan.kind) + Math.floor(plan.at.getTime() / 86_400_000), undefined, task.priority === 'High'),
         // Exact-alarm denial falls back to Android's idle-aware inexact alarm.
         // Reserve the per-app idle quota for reminders the user explicitly set;
         // deadline/overdue alerts are separate, lower-priority events.
         schedule: { at: plan.at, allowWhileIdle: plan.kind === 'dueTime' || plan.kind === 'taskReminders' }, channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
-        extra: { kind: plan.kind, taskId: task.id, scheduleMode,
+        extra: { kind: plan.kind, taskId: task.id, scheduleMode, presentation: tone + (actionTypeId ? ":actions" : ""),
           ...(['dueTime', 'taskReminders'].includes(plan.kind) ? { originalReminderAt: plan.at.toISOString() } : {}) },
       })));
       for (const task of tasks) {
@@ -347,8 +362,7 @@ export const NotificationService = {
           // eligible for one foreground catch-up rather than stale cancellation.
           lateCatchUps.push({
             id: item.id,
-            title: 'Task reminder',
-            body: 'Unlock LifeOS to view your reminder.',
+            ...reminderCopy('taskReminders', tone, item.id), actionTypeId,
             schedule: { at: new Date(now.getTime() + 5_000), allowWhileIdle: true },
             channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
             extra: { kind: 'taskReminders', taskId, lateCatchUp: true, originalReminderAt: task.reminderAt },
@@ -370,6 +384,8 @@ export const NotificationService = {
         return !existing || existing.extra?.scheduleMode !== scheduleMode ||
           existing.extra?.taskId !== item.extra?.taskId ||
           existing.extra?.kind !== item.extra?.kind ||
+          existing.extra?.presentation !== item.extra?.presentation ||
+          existing.title !== item.title || existing.body !== item.body ||
           !pendingTimeMatches(existing.schedule?.at, item.schedule.at);
       });
       if (replacements.length || lateCatchUps.length) {
@@ -585,7 +601,7 @@ export const NotificationService = {
     };
   },
 
-  async addActionListener(listener: (action: { notification: { id: number; extra?: Record<string, unknown> } }) => void) {
+  async addActionListener(listener: (action: ReminderAction) => void) {
     if (!requireNativeNotifications()) return { remove: async () => {} };
     return LocalNotifications.addListener('localNotificationActionPerformed', action => {
       const kind = typeof action.notification.extra?.kind === 'string' ? action.notification.extra.kind : 'unknown';
@@ -618,7 +634,7 @@ export const NotificationService = {
     if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('NotificationTapLaunch')) return null;
     const result = await NativeNotificationTapLaunch.getInitialAction();
     const action = result.action?.notification && typeof result.action.notification.id === 'number'
-      ? { notification: { id: result.action.notification.id, extra: result.action.notification.extra } }
+      ? { actionId: result.action.actionId, notification: { id: result.action.notification.id, extra: result.action.notification.extra } }
       : null;
     if (action) {
       const kind = String(action.notification.extra?.kind || 'unknown');
@@ -640,7 +656,7 @@ export const NotificationService = {
 
   async cancelTask(task: Task) {
     try {
-      await cancelIds(['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts'].map(kind => taskNotificationId(task, kind)));
+      await cancelIds([...['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts'].map(kind => taskNotificationId(task, kind)), snoozeId(task)]);
       if (task.reminderAt) updateReminderLifecycle(taskNotificationId(task, 'taskReminders'), {
         kind: 'taskReminders', configuredAt: task.createdAt || null, reminderAt: task.reminderAt,
         deliveryState: 'cancelled', cancellationAt: new Date().toISOString(), cancellationReason: 'task-deleted',
@@ -649,12 +665,25 @@ export const NotificationService = {
     } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS task notification cancellation failed.'); throw error; }
   },
 
-  async syncHabits(habits: Habit[], preferences: NotificationPreferences) {
+  async snoozeTask(task: Task, tone: NotificationTone = 'warm') {
+    if (task.completed || isSampleRecord(task.id) || isSampleRecord(task.recurrenceRootId ?? '')) return false;
+    if (!(await this.canScheduleNotifications())) throw new Error('Allow notifications in Android to snooze a reminder.');
+    const id = snoozeId(task);
+    const pending = await LocalNotifications.getPending();
+    if (pending.notifications.some(item => item.id === id && item.schedule?.at && asDate(item.schedule.at).getTime() > Date.now())) return true;
+    await schedule([{ id, ...reminderCopy('taskSnooze', tone, id), actionTypeId: await ensureTaskActions(),
+      schedule: { at: new Date(Date.now() + 10 * 60_000), allowWhileIdle: true },
+      channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification', extra: { kind: 'taskSnooze', taskId: task.id },
+    }]);
+    return true;
+  },
+
+  async syncHabits(habits: Habit[], preferences: NotificationPreferences, tone: NotificationTone = 'warm') {
     if (!requireNativeNotifications()) return;
     try {
     await this.ensureChannel();
     const weekdays = [Weekday.Sunday, Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday, Weekday.Thursday, Weekday.Friday, Weekday.Saturday];
-    const entries = habits.filter(habit => habit.reminderTime).flatMap(habit => {
+    const entries = habits.filter(habit => !isSampleRecord(habit.id) && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(habit.reminderTime || '')).flatMap(habit => {
       const [hour, minute] = (habit.reminderTime || '').split(':').map(Number);
       const days = habit.frequency === 'weekdays' ? weekdays.slice(1, 6)
         : habit.frequency === 'weekends' ? [Weekday.Saturday, Weekday.Sunday]
@@ -666,7 +695,7 @@ export const NotificationService = {
     if (!preferences.habitReminders || !(await this.canScheduleNotifications())) { if (preferences.habitReminders) writeLastError('permission-denied-or-revoked'); return; }
     await schedule(entries.map(({ habit, hour, minute, weekday }) => ({
       id: notificationId(`habit:${habit.id}:${weekday}`),
-      title: 'Habit reminder', body: `Time for: ${habit.name}`,
+      ...reminderCopy('habitReminder', tone, notificationId(`habit:${habit.id}:${weekday}`)),
       schedule: { on: { weekday, hour, minute }, allowWhileIdle: false },
       channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
       extra: { kind: 'habitReminder', habitId: habit.id },
@@ -680,27 +709,25 @@ export const NotificationService = {
     catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS habit notification cancellation failed.'); throw error; }
   },
 
-  async syncMilestones(goals: Goal[], milestones: Milestone[], preferences: NotificationPreferences) {
+  async syncMilestones(goals: Goal[], milestones: Milestone[], preferences: NotificationPreferences, tone: NotificationTone = 'warm') {
     if (!requireNativeNotifications()) return;
     try {
     await this.ensureChannel();
     await cancelPendingKinds(['milestoneReminder']);
-    const completedGoalIds = new Set(goals.filter(goal => goal.status === 'Completed').map(goal => goal.id));
-    const activeMilestones = milestones.filter(milestone => !milestone.completed && milestone.targetDate && !completedGoalIds.has(milestone.goalId));
+    const activeGoals = new Set(goals.filter(goal => goal.status === 'In Progress' && !isSampleRecord(goal.id)).map(goal => goal.id));
+    const activeMilestones = milestones.filter(milestone => !milestone.completed && milestone.targetDate && !isSampleRecord(milestone.id) && activeGoals.has(milestone.goalId));
     const ids = milestones.map(milestone => notificationId(`milestone:${milestone.id}`));
     await cancelIds(ids);
     if (!preferences.milestoneReminders || !(await this.canScheduleNotifications())) { if (preferences.milestoneReminders) writeLastError('permission-denied-or-revoked'); return; }
-    const goalById = new Map(goals.map(goal => [goal.id, goal]));
     const now = new Date();
     const notifications = activeMilestones.flatMap(milestone => {
-      const goal = goalById.get(milestone.goalId);
       const at = milestone.targetDate ? localDateTime(milestone.targetDate, '09:00') : null;
       if (!at || at <= now) return [];
       return [{
         id: notificationId(`milestone:${milestone.id}`),
-        title: 'Goal milestone', body: `${milestone.title}${goal ? ` · ${goal.title}` : ''}`,
+        ...reminderCopy('milestoneReminder', tone, notificationId('milestone:' + milestone.id)),
         schedule: { at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
-        extra: { kind: 'milestoneReminder', milestoneId: milestone.id },
+        extra: { kind: 'milestoneReminder', milestoneId: milestone.id, goalId: milestone.goalId },
       }];
     });
     await schedule(notifications);

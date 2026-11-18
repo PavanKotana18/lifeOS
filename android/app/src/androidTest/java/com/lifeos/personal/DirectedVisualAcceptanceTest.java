@@ -84,6 +84,11 @@ public class DirectedVisualAcceptanceTest {
         captureProtectedSyntheticOnboarding("onboarding-name-keyboard-dismissed");
         js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Android synthetic owner');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
         click("Continue");
+        until("document.querySelector('.initial-setup h1')?.textContent==='Notifications'");
+        captureProtectedSyntheticOnboarding("onboarding-notifications");
+        click("Not now");
+        until("!![...document.querySelectorAll('button')].find(button=>button.innerText.startsWith('Continue'))");
+        js("[...document.querySelectorAll('button')].find(button=>button.innerText.startsWith('Continue')).click()");
         String protection = "document.querySelector('.initial-setup h1')?.textContent==='Biometric setup'";
         until(protection);
         assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));

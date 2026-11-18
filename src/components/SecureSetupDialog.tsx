@@ -7,7 +7,8 @@ import RecoveryProgress from './RecoveryProgress';
 import type { PreparedRecovery } from '../services/cryptoService.ts';
 
 /** Recovery secrets live only in this mounted dialog and native pending state. */
-export default function SecureSetupDialog({ cancelLabel, prepared, onDecision, onRecoveryExportStart, recoveryExportResumeReady = true, onRetryRecoveryExportResume }: {
+export default function SecureSetupDialog({ inline = false, cancelLabel, prepared, onDecision, onRecoveryExportStart, recoveryExportResumeReady = true, onRetryRecoveryExportResume }: {
+  inline?: boolean;
   cancelLabel?: string;
   prepared?: PreparedRecovery;
   onDecision(accepted: boolean): void;
@@ -113,14 +114,15 @@ export default function SecureSetupDialog({ cancelLabel, prepared, onDecision, o
     }
   };
 
-  return <main className="lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6">
-    <section role="dialog" aria-modal="true" aria-labelledby="secure-setup-title" className="lifeos-panel mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 rounded-3xl border p-5 shadow-xl sm:p-6">
+  const content = <section role={inline ? undefined : "dialog"} aria-modal={inline ? undefined : true} aria-labelledby={inline ? undefined : "secure-setup-title"} className={inline ? "onboarding-step recovery-stage mt-4" : "lifeos-panel mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 rounded-3xl border p-5 shadow-xl sm:p-6"}>
+      {!inline && <>
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-tint)] text-[var(--accent)]" aria-hidden="true">
         <ShieldCheck size={24} strokeWidth={1.8} />
       </div>
       <h1 id="secure-setup-title" className="text-center text-2xl font-semibold">{prepared ? 'Recovery setup' : 'Protect your local LifeOS data'}</h1>
+      </>}
       {prepared ? <>
-        <RecoveryProgress step={2} />
+        {!inline && <RecoveryProgress step={2} />}
         {!kitExported ? <div className="recovery-stage space-y-3">
           <p className="text-sm text-secondary">Save your recovery file somewhere you can access if you lose this device.</p>
           <button type="button" data-testid="save-complete-recovery-kit" onClick={() => void saveKit()} disabled={exportBusy}
@@ -162,7 +164,7 @@ export default function SecureSetupDialog({ cancelLabel, prepared, onDecision, o
         <p className="text-sm leading-6 text-secondary">LifeOS encrypts your records on this device using an Android Keystore key protected by strong biometrics. Continue to authenticate and create your private recovery kit. Existing local records will be verified before encrypted copies replace them.</p>
         <button type="button" onClick={() => void finish(true)} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Set up secure storage</button>
       </>}
-      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">Cancel and keep data locked</button>
-    </section>
-  </main>;
+      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{inline ? 'Back to recovery options' : 'Cancel and keep data locked'}</button>
+    </section>;
+  return inline ? content : <main className="lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6">{content}</main>;
 }

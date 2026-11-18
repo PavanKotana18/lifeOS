@@ -29,10 +29,10 @@ export function ProfileIdentityCard({ name, initial, onChange }: { name: string;
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  return <section className="preference-group p-3" aria-labelledby="profile-identity-title">
+  return <section className="profile-identity-card lifeos-panel rounded-2xl border" aria-labelledby="profile-identity-title">
     <div className="flex items-center gap-3">
-      <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-lg font-semibold" aria-hidden="true">{initial || <UserRound size={21} />}</div>
-      <h2 id="profile-identity-title" className="min-w-0 flex-1 truncate text-base font-semibold">{name.trim() || 'Your profile'}</h2>
+      <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-lg font-semibold" aria-hidden="true">{initial || <UserRound size={21} />}</div>
+      <h2 id="profile-identity-title" className="min-w-0 flex-1 safe-wrap text-xl font-semibold">{name.trim() || 'Your profile'}</h2>
       {!editing && <button type="button" className="min-h-11 text-sm lifeos-accent-text" onClick={() => { setDraft(name); setEditing(true); }}>Edit name</button>}
     </div>
     {editing && <form className="mt-3 space-y-2" onSubmit={async event => {
@@ -49,26 +49,31 @@ export function ProfileIdentityCard({ name, initial, onChange }: { name: string;
   </section>;
 }
 
-export function ProfileNavigationRow({ title, icon: Icon, onClick }: { title: string; detail: string; icon: LucideIcon; onClick: () => void }) {
+export function ProfileNavigationRow({ title, icon: Icon, onClick, value }: { title: string; detail: string; value?: string; icon: LucideIcon; onClick: () => void }) {
   return <button type="button" onClick={onClick} className="profile-navigation-row lifeos-panel group flex min-h-14 w-full items-center gap-3 border-b px-3 py-2 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)] active:scale-[.995]">
     <span className="lifeos-tint flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lifeos-accent-text" aria-hidden="true"><Icon size={17} strokeWidth={1.9} /></span>
-    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span></span>
+    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span>{value && <span className="block text-xs text-secondary">{value}</span>}</span>
   </button>;
 }
 
-export function ProfileHome({ name, initial, onNameChange, onOpen, developerAllowed = false }: {
+export function ProfileHome({ name, initial, onNameChange, onOpen, developerAllowed = false, securityStatus }: {
   name: string;
   initial: string;
   onNameChange: (name: string) => Promise<void>;
   onOpen: (section: typeof profileLinks[number]['section'] | 'developer') => void;
   developerAllowed?: boolean;
+  securityStatus?: string;
 }) {
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
     <header><h1 className="type-page-title">Profile</h1></header>
     <ProfileIdentityCard name={name} initial={initial} onChange={onNameChange} />
-    <nav aria-label="Profile settings" className="profile-settings-list grid overflow-hidden rounded-xl border border-[var(--stroke)]">
-      {profileLinks.map(({ section, title, detail, Icon }) => <ProfileNavigationRow key={section} title={title} detail={detail} icon={Icon} onClick={() => onOpen(section)} />)}
-      {developerAllowed && <ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} />}
+    <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
+      {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>
+        <section key={index} aria-label={index === 0 ? "Personal preferences" : "Security and information"} className="profile-link-group lifeos-panel rounded-2xl border">
+          {group.map(({ section, title, detail, Icon }) => <ProfileNavigationRow key={section} title={title} detail={detail} icon={Icon}
+            value={section === "privacy" ? securityStatus : undefined} onClick={() => onOpen(section)} />)}
+        </section>)}
+      {developerAllowed && <section className="profile-link-group lifeos-panel rounded-2xl border"><ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} /></section>}
     </nav>
   </div>;
 }

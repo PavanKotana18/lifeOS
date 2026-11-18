@@ -21,7 +21,6 @@ export function LifeOSLaunchReveal({ reducedMotion = false }: { reducedMotion?: 
     <div className="lifeos-launch-lockup">
       <div className="lifeos-launch-mark"><LifeOSMark /></div>
       <div className="lifeos-launch-word">LifeOS</div>
-      <div className="lifeos-launch-caption">A little more in sync, every day</div>
     </div>
   </div>;
 }
