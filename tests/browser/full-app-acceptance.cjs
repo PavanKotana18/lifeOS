@@ -592,7 +592,9 @@ async function main() {
           const content = await page.evaluate(() => document.documentElement.scrollWidth);
           assert.ok(content <= width + 1, name + ' overflows at ' + width + 'px');
           if (width === 390) await capture('money-destination-' + name.toLowerCase() + '-390');
+          await page.evaluate(() => window.scrollTo(0, 0));
           await clickButton('Money overview');
+          await menu.waitFor();
         }
       }
     });

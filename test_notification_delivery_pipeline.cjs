@@ -76,3 +76,5 @@ console.log('NOTIFICATION DELIVERY CONTRACT: Android permission, inexact fallbac
 
 assert.match(nativeScheduler, /Reminder time has already passed/, 'expired requests are rejected before reaching the pending store');
 assert.match(nativeScheduler, /FLAG_NO_CREATE/, 'cancellation searches for the existing Android token');
+
+assert.match(service, /async sendImmediateTestNotification\(\)[\s\S]*?id: immediateTestId,[^\n]*extra: \{ kind: 'test' \}/, 'immediate test posts directly instead of using an alarm');

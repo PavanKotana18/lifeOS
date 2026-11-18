@@ -17,6 +17,7 @@ const notificationId = stableNotificationId;
 
 const taskNotificationId = (task: Task, kind: string) => notificationId(`task:${task.id}:${kind}`);
 const testId = notificationId('lifeos:test-notification');
+const immediateTestId = notificationId('lifeos:immediate-notification');
 const isNative = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('LocalNotifications');
 const NativeRuntimeInfo = registerPlugin<{ getInfo(): Promise<{ androidApi: number; packageName: string; versionName: string; versionCode: number; batteryOptimizationExempt?: boolean | null }> }>('LifeOSRuntimeInfo');
 const NativeNotificationSettings = registerPlugin<{ open(): Promise<void> }>('NotificationSettings');
@@ -807,7 +808,15 @@ export const NotificationService = {
   },
 
   async sendImmediateTestNotification() {
-    return this.testNotification(1_000);
+    if (!isNative()) throw new Error('Local notifications are available only in the installed Android app.');
+    await this.ensureChannel();
+    if (!await this.canScheduleNotifications()) throw new Error('Allow LifeOS notifications and its reminder channel in Android settings.');
+    const requestedAt = new Date();
+    try {
+      await schedule([{ id: immediateTestId, title: 'LifeOS immediate test', body: 'This test posts without an alarm.', channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification', extra: { kind: 'test' } }]);
+      writeLastError('');
+      return requestedAt;
+    } catch (error) { writeLastError(safeErrorCode(error)); throw error; }
   },
 
   async openSettings() {
