@@ -1,6 +1,7 @@
 package com.lifeos.personal;
 
 import android.Manifest;
+import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.AlarmManager;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -16,9 +17,12 @@ import androidx.core.content.ContextCompat;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.service.notification.StatusBarNotification;
+import android.util.DisplayMetrics;
 import android.view.accessibility.AccessibilityNodeInfo;
+import android.view.accessibility.AccessibilityWindowInfo;
 import com.capacitorjs.plugins.localnotifications.NotificationStorage;
 import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher;
+import java.io.InputStream;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.junit.Test;
@@ -112,7 +116,7 @@ public class LocalNotificationBridgeAcceptanceTest {
                     storage.getSavedNotificationIds().contains(String.valueOf(id)));
                 assertNotNull("Posted reminder must expose a native content tap action", postedNotification);
                 assertNotNull("Posted reminder content tap must be launchable", postedNotification.contentIntent);
-                tapSystemNotification(title);
+                tapSystemNotification(context, title);
                 JSONObject tap = new JSONObject(WebViewTestSupport.evaluateAsync(scenario,
                     "(async()=>{const until=Date.now()+10000;while(Date.now()<until){if(window.__lifeosQaNotificationTap)" +
                     "return JSON.stringify(window.__lifeosQaNotificationTap);await new Promise(r=>setTimeout(r,50));}return '{}';})()"));
@@ -133,27 +137,39 @@ public class LocalNotificationBridgeAcceptanceTest {
         }
     }
 
-    private static void tapSystemNotification(String title) throws Exception {
+    private static void tapSystemNotification(Context context, String title) throws Exception {
         UiAutomation ui = InstrumentationRegistry.getInstrumentation().getUiAutomation();
-        ParcelFileDescriptor shade = ui.executeShellCommand("cmd statusbar expand-notifications");
-        if (shade != null) shade.close();
-
-        // Let SystemUI launch the action just as it does for a user tap.
-        // An app-side PendingIntent.send() can be denied while backgrounded.
-        long deadline = SystemClock.elapsedRealtime() + 10000L;
-        while (SystemClock.elapsedRealtime() < deadline) {
-            AccessibilityNodeInfo root = ui.getRootInActiveWindow();
-            if (root != null && "com.android.systemui".equals(String.valueOf(root.getPackageName()))) {
-                for (AccessibilityNodeInfo match : root.findAccessibilityNodeInfosByText(title)) {
-                    if (!title.equals(String.valueOf(match.getText()))) continue;
-                    for (AccessibilityNodeInfo node = match; node != null; node = node.getParent()) {
-                        if (node.isClickable() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+        AccessibilityServiceInfo service = ui.getServiceInfo();
+        int originalFlags = service.flags;
+        service.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
+        ui.setServiceInfo(service);
+        try {
+            // Open the shade with the same system gesture as an unlocked user.
+            DisplayMetrics display = context.getResources().getDisplayMetrics();
+            int center = display.widthPixels / 2;
+            String swipe = "input swipe " + center + " 1 " + center + " " + display.heightPixels / 2 + " 350";
+            try (InputStream command = new ParcelFileDescriptor.AutoCloseInputStream(ui.executeShellCommand(swipe))) {
+                while (command.read() != -1) { /* Wait for the gesture to finish. */ }
+            }
+            long deadline = SystemClock.elapsedRealtime() + 10000L;
+            while (SystemClock.elapsedRealtime() < deadline) {
+                // Launcher or an overlay can still be the active window.
+                for (AccessibilityWindowInfo window : ui.getWindows()) {
+                    AccessibilityNodeInfo root = window.getRoot();
+                    if (root == null || !"com.android.systemui".equals(String.valueOf(root.getPackageName()))) continue;
+                    for (AccessibilityNodeInfo match : root.findAccessibilityNodeInfosByText(title)) {
+                        for (AccessibilityNodeInfo node = match; node != null; node = node.getParent()) {
+                            if (node.isClickable() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+                        }
                     }
                 }
+                Thread.sleep(100L);
             }
-            Thread.sleep(100L);
+            fail("SystemUI did not expose the posted synthetic notification for a tap");
+        } finally {
+            service.flags = originalFlags;
+            ui.setServiceInfo(service);
         }
-        fail("SystemUI did not expose the posted synthetic notification for a tap");
     }
 
     @Test public void immediatePostDoesNotRequireExactAlarmAccess() throws Exception {
