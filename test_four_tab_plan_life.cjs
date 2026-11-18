@@ -61,8 +61,7 @@ assert.equal(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').
 walk(tree, n => n.type === 'input' && n.props['aria-label'] === 'Mark done incomplete')[0].props.onChange();
 walk(tree, n => n.type === 'button' && n.props.className === 'plan-hub-task-open' && text(n).startsWith('future'))[0].props.onClick();
 assert.match(markup, /Create Task/); assert.doesNotMatch(markup, /plan-compose/);
-walk(tree, n => n.type === 'button' && n.props['aria-label'] === 'Open calendar')[0].props.onClick();
-assert.deepEqual(calls, ['toggle:done', 'open:future', 'calendar']);
+assert.deepEqual(calls, ['toggle:done', 'open:future']);
 const many = renderToStaticMarkup(React.createElement(PlanHub, { ...props, tasks: Array.from({ length: 12 }, (_, i) => task('task' + i, today)) }));
 assert.equal((many.match(/class="plan-hub-task ui-interactive-row/g) || []).length, 12, 'Workspace does not hide tasks behind a five-row preview');
 assert.doesNotMatch(fs.readFileSync('src/components/PlanHub.tsx', 'utf8'), /onTouchStart|onTouchMove|onTouchEnd|onPointerMove/, 'Local filters do not install competing swipe handlers');

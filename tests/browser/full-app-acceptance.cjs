@@ -241,12 +241,17 @@ async function main() {
       await page.getByRole('heading', { name: 'Budgets', exact: true }).waitFor();
       await clickButton('Money overview');
       await page.getByTestId('money-home').waitFor();
-      await activeTab('plan'); await clickButton('Open calendar');
-      await page.getByRole('heading', { name: 'Tasks by date' }).waitFor();
+      await activeTab('plan');
+      assert.equal(await page.getByRole('button', { name: 'Open calendar' }).count(), 0);
       assert.equal(await page.locator('[data-tab="plan"]').getAttribute('aria-current'), 'page');
-      await activeTab('life'); await clickButton('Habits', { exact: false });
-      await page.getByRole('heading', { name: 'Habit Tracker' }).waitFor();
-      await clickButton('Back to Life');
+      await activeTab('life');
+      await page.getByRole('button', { name: 'Add a habit', exact: true }).waitFor();
+      await activeTab('finance');
+      await clickButton('This month');
+      await page.getByRole('heading', { name: 'This month', exact: true }).waitFor();
+      await page.getByRole('heading', { name: 'Savings contributions' }).waitFor();
+      await capture('monthly-overview-390');
+      await clickButton('Money overview');
       completed.add('primary tab navigation and details');
     });
 
@@ -568,9 +573,13 @@ async function main() {
         await page.setViewportSize({ width, height: 844 });
         await activeTab('finance');
         const menu = page.getByRole('navigation', { name: 'Money destinations' });
+        const metrics = await menu.getByRole('button').evaluateAll(nodes => nodes.map(node => { const rect = node.getBoundingClientRect(); return [rect.width, rect.height, rect.top]; }));
+        assert.equal(metrics.length, 6);
+        assert.ok(metrics.every(([w,h]) => Math.abs(w - metrics[0][0]) < 1 && Math.abs(h - metrics[0][1]) < 1), 'Money destinations have matching dimensions');
+        if (width < 768) assert.equal(new Set(metrics.map(row => row[2])).size, 3, 'phones show two columns and three rows');
         for (const name of ['Transactions', 'Accounts', 'Budgets', 'Savings', 'Insights', 'Plans']) {
           await menu.getByRole('button', { name, exact: true }).click();
-          await page.getByRole('heading', { name: name === 'Plans' ? 'Upcoming bills' : name, exact: true }).first().waitFor();
+          await page.getByRole('heading', { name, exact: true }).first().waitFor();
           const content = await page.evaluate(() => document.documentElement.scrollWidth);
           assert.ok(content <= width + 1, name + ' overflows at ' + width + 'px');
           if (width === 390) await capture('money-destination-' + name.toLowerCase() + '-390');
@@ -593,6 +602,57 @@ async function main() {
         }
       }
       completed.add('responsive layouts and live accessibility audit');
+    });
+
+
+    await journey('appearance and date-only alert settings persist', async () => {
+      await clickButton('Open profile and settings');
+      await clickButton('Preferences');
+      const dateOnly = page.getByLabel('Date-only task alerts');
+      await dateOnly.fill('09:00');
+      await page.waitForFunction(async () => {
+        const { StorageService } = await import('/src/db.ts');
+        return await StorageService.settings.get('dateOnlyAlertTime', '') === '09:00';
+      });
+      await clickButton('Profile');
+      await clickButton('Appearance');
+      await clickButton('Dark');
+      await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
+      await activeTab('finance');
+      await capture('money-dark-390');
+      await page.reload();
+      await page.getByTestId('today-dashboard').waitFor();
+      assert.ok(await page.evaluate(() => document.documentElement.classList.contains('dark')), 'dark display persisted');
+      await clickButton('Open profile and settings');
+      await clickButton('Preferences');
+      assert.equal(await page.getByLabel('Date-only task alerts').inputValue(), '09:00');
+      await clickButton('Turn off date-only alerts');
+      await page.waitForFunction(async () => {
+        const { StorageService } = await import('/src/db.ts');
+        return await StorageService.settings.get('dateOnlyAlertTime', 'missing') === '';
+      });
+    });
+    await journey('transaction detail edits and deletes through the encrypted store', async () => {
+      await page.setViewportSize({width:390,height:844});
+      await activeTab('finance');
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
+      await page.getByRole('button', { name: /View transaction QA acceptance:/ }).first().click();
+      const detail = page.locator('dialog[data-transaction-details][open]');
+      await detail.waitFor();
+      await capture('transaction-detail-390');
+      await detail.getByRole('button', {name:'Edit transaction',exact:true}).click();
+      const title = 'QA acceptance: edited from transaction details';
+      await fillDialogField('Merchant or description', title);
+      await capture('edit-transaction-composer-390');
+      await saveDialog('Save transaction');
+      await page.getByRole('button', {name:'View transaction ' + title,exact:true}).click();
+      await detail.getByText('More actions', {exact:true}).click();
+      await detail.getByRole('button', {name:'Delete transaction',exact:true}).click();
+      await page.getByRole('alertdialog').getByRole('button', {name:'Delete transaction',exact:true}).click();
+      await page.waitForFunction(async name => {
+        const { StorageService } = await import('/src/db.ts');
+        return !(await StorageService.transactions.getAll()).some(row => row.description === name);
+      }, title);
     });
   } catch (error) {
     report.fatal = { journey: currentJourney, message: error instanceof Error ? error.message : String(error) };

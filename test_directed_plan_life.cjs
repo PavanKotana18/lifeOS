@@ -35,7 +35,7 @@ const planProps = {
 };
 const planMarkup = renderToStaticMarkup(React.createElement(PlanHub, planProps));
 assert.match(planMarkup, /Search tasks/);
-assert.match(planMarkup, /Open calendar/);
+assert.doesNotMatch(planMarkup, /Open calendar/);
 assert.match(planMarkup, /role="group" aria-label="Task views"/);
 assert.match(planMarkup, /Overdue · Today/);
 assert.match(planMarkup, /Call the dentist/);
@@ -74,8 +74,8 @@ assert.equal(state[0], 'upcoming', 'Upcoming selects a local view instead of nav
 const upcoming = renderToStaticMarkup(renderPlan());
 assert.match(upcoming, /Call the dentist/);
 assert.doesNotMatch(upcoming, /class="plan-hub-row-title">Sort the paperwork/);
-clickButtonContaining(planElement, 'Open calendar');
-assert.deepEqual(calls, ['planner'], 'Calendar navigation preserves its callback while task view selection stays local');
+
+assert.deepEqual(calls, [], 'Task view selection stays local');
 const emptyPlan = renderToStaticMarkup(React.createElement(PlanHub, { ...planProps, tasks: [] }));
 assert.match(emptyPlan, /No tasks yet/);
 assert.match(emptyPlan, /Start with one thing you want to remember/);

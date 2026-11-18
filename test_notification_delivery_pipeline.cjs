@@ -37,7 +37,7 @@ assert.match(manifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
 assert.match(app, /const exactAlarm = await NotificationService\.checkExactAlarmPermission\(\);[\s\S]*?status: exactAlarm === 'granted' \? 'granted' : 'approximate'/, 'exact alarm access is reported as precision, not a hard delivery prerequisite');
 assert.match(app, /notificationDefaultsPending[\s\S]*?Enable notifications/, "Today offers an explicit opt-in");
 
-assert.match(app, /requestExactAlarmPermission\(\)[\s\S]*?Allow precise reminders/, 'exact alarm special access is separate and user-invoked when reminder categories are active');
+assert.match(app, /requestExactAlarmPermission\(\)[\s\S]*?Enable precise reminders/, 'exact alarm special access is separate and user-invoked when reminder categories are active');
 assert.match(app, /const toggleNotificationCategory[\s\S]*?askNotificationPermission\(\)/, 'permission is requested when a notification category is enabled');
 assert.match(app, /const setNotificationsMaster[\s\S]*?askNotificationPermission\(\)/, 'the notification master switch is a second explicit opt-in path');
 assert.match(notificationService, /sendImmediateTestNotification/);
@@ -73,3 +73,6 @@ assert.match(fs.readFileSync('android/app/src/androidTest/java/com/lifeos/person
 assert.match(fs.readFileSync('android/app/src/androidTest/java/com/lifeos/personal/LocalNotificationBridgeAcceptanceTest.java', 'utf8'), /backgroundedSyntheticTaskReminderIsActuallyPosted/, 'native test waits for a synthetic task notification after backgrounding');
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/RuntimeInfoPlugin.java', 'utf8'), /isIgnoringBatteryOptimizations/, 'diagnostics inspect OS power allowlisting without requesting exemption');
 console.log('NOTIFICATION DELIVERY CONTRACT: Android permission, inexact fallback, queue verification, privacy and reboot manifest checks passed (source contract only; no delivery test).');
+
+assert.match(nativeScheduler, /Reminder time has already passed/, 'expired requests are rejected before reaching the pending store');
+assert.match(nativeScheduler, /FLAG_NO_CREATE/, 'cancellation searches for the existing Android token');

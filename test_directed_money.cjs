@@ -42,11 +42,10 @@ assert.match(home, /Net cash flow/);
 assert.match(home, /aria-label="About Net cash flow" aria-haspopup="dialog" aria-expanded="false"/,
   'the cash-flow explanation stays hidden behind its contextual info control');
 assert.match(home, /Recorded cash flow: income \$500\.00; expenses \$120\.00/);
-assert.match(home, /Showing 3 of 4 accounts\./, 'the summary makes omitted accounts discoverable');
-assert.match(home, /Wallet: \$80\.00/, 'account amount is accessible with its account name');
+assert.doesNotMatch(home, /Showing 3 of 4 accounts/, "Balances appear on the monthly page");
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
-assert.match(home, /aria-label="Edit Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
-assert.match(home, /This month at a glance/);
+assert.match(home, /aria-label="View Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
+assert.match(home, />This month/);
 assert.match(home, />Plans</);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
@@ -73,7 +72,7 @@ const emptyAccounts = renderToStaticMarkup(React.createElement(MoneyAccounts, {
   onCreateAccount: asyncNoop, onUpdateAccount: asyncNoop, onDeleteAccount: asyncNoop,
   onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
 }));
-assert.match(emptyAccounts, /Account tracking is optional[\s\S]*record income and spending without an account/);
+assert.match(emptyAccounts, /Add an account to track its balance and transfers/);
 assert.equal((emptyAccounts.match(/>Add account<\/button>/g) || []).length, 1, 'account creation has one clear first-use action');
 assert.match(emptyAccounts, /aria-describedby="account-transfer-help"[\s\S]*Add two active accounts to move money between them/);
 const controlledDraft = { name: 'Rainy day fund', type: 'bank', currencyCode: 'USD', opening: '125.50', description: 'Buffer', isActive: true };

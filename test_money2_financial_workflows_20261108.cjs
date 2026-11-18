@@ -42,7 +42,7 @@ const emptyAccountsMarkup = renderToStaticMarkup(React.createElement(MoneyAccoun
   onCreateAccount: noop, onUpdateAccount: noop, onDeleteAccount: noop, onCreateTransfer: noop,
   onUpdateTransfer: noop, onReverseTransfer: noop, onDeleteTransfer: noop,
 }));
-assert.match(emptyAccountsMarkup, /Account tracking is optional[\s\S]*record income and spending without an account/, 'first-use copy explains that accounts are optional and what they enable');
+assert.match(emptyAccountsMarkup, /Add an account to track its balance and transfers/, 'first-use copy explains that accounts are optional and what they enable');
 assert.equal((emptyAccountsMarkup.match(/>Add account<\/button>/g) || []).length, 1, 'the empty state has one account creation action instead of duplicating the header action');
 assert.match(emptyAccountsMarkup, /disabled="" aria-describedby="account-transfer-help"[\s\S]*Add two active accounts to move money between them/, 'a disabled transfer action explains how to enable it');
 const reversalCopy = buildTransferReversalConfirmation(transfers[0], 'Wallet', 'Card', 'en-US');
