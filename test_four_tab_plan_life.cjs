@@ -41,7 +41,7 @@ function renderPlan(props) {
   try { return PlanHub(props); } finally { React.useState = originalState; React.useId = originalId; }
 }
 const calls = [];
-const props = { tasks, today, now, onNavigatePlanner: () => calls.push('calendar'), onOpenTask: value => calls.push('open:' + value.id), onToggleTask: value => calls.push('toggle:' + value.id), onCreateTask: () => calls.push('create'), onSelectRange: noop, onOpenGoals: () => calls.push('goals'), onQuickAdd: async () => {} };
+const props = { tasks, today, now, onNavigatePlanner: () => calls.push('calendar'), onOpenTask: value => calls.push('open:' + value.id), onToggleTask: value => calls.push('toggle:' + value.id), onSelectRange: noop, onOpenGoals: () => calls.push('goals'), onQuickAdd: async () => {} };
 let tree = renderPlan(props);
 let markup = renderToStaticMarkup(tree);
 assert.match(markup, /Task views/); assert.match(markup, /Search tasks/); assert.match(markup, /All statuses/); assert.match(markup, /Quick task creation/);
@@ -60,8 +60,9 @@ button(tree, 'Show every task').props.onClick(); tree = renderPlan(props);
 assert.equal(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').length, tasks.length);
 walk(tree, n => n.type === 'input' && n.props['aria-label'] === 'Mark done incomplete')[0].props.onChange();
 walk(tree, n => n.type === 'button' && n.props.className === 'plan-hub-task-open' && text(n).startsWith('future'))[0].props.onClick();
-button(tree, '+ Add task').props.onClick(); button(tree, 'Calendar planner').props.onClick(); button(tree, 'Goals in Life').props.onClick();
-assert.deepEqual(calls, ['toggle:done', 'open:future', 'create', 'calendar', 'goals']);
+assert.match(markup, /aria-label="Quick task creation"/); assert.doesNotMatch(markup, /plan-compose/);
+button(tree, 'Calendar planner').props.onClick(); button(tree, 'Goals in Life').props.onClick();
+assert.deepEqual(calls, ['toggle:done', 'open:future', 'calendar', 'goals']);
 const many = renderToStaticMarkup(React.createElement(PlanHub, { ...props, tasks: Array.from({ length: 12 }, (_, i) => task('task' + i, today)) }));
 assert.equal((many.match(/class="plan-hub-task ui-interactive-row/g) || []).length, 12, 'Workspace does not hide tasks behind a five-row preview');
 assert.doesNotMatch(fs.readFileSync('src/components/PlanHub.tsx', 'utf8'), /onTouchStart|onTouchMove|onTouchEnd|onPointerMove/, 'Local filters do not install competing swipe handlers');

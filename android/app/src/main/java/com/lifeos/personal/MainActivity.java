@@ -53,6 +53,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ScreenCaptureProtectionPlugin.class);
         registerPlugin(LaunchExperiencePlugin.class);
         registerPlugin(NotificationTapLaunchPlugin.class);
+        registerPlugin(NotificationDeliveryDiagnosticsPlugin.class);
         registerPlugin(RuntimeInfoPlugin.class);
         super.onCreate(savedInstanceState);
 

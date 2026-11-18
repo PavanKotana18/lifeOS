@@ -10,7 +10,7 @@ type TaskRange = 'today' | 'tomorrow' | 'upcoming';
 type Props = {
   tasks: Task[]; today: string; now: Date;
   onNavigatePlanner: () => void; onOpenTask: (task: Task) => void;
-  onToggleTask: (task: Task) => void; onCreateTask: () => void;
+  onToggleTask: (task: Task) => void;
   onSelectRange: (range: TaskRange) => void; onOpenGoals: () => void;
   onQuickAdd?: (title: string) => Promise<void>;
 };
@@ -40,7 +40,7 @@ function formatTaskDate(value: string | undefined, today: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date);
 }
 
-export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTask, onToggleTask, onCreateTask, onOpenGoals, onQuickAdd }: Props) {
+export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTask, onToggleTask, onOpenGoals, onQuickAdd }: Props) {
   const [view, setView] = useState<PlanView>('all');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<PlanStatus>('open');
@@ -53,11 +53,11 @@ export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTa
   const views: { id: PlanView; label: string }[] = [{ id: 'today', label: 'Today' }, { id: 'upcoming', label: 'Upcoming' }, { id: 'all', label: 'All' }, { id: 'unscheduled', label: 'Unscheduled' }];
   const narrowed = Boolean(query.trim()) || status !== 'open' || view !== 'all';
   return <section aria-labelledby="plan-title" className="plan-hub plan-workspace">
-    <header className="plan-workspace-heading"><div><p className="type-eyebrow">YOUR TASKS</p><h2 id="plan-title" className="type-page-title">Plan</h2><p className="type-caption text-secondary">{summary}</p></div><button type="button" onClick={onCreateTask} className="lifeos-accent-button plan-compose">+ Add task</button></header>
+    <header className="plan-workspace-heading"><div><p className="type-eyebrow">YOUR TASKS</p><h2 id="plan-title" className="type-page-title">Plan</h2><p className="type-caption text-secondary">{summary}</p></div></header>
     {onQuickAdd && <div className="plan-quick-entry"><QuickTaskEntry onAdd={onQuickAdd} label="Quick task" /></div>}
     <div className="plan-view-controls" data-no-tab-swipe>
       <div className="plan-view-switch" role="group" aria-label="Task views">{views.map(item => <button type="button" key={item.id} aria-pressed={view === item.id} onClick={() => setView(item.id)}>{item.label}<span>{selectPlanTasks(tasks, today, now, item.id, '', status).length}</span></button>)}</div>
-      <div className="plan-search-controls"><label htmlFor={`${filterId}-search`} className="plan-search-label"><span>Search tasks</span><input id={`${filterId}-search`} type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Title, notes or category" className="lifeos-input" /></label><label htmlFor={`${filterId}-status`}><span>Status</span><select id={`${filterId}-status`} value={status} onChange={event => setStatus(event.target.value as PlanStatus)} className="lifeos-input"><option value="open">Open</option><option value="all">All statuses</option><option value="completed">Completed</option><option value="overdue">Overdue</option></select></label></div>
+      <details className="plan-filter-details"><summary>Search and filter{narrowed ? <span>Active</span> : null}</summary><div className="plan-search-controls"><label htmlFor={`${filterId}-search`} className="plan-search-label"><span>Search tasks</span><input id={`${filterId}-search`} type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Title, notes or category" className="lifeos-input" /></label><label htmlFor={`${filterId}-status`}><span>Status</span><select id={`${filterId}-status`} value={status} onChange={event => setStatus(event.target.value as PlanStatus)} className="lifeos-input"><option value="open">Open</option><option value="all">All statuses</option><option value="completed">Completed</option><option value="overdue">Overdue</option></select></label></div></details>
     </div>
     <section className="plan-task-workspace" aria-labelledby="plan-tasks-title">
       <div className="plan-list-heading"><h3 id="plan-tasks-title">{views.find(item => item.id === view)?.label} tasks</h3><span role="status" className="type-caption text-secondary">{visible.length} shown</span></div>

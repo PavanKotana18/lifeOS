@@ -123,20 +123,23 @@ export function sumMinorUnits(values: Iterable<bigint>): bigint {
 
 /** Locale formatting that keeps the amount exact even beyond Number precision. */
 export function formatMinorUnits(minorUnits: bigint, currencyCode: string, locale?: string): string {
+  // The system-default currency for LifeOS is INR; Indian grouping is its
+  // expected home-market display even when the device language is English-US.
+  const resolvedLocale = locale ?? (currencyCode.toUpperCase() === 'INR' ? 'en-IN' : undefined);
   const { fractionDigits } = getCurrencyMetadata(currencyCode);
   const negative = minorUnits < 0n;
   const magnitude = negative ? -minorUnits : minorUnits;
   const divisor = pow10(fractionDigits);
   const whole = magnitude / divisor;
   const fraction = magnitude % divisor;
-  const groupedWhole = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(whole);
+  const groupedWhole = new Intl.NumberFormat(resolvedLocale, { maximumFractionDigits: 0 }).format(whole);
   const assemble = (parts: Intl.NumberFormatPart[]) => parts.map(part => {
     if (part.type === 'integer') return groupedWhole;
     if (part.type === 'fraction') return String(fraction).padStart(fractionDigits, '0');
     return part.value;
   }).join('');
   try {
-    const parts = new Intl.NumberFormat(locale, {
+    const parts = new Intl.NumberFormat(resolvedLocale, {
       style: 'currency', currency: currencyCode, minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,
     }).formatToParts(negative ? -1n : 1n);
@@ -144,7 +147,7 @@ export function formatMinorUnits(minorUnits: bigint, currencyCode: string, local
   } catch {
     // Older Android ICU data may predate a valid code in this frozen catalog.
     // Retain exact localized digits and visibly include the code as a fallback.
-    const parts = new Intl.NumberFormat(locale, {
+    const parts = new Intl.NumberFormat(resolvedLocale, {
       minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits,
     }).formatToParts(negative ? -1n : 1n);
     return `${currencyCode}\u00a0${assemble(parts)}`;

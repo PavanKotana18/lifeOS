@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict');
 require('./scripts/register-ts-test-loader.cjs');
 const finance = require('./src/services/financeCore.ts');
+const preferences = require('./src/services/userPreferences.ts');
 
 assert.equal(finance.CURRENCY_CATALOG_VERSION, 'lifeos-iso4217-snapshot-2026-11-v2');
 assert.equal(Object.keys(finance.CURRENCY_CATALOG).length, 162);
@@ -45,6 +46,19 @@ const exactLarge = 900719925474099312345n;
 const formattedLarge = finance.formatMinorUnits(exactLarge, 'USD', 'en-US');
 assert.match(formattedLarge, /9,007,199,254,740,993,123\.45/);
 assert.equal(finance.formatMinorUnits(12345678n, 'INR', 'en-IN'), '₹1,23,456.78');
+for (const [minor, expected] of [
+  [12135000n, '₹1,21,350.00'], [19900000n, '₹1,99,000.00'],
+  [123456700n, '₹12,34,567.00'], [1234567800n, '₹1,23,45,678.00'],
+  [14830000n, '₹1,48,300.00'],
+]) assert.equal(finance.formatMinorUnits(minor, 'INR'), expected);
+assert.equal(finance.formatMinorUnits(12345678n, 'INR', 'en-US'), '₹123,456.78');
+assert.equal(preferences.getNumberLocale('INR', 'system'), 'en-IN');
+assert.equal(preferences.getNumberLocale('USD', 'system'), undefined);
+assert.equal(preferences.getNumberLocale('INR', 'en-US'), 'en-US');
+assert.equal(preferences.formatHabitQuantity(1, 'glasses'), '1 glass');
+assert.equal(preferences.formatHabitQuantity(2, 'glass'), '2 glasses');
+assert.equal(preferences.formatHabitQuantity(1, 'litre'), '1 litre');
+assert.equal(preferences.formatHabitQuantity(2, 'litres'), '2 litres');
 assert.equal(finance.formatMinorUnits(-123n, 'JPY', 'ja-JP'), '-￥123');
 const originalNumberFormat = Intl.NumberFormat;
 try {

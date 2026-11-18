@@ -757,7 +757,29 @@ export function createEncryptedStorageFacade(
         const completed = quantity >= habit.targetPerDay;
         const update = { quantity, completed, completedAt: completed ? new Date().toISOString() : undefined };
         if (existing) ctx.put('habitLogs', { ...existing, ...update });
-        else ctx.add('habitLogs', { id: helpers.createRecordId('habitlog'), habitId, date, ...update });
+        else ctx.add('habitLogs', { id: helpers.createRecordId('habitlog'), habitId, date, quantityUnit: habit.quantityUnit, ...update });
+      }),
+      adjustQuantity: async (habitId: string, date: string, delta: number) => coordinator.run(async ctx => {
+        const parsedDate = new Date(`${date}T00:00:00.000Z`);
+        if (!Number.isInteger(delta) || delta === 0) throw new Error('Quantity adjustment must be a non-zero whole number.');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) throw new Error('Invalid habit completion date.');
+        const habit = await ctx.get<Habit>('habits', habitId);
+        if (!habit || habit.trackingMode !== 'quantity' || !habit.targetPerDay) throw new Error('This habit is not set up for quantity tracking.');
+        const logs = await ctx.getAll<HabitLog>('habitLogs');
+        const existing = logs.find(row => row.habitId === habitId && row.date === date);
+        const quantity = Math.max(0, (existing?.quantity ?? 0) + delta);
+        const completed = quantity >= habit.targetPerDay;
+        const update = { quantity, completed, completedAt: completed ? new Date().toISOString() : undefined };
+        if (existing) ctx.put('habitLogs', { ...existing, ...update });
+        else ctx.add('habitLogs', { id: helpers.createRecordId('habitlog'), habitId, date, quantityUnit: habit.quantityUnit, ...update });
+        return quantity;
+      }),
+      setQuantityLogUnit: async (logId: string, quantityUnit: string) => coordinator.run(async ctx => {
+        const normalized = quantityUnit.trim();
+        if (!normalized) throw new Error('Enter the unit used for this historical quantity.');
+        const log = await ctx.get<HabitLog>('habitLogs', logId);
+        if (!log || log.quantity === undefined) throw new Error('Quantity history not found.');
+        ctx.put('habitLogs', { ...log, quantityUnit: normalized });
       }),
     },
 

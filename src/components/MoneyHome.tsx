@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowLeftRight, ArrowRight, ArrowUpRight, BarChart3, CalendarClock, ChartNoAxesCombined, PiggyBank, Receipt, WalletCards } from 'lucide-react';
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, BarChart3, ChartNoAxesCombined, PiggyBank, Receipt, WalletCards } from 'lucide-react';
 import type { SavingsGoal, Transaction } from '../types';
 import { decimalToMinorUnits, formatMinorUnits } from '../services/financeCore';
 
@@ -17,9 +17,7 @@ type Props = {
   formatDate: (date: string) => string;
   formatTime: (date: Date) => string;
   onMonthChange: (month: string) => void;
-  onAddExpense: () => void;
-  onAddIncome: () => void;
-  onTransfer: () => void;
+  onAddTransaction: () => void;
   onMoveToSavings: () => void;
   onTransactions: () => void;
   onBudgets: () => void;
@@ -34,15 +32,14 @@ type Props = {
 };
 
 const moneyDestinations = [
-  { id: 'transactions', label: 'Transactions', note: 'Find and review activity', icon: Receipt },
-  { id: 'budgets', label: 'Budgets', note: 'Plan monthly spending', icon: WalletCards },
-  { id: 'savings', label: 'Savings', note: 'Goals and contributions', icon: PiggyBank },
-  { id: 'analytics', label: 'Analytics', note: 'Understand recorded cash flow', icon: ChartNoAxesCombined },
-  { id: 'planning', label: 'Financial Planning', note: 'Future bills and saved exchange rates', icon: CalendarClock },
+  { id: 'transactions', label: 'Transactions', icon: Receipt },
+  { id: 'budgets', label: 'Budgets', icon: WalletCards },
+  { id: 'savings', label: 'Savings', icon: PiggyBank },
+  { id: 'analytics', label: 'Analytics', icon: ChartNoAxesCombined },
 ] as const;
 
 export default function MoneyHome({ month, income, expenses, netCashFlow, budgetRows, largestCategory, expenseChange, hasPreviousMonthRecords, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
-  onAddExpense, onAddIncome, onTransfer, onMoveToSavings, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, accountSummaries = [], savingsGoals = [], legacyCurrency, onEditTransaction }: Props) {
+  onAddTransaction, onMoveToSavings, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, accountSummaries = [], savingsGoals = [], legacyCurrency, onEditTransaction }: Props) {
   const destinationActions = { transactions: onTransactions, accounts: onAccounts, budgets: onBudgets, savings: onSavings, analytics: onAnalytics, planning: onPlanning };
   const monthDate = /^\d{4}-\d{2}$/.test(month) ? new Date(`${month}-01T12:00:00`) : new Date();
   const monthLabel = monthDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -55,16 +52,12 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
       <label className="money-period type-caption">Period<input type="month" aria-label="Money home month" value={month} onChange={event => onMonthChange(event.target.value)} /></label>
     </header>
 
-    <section aria-label="Quick money actions" className="money-quick-actions" data-testid="money-quick-actions">
-      <button type="button" onClick={onAddExpense} className="money-action money-action-expense"><span className="money-action-icon"><ArrowUpRight size={19} /></span><span><strong>Add expense</strong><small>Money spent</small></span></button>
-      <button type="button" onClick={onAddIncome} className="money-action money-action-income"><span className="money-action-icon"><ArrowDownLeft size={19} /></span><span><strong>Add income</strong><small>Money received</small></span></button>
-      {accountSummaries.length >= 2 && <button type="button" onClick={onTransfer} className="money-action money-action-transfer"><span className="money-action-icon"><ArrowLeftRight size={19} /></span><span><strong>Transfer</strong><small>Move between accounts</small></span></button>}
-    </section>
+    <button type="button" onClick={onAddTransaction} className="money-add-transaction" data-testid="money-add-transaction"><span aria-hidden="true">+</span><span><strong>Add transaction</strong><small>Choose income or expense</small></span><ArrowRight size={18} aria-hidden="true" /></button>
 
     <section className="money-cashflow" aria-labelledby="money-cashflow-title">
       <div className="money-cashflow-top"><div><p className="type-eyebrow">{monthLabel.toUpperCase()} · RECORDED CASH FLOW</p><h3 id="money-cashflow-title" className="type-section-title">Income minus expenses</h3></div><span className="money-cashflow-mark" aria-hidden="true"><BarChart3 size={20} strokeWidth={1.8} /></span></div>
       <p className="type-display-amount" data-testid="money-net-cashflow">{formatMoney(netCashFlow)}</p>
-      <p className="money-cashflow-caption">Recorded income minus recorded spending. Transfers do not change this amount.</p>
+      <p className="money-cashflow-caption">Saved activity for this month.</p>
       <div className="money-flow-split" role="group" aria-label={`Recorded cash flow: income ${formatMoney(income)}; expenses ${formatMoney(expenses)}`}>
         <div><span>Income</span><strong>{formatMoney(income)}</strong></div>
         <div><span>Expenses</span><strong>{formatMoney(expenses)}</strong></div>
@@ -76,7 +69,7 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
 
     <nav className="money-destinations" aria-label="Money destinations">{moneyDestinations.map(item => {
       const Icon = item.icon;
-      return <button type="button" key={item.id} onClick={destinationActions[item.id]} className={`money-destination-card money-destination-${item.id}`}><span className="money-destination-icon" aria-hidden="true"><Icon size={22} strokeWidth={1.8} /></span><span><strong>{item.label}</strong><small>{item.note}</small></span><ArrowRight size={17} aria-hidden="true" /></button>;
+      return <button type="button" key={item.id} onClick={destinationActions[item.id]} className={`money-destination-card money-destination-${item.id}`}><span className="money-destination-icon" aria-hidden="true"><Icon size={20} strokeWidth={1.8} /></span><strong>{item.label}</strong><ArrowRight size={16} aria-hidden="true" /></button>;
     })}</nav>
 
     <details className="money-secondary-summary"><summary>Monthly details <span>Accounts, savings and spending patterns</span></summary><div className="money-secondary-content">
@@ -89,6 +82,8 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
       {budgetRows.length ? <ul className="money-budget-list">{budgetRows.slice(0, 2).map((row, index) => <li key={`${row.category}-${index}`}><div><strong>{row.category === 'Overall' ? 'Overall plan' : `${row.category} plan`}</strong><span>{formatMoney(row.spent)} recorded of {formatMoney(row.allocated)}</span></div><span className={row.remaining < 0 ? 'money-budget-over' : 'money-budget-remaining'}>{row.remaining < 0 ? `${formatMoney(Math.abs(row.remaining))} over` : `${formatMoney(row.remaining)} left`}</span></li>)}</ul> : <button type="button" className="money-context-empty" onClick={onBudgets}>No budget added for this month <span>Create a plan <ArrowRight size={14} aria-hidden="true" /></span></button>}
       <div className="money-insight" role="note"><span className="money-insight-mark" aria-hidden="true"><ChartNoAxesCombined size={17} /></span><p>{largestCategory ? <>Your largest recorded expense category is <strong>{largestCategory.name}</strong> at {formatMoney(largestCategory.amount)}.</> : expenses > 0 ? 'Category comparisons will appear as your recorded expenses build.' : 'Insights will appear when you have recorded activity to compare.'}{expenseChange !== null ? <> Expenses are {expenseChange > 0 ? 'up' : expenseChange < 0 ? 'down' : 'unchanged'} {Math.abs(expenseChange).toFixed(1)}% from the previous month.</> : hasPreviousMonthRecords ? ' A percentage comparison is unavailable because the previous month has no expense baseline.' : ''}</p></div>
     </section>
+
+    <button type="button" onClick={onPlanning} className="money-text-action">Financial Planning <ArrowRight size={15} aria-hidden="true" /></button>
 
     </div></details>
 

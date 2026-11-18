@@ -67,9 +67,10 @@ assert.match(markup, /<nav class="money-destinations" aria-label="Money destinat
 assert.match(markup, /Analytics/);
 assert.match(markup, /Financial Planning/);
 assert.doesNotMatch(markup, /Track account balances \(optional\)/, 'optional account tracking does not compete with recording a transaction');
-const primaryActions = markup.match(/<section aria-label="Quick money actions"[\s\S]*?<\/section>/)?.[0] || '';
-assert.ok(primaryActions.indexOf('Add expense') < primaryActions.indexOf('Add income')); assert.ok(!primaryActions.includes('Transfer'), 'transfer requires two accounts');
-assert.match(app, /onTransfer=\{\(\) => \{ setOpenMoneyTransferOnAccounts\(true\); navigateFinanceSubtab\('accounts'\); \}\}/, 'Money transfer quick action opens Accounts and requests the transfer form');
+assert.match(markup, /data-testid="money-add-transaction"/);
+assert.match(markup, /Choose income or expense/);
+assert.doesNotMatch(markup, /Quick money actions/, 'one primary action opens transaction type options');
+assert.match(app, /openMoneyTransferOnAccounts/);
 assert.match(app, /autoOpenTransfer=\{openMoneyTransferOnAccounts\}/);
 assert.match(moneyAccounts, /if \(active\.length >= 2\) beginTransfer\(\)/, 'transfer form opens directly when two accounts are available');
 assert.match(moneyAccounts, /Add at least two active accounts before making a transfer/);
@@ -82,8 +83,8 @@ const emptyMarkup = renderToStaticMarkup(React.createElement(MoneyHome, {
   month: '2026-11', income: 0, expenses: 0, netCashFlow: 0, budgetRows: [],
   largestCategory: null, expenseChange: null, hasPreviousMonthRecords: false, transactions: [],
   formatMoney: amount => formatCurrency(amount, 'INR', 'en-IN'), formatDate: date => date,
-  formatTime: date => date.toISOString().slice(11, 16), onMonthChange() {}, onAddExpense() {},
-  onAddIncome() {}, onTransfer() {}, onMoveToSavings() {}, onTransactions() {}, onBudgets() {},
+  formatTime: date => date.toISOString().slice(11, 16), onMonthChange() {}, onAddTransaction() {},
+  onMoveToSavings() {}, onTransactions() {}, onBudgets() {},
   onSavings() {}, onAnalytics() {}, onPlanning() {}, onAccounts() {}, accountSummaries: [],
   savingsGoals: [], legacyCurrency: 'INR', onEditTransaction() {},
 }));

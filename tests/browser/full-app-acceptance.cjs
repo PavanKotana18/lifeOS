@@ -181,7 +181,7 @@ async function verifyProtectedRows() {
   assert.equal(state.records.habit, 'QA acceptance: read ten pages');
   assert.equal(state.records.quantitativeHabit, 'QA acceptance: drink water');
   assert.equal(state.records.quantityTarget, 4);
-  assert.equal(state.records.quantityUnit, 'glasses');
+  assert.equal(state.records.quantityUnit, 'glass');
   assert.equal(state.records.quantity, 1);
   assert.equal(state.records.quantityCompleted, false);
   assert.equal(state.records.goal, 'QA acceptance: finish one course');
@@ -259,6 +259,7 @@ async function main() {
         const tasks = await db.StorageService.tasks.getAll();
         return tasks.some(task => task.title === title && task.completed);
       }, 'QA acceptance: review weekly plan');
+      await page.locator('.plan-filter-details > summary').click();
       await page.locator('.plan-search-controls select').selectOption('completed');
       const completedToggle = page.getByRole('checkbox', { name: 'Mark QA acceptance: review weekly plan incomplete' });
       await completedToggle.waitFor();
@@ -269,7 +270,7 @@ async function main() {
 
     await journey('create a posted expense and budget', async () => {
       await activeTab('finance');
-      await clickButton('Add expense');
+      await clickButton('Add transaction', { exact: false });
       await fillDialogField('Amount', '125.50');
       await fillDialogField('Merchant or description', 'QA acceptance: expense');
       const category = dialog().getByLabel('Category', { exact: false }).last();
@@ -366,8 +367,8 @@ async function main() {
       await page.getByRole('button', { name: /QA acceptance: drink water/ }).last().click();
       await page.getByRole('heading', { name: 'QA acceptance: drink water' }).waitFor();
       await page.getByText('0 / 4 glasses', { exact: true }).waitFor();
-      await page.getByRole('button', { name: 'Add one glasses to QA acceptance: drink water' }).click();
-      await page.getByText('1 / 4 glasses', { exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Add one glass to QA acceptance: drink water' }).click();
+      await page.getByText('1 glass / 4 glasses', { exact: true }).waitFor();
       await capture('life-quantity-habit-detail-390');
       completed.add('create and check in a habit');
     });

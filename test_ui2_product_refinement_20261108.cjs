@@ -21,10 +21,11 @@ assert.match(app, /Discard unsaved changes\?/, 'edited forms clearly explain the
 assert.match(app, /onChange=\{\(\) => setCreateFormDirty\(true\)\}/, 'form changes mark the draft dirty through normal input events');
 assert.match(app, /if \(isLocked && confirmation\) settleConfirmation\(false\)/, 'a pending generic confirmation is dismissed when the session locks');
 
-const actionIndex = moneyHome.indexOf('data-testid="money-quick-actions"');
+const actionIndex = moneyHome.indexOf('data-testid="money-add-transaction"');
 const balanceIndex = moneyHome.indexOf('aria-labelledby="money-cashflow-title"');
-assert.ok(actionIndex >= 0 && actionIndex < balanceIndex, 'Expense, Income and Transfer are available before the overview detail');
-assert.equal((moneyHome.match(/className="money-action money-action-/g) || []).length, 3, 'Money has three equally presented primary actions');
+assert.ok(actionIndex >= 0 && actionIndex < balanceIndex, 'One transaction action appears before the overview detail');
+assert.match(moneyHome, /Choose income or expense/, 'income and expense are contextual options within transaction entry');
+assert.equal((moneyHome.match(/className="money-add-transaction"/g) || []).length, 1, 'Money has one primary transaction action');
 assert.match(accounts, /record income and spending without an account/, 'account tracking remains optional in the first-use state');
 assert.doesNotMatch(moneyHome, /money-account-nudge/, 'the overview does not repeat an account-creation prompt');
 assert.match(app, /<MoneyDetailHeader section=\{financeSubtab\}[^]*onBack=\{\(\) => navigateFinanceSubtab\('overview'\)/, 'focused Money details retain explicit overview navigation');

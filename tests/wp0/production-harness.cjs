@@ -217,8 +217,9 @@ async function fixture({ activate = true } = {}) {
   const pending = new Map();
   const delivered = new Map();
   const notificationListeners = new Map();
+  const channels = new Map();
   const notifications = {
-    async createChannel() {}, async listChannels() { return { channels: [] }; },
+    async createChannel(channel) { channels.set(channel.id, channel); }, async listChannels() { return { channels: [...channels.values()] }; },
     async areEnabled() { return { value: true }; },
     async checkPermissions() { return { display: 'granted' }; },
     async requestPermissions() { return { display: 'granted' }; },

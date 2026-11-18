@@ -36,16 +36,16 @@ const homeProps = {
   savingsGoals: [], legacyCurrency: 'USD', onEditTransaction: noop,
 };
 const home = renderToStaticMarkup(React.createElement(MoneyHome, homeProps));
-const actions = home.match(/<section aria-label="Quick money actions"[\s\S]*?<\/section>/)?.[0] || '';
-assert.ok(actions.includes('Add expense') && actions.includes('Add income') && actions.includes('Transfer'), 'expense, income and transfer remain equally discoverable');
+assert.equal((home.match(/data-testid="money-add-transaction"/g) || []).length, 1, 'Money has one clear primary transaction entry point');
+assert.match(home, /Choose income or expense/, 'the primary transaction entry point names its available records');
 assert.match(home, /Income minus expenses/);
-assert.match(home, /Recorded income minus recorded spending\. Transfers do not change this amount\./);
+assert.match(home, /Posted activity only\. Planned bills and savings targets are separate; this is not an account balance\./);
 assert.match(home, /Recorded cash flow: income \$500\.00; expenses \$120\.00/);
 assert.match(home, /Showing 3 of 4 accounts\./, 'the summary makes omitted accounts discoverable');
 assert.match(home, /Wallet: \$80\.00/, 'account amount is accessible with its account name');
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="Edit Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
-assert.match(home, /Future bills and saved exchange rates/);
+assert.match(home, /Monthly details <span>Accounts, savings and spending patterns<\/span>/);
 assert.match(home, /Financial Planning/);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {

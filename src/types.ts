@@ -157,6 +157,8 @@ export interface HabitLog {
   date: string; // YYYY-MM-DD
   completed: boolean;
   quantity?: number;
+  /** Unit recorded with this quantity; absent on legacy rows with unknown units. */
+  quantityUnit?: string;
   completedAt?: string;
 }
 

@@ -25,7 +25,7 @@ import { exportBackupFile } from './services/backupExportService';
 import { confirmScreenshotResume, isSensitiveScreenshotState, setSensitiveScreenshotState } from './services/screenshotProtection';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
-import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, type UserPreferences } from './services/userPreferences';
+import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, formatHabitQuantity, normalizeHabitUnit, type UserPreferences } from './services/userPreferences';
 import { createMoneyRecordAmount, decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
 import { calculateAccountBalances } from './services/financialAccounting';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
@@ -199,7 +199,7 @@ export default function App() {
     visibleNotificationCount: 0, visibleNotificationIds: [], batteryOptimizationExempt: null,
     androidApi: null, packageName: null, versionName: null, versionCode: null, build: __LIFEOS_BUILD_INFO__,
     lastScheduleAttempt: null, lastScheduleResult: 'unknown', lastCancellationReason: null,
-    lastActionEvent: null, lastError: '',
+    lastActionEvent: null, reminderLifecycle: [], lastError: '',
   });
   const developerPreviewEnabled = import.meta.env.DEV || notificationDiagnostics.packageName === 'com.lifeos.personal.preview';
   const [taskReminderDiagnostics, setTaskReminderDiagnostics] = useState<Record<string, unknown> | null>(null);
@@ -441,6 +441,7 @@ export default function App() {
 
   const [habitsSubtab, setHabitsSubtab] = useState<'checklist' | 'weekly' | 'monthly'>('checklist');
   const [habitsSelectedDate, setHabitsSelectedDate] = useState<string>(formatLocalDate(new Date()));
+  const [historicalQuantityUnit, setHistoricalQuantityUnit] = useState('');
 
   const [goalsSubtab, setGoalsSubtab] = useState<'active' | 'paused' | 'completed'>('active');
   const [lifeDetail, setLifeDetail] = useState<{ kind: 'habit' | 'goal'; id: string } | null>(null);
@@ -1901,13 +1902,10 @@ export default function App() {
   };
 
   const handleHabitQuantity = async (habit: Habit, date: string, delta: number) => {
-    const existing = habitLogs.find(log => log.habitId === habit.id && log.date === date);
-    const current = existing?.quantity ?? 0;
-    const next = Math.max(0, current + delta);
     try {
-      await StorageService.habits.logQuantity(habit.id, date, next);
+      const next = await StorageService.habits.adjustQuantity(habit.id, date, delta);
       await reloadAllData();
-      showToast(`${habit.name}: ${next} / ${habit.targetPerDay} ${habit.quantityUnit || 'items'}`, 'success');
+      showToast(`${habit.name}: ${formatHabitQuantity(next, habit.quantityUnit)} / ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}`, 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not update habit progress.', 'danger');
     }
@@ -2176,7 +2174,7 @@ export default function App() {
         const existingHabit = editingHabitId ? habits.find(habit => habit.id === editingHabitId) : undefined;
         if (editingHabitId && habitLogs.some(log => log.habitId === editingHabitId) && trackingMode !== (existingHabit?.trackingMode || 'binary')) throw new Error('Tracking mode cannot change after check-in history exists. Create another habit to use a different tracking mode.');
         if (trackingMode === 'quantity' && (!targetPerDay || !value('quantityUnit').trim())) throw new Error('Quantity tracking needs a daily target and unit.');
-        const habit: Partial<Habit> = { name: value('title'), description: value('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, trackingMode, quantityUnit: trackingMode === 'quantity' ? value('quantityUnit').trim() : undefined, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
+        const habit: Partial<Habit> = { name: value('title'), description: value('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, trackingMode, quantityUnit: trackingMode === 'quantity' ? normalizeHabitUnit(value('quantityUnit')) : undefined, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
         if (editingHabitId) await StorageService.habits.update(editingHabitId, habit);
         else await StorageService.habits.add({ ...habit, name: habit.name!, frequency: habit.frequency!, color: habit.color! });
       } else if (createKind === 'budget') {
@@ -2397,7 +2395,7 @@ export default function App() {
     const quantityLog = habitLogs.find(log => log.habitId === habit.id && log.date === todayKey);
     const quantityTracking = habit.trackingMode === 'quantity';
     return { id: habit.id, name: habit.name, completedToday: stats.completedToday, currentStreak: stats.currentStreak,
-      ...(quantityTracking ? { quantity: quantityLog?.quantity ?? 0, targetPerDay: habit.targetPerDay, quantityUnit: habit.quantityUnit } : {}) };
+      ...(quantityTracking ? { quantity: quantityLog?.quantity ?? 0, targetPerDay: habit.targetPerDay, quantityUnit: quantityLog?.quantityUnit ?? (quantityLog?.quantity === undefined ? habit.quantityUnit : undefined) } : {}) };
   }), [habits, habitLogs, todayKey]);
   const lifeHubGoals = useMemo(() => goals.filter(goal => goal.status === 'In Progress').map(goal => {
     const goalMilestones = milestones.filter(milestone => milestone.goalId === goal.id);
@@ -2725,7 +2723,6 @@ export default function App() {
           onNavigatePlanner={() => navigateTo('planner')}
           onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter(task.dueDate ? 'all' : 'unscheduled'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
-          onCreateTask={() => openCreateForm('task')}
           onSelectRange={range => { setPlannerFilter(range); if (range === 'today') setPlannerSelectedDate(todayKey); if (range === 'tomorrow') setPlannerSelectedDate(tomorrowKey); navigateTo('planner'); }}
           onOpenGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }} /></Suspense>} />
 
@@ -2768,12 +2765,7 @@ export default function App() {
                 formatDate={formatDate}
                 formatTime={formatTime}
                 onMonthChange={setFinanceMonth}
-                onAddExpense={() => openCreateForm('transaction')}
-                onAddIncome={() => {
-                  openCreateForm('transaction');
-                  setCreateDraft(current => ({ ...current, type: 'income', category: categories.find(category => category.type === 'income')?.name || '' }));
-                }}
-                onTransfer={() => { setOpenMoneyTransferOnAccounts(true); navigateFinanceSubtab('accounts'); }}
+                onAddTransaction={() => openCreateForm('transaction')}
                 onMoveToSavings={() => {
                   navigateFinanceSubtab('savings');
                   if (savingsGoals.length === 1) {
@@ -2958,17 +2950,18 @@ export default function App() {
               </div>
               <button onClick={() => openCreateForm('habit')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add habit</button>
             </div>
-            <label className="block text-xs text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => setHabitsSelectedDate(e.target.value)} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>
+            <label className="block text-xs text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => { setHabitsSelectedDate(e.target.value); setHistoricalQuantityUnit(''); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>
 
             {lifeDetail?.kind === 'habit' && habits.find(item => item.id === lifeDetail.id) && (() => {
               const habit = habits.find(item => item.id === lifeDetail.id)!;
               const stats = getHabitStreaks(habit.id, habitsSelectedDate);
               const weekly = calculateWeeklyHabitRate(habitLogs, habit.id, clockNow, habit.frequency);
-              const quantity = habitLogs.find(log => log.habitId === habit.id && log.date === habitsSelectedDate)?.quantity ?? 0;
+              const quantityLog = habitLogs.find(log => log.habitId === habit.id && log.date === habitsSelectedDate && log.quantity !== undefined);
+              const quantity = quantityLog?.quantity ?? 0;
               return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="habit-detail-title">
                 <div><p className="type-eyebrow">HABIT DETAIL</p><h3 id="habit-detail-title" className="type-section-title">{habit.name}</h3><p className="mt-1 text-sm text-secondary">{habit.description || `A ${habit.frequency} routine, tracked on your device.`}</p></div>
                 <div className="grid grid-cols-2 gap-3"><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">Current streak</p><p className="mt-1 text-xl font-semibold">{stats.currentStreak} days</p></div><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">This week</p><p className="mt-1 text-xl font-semibold">{weekly.completed}/{weekly.scheduled} · {weekly.rate}%</p></div></div>
-                {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{quantity} / {habit.targetPerDay} {habit.quantityUnit}</p><div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
+                {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{quantityLog?.quantityUnit ? `${formatHabitQuantity(quantity, quantityLog.quantityUnit)} / ${formatHabitQuantity(habit.targetPerDay || 0, quantityLog.quantityUnit)}` : quantityLog ? `${formatHabitQuantity(quantity)} · target ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : `0 / ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}`}</p>{quantityLog && !quantityLog.quantityUnit && <div className="mt-3 rounded-xl border border-[var(--stroke)] p-3"><p className="text-xs text-secondary">This older entry has no saved unit. Choose the unit it used before displaying it with a unit.</p><div className="mt-2 flex gap-2"><select aria-label="Historical quantity unit" value={historicalQuantityUnit} onChange={event => setHistoricalQuantityUnit(event.target.value)} className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm"><option value="">Choose unit…</option>{[...new Set([habit.quantityUnit, 'glass', 'litre', 'minute', 'page', 'item'].filter(Boolean) as string[])].map(unit => <option key={unit} value={unit}>{unit}</option>)}</select><button type="button" disabled={!historicalQuantityUnit} onClick={async () => { try { await StorageService.habits.setQuantityLogUnit(quantityLog.id, historicalQuantityUnit); setHistoricalQuantityUnit(''); await reloadAllData(); showToast('Historical unit saved', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Could not update this entry.', 'danger'); } }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Save unit</button></div></div>}<div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
                 <p className="text-xs text-secondary">Best streak: {stats.longestStreak} days{habit.reminderTime ? ` · Reminder ${habit.reminderTime} local` : ' · No reminder set'}</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditHabit(habit)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit habit</button><button type="button" onClick={() => void confirmAction({ title: 'Delete this habit?', message: `“${habit.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(habit); })} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm text-[var(--danger)]">Delete habit</button></div>
               </section>;
             })()}
@@ -3150,6 +3143,8 @@ export default function App() {
               <p className="text-xs text-secondary">Android can delay inexact reminders to save battery. LifeOS does not request exact-alarm access.</p>
               <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
               <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
+              {notificationDiagnostics.appNotifications === 'disabled' && <div className="rounded-xl border border-[var(--stroke)] p-3 text-xs"><p>Android has turned LifeOS notifications off.</p><button type="button" onClick={() => void openNotificationSettings()} className="mt-2 min-h-11 text-left font-semibold lifeos-accent-text">Open Android notification settings</button></div>}
+              {notificationDiagnostics.channel.startsWith('blocked') && <p className="rounded-xl border border-[var(--stroke)] p-3 text-xs">The LifeOS reminders channel is muted in Android. Turn it back on in notification settings to receive reminders.</p>}
               {notificationDiagnostics.capability === 'initializing' && <p role="status" className="text-[11px] text-secondary">Checking Android notification support…</p>}
               {notificationDiagnostics.capability === 'unavailable' && <p className="text-[11px] text-[var(--warning)]">Android notification support is unavailable in this app build. Your reminder definitions remain saved.</p>}
               {notificationDiagnostics.capability === 'error' && <p className="text-[11px] text-[var(--warning)]">Android notification diagnostics could not be read. Refresh to retry.</p>}
@@ -3160,6 +3155,7 @@ export default function App() {
             {developerPreviewEnabled && profileSection === 'developer' && <ProfileSubpage title="Developer / Preview" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
               <section className="lifeos-panel rounded-xl border p-4 space-y-3"><h2 className="text-sm font-semibold">Notification diagnostics</h2>
                 <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary"><p>Capability: {notificationDiagnostics.capability} · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Exact alarms: {notificationDiagnostics.exactAlarm} · Channel: {notificationDiagnostics.channel}</p><p>Pending records: {notificationDiagnostics.pendingCount} · Visible: {notificationDiagnostics.visibleNotificationCount} · IDs {notificationDiagnostics.visibleNotificationIds.join(', ') || 'none'}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation: {notificationDiagnostics.lastCancellationReason || 'none'} · Last action: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: {notificationDiagnostics.lastError || 'none'}</p></div>
+                {developerPreviewEnabled && notificationDiagnostics.reminderLifecycle.length > 0 && <details className="rounded-xl border border-[var(--stroke)] p-3"><summary className="min-h-11 cursor-pointer text-xs font-semibold">Preview reminder timeline · no task titles</summary><ol className="mt-2 space-y-2">{notificationDiagnostics.reminderLifecycle.map(item => <li key={item.notificationId} className="border-t border-[var(--stroke)] pt-2 text-[10px] leading-5 text-secondary"><strong>Reminder {item.notificationId}</strong> · {item.deliveryState}<br />Scheduled: {item.reminderAt}<br />Accepted: {item.nativeAcceptedAt || 'not observed'} · Pending: {item.pendingObservedAt || 'not observed'}<br />Android posted: {item.androidPostedAt || 'not observed'} · Receiver event: {item.receiverEventAt || 'not observed'} · Tapped: {item.tappedAt || 'not observed'}</li>)}</ol></details>}
                 <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android notification settings</button></div>
                 <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button><button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
               </section>

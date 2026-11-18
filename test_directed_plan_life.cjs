@@ -30,7 +30,7 @@ const tasks = [
 const planProps = {
   tasks, today: '2026-11-09', now: new Date('2026-11-09T09:00:00'),
   onNavigatePlanner: () => calls.push('planner'), onOpenTask: item => calls.push(`task:${item.id}`),
-  onToggleTask: noop, onCreateTask: () => calls.push('create-task'),
+  onToggleTask: noop, onQuickAdd: async title => calls.push(`create-task:${title}`),
   onSelectRange: range => calls.push(`range:${range}`), onOpenGoals: () => calls.push('goals'),
 };
 const planMarkup = renderToStaticMarkup(React.createElement(PlanHub, planProps));
@@ -42,6 +42,8 @@ assert.match(planMarkup, /Call the dentist/);
 assert.doesNotMatch(planMarkup, /2026-11-11/, 'dates are presented in a readable local format rather than raw storage format');
 assert.match(planMarkup, /Repeats daily/);
 assert.match(planMarkup, /No due date/);
+assert.match(planMarkup, /aria-label="Quick task creation"/);
+assert.match(planMarkup, />Add task<\/button>/, 'task creation has one direct submit action');
 assert.match(planMarkup, /All statuses/);
 assert.doesNotMatch(planMarkup, /Open planner/);
 const state = []; let cursor = 0;
@@ -67,14 +69,13 @@ function clickButtonContaining(element, text) {
   assert.ok(button, `button containing ${text} exists`);
   button.props.onClick();
 }
-clickButtonContaining(planElement, 'Add task');
 clickButtonContaining(planElement, 'Upcoming');
 assert.equal(state[0], 'upcoming', 'Upcoming selects a local view instead of navigating away');
 const upcoming = renderToStaticMarkup(renderPlan());
 assert.match(upcoming, /Call the dentist/);
 assert.doesNotMatch(upcoming, /class="plan-hub-row-title">Sort the paperwork/);
 clickButtonContaining(planElement, 'Calendar planner');
-assert.deepEqual(calls, ['create-task', 'planner'], 'Creation and calendar preserve callbacks while task view selection stays local');
+assert.deepEqual(calls, ['planner'], 'Calendar navigation preserves its callback while task view selection stays local');
 const emptyPlan = renderToStaticMarkup(React.createElement(PlanHub, { ...planProps, tasks: [] }));
 assert.match(emptyPlan, /No tasks yet/);
 assert.match(emptyPlan, /Start with one thing you want to remember/);

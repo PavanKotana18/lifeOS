@@ -23,6 +23,9 @@ const NativeNotificationTapLaunch = registerPlugin<{
   getInitialAction(): Promise<{ action?: { notification?: { id?: number; extra?: Record<string, unknown> } } }>;
   acknowledgeInitialAction(options: { id: number }): Promise<void>;
 }>('NotificationTapLaunch');
+const NativeNotificationDeliveryDiagnostics = registerPlugin<{
+  getRecentDeliveries(): Promise<{ notifications: Array<{ id: number; postedAt: string }> }>;
+}>('LifeOSNotificationDeliveryDiagnostics');
 const diagnosticKey = 'lifeos.notificationDiagnostics';
 const lifecycleKey = 'lifeos.notificationLifecycle.v1';
 let ensureChannelPromise: Promise<void> | null = null;
@@ -50,6 +53,11 @@ export interface NotificationDiagnostics {
   lastScheduleResult: string;
   lastCancellationReason: string | null;
   lastActionEvent: { at: string; kind: string; id: number } | null;
+  reminderLifecycle: Array<{
+    notificationId: number; reminderAt: string; deliveryState: ReminderLifecycle['deliveryState'];
+    scheduleRequestedAt: string | null; nativeAcceptedAt: string | null; pendingObservedAt: string | null;
+    receiverEventAt: string | null; androidPostedAt: string | null; tappedAt: string | null; updatedAt: string;
+  }>;
   lastError: string;
 }
 
@@ -71,6 +79,7 @@ type ReminderLifecycle = {
   deliveryState: 'requested' | 'accepted' | 'pending-observed' | 'native-receiver-event-observed' | 'active-observed' | 'tapped' | 'delivery-unconfirmed' | 'cancelled' | 'schedule-failed' | 'unknown';
   deliveryObservedAt: string | null;
   receiverEventAt: string | null;
+  androidPostedAt: string | null;
   tappedAt: string | null;
   cancellationAt: string | null;
   cancellationReason: string | null;
@@ -91,7 +100,7 @@ function updateReminderLifecycle(id: number, update: Partial<ReminderLifecycle> 
     const base = changedReminder ? {
       kind: 'taskReminders' as const, configuredAt: update.configuredAt ?? previous?.configuredAt ?? null,
       reminderAt: update.reminderAt, scheduleMode: 'unknown' as const, scheduleRequestedAt: null,
-      nativeAcceptedAt: null, pendingObservedAt: null, deliveryState: 'unknown' as const,
+      nativeAcceptedAt: null, pendingObservedAt: null, androidPostedAt: null, deliveryState: 'unknown' as const,
       deliveryObservedAt: null, receiverEventAt: null, tappedAt: null, cancellationAt: null, cancellationReason: null,
       updatedAt: new Date().toISOString(),
     } : previous;
@@ -99,6 +108,15 @@ function updateReminderLifecycle(id: number, update: Partial<ReminderLifecycle> 
     const entries = Object.entries(all).sort((a, b) => b[1].updatedAt.localeCompare(a[1].updatedAt)).slice(0, 128);
     localStorage.setItem(lifecycleKey, JSON.stringify(Object.fromEntries(entries)));
   } catch { /* Diagnostic persistence is best-effort and contains no record content. */ }
+}
+function readReminderLifecycleSummary(): NotificationDiagnostics['reminderLifecycle'] {
+  return Object.entries(readReminderLifecycle()).map(([id, row]) => ({
+    notificationId: Number(id), reminderAt: row.reminderAt, deliveryState: row.deliveryState,
+    scheduleRequestedAt: row.scheduleRequestedAt, nativeAcceptedAt: row.nativeAcceptedAt,
+    pendingObservedAt: row.pendingObservedAt, receiverEventAt: row.receiverEventAt,
+    tappedAt: row.tappedAt, androidPostedAt: row.androidPostedAt || null, updatedAt: row.updatedAt,
+  })).filter(row => Number.isInteger(row.notificationId))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 12);
 }
 function readDiagnosticRecord(): NotificationDiagnosticRecord {
   try { return JSON.parse(localStorage.getItem(diagnosticKey) || '{}'); } catch { return {}; }
@@ -200,10 +218,14 @@ export const NotificationService = {
   },
 
   async canScheduleNotifications() {
-    // Capacitor's Android scheduler uses setAndAllowWhileIdle when exact-alarm
-    // access is unavailable. POST_NOTIFICATIONS is the delivery gate; exact
-    // access controls precision and must not disable all reminders.
-    return isNative() && await this.checkPermission() === 'granted';
+    // Exact access controls precision, while app and channel gates control
+    // whether Android can show the alert at all.
+    if (!isNative()) return false;
+    const [permission, appEnabled, channels] = await Promise.all([
+      this.checkPermission(), LocalNotifications.areEnabled(), LocalNotifications.listChannels(),
+    ]);
+    const reminderChannel = channels.channels.find(item => item.id === 'lifeos-reminders');
+    return permission === 'granted' && appEnabled.value && Boolean(reminderChannel && Number(reminderChannel.importance) > 0);
   },
 
   async syncTasks(tasks: Task[], preferences: NotificationPreferences) {
@@ -676,6 +698,7 @@ export const NotificationService = {
       versionName: null, versionCode: null, build: LIFEOS_BUILD_INFO, lastScheduleAttempt: record.lastScheduleAttempt || null,
       lastScheduleResult: record.lastScheduleResult || 'unknown', lastCancellationReason: record.lastCancellationReason || null,
       lastActionEvent: record.lastActionEvent || null, lastError: record.lastError || '',
+      reminderLifecycle: readReminderLifecycleSummary(),
     };
     if (!Capacitor.isNativePlatform()) return { ...empty, capability: 'unavailable', permission: 'unsupported', exactAlarm: 'unsupported', channel: 'not-applicable' };
     // Capacitor exposes registered native plugins synchronously. Probe a few
@@ -704,6 +727,20 @@ export const NotificationService = {
         try { runtime = await withTimeout(NativeRuntimeInfo.getInfo(), 'runtime-info'); } catch { /* Runtime facts are optional; notification availability is probed independently. */ }
       }
       const channel = channels.channels.find(item => item.id === 'lifeos-reminders');
+      if (Capacitor.isPluginAvailable('LifeOSNotificationDeliveryDiagnostics')) {
+        try {
+          const recent = await withTimeout(NativeNotificationDeliveryDiagnostics.getRecentDeliveries(), 'delivery-events');
+          const lifecycle = readReminderLifecycle();
+          for (const event of recent.notifications) {
+            const reminder = lifecycle[String(event.id)];
+            if (reminder?.kind !== 'taskReminders') continue;
+            updateReminderLifecycle(event.id, {
+              kind: 'taskReminders', reminderAt: reminder.reminderAt,
+              androidPostedAt: event.postedAt, deliveryState: 'active-observed',
+            });
+          }
+        } catch { /* Delivery timestamps supplement core permission and queue diagnostics. */ }
+      }
       return {
         ...empty, capability: 'available', platform, supported: true, permission,
         appNotifications: enabled.value ? 'enabled' : 'disabled', exactAlarm,
@@ -715,6 +752,7 @@ export const NotificationService = {
         androidApi: runtime?.androidApi ?? null, packageName: runtime?.packageName ?? null,
         versionName: runtime?.versionName ?? null, versionCode: runtime?.versionCode ?? null,
         lastError: record.lastError || '',
+        reminderLifecycle: readReminderLifecycleSummary(),
       };
     } catch (error) {
       const code = safeErrorCode(error);

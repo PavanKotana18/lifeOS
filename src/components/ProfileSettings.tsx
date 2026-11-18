@@ -28,9 +28,9 @@ export function ProfileIdentityCard({ name, initial, onChange }: { name: string;
 }
 
 export function ProfileNavigationRow({ title, detail, icon: Icon, onClick }: { title: string; detail: string; icon: LucideIcon; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="profile-navigation-row lifeos-panel group flex min-h-[76px] w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)] active:scale-[.995]">
-    <span className="lifeos-tint flex h-11 w-11 shrink-0 items-center justify-center rounded-xl lifeos-accent-text" aria-hidden="true"><Icon size={19} strokeWidth={1.9} /></span>
-    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="mt-1 block text-xs leading-5 text-secondary">{detail}</span></span>
+  return <button type="button" onClick={onClick} className="profile-navigation-row lifeos-panel group flex min-h-14 w-full items-center gap-3 rounded-xl border px-3 py-2 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)] active:scale-[.995]">
+    <span className="lifeos-tint flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lifeos-accent-text" aria-hidden="true"><Icon size={17} strokeWidth={1.9} /></span>
+    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="block text-xs leading-4 text-secondary">{detail}</span></span>
     <ArrowRight size={17} className="shrink-0 text-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
   </button>;
 }

@@ -9,7 +9,8 @@ const nativeScheduler = fs.readFileSync('node_modules/@capacitor/local-notificat
 const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
 const bootstrap = fs.readFileSync('src/services/encryptedStorageIntegration.ts', 'utf8');
 const taskSave = app.slice(app.indexOf('const saveNewRecord'), app.indexOf('const formatMoney'));
-assert.match(service, /return isNative\(\) && await this\.checkPermission\(\) === 'granted'/, 'notification display permission gates scheduling');
+assert.match(service, /this\.checkPermission\(\), LocalNotifications\.areEnabled\(\), LocalNotifications\.listChannels\(\)/, 'runtime app and channel availability gate scheduling as well as permission');
+assert.match(service, /Number\(reminderChannel\.importance\) > 0/, 'a blocked reminders channel cannot be misreported as scheduled for delivery');
 assert.match(nativeScheduler, /Notification scheduled with non-exact alarm/);
 assert.match(nativeScheduler, /alarmManager\.setAndAllowWhileIdle/, 'native plugin falls back to inexact allow-while-idle delivery');
 assert.doesNotMatch(service, /body: task\.title/, 'scheduled reminder body must not expose the task title');
@@ -22,6 +23,10 @@ assert.match(service, /delivery-not-observable/, 'a missing pending record is no
 assert.match(service, /setAndAllowWhileIdle|approximate/, 'denied exact-alarm access is explicitly approximate');
 assert.match(service, /allowWhileIdle: plan\.kind === 'taskReminders'/, 'only explicit task reminders consume the per-app idle-aware alarm quota');
 assert.match(service, /lifeos\.notificationLifecycle\.v1/, 'per-reminder request/acceptance/observation evidence survives pending-row removal');
+assert.match(service, /reminderLifecycle: readReminderLifecycleSummary\(\)/, 'diagnostics expose a bounded content-free reminder lifecycle');
+assert.match(app, /developerPreviewEnabled && notificationDiagnostics\.reminderLifecycle\.length/, 'the delivery timeline is rendered only in Developer/Preview');
+assert.match(app, /Android posted:/, 'the timeline displays the OS post timestamp separately from schedule acceptance');
+assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationDeliveryDiagnosticsPlugin.java', 'utf8'), /getPostTime\(\)/, 'the Preview timeline uses Android post time for actual OS delivery evidence');
 assert.match(service, /delivery-unconfirmed/, 'an elapsed reminder without active delivery evidence remains unconfirmed');
 assert.match(service, /localNotificationReceived/, 'native plugin receipt events are recorded separately from schedule acceptance');
 assert.match(service, /taskSyncQueue\.then\(run, run\)/, 'task schedule updates are serialized');

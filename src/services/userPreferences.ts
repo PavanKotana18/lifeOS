@@ -46,7 +46,24 @@ export function mergeUserPreferences(saved: Partial<UserPreferences>, legacyCurr
 }
 
 export function getNumberLocale(_currency: CurrencyCode, locale: UserPreferences['locale']) {
-  return locale === 'system' ? undefined : locale;
+  return locale === 'system' ? (_currency.toUpperCase() === 'INR' ? 'en-IN' : undefined) : locale;
+}
+
+const singularUnits: Record<string, string> = {
+  glasses: 'glass', litres: 'litre', liters: 'liter', minutes: 'minute', hours: 'hour', pages: 'page',
+  steps: 'step', reps: 'rep', times: 'time', cups: 'cup', bottles: 'bottle', kilometers: 'kilometer', miles: 'mile',
+};
+export function normalizeHabitUnit(unit: string) {
+  const trimmed = unit.trim();
+  return singularUnits[trimmed.toLocaleLowerCase()] || trimmed;
+}
+export function formatHabitQuantity(quantity: number, unit?: string) {
+  if (!unit) return `${quantity} · unit unknown`;
+  const normalized = normalizeHabitUnit(unit);
+  const displayed = quantity === 1 ? normalized
+    : /(?:s|x|z|ch|sh)$/i.test(normalized) ? `${normalized}es`
+      : /[^aeiou]y$/i.test(normalized) ? `${normalized.slice(0, -1)}ies` : `${normalized}s`;
+  return `${quantity} ${displayed}`;
 }
 
 export function formatCurrency(value: number, currency: CurrencyCode, locale: UserPreferences['locale'] = 'system') {
