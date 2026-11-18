@@ -143,19 +143,16 @@ jobs:
         run: gradle -p android :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
 
       - name: Report APK signing identity
-        run: gradle -p android :app:signingReport
+        shell: bash
+        run: gradle -p android :app:signingReport --console=plain | tee "$RUNNER_TEMP/lifeos-signing-report.txt"
 
       - name: Verify standard debug APK signature and package version
         shell: bash
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          APKSIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
+          ACTUAL="$(bash scripts/verify-android-debug-signer.sh "$APK" "$RUNNER_TEMP/lifeos-signing-report.txt")"
           AAPT="$ANDROID_HOME/build-tools/34.0.0/aapt"
-          "$APKSIGNER" verify "$APK"
-          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}')"
-          EXPECTED="$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey | sha256sum | awk '{print $1}')"
-          [[ "${ACTUAL,,}" == "$EXPECTED" ]] || { echo "::error::Debug APK certificate differs from the build runner Debug signer."; exit 1; }
           BADGING="$("$AAPT" dump badging "$APK")"
           grep -q "package: name='com.lifeos.personal.debug'" <<< "$BADGING" || { echo "::error::Unexpected LifeOS applicationId in debug APK."; exit 1; }
           VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
