@@ -2,6 +2,8 @@ package com.lifeos.personal;
 
 import android.app.NotificationManager;
 import android.os.Build;
+import android.content.Context;
+import java.util.Map;
 import android.service.notification.StatusBarNotification;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -20,12 +22,22 @@ public final class NotificationDeliveryDiagnosticsPlugin extends Plugin {
     @PluginMethod
     public void getRecentDeliveries(PluginCall call) {
         JSArray events = new JSArray();
+        JSArray receiverEvents = new JSArray();
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
+        formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
+        for (Map.Entry<String, ?> row : getContext().getSharedPreferences("lifeos_alarm_events", Context.MODE_PRIVATE).getAll().entrySet()) {
+            if (!(row.getValue() instanceof Long)) continue;
+            try {
+                JSObject event = new JSObject();
+                event.put("id", Integer.parseInt(row.getKey()));
+                event.put("firedAt", formatter.format(new Date((Long) row.getValue())));
+                receiverEvents.put(event);
+            } catch (NumberFormatException ignored) { /* Only numeric IDs are valid. */ }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             NotificationManager manager = getContext().getSystemService(NotificationManager.class);
             if (manager != null) {
                 StatusBarNotification[] active = manager.getActiveNotifications();
-                SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
-                formatter.setTimeZone(TimeZone.getTimeZone("UTC"));
                 for (int index = active.length - 1; index >= 0 && events.length() < 32; index--) {
                     StatusBarNotification notification = active[index];
                     JSObject event = new JSObject();
@@ -37,6 +49,7 @@ public final class NotificationDeliveryDiagnosticsPlugin extends Plugin {
         }
         JSObject result = new JSObject();
         result.put("notifications", events);
+        result.put("receiverEvents", receiverEvents);
         call.resolve(result);
     }
 }

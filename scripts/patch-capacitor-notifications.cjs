@@ -38,3 +38,30 @@ if (!source.includes('LifeOS: permission may change between check and registrati
   ].join('\n');
   fs.writeFileSync(manager, source.slice(0, start) + replacement + source.slice(end));
 }
+
+
+const publisher = path.join(path.dirname(manager), 'TimedNotificationPublisher.java');
+const receiver = fs.readFileSync(publisher, 'utf8').replace(/\r\n/g, '\n');
+if (!receiver.includes('lifeos_alarm_events')) {
+  const marker = '        NotificationStorage storage = new NotificationStorage(context);';
+  if (!receiver.includes(marker)) throw new Error('Capacitor Android receiver changed.');
+  fs.writeFileSync(publisher, receiver.replace('        notification.when = System.currentTimeMillis();', '')
+    .replace(marker, [
+      '        if (notification == null || notificationManager == null || id == Integer.MIN_VALUE) return;',
+      '        long firedAt = System.currentTimeMillis();',
+      '        notification.when = firedAt;',
+      '        android.content.SharedPreferences events = context.getSharedPreferences("lifeos_alarm_events", Context.MODE_PRIVATE);',
+      '        android.content.SharedPreferences.Editor event = events.edit();',
+      '        java.util.Map<String, ?> history = events.getAll();',
+      '        if (history.size() >= 64 && !history.containsKey(Integer.toString(id))) {',
+      '            history.entrySet().stream().filter(row -> row.getValue() instanceof Long)',
+      '                .min(java.util.Comparator.comparingLong(row -> (Long) row.getValue()))',
+      '                .ifPresent(row -> event.remove(row.getKey()));',
+      '        }',
+      '        event.putLong(Integer.toString(id), firedAt).apply();',
+      marker,
+    ].join('\n')).replace(
+      '        LocalNotificationsPlugin.fireReceived(notificationJson);\n        notificationManager.notify(id, notification);',
+      '        notificationManager.notify(id, notification);\n        if (notificationJson != null) LocalNotificationsPlugin.fireReceived(notificationJson);'
+    ));
+}

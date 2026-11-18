@@ -68,7 +68,7 @@ export interface EncryptedStorageHelpers {
   ): void;
   /** Throws on invalid data; returns validated table names, never error messages. */
   validateBackupTables(tables: unknown): string[];
-  normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt' | 'recurring'>>(task: T): T;
+  normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt' | 'recurring' | 'reminderLeadMinutes' | 'dueAlertDisabled'>>(task: T): T;
   getNextRecurringTaskDate(
     task: Task,
     fromDate?: string

@@ -4,13 +4,15 @@ import { formatCurrencyChoice } from '../services/financeCore';
 
 type Props = {
   preferences: UserPreferences;
+  dateOnlyAlertTime?: string;
+  onDateOnlyAlertTime?: (time: string) => void;
   hasFinancialRecords: boolean;
   onChange: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void;
 };
 
 const selectClass = 'lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm';
 
-export default function ProfilePreferences({ preferences, hasFinancialRecords, onChange }: Props) {
+export default function ProfilePreferences({ preferences, hasFinancialRecords, onChange, dateOnlyAlertTime, onDateOnlyAlertTime }: Props) {
   const [currencySearch, setCurrencySearch] = useState('');
   const currencyLabels = useMemo(() => new Map(CURRENCY_CODES.map(code => [code, formatCurrencyChoice(code, preferences.locale === 'system' ? undefined : preferences.locale)])), [preferences.locale]);
   const currencyOptions = useMemo(() => {

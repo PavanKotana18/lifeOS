@@ -36,9 +36,11 @@ type Props = {
 
 const moneyDestinations = [
   { id: 'transactions', label: 'Transactions', icon: Receipt },
+  { id: 'accounts', label: 'Accounts', icon: WalletCards },
   { id: 'budgets', label: 'Budgets', icon: WalletCards },
   { id: 'savings', label: 'Savings', icon: PiggyBank },
   { id: 'analytics', label: 'Insights', icon: ChartNoAxesCombined },
+  { id: 'planning', label: 'Plans', icon: Receipt },
 ] as const;
 
 export default function MoneyHome({ month, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
@@ -53,7 +55,7 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
       <MoneyPeriod label="Money" month={month} onChange={onMonthChange} />
     </header>
 
-    <button type="button" onClick={onAddTransaction} className="money-add-transaction" data-testid="money-add-transaction"><span aria-hidden="true">+</span><span><strong>Add transaction</strong></span><ArrowRight size={18} aria-hidden="true" /></button>
+    <button type="button" onClick={onAddTransaction} className="money-add-transaction" data-testid="money-add-transaction"><span aria-hidden="true">+</span><span><strong>Add transaction</strong></span></button>
 
     <section className="money-cashflow" aria-labelledby="money-cashflow-title">
       <div className="money-cashflow-top justify-start"><h3 id="money-cashflow-title" className="type-section-title">Net cash flow</h3><InfoTip label="Net cash flow">Income received minus spending recorded in this period. Planned bills, transfers and savings contributions are separate.</InfoTip></div>
@@ -68,10 +70,10 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
 
     <nav className="money-destinations" aria-label="Money destinations">{moneyDestinations.map(item => {
       const Icon = item.icon;
-      return <button type="button" key={item.id} onClick={destinationActions[item.id]} className={`money-destination-card money-destination-${item.id}`}><span className="money-destination-icon" aria-hidden="true"><Icon size={20} strokeWidth={1.8} /></span><strong>{item.label}</strong><ArrowRight size={16} aria-hidden="true" /></button>;
+      return <button type="button" key={item.id} onClick={destinationActions[item.id]} className={`money-destination-card money-destination-${item.id}`}><span className="money-destination-icon" aria-hidden="true"><Icon size={20} strokeWidth={1.8} /></span><strong>{item.label}</strong></button>;
     })}</nav>
 
-    <details className="money-secondary-summary"><summary>Accounts, budgets and plans</summary><div className="money-secondary-content">
+    <details className="money-secondary-summary"><summary>This month at a glance</summary><div className="money-secondary-content">
     {accountSummaries.length > 0 && <section className="money-context" aria-labelledby="money-account-summary-title"><div className="money-context-heading"><div><p className="type-eyebrow">OPTIONAL TRACKING</p><h3 id="money-account-summary-title" className="type-section-title">Account balances</h3></div><button type="button" onClick={onAccounts} className="money-text-action">Manage <ArrowRight size={15} aria-hidden="true" /></button></div><p className="mb-3 text-xs text-secondary">Each account is shown in its own currency; balances are not combined.</p>{accountSummaries.length > 3 && <p className="mb-2 text-xs text-secondary">Showing 3 of {accountSummaries.length} accounts.</p>}<ul className="money-budget-list">{accountSummaries.slice(0, 3).map(account => <li key={account.id}><div><strong>{account.name}</strong><span>{account.type.replace('-', ' ')} · {account.currencyCode}</span></div><strong className="tabular-nums" aria-label={`${account.name}: ${formatMinorUnits(BigInt(account.balanceMinor), account.currencyCode, locale)}`}>{formatMinorUnits(BigInt(account.balanceMinor), account.currencyCode)}</strong></li>)}</ul></section>}
 
     {savingsGoals.length > 0 && <section className="money-context" aria-labelledby="money-savings-summary-title"><div className="money-context-heading"><div><p className="type-eyebrow">SAVINGS</p><h3 id="money-savings-summary-title" className="type-section-title">Progress toward goals</h3></div><div className="money-context-actions"><button type="button" onClick={onMoveToSavings} className="money-text-action">Add money <ArrowRight size={15} aria-hidden="true" /></button><button type="button" onClick={onSavings} className="money-text-action">All goals <ArrowRight size={15} aria-hidden="true" /></button></div></div><div className="mt-3 space-y-3">{savingsGoals.slice(0, 2).map(goal => { const code = goal.currencyCode || legacyCurrency; const current = goal.currentAmountMinor ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(goal.currentAmount, code); const target = goal.targetAmountMinor ? BigInt(goal.targetAmountMinor) : decimalToMinorUnits(goal.targetAmount, code); const percent = target > 0n ? Number(current * 10000n / target) / 100 : 0; const displayedPercent = Math.min(100, Math.max(0, percent)); return <div key={goal.id}><div className="flex justify-between gap-3 text-sm"><strong className="truncate">{goal.title}</strong><span className="shrink-0 tabular-nums">{formatMinorUnits(current, code, locale)} / {formatMinorUnits(target, code, locale)}</span></div><div className="lifeos-progress-track mt-2 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} savings progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={displayedPercent}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${displayedPercent}%` }} /></div><p className="mt-1 text-xs text-secondary">{displayedPercent.toFixed(0)}% of target{goal.targetDate ? ` · ${goal.targetDate}` : ''}</p></div>; })}</div></section>}
@@ -81,7 +83,6 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
       {budgetRows.length ? <ul className="money-budget-list">{budgetRows.slice(0, 2).map((row, index) => <li key={`${row.category}-${index}`}><div><strong>{row.category === 'Overall' ? 'Overall plan' : `${row.category} plan`}</strong><span>{formatMoney(row.spent)} recorded of {formatMoney(row.allocated)}</span></div><span className={row.remaining < 0 ? 'money-budget-over' : 'money-budget-remaining'}>{row.remaining < 0 ? `${formatMoney(Math.abs(row.remaining))} over` : `${formatMoney(row.remaining)} left`}</span></li>)}</ul> : <button type="button" className="money-context-empty" onClick={onBudgets}>No budget added for this month <span>Create a plan <ArrowRight size={14} aria-hidden="true" /></span></button>}
     </section>
 
-    <button type="button" onClick={onPlanning} className="money-text-action">Upcoming bills <ArrowRight size={15} aria-hidden="true" /></button>
 
     </div></details>
 
@@ -103,6 +104,5 @@ export default function MoneyHome({ month, income, expenses, netCashFlow, budget
       })}</ul>}
     </section>
 
-    {accountSummaries.length === 0 && <div className="money-optional-accounts"><button type="button" onClick={onAccounts} className="money-text-action">Optional accounts <ArrowRight size={15} aria-hidden="true" /></button></div>}
   </div>;
 }

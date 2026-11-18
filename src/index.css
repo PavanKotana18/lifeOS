@@ -884,3 +884,20 @@ html.dark .text-amber-400 { color: var(--warning); }
 
 .money-period-unified { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; width: max-content; max-width: 100%; padding-inline: .75rem; white-space: nowrap; }
 .money-home-heading, .money-detail-title { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem 1rem; }
+
+.plan-toolbar { display:grid; grid-template-columns:minmax(0, 1fr) auto auto; gap:.45rem; }
+.plan-toolbar :is(input, button) { min-width:0; min-height:2.75rem; border-radius:.75rem; padding-inline:.65rem; }
+.plan-toolbar button { display:inline-flex; align-items:center; gap:.35rem; }
+.plan-filter-sheet { position:fixed; inset:auto 0 0; width:min(100%,32rem); max-height:85dvh; border:0; border-radius:1.25rem 1.25rem 0 0; margin:0 auto; padding:0; }
+.plan-filter-sheet::backdrop { background:rgb(0 0 0 / .45); }
+.plan-filter-sheet form { display:grid; gap:1rem; padding:1rem 1rem max(1rem,env(safe-area-inset-bottom)); }
+.plan-filter-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }
+.plan-filter-fields label { display:grid; gap:.3rem; font-size:.82rem; color:var(--ink-secondary); }
+.plan-filter-fields :is(input,select) { width:100%; min-width:0; min-height:2.75rem; border:1px solid var(--stroke); border-radius:.75rem; padding-inline:.5rem; background:var(--surface); color:var(--ink); }
+
+.record-composer { width:min(100%,35rem); max-height:min(90dvh,52rem); overflow:auto; border:1px solid var(--stroke); border-radius:1.5rem 1.5rem 0 0; padding:clamp(1rem,3vw,1.45rem); box-shadow:0 16px 70px rgb(0 0 0 / .18); }
+.record-composer > div:first-child { border-bottom:1px solid var(--stroke); align-items:center; padding-bottom:.65rem; }
+.record-composer :is(input,select,textarea) { scroll-margin-block:1rem 6rem; }
+.record-composer :is(input,select,textarea):not([type=checkbox]):not([type=radio]) { min-height:2.75rem; }
+.record-composer button[type=submit] { min-height:3rem; }
+.money-destination-card { grid-template-columns:auto minmax(0,1fr); }

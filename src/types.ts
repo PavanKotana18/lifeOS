@@ -207,7 +207,9 @@ export interface Task {
   description?: string;
   dueDate?: string; // YYYY-MM-DD; absent means unscheduled
   dueTime?: string; // HH:mm local time
-  reminderAt?: string; // ISO instant
+  reminderAt?: string; // Previously saved absolute reminder
+  reminderLeadMinutes?: number;
+  dueAlertDisabled?: boolean;
   priority: PriorityLevel;
   category?: string;
   notes?: string;

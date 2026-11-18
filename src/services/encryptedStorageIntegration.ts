@@ -34,7 +34,8 @@ export const BOOTSTRAP_SETTING_KEYS = new Set([
   'notificationPreferences',
   'notificationsEnabled',
   'notificationPermissionRequested',
-  'notificationDefaultsPending'
+  'notificationDefaultsPending',
+  'dateOnlyAlertTime'
 ]);
 
 export type LifeOSRawDatabase = Record<EncryptedTable, DexieTableLike>;

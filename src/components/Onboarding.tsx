@@ -65,11 +65,11 @@ export default function Onboarding(props: Props) {
         </>}
         {step === 2 && <>
           <h1>Recovery setup</h1>
-          <p className="initial-setup-description">{props.recoveryReady ? 'Your recovery kit is set up.' : props.protectionReady ? 'Keep a recovery kit somewhere safe so you can recover encrypted records if you lose this device.' : 'You can set up a recovery kit once device protection is enabled. LifeOS requires protection before saving private records.'}</p>
+          <p className="initial-setup-description">{props.recoveryReady ? 'Your recovery kit is set up.' : props.protectionReady ? 'Without a recovery file, losing access to this device can mean losing your encrypted records.' : 'You can set up a recovery kit once device protection is enabled. LifeOS requires protection before saving private records.'}</p>
           {props.protectionReady && !props.recoveryReady && <button type="button" disabled={busy} className="lifeos-accent-button" onClick={() => void run(async () => {
             if (await props.onRecover()) await props.onFinish();
-          })}>Set up recovery kit</button>}
-          <button type="button" disabled={busy} className={props.protectionReady && !props.recoveryReady ? 'initial-setup-secondary' : 'lifeos-accent-button'} onClick={() => void run(props.onFinish)}>{props.recoveryReady ? 'Continue' : 'Set up later'}</button>
+          })}>Save recovery file</button>}
+          <button type="button" disabled={busy} className={props.protectionReady && !props.recoveryReady ? 'initial-setup-secondary' : 'lifeos-accent-button'} onClick={() => void run(props.onFinish)}>{props.recoveryReady ? 'Continue' : 'Do this later'}</button>
         </>}
         {message && <p role="alert" className="initial-setup-error">{message}</p>}
       </section>

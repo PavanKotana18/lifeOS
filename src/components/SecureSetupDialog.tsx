@@ -6,7 +6,8 @@ import { matchesRecoveryCode } from '../services/recoveryCodeConfirmation';
 import type { PreparedRecovery } from '../services/cryptoService.ts';
 
 /** Recovery secrets live only in this mounted dialog and native pending state. */
-export default function SecureSetupDialog({ prepared, onDecision, onRecoveryExportStart, recoveryExportResumeReady = true, onRetryRecoveryExportResume }: {
+export default function SecureSetupDialog({ cancelLabel, prepared, onDecision, onRecoveryExportStart, recoveryExportResumeReady = true, onRetryRecoveryExportResume }: {
+  cancelLabel?: string;
   prepared?: PreparedRecovery;
   onDecision(accepted: boolean): void;
   onRecoveryExportStart?: () => () => void;
@@ -46,7 +47,7 @@ export default function SecureSetupDialog({ prepared, onDecision, onRecoveryExpo
       <h1 id="secure-setup-locked-title" className="text-center text-2xl font-semibold">Unlock to continue</h1>
       <p className="text-center text-sm leading-6 text-secondary">{exportBusy ? 'Opening Android’s secure save picker. Your recovery code is hidden while the file is saved.' : 'LifeOS locked your recovery setup while Android’s file picker was open. Your code stays hidden until secure unlock succeeds.'}</p>
       {!exportBusy && onRetryRecoveryExportResume && <button type="button" onClick={onRetryRecoveryExportResume} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Unlock and continue</button>}
-      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">Cancel and keep data locked</button>
+      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{cancelLabel || 'Cancel and keep data locked'}</button>
     </section>
   </main>;
 
@@ -79,6 +80,7 @@ export default function SecureSetupDialog({ prepared, onDecision, onRecoveryExpo
         preservePendingRecovery: true
       });
       if (result.status === 'cancelled') {
+        if (cancelLabel) { await finish(false); return; }
         announce('Save cancelled. Save the complete kit to continue.');
       } else if (result.status === 'saved') {
         setKitExportState('saved');

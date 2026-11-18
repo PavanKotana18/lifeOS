@@ -145,7 +145,7 @@ export function getRecurrenceRootId(
 }
 
 /** Validate a dated schedule, or a genuinely unscheduled task with no alarms/recurrence. */
-export function normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt' | 'recurring'>>(task: T): T {
+export function normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt' | 'recurring' | 'reminderLeadMinutes' | 'dueAlertDisabled'>>(task: T): T {
   if (task.dueDate !== undefined && typeof task.dueDate !== 'string') throw new Error('Choose a valid task date.');
   if (task.dueTime !== undefined && typeof task.dueTime !== 'string') throw new Error('Choose a valid task time.');
   if (task.reminderAt !== undefined && typeof task.reminderAt !== 'string') throw new Error('Choose a valid task reminder.');
@@ -163,6 +163,11 @@ export function normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime'
   }
   if (dueTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(dueTime)) throw new Error('Choose a valid task time.');
   if (reminderAt && !Number.isFinite(Date.parse(reminderAt))) throw new Error('Choose a valid task reminder.');
+  const { reminderLeadMinutes, dueAlertDisabled } = task;
+  if (dueAlertDisabled !== undefined && typeof dueAlertDisabled !== 'boolean') throw new Error('Choose a valid due-time alert setting.');
+  if (reminderLeadMinutes !== undefined && (!dueDate || !Number.isInteger(reminderLeadMinutes) || reminderLeadMinutes < 1 || reminderLeadMinutes > 10080 || reminderAt)) {
+    throw new Error('Choose one early reminder between 1 minute and 7 days.');
+  }
   return { ...task, dueDate, dueTime, reminderAt, recurring };
 }
 
@@ -713,6 +718,8 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'notes', 'tasks', i);
     if (r.dueTime !== undefined && !time(r.dueTime)) fail('tasks', i, 'dueTime');
     optionalInstant(r, 'reminderAt', 'tasks', i);
+    if (r.dueAlertDisabled !== undefined && typeof r.dueAlertDisabled !== 'boolean') fail('tasks', i, 'invalid due-time alert');
+    if (r.reminderLeadMinutes !== undefined && (!r.dueDate || typeof r.reminderLeadMinutes !== 'number' || !Number.isInteger(r.reminderLeadMinutes) || r.reminderLeadMinutes < 1 || r.reminderLeadMinutes > 10080 || r.reminderAt)) fail('tasks', i, 'invalid early reminder');
     optionalInstant(r, 'completedAt', 'tasks', i);
     optionalInstant(r, 'updatedAt', 'tasks', i);
     optionalString(r, 'recurrenceRootId', 'tasks', i);
@@ -1475,6 +1482,8 @@ const rawStorageService: IDataStorage = {
               dueDate: nextDueDate,
               dueTime: task.dueTime,
               reminderAt: task.reminderAt,
+              reminderLeadMinutes: task.reminderLeadMinutes,
+              dueAlertDisabled: task.dueAlertDisabled,
               priority: task.priority,
               category: task.category,
               notes: task.notes,

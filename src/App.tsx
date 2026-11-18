@@ -93,7 +93,7 @@ const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME
 };
 
 const notificationLabels: Record<keyof NotificationPreferences, string> = {
-  taskReminders: 'Task reminders',
+  taskReminders: 'Due-time and early task alerts',
   upcomingDeadlines: 'Upcoming task deadlines',
   overdueAlerts: 'Overdue task alerts',
   habitReminders: 'Habit reminders',
@@ -207,6 +207,7 @@ export default function App() {
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
+  const [dateOnlyAlertTime, setDateOnlyAlertTime] = useState('');
   const [notificationOffer, setNotificationOffer] = useState(false);
   const notificationOfferBack = useRef<(() => void) | null>(null);
   const [notificationOfferBusy, setNotificationOfferBusy] = useState(false);
@@ -761,6 +762,8 @@ export default function App() {
     }
     const state = backState.current;
     if (typeof document !== 'undefined') {
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open]');
+      if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
     }
@@ -1164,6 +1167,7 @@ export default function App() {
     } catch { /* Cosmetic cache is optional. */ }
     localStorage.setItem('lifeos-appearance', savedTheme);
 
+    setDateOnlyAlertTime(await StorageService.settings.get<string>('dateOnlyAlertTime', ''));
     const lockSetting = await StorageService.settings.get<boolean>('biometricLockEnabled', false);
     setBiometricEnabled(lockSetting);
     setIsLocked(lockSetting);
@@ -1246,7 +1250,7 @@ export default function App() {
     todayLayoutRef.current = savedTodayLayout;
     setTodayLayout(savedTodayLayout);
 
-    let savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>(
+    const savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>(
       'notificationPreferences',
       DEFAULT_NOTIFICATION_PREFERENCES
     );
@@ -1258,13 +1262,8 @@ export default function App() {
       'notificationsEnabled',
       undefined
     );
-    const notificationsOn =
-      savedNotificationsEnabled ?? Object.values(savedNotificationPreferences).some(Boolean);
-
-    if (notificationsOn && !Object.values(savedNotificationPreferences).some(Boolean) && await NotificationService.checkPermission() === 'granted') {
-      savedNotificationPreferences = { ...DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };
-      await StorageService.settings.set('notificationPreferences', savedNotificationPreferences);
-    }
+    const hasEnabledCategory = Object.values(savedNotificationPreferences).some(Boolean);
+    const notificationsOn = savedNotificationsEnabled !== false && hasEnabledCategory;
     setNotificationsEnabled(notificationsOn);
     setNotificationPreferences({
       ...DEFAULT_NOTIFICATION_PREFERENCES,
@@ -1490,9 +1489,10 @@ export default function App() {
     await StorageService.settings.set('notificationsEnabled', enabled);
   };
 
-  const syncNotificationSchedules = async (taskRows: Task[], habitRows: Habit[], goalRows: Goal[], milestoneRows: Milestone[], preferences = notificationPreferences) => {
+  const syncNotificationSchedules = async (taskRows: Task[], habitRows: Habit[], goalRows: Goal[], milestoneRows: Milestone[], preferences = effectiveNotificationPreferences(notificationPreferences, notificationsEnabled)) => {
+    const dateOnlyAlertTime = typeof StorageService.settings.get === 'function' ? await StorageService.settings.get<string>('dateOnlyAlertTime', '') : undefined;
     const results = await Promise.allSettled([
-      NotificationService.syncTasks(taskRows, preferences),
+      NotificationService.syncTasks(taskRows, preferences, dateOnlyAlertTime),
       NotificationService.syncHabits(habitRows, preferences),
       NotificationService.syncMilestones(goalRows, milestoneRows, preferences),
     ]);
@@ -1649,11 +1649,7 @@ export default function App() {
       }
       const prepared = await CryptoService.prepareRecovery();
       if (!(await requestSecureSetup(prepared))) {
-        await encryptedSession.lock();
-        setBiometricVerified(false); biometricAuthenticated.current = false;
-        // The onboarding gate remains visible. A retry will authenticate and
-        // recreate a temporary kit; no private workspace is opened.
-        setIsLocked(false);
+        await CryptoService.cancelPendingRecovery();
         return false;
       }
       await CryptoService.confirmRecovery();
@@ -2096,7 +2092,7 @@ export default function App() {
     setCreateFormDirty(false);
     setCreateDraft({
       title: task.title, description: task.description || task.notes || '', date: task.dueDate || '',
-      time: task.dueTime || '', reminderAt: task.reminderAt ? formatLocalDateTime(new Date(task.reminderAt)) : '',
+      time: task.dueTime || '', dueAlert: task.dueAlertDisabled ? 'off' : 'on', reminderLead: task.reminderLeadMinutes ? String(task.reminderLeadMinutes) : task.reminderAt ? 'legacy' : '', reminderAt: task.reminderAt ? formatLocalDateTime(new Date(task.reminderAt)) : '',
       priority: task.priority, category: task.category || '', recurring: task.recurring || 'None',
     });
     setEditingTaskId(task.id);
@@ -2182,28 +2178,15 @@ export default function App() {
       let committed = false;
       await ensurePrivateStorageBeforeWrite();
       const reminderAt = details.reminderAt ? new Date(details.reminderAt).toISOString() : undefined;
-      let reminderCouldNotEnable = false;
-      let schedulePreferences = notificationPreferences;
-      let scheduleEnabled = notificationsEnabled;
-      if (reminderAt && (!notificationPreferences.taskReminders || !notificationsEnabled)) {
-        const permission = await askNotificationPermission();
-        if (permission.granted) {
-          schedulePreferences = { ...notificationPreferences, taskReminders: true };
-          scheduleEnabled = true;
-          await saveNotificationSelection(schedulePreferences, true);
-        } else reminderCouldNotEnable = true;
-      }
       await StorageService.tasks.add({ title: nextTitle, dueDate: details.dueDate, dueTime: details.dueTime,
         reminderAt, priority: details.priority || 'Medium', recurring: 'None', completed: false });
       committed = true;
       try {
         const records = await reloadAllData();
         const synchronized = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
-          effectiveNotificationPreferences(schedulePreferences, scheduleEnabled));
-        showToast(reminderCouldNotEnable ? 'Task saved. Turn on task reminders in Settings to receive its reminder.'
-          : reminderAt && !synchronized ? 'Task saved, but its reminder could not be confirmed. Check task details.'
-            : details.dueDate ? 'Task saved with its schedule.' : 'Task saved without a due date.',
-          reminderCouldNotEnable || (reminderAt && !synchronized) ? 'danger' : 'success');
+          effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
+        const scheduleFailed = notificationsEnabled && notificationPreferences.taskReminders && Boolean(details.dueDate) && !synchronized;
+        showToast(scheduleFailed ? 'Task saved, but Android scheduling could not be confirmed.' : 'Task saved', scheduleFailed ? 'danger' : 'success');
       } catch {
         if (!committed) throw new Error('Task could not be confirmed after saving. Retry from the Plan screen.');
         showToast('Task saved, but Plan could not refresh. Reopen it to verify.', 'info');
@@ -2218,9 +2201,8 @@ export default function App() {
     setRecordSaving(true);
     let committed = false;
     const value = (key: string) => (createDraft[key] || '').trim();
-    let reminderCouldNotEnable = false;
     try {
-      if (createKind === 'task' && !value('date') && (value('time') || value('reminderAt') || (value('recurring') && value('recurring') !== 'None'))) throw new Error('Add a due date before setting a time, reminder or repeat.');
+      if (createKind === 'task' && !value('date') && (value('time') || value('reminderLead') || value('reminderAt') || (value('recurring') && value('recurring') !== 'None'))) throw new Error('Add a due date before setting a time, reminder or repeat.');
       await ensurePrivateStorageBeforeWrite();
       // A fresh user may begin with Money. Categories are private and are only
       // loaded after explicit secure provisioning; never post an unclassified
@@ -2228,15 +2210,6 @@ export default function App() {
       if (createKind === 'transaction' && !value('category')) {
         showToast('Choose a category to finish saving your transaction.', 'info');
         return;
-      }
-      if (createKind === 'task' && value('reminderAt') && (!notificationsEnabled || !notificationPreferences.taskReminders)) {
-        const permission = await askNotificationPermission();
-        if (permission.granted) {
-          const nextPreferences = { ...notificationPreferences, taskReminders: true };
-          setNotificationPreferences(nextPreferences); setNotificationsEnabled(true);
-          await StorageService.settings.set('notificationPreferences', nextPreferences);
-          await StorageService.settings.set('notificationsEnabled', true);
-        } else reminderCouldNotEnable = true;
       }
       if (createKind === 'transaction') {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
@@ -2317,10 +2290,11 @@ export default function App() {
         if (editingGoalId) await StorageService.goals.update(editingGoalId, goalFields);
         else await StorageService.goals.add(goalFields);
       } else {
-        const reminderAt = value('reminderAt') ? new Date(value('reminderAt')).toISOString() : undefined;
+        const reminderAt = value('reminderLead') === 'legacy' && value('reminderAt') ? new Date(value('reminderAt')).toISOString() : undefined;
+        const reminderLeadMinutes = value('reminderLead') && value('reminderLead') !== 'legacy' ? Number(value('reminderLead') === 'custom' ? value('reminderCustom') : value('reminderLead')) : undefined;
         const taskUpdates: Partial<Task> = {
           title: value('title'), description: value('description') || undefined, notes: value('description') || undefined,
-          dueDate: value('date') || undefined, dueTime: value('time') || undefined, reminderAt,
+          dueDate: value('date') || undefined, dueTime: value('time') || undefined, reminderAt, reminderLeadMinutes, dueAlertDisabled: value('dueAlert') === 'off',
           priority: value('priority') as Task['priority'], category: value('category') || undefined,
           recurring: (value('recurring') || 'None') as Task['recurring'],
         };
@@ -2334,16 +2308,14 @@ export default function App() {
       setEditingTaskId(null); setEditingHabitId(null);
       setEditingTransactionId(null); setEditingGoalId(null); setEditingContributionId(null); setEditingSavingsGoalId(null);
       const records = await reloadAllData();
-      const reminderOptedIn = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable;
-      const schedulePreferences = { ...notificationPreferences, taskReminders: reminderOptedIn || notificationPreferences.taskReminders };
-      const schedulesUpdated = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(schedulePreferences, notificationsEnabled || reminderOptedIn));
+      const schedulesUpdated = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
       const wasEditingTask = editingTaskId;
       const wasEditingHabit = editingHabitId;
       const wasEditingTransaction = editingTransactionId;
       const wasEditingGoal = editingGoalId;
       const wasEditingContribution = editingContributionId;
-      const reminderSyncFailed = createKind === 'task' && Boolean(value('reminderAt')) && !reminderCouldNotEnable && !schedulesUpdated;
-      showToast(reminderCouldNotEnable ? 'Task saved, but Android notification permission is unavailable. Enable it in Profile to receive its reminder.' : reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderCouldNotEnable || reminderSyncFailed ? 'danger' : 'success');
+      const reminderSyncFailed = createKind === 'task' && Boolean(value('date')) && notificationsEnabled && notificationPreferences.taskReminders && !schedulesUpdated;
+      showToast(reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderSyncFailed ? 'danger' : 'success');
     } catch (error) {
       showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
     } finally { createOperation.current = false; setRecordSaving(false); }
@@ -2538,6 +2510,7 @@ export default function App() {
   if (secureSetup) return <SecureSetupDialog prepared={secureSetup.prepared}
     onRecoveryExportStart={beginRecoveryExportActivity}
     recoveryExportResumeReady={recoveryExportResumeReady}
+    cancelLabel={onboardingRequired && !onboardingComplete && secureSetup.prepared ? 'Back to recovery options' : undefined}
     onRetryRecoveryExportResume={() => { void resumeRecoveryAfterPicker(); }}
     onDecision={accepted => {
       if (!accepted && recoveryExportReturnPending.current) {
@@ -2804,12 +2777,11 @@ export default function App() {
           onInsights={() => navigateTo('insights')}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub onQuickAdd={addUnscheduledTask} tasks={tasks} today={todayKey} now={clockNow}
+        <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub onCreate={() => openCreateForm('task')} tasks={tasks} today={todayKey} now={clockNow}
           onNavigatePlanner={() => navigateTo('planner')}
           onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter(task.dueDate ? 'all' : 'unscheduled'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
-          onSelectRange={range => { setPlannerFilter(range); if (range === 'today') setPlannerSelectedDate(todayKey); if (range === 'tomorrow') setPlannerSelectedDate(tomorrowKey); navigateTo('planner'); }}
-          onOpenGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }} /></Suspense>} />
+          /></Suspense>} />
 
         <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
           month={financeMonth}
@@ -3012,7 +2984,7 @@ export default function App() {
               onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /><details className="lifeos-panel rounded-2xl border p-4" onToggle={event => setProjectionExpanded(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer font-semibold">Explore a savings projection</summary><p className="mt-2 text-sm text-secondary">Compare savings scenarios using your own assumptions. This does not change your accounts or planned bills.</p>{activeTab === 'finance' && projectionExpanded && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}</details></div>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
-              <div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-secondary">Posted transactions in {userPrefs.currency} for {formatMonthYear(financeMonth)}; planned estimates stay separate in Financial Planning.</p></div>
+              <div><h3 className="text-base font-semibold">Financial insights</h3></div>
               <div className="grid grid-cols-2 gap-2.5">
                 {[['Income', financeAnalytics.totalIncome, 'text-[var(--success)]'], ['Expenses', financeAnalytics.totalExpenses, 'text-[var(--danger)]'], ['Net cash flow', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-[var(--danger)]' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'lifeos-accent-text']].map(([label, value, color]) => <div key={String(label)} className="min-w-0 rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><p className="text-xs text-secondary">{label}</p><p className={`mt-1 break-words text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p><p className="mt-1 text-[10px] text-muted">{formatMonthYear(financeMonth)} · posted</p></div>)}
               </div>
@@ -3101,7 +3073,16 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <>
-            {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'No scheduled reminder'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={<details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
+            {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={[!plannerDetailTask.dueAlertDisabled && plannerDetailTask.dueDate && (plannerDetailTask.dueTime || dateOnlyAlertTime) ? 'At due time' : '', plannerDetailTask.reminderLeadMinutes ? plannerDetailTask.reminderLeadMinutes + ' min before' : plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : ''].filter(Boolean).join(' / ') || 'No alert'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onDelete={async () => {
+              if (!await confirmAction({ title: 'Delete this task?', message: 'This will remove the task and its alerts.', confirmLabel: 'Delete task', destructive: true })) return;
+              try {
+                await StorageService.tasks.delete(plannerDetailTask.id);
+                setPlannerDetailTaskId(null);
+                const records = await reloadAllData();
+                await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
+                showToast('Task removed', 'info');
+              } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
+            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
             <QuickTaskEntry onAdd={addUnscheduledTask} />
             <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
@@ -3222,7 +3203,13 @@ export default function App() {
               <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
             </section></ProfileSubpage>}
 
-            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
+            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
+              try {
+                await StorageService.settings.set('dateOnlyAlertTime', time);
+                setDateOnlyAlertTime(time);
+                if (!await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled))) showToast('Saved, but Android could not update some alerts.', 'danger');
+              } catch { showToast('Could not save alert time.', 'danger'); }
+            }} preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
 
             {profileSection === 'notifications' && <ProfileSubpage title="Notifications" description="Choose which local reminders LifeOS may send." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-xl border p-4 space-y-3">
               <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
@@ -3349,7 +3336,7 @@ export default function App() {
             </ProfileSubpage>}
             {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => navigateProfileSection('home')}>
             <section className="lifeos-panel rounded-xl border p-4 space-y-2">
-              <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
+              <h3 className="text-sm font-semibold">LifeOS information</h3><a href="./licenses/capacitor-local-notifications.txt" target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-sm lifeos-accent-text">Open source license</a><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
 
             </section>
             </ProfileSubpage>}
@@ -3370,12 +3357,12 @@ export default function App() {
         </div>}
       {createKind && (
         <div className="ui-sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+          <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
             </div>
-            <p id="record-form-description" className="record-form-description">{createKind === 'task' ? 'Start with a title and date. Reminders and repeat options are below.' : createKind === 'transaction' ? 'Enter the amount and category. An account is optional.' : createKind === 'habit' ? 'Choose a routine and how often you want to check in.' : createKind === 'goal' ? 'Name the outcome, then choose a measurable target.' : 'Complete the details below. Your changes are saved only when you confirm.'}</p>
+            <p id="record-form-description" className="sr-only">Enter the record details and save your changes.</p>
             {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
               {createKind === 'transaction' ? 'Merchant or description (optional)' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
               <input autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
@@ -3443,12 +3430,18 @@ export default function App() {
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
+              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', reminderLead: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
               <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              <details className="ui-optional-form-details" open={Boolean(editingTaskId && (createDraft.description || createDraft.category || createDraft.reminderAt || (createDraft.recurring && createDraft.recurring !== 'None')))}><summary>More task details</summary>
+<label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={!createDraft.date} checked={createDraft.dueAlert !== 'off'} onChange={event => setCreateDraft({ ...createDraft, dueAlert: event.target.checked ? 'on' : 'off' })} /> Alert at due time</label>
+              <details className="ui-optional-form-details" open={Boolean(editingTaskId && (createDraft.description || createDraft.category || createDraft.reminderLead || (createDraft.recurring && createDraft.recurring !== 'None')))}><summary>More task details</summary>
                 <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-xs text-secondary">Reminder (optional)<input disabled={!createDraft.date} type="datetime-local" value={createDraft.reminderAt || ''} onChange={e => setCreateDraft({ ...createDraft, reminderAt: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /><span className="mt-1 block text-[10px] text-muted">Uses local time; delivery may be approximate on Android.</span></label>
+                <label className="mb-3 block text-sm">Extra reminder
+                  <select disabled={!createDraft.date || (!createDraft.time && !dateOnlyAlertTime && !createDraft.reminderAt)} value={['', '5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead || '') ? createDraft.reminderLead || '' : 'custom'} onChange={event => setCreateDraft({ ...createDraft, reminderLead: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3">
+                    <option value="">None</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="custom">Custom lead time</option>{createDraft.reminderAt && <option value="legacy">Keep saved reminder</option>}
+                  </select>
+                </label>
+                {createDraft.reminderLead && !['5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead) && <label className="mb-3 block text-sm">Minutes before<input type="number" min="1" max="10080" required value={createDraft.reminderCustom || (createDraft.reminderLead === 'custom' ? '' : createDraft.reminderLead)} onChange={event => setCreateDraft({ ...createDraft, reminderLead: 'custom', reminderCustom: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
                 <label className="mb-3 block text-xs text-secondary">Repeat<select disabled={!createDraft.date} value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
               </details>
             </>}

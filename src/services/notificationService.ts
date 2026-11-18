@@ -25,7 +25,7 @@ const NativeNotificationTapLaunch = registerPlugin<{
   acknowledgeInitialAction(options: { id: number }): Promise<void>;
 }>('NotificationTapLaunch');
 const NativeNotificationDeliveryDiagnostics = registerPlugin<{
-  getRecentDeliveries(): Promise<{ notifications: Array<{ id: number; postedAt: string }> }>;
+  getRecentDeliveries(): Promise<{ notifications: Array<{ id: number; postedAt: string }>; receiverEvents?: Array<{ id: number; firedAt: string }> }>;
 }>('LifeOSNotificationDeliveryDiagnostics');
 const diagnosticKey = 'lifeos.notificationDiagnostics';
 const lifecycleKey = 'lifeos.notificationLifecycle.v1';
@@ -70,7 +70,7 @@ type NotificationDiagnosticRecord = {
   lastActionEvent?: { at: string; kind: string; id: number };
 };
 type ReminderLifecycle = {
-  kind: 'taskReminders';
+  kind: 'taskReminders' | 'dueTime';
   configuredAt: string | null;
   reminderAt: string;
   scheduleMode: 'exact' | 'inexact-allowWhileIdle' | 'unknown';
@@ -99,7 +99,7 @@ function updateReminderLifecycle(id: number, update: Partial<ReminderLifecycle> 
     const previous = all[key];
     const changedReminder = Boolean(previous && previous.reminderAt !== update.reminderAt);
     const base = changedReminder ? {
-      kind: 'taskReminders' as const, configuredAt: update.configuredAt ?? previous?.configuredAt ?? null,
+      kind: update.kind, configuredAt: update.configuredAt ?? previous?.configuredAt ?? null,
       reminderAt: update.reminderAt, scheduleMode: 'unknown' as const, scheduleRequestedAt: null,
       nativeAcceptedAt: null, pendingObservedAt: null, androidPostedAt: null, deliveryState: 'unknown' as const,
       deliveryObservedAt: null, receiverEventAt: null, tappedAt: null, cancellationAt: null, cancellationReason: null,
@@ -189,7 +189,7 @@ export const NotificationService = {
   isSupported: isNative,
 
   async cancelAllRecordReminders() {
-    await cancelPendingKinds(['taskReminders', 'upcomingDeadlines', 'overdueAlerts', 'habitReminder', 'milestoneReminder']);
+    await cancelPendingKinds(['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts', 'habitReminder', 'milestoneReminder']);
   },
 
   async checkPermission() {
@@ -229,7 +229,7 @@ export const NotificationService = {
     return permission === 'granted' && appEnabled.value && Boolean(reminderChannel && Number(reminderChannel.importance) > 0);
   },
 
-  async syncTasks(tasks: Task[], preferences: NotificationPreferences) {
+  async syncTasks(tasks: Task[], preferences: NotificationPreferences, dateOnlyAlertTime?: string) {
     if (!requireNativeNotifications()) return;
     const run = async () => {
       updateDiagnostics({ lastScheduleAttempt: new Date().toISOString(), lastScheduleResult: 'running', lastCancellationReason: '' });
@@ -237,7 +237,7 @@ export const NotificationService = {
       await this.ensureChannel();
       if (!(await this.canScheduleNotifications())) {
         const pending = await LocalNotifications.getPending();
-        const owned = pending.notifications.filter(item => ['taskReminders', 'upcomingDeadlines', 'overdueAlerts'].includes(String(item.extra?.kind || '')));
+        const owned = pending.notifications.filter(item => ['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts'].includes(String(item.extra?.kind || '')));
         await cancelIds(owned.map(item => item.id));
         for (const item of owned) {
           if (String(item.extra?.kind) !== 'taskReminders') continue;
@@ -258,21 +258,21 @@ export const NotificationService = {
       const delivered = await LocalNotifications.getDeliveredNotifications();
       const exactAlarm = await this.checkExactAlarmPermission();
       const scheduleMode = exactAlarm === 'granted' ? 'exact' as const : 'inexact-allowWhileIdle' as const;
-      const taskKinds = new Set(['taskReminders', 'upcomingDeadlines', 'overdueAlerts']);
+      const taskKinds = new Set(['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts']);
       const oldTaskNotifications = pending.notifications.filter(item => taskKinds.has(String(item.extra?.kind || '')));
 
       const labels: Record<string, string> = {
-        taskReminders: 'Task reminder', upcomingDeadlines: 'Upcoming deadline', overdueAlerts: 'Task overdue',
+        dueTime: 'Task due now', taskReminders: 'Task reminder', upcomingDeadlines: 'Upcoming deadline', overdueAlerts: 'Task overdue',
       };
       const now = new Date();
-      const notifications = tasks.filter(task => !isSampleRecord(task.id) && !isSampleRecord(task.recurrenceRootId ?? '')).flatMap(task => buildTaskNotificationPlan(task, preferences, now).map(plan => ({
+      const notifications = tasks.filter(task => !isSampleRecord(task.id) && !isSampleRecord(task.recurrenceRootId ?? '')).flatMap(task => buildTaskNotificationPlan(task, preferences, now, dateOnlyAlertTime).map(plan => ({
         id: taskNotificationId(task, plan.kind), title: labels[plan.kind] || 'LifeOS reminder', body: 'Unlock LifeOS to view your reminder.',
         // Exact-alarm denial falls back to Android's idle-aware inexact alarm.
         // Reserve the per-app idle quota for reminders the user explicitly set;
         // deadline/overdue alerts are separate, lower-priority events.
-        schedule: { at: plan.at, allowWhileIdle: plan.kind === 'taskReminders' }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+        schedule: { at: plan.at, allowWhileIdle: plan.kind === 'dueTime' || plan.kind === 'taskReminders' }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
         extra: { kind: plan.kind, taskId: task.id, scheduleMode,
-          ...(plan.kind === 'taskReminders' && task.reminderAt ? { originalReminderAt: task.reminderAt } : {}) },
+          ...(['dueTime', 'taskReminders'].includes(plan.kind) ? { originalReminderAt: plan.at.toISOString() } : {}) },
       })));
       for (const task of tasks) {
         if (!task.reminderAt || task.completed || !task.dueDate) continue;
@@ -299,9 +299,20 @@ export const NotificationService = {
       const lateCatchUps: LocalNotificationSchema[] = [];
       const retainedLateIds = new Set<number>();
       for (const item of oldTaskNotifications) {
-        if (String(item.extra?.kind || '') !== 'taskReminders') continue;
+        const kind = String(item.extra?.kind || '');
         const taskId = String(item.extra?.taskId || '');
         const task = tasksById.get(taskId);
+        if (task && !desiredIds.has(item.id)) {
+          const definition = buildTaskNotificationPlan(task, preferences, new Date(0), dateOnlyAlertTime).find(plan => plan.kind === kind);
+          // Android may fire an inexact alarm after its nominal time. Leave an
+          // existing matching alarm registered while its definition is valid.
+          if (definition && definition.at <= now && pendingTimeMatches(item.extra?.originalReminderAt ?? item.schedule?.at, definition.at) &&
+            (kind !== 'taskReminders' || task.reminderLeadMinutes !== undefined)) {
+            retainedLateIds.add(item.id);
+            continue;
+          }
+        }
+        if (kind !== 'taskReminders') continue;
         if (!task || isSampleRecord(task.id) || isSampleRecord(task.recurrenceRootId ?? '') || task.completed || !task.dueDate || !preferences.taskReminders || !task.reminderAt) continue;
         const selectedAt = new Date(task.reminderAt);
         if (!Number.isFinite(selectedAt.getTime()) || selectedAt > now) continue;
@@ -357,11 +368,12 @@ export const NotificationService = {
         // reminders which were already queued successfully.
         const requestedAt = new Date().toISOString();
         for (const item of replacements) {
-          if (String(item.extra?.kind) !== 'taskReminders') continue;
+          const kind = item.extra?.kind;
+          const reminderAt = item.extra?.originalReminderAt;
+          if ((kind !== 'taskReminders' && kind !== 'dueTime') || typeof reminderAt !== 'string') continue;
           const task = tasksById.get(String(item.extra?.taskId || ''));
-          if (!task?.reminderAt) continue;
           updateReminderLifecycle(item.id, {
-            kind: 'taskReminders', configuredAt: task.createdAt || null, reminderAt: task.reminderAt,
+            kind, configuredAt: task?.createdAt || null, reminderAt,
             scheduleMode, scheduleRequestedAt: requestedAt, deliveryState: 'requested',
             cancellationAt: null, cancellationReason: null,
           });
@@ -377,11 +389,12 @@ export const NotificationService = {
         }
         await schedule([...replacements, ...lateCatchUps]);
         for (const item of [...replacements, ...lateCatchUps]) {
-          if (String(item.extra?.kind) !== 'taskReminders') continue;
+          const kind = item.extra?.kind;
+          const reminderAt = item.extra?.originalReminderAt;
+          if ((kind !== 'taskReminders' && kind !== 'dueTime') || typeof reminderAt !== 'string') continue;
           const task = tasksById.get(String(item.extra?.taskId || ''));
-          if (!task?.reminderAt) continue;
           updateReminderLifecycle(item.id, {
-            kind: 'taskReminders', configuredAt: task.createdAt || null, reminderAt: task.reminderAt,
+            kind, configuredAt: task?.createdAt || null, reminderAt,
             scheduleMode, nativeAcceptedAt: new Date().toISOString(), deliveryState: 'accepted',
           });
         }
@@ -393,11 +406,12 @@ export const NotificationService = {
         });
         if (missing.length) throw new Error(`schedule-verification-missing:${missing.length}`);
         for (const item of [...replacements, ...lateCatchUps]) {
-          if (String(item.extra?.kind) !== 'taskReminders') continue;
+          const kind = item.extra?.kind;
+          const reminderAt = item.extra?.originalReminderAt;
+          if ((kind !== 'taskReminders' && kind !== 'dueTime') || typeof reminderAt !== 'string') continue;
           const task = tasksById.get(String(item.extra?.taskId || ''));
-          if (!task?.reminderAt) continue;
           updateReminderLifecycle(item.id, {
-            kind: 'taskReminders', configuredAt: task.createdAt || null, reminderAt: task.reminderAt,
+            kind, configuredAt: task?.createdAt || null, reminderAt,
             scheduleMode,
             pendingObservedAt: new Date().toISOString(), deliveryState: 'pending-observed',
           });
@@ -565,9 +579,9 @@ export const NotificationService = {
     if (!requireNativeNotifications()) return { remove: async () => {} };
     return LocalNotifications.addListener('localNotificationActionPerformed', action => {
       const kind = typeof action.notification.extra?.kind === 'string' ? action.notification.extra.kind : 'unknown';
-      if (kind === 'taskReminders' && action.notification.extra?.originalReminderAt) {
+      if ((kind === 'taskReminders' || kind === 'dueTime') && action.notification.extra?.originalReminderAt) {
         updateReminderLifecycle(action.notification.id, {
-          kind: 'taskReminders', reminderAt: String(action.notification.extra.originalReminderAt),
+          kind, reminderAt: String(action.notification.extra.originalReminderAt),
           deliveryState: 'tapped', tappedAt: new Date().toISOString(),
         });
       }
@@ -616,7 +630,7 @@ export const NotificationService = {
 
   async cancelTask(task: Task) {
     try {
-      await cancelIds(['taskReminders', 'upcomingDeadlines', 'overdueAlerts'].map(kind => taskNotificationId(task, kind)));
+      await cancelIds(['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts'].map(kind => taskNotificationId(task, kind)));
       if (task.reminderAt) updateReminderLifecycle(taskNotificationId(task, 'taskReminders'), {
         kind: 'taskReminders', configuredAt: task.createdAt || null, reminderAt: task.reminderAt,
         deliveryState: 'cancelled', cancellationAt: new Date().toISOString(), cancellationReason: 'task-deleted',
@@ -740,11 +754,16 @@ export const NotificationService = {
         try {
           const recent = await withTimeout(NativeNotificationDeliveryDiagnostics.getRecentDeliveries(), 'delivery-events');
           const lifecycle = readReminderLifecycle();
+          for (const event of recent.receiverEvents ?? []) {
+            const reminder = lifecycle[String(event.id)];
+            if (!reminder || !reminder.nativeAcceptedAt || event.firedAt < reminder.nativeAcceptedAt) continue;
+            updateReminderLifecycle(event.id, { kind: reminder.kind, reminderAt: reminder.reminderAt, receiverEventAt: event.firedAt });
+          }
           for (const event of recent.notifications) {
             const reminder = lifecycle[String(event.id)];
-            if (reminder?.kind !== 'taskReminders') continue;
+            if (!reminder || (reminder.nativeAcceptedAt && event.postedAt < reminder.nativeAcceptedAt)) continue;
             updateReminderLifecycle(event.id, {
-              kind: 'taskReminders', reminderAt: reminder.reminderAt,
+              kind: reminder.kind, reminderAt: reminder.reminderAt,
               androidPostedAt: event.postedAt, deliveryState: 'active-observed',
             });
           }
