@@ -49,12 +49,18 @@ close(); assert.equal(closes, 2);
 
 const backExpression = h.appFunction('navigateBack');
 const state = { appReady: true, isLocked: false, activeTab: 'dashboard', todayCustomizationOpen: true, onboardingRequired: false, onboardingComplete: true };
-h.bind(backExpression, { backState: { current: state }, confirmationResolver: { current: null }, firstRecordSecurityResolver: { current: null },
+h.bind(backExpression, { notificationOfferBack: { current: null }, backState: { current: state }, confirmationResolver: { current: null }, firstRecordSecurityResolver: { current: null },
   closeTodayCustomization: close, resolveBackAction: () => { throw new Error('Customization must close before navigation'); },
 })();
 assert.equal(closes, 3, 'Native Back closes Customize before any navigation or exit');
+let offerDismissed = false;
+h.bind(backExpression, {
+  notificationOfferBack: { current: () => { offerDismissed = true; } },
+  resolveBackAction: () => { throw new Error('The notification offer owns Back'); },
+})();
+assert.equal(offerDismissed, true);
 let confirmationDismissed = false;
-h.bind(backExpression, { backState: { current: state }, confirmationResolver: { current: () => {} },
+h.bind(backExpression, { notificationOfferBack: { current: null }, backState: { current: state }, confirmationResolver: { current: () => {} },
   settleConfirmation: value => { assert.equal(value, false); confirmationDismissed = true; },
   closeTodayCustomization: () => { throw new Error('Nested confirmation owns Back'); },
 })();
