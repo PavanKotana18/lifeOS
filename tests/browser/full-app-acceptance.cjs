@@ -216,7 +216,7 @@ async function main() {
       await clickButton('Not now');
       await page.getByRole('heading', { name: 'Recovery setup' }).waitFor();
       await capture('recovery-390');
-      await clickButton('Set up later');
+      await clickButton('Do this later');
       await page.getByTestId('today-dashboard').waitFor();
       await page.getByRole('dialog', { name: 'Stay on top of what matters' }).waitFor();
       await capture('today-notification-opt-in-390');
@@ -241,7 +241,7 @@ async function main() {
       await page.getByRole('heading', { name: 'Budgets', exact: true }).waitFor();
       await clickButton('Money overview');
       await page.getByTestId('money-home').waitFor();
-      await activeTab('plan'); await clickButton('Calendar planner');
+      await activeTab('plan'); await clickButton('Open calendar');
       await page.getByRole('heading', { name: 'Tasks by date' }).waitFor();
       assert.equal(await page.locator('[data-tab="plan"]').getAttribute('aria-current'), 'page');
       await activeTab('life'); await clickButton('Habits', { exact: false });
@@ -255,9 +255,10 @@ async function main() {
       const views = page.getByRole('group', { name: 'Task views' }).getByRole('button');
       assert.match(await views.first().innerText(), /^All/);
       assert.equal(await views.first().getAttribute('aria-pressed'), 'true');
-      const quick = page.getByLabel('Quick task', { exact: true });
-      await quick.fill('QA acceptance: review weekly plan');
-      await page.getByRole('button', { name: 'Add task', exact: true }).last().click();
+      await clickButton('Create Task');
+      await fillDialogField('Task title', 'QA acceptance: review weekly plan');
+      await capture('task-composer-390');
+      await dialog().locator('button[type=submit]').click();
       await page.getByRole('dialog', { name: 'Protect your personal data' }).waitFor();
       await clickButton('Protect this device and save');
       await page.waitForFunction(async () => {
@@ -272,8 +273,13 @@ async function main() {
         const tasks = await db.StorageService.tasks.getAll();
         return tasks.some(task => task.title === title && task.completed);
       }, 'QA acceptance: review weekly plan');
-      await page.locator('.plan-filter-details > summary').click();
-      await page.locator('.plan-search-controls select').selectOption('completed');
+      await clickButton('Filters');
+      const filters = page.getByRole('dialog', { name: 'Task filters' });
+      await filters.getByLabel('Status').selectOption('completed');
+      await filters.getByLabel('Priority').selectOption('Medium');
+      await capture('plan-filters-390');
+      await clickButton('Apply filters');
+      await page.getByRole('button', { name: 'Filters (2)' }).waitFor();
       const completedToggle = page.getByRole('checkbox', { name: 'Mark QA acceptance: review weekly plan incomplete' });
       await completedToggle.waitFor();
       assert.equal(await completedToggle.isChecked(), true, 'completed task is shown checked in the completed filter');
@@ -321,8 +327,8 @@ async function main() {
       await page.getByRole('heading', { name: 'Financial insights' }).waitFor();
       await page.getByText(/Posted expenses/).waitFor();
       assert.ok(await page.locator('.recharts-wrapper').count() > 0, 'real finance chart is rendered from the saved expense');
-      await page.getByLabel('Chart range').selectOption('3');
-      assert.equal(await page.getByLabel('Chart range').inputValue(), '3');
+      await page.getByLabel('Time period').selectOption('3');
+      assert.equal(await page.getByLabel('Time period').inputValue(), '3');
       await capture('money-analytics-posted-390');
       assert.match(await page.locator('.money-period-control input').getAttribute('aria-label'), /November 2026/,
         'period selector retains a full accessible month name');
@@ -493,9 +499,9 @@ async function main() {
       await clickButton('Open profile and settings');
       await page.getByTestId('profile-settings-home').waitFor();
       await capture('profile-390');
-      for (const name of ['Preferences', 'Notifications', 'Developer tools']) {
+      for (const name of ['Appearance', 'Preferences', 'Notifications', 'Privacy & Security', 'Backup & Restore', 'About', 'Developer tools']) {
         await clickButton(name);
-        await page.getByRole('heading', { name, exact: true }).waitFor();
+        await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true }).waitFor();
         await inspectVisiblePage(name);
         await capture(name.toLowerCase().replaceAll(' ', '-') + '-390');
         if (name === 'Developer tools') {
@@ -517,6 +523,22 @@ async function main() {
         await clickButton('Profile');
       }
       await activeTab('dashboard');
+    });
+
+    await journey('all Money destinations render on narrow screens', async () => {
+      for (const width of [320, 390, 768, 1280]) {
+        await page.setViewportSize({ width, height: 844 });
+        await activeTab('finance');
+        const menu = page.getByRole('navigation', { name: 'Money destinations' });
+        for (const name of ['Transactions', 'Accounts', 'Budgets', 'Savings', 'Insights', 'Plans']) {
+          await menu.getByRole('button', { name, exact: true }).click();
+          await page.getByRole('heading', { name: name === 'Plans' ? 'Upcoming bills' : name, exact: true }).first().waitFor();
+          const content = await page.evaluate(() => document.documentElement.scrollWidth);
+          assert.ok(content <= width + 1, name + ' overflows at ' + width + 'px');
+          if (width === 390) await capture('money-destination-' + name.toLowerCase() + '-390');
+          await clickButton('Money overview');
+        }
+      }
     });
 
     await journey('responsive layouts and live accessibility audit', async () => {

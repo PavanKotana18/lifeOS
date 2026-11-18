@@ -35,16 +35,16 @@ function button(tree, label) { const matches = walk(tree, n => n.type === 'butto
 // React hook host. This is not a mounted browser/native interaction test.
 const state = []; let cursor = 0;
 function renderPlan(props) {
-  const originalState = React.useState, originalId = React.useId;
+  const originalState = React.useState, originalId = React.useRef;
   React.useState = initial => { const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], value => { state[index] = typeof value === 'function' ? value(state[index]) : value; }]; };
-  React.useId = () => 'plan-test'; cursor = 0;
-  try { return PlanHub(props); } finally { React.useState = originalState; React.useId = originalId; }
+  React.useRef = value => ({ current: value }); cursor = 0;
+  try { return PlanHub(props); } finally { React.useState = originalState; React.useRef = originalId; }
 }
 const calls = [];
 const props = { tasks, today, now, onNavigatePlanner: () => calls.push('calendar'), onOpenTask: value => calls.push('open:' + value.id), onToggleTask: value => calls.push('toggle:' + value.id), onSelectRange: noop, onOpenGoals: () => calls.push('goals'), onQuickAdd: async () => {} };
 let tree = renderPlan(props);
 let markup = renderToStaticMarkup(tree);
-assert.match(markup, /Task views/); assert.match(markup, /Search tasks/); assert.match(markup, /All statuses/); assert.match(markup, /Quick task creation/);
+assert.match(markup, /Task views/); assert.match(markup, /Search tasks/); assert.match(markup, /All statuses/); assert.match(markup, /Create Task/);
 assert.match(markup, /Repeats daily/); assert.match(markup, /Reminder set/); assert.match(markup, /No due date/);
 assert.match(markup, /done-undated/);
 const view = label => walk(tree, n => n.type === 'button' && text(n).startsWith(label) && n.props['aria-pressed'] !== undefined)[0];
@@ -60,9 +60,9 @@ button(tree, 'Show every task').props.onClick(); tree = renderPlan(props);
 assert.equal(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').length, tasks.length);
 walk(tree, n => n.type === 'input' && n.props['aria-label'] === 'Mark done incomplete')[0].props.onChange();
 walk(tree, n => n.type === 'button' && n.props.className === 'plan-hub-task-open' && text(n).startsWith('future'))[0].props.onClick();
-assert.match(markup, /aria-label="Quick task creation"/); assert.doesNotMatch(markup, /plan-compose/);
-button(tree, 'Calendar planner').props.onClick(); button(tree, 'Goals in Life').props.onClick();
-assert.deepEqual(calls, ['toggle:done', 'open:future', 'calendar', 'goals']);
+assert.match(markup, /Create Task/); assert.doesNotMatch(markup, /plan-compose/);
+walk(tree, n => n.type === 'button' && n.props['aria-label'] === 'Open calendar')[0].props.onClick();
+assert.deepEqual(calls, ['toggle:done', 'open:future', 'calendar']);
 const many = renderToStaticMarkup(React.createElement(PlanHub, { ...props, tasks: Array.from({ length: 12 }, (_, i) => task('task' + i, today)) }));
 assert.equal((many.match(/class="plan-hub-task ui-interactive-row/g) || []).length, 12, 'Workspace does not hide tasks behind a five-row preview');
 assert.doesNotMatch(fs.readFileSync('src/components/PlanHub.tsx', 'utf8'), /onTouchStart|onTouchMove|onTouchEnd|onPointerMove/, 'Local filters do not install competing swipe handlers');
@@ -77,5 +77,5 @@ walk(life, n => n.props.className === 'life-goal-card')[0].props.onClick(); walk
 assert.deepEqual(calls.slice(-2), ['all-goals', 'habits'], 'Existing consumers retain collection navigation');
 assert.equal(displayGoalProgress(Infinity), 0); assert.equal(displayGoalProgress(125), 100); assert.equal(displayGoalProgress(-1), 0); assert.equal(displayGoalProgress(45.5), 45.5);
 const empty = renderToStaticMarkup(React.createElement(LifeHub, { ...lifeProps, habits: [], goals: [], routinesDue: 0, weeklyTotal: 0 }));
-assert.match(empty, /Make room for what matters/); assert.match(empty, /Add a habit/); assert.match(empty, /Add a goal/); assert.doesNotMatch(empty, /Routine progress|role="progressbar"/);
+assert.match(empty, /Start tracking/); assert.match(empty, /Add a habit/); assert.match(empty, /Add a goal/); assert.doesNotMatch(empty, /Routine progress|role="progressbar"/);
 console.log('FOUR-TAB PLAN/LIFE: real local views/search/status, complete task access, direct callbacks, quick entry, focused habit/goal navigation, real progress and combined empty state PASS. Hook/SSR tests only.');

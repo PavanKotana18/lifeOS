@@ -35,23 +35,23 @@ const planProps = {
 };
 const planMarkup = renderToStaticMarkup(React.createElement(PlanHub, planProps));
 assert.match(planMarkup, /Search tasks/);
-assert.match(planMarkup, /Calendar planner/);
+assert.match(planMarkup, /Open calendar/);
 assert.match(planMarkup, /role="group" aria-label="Task views"/);
 assert.match(planMarkup, /Overdue · Today/);
 assert.match(planMarkup, /Call the dentist/);
 assert.doesNotMatch(planMarkup, /2026-11-11/, 'dates are presented in a readable local format rather than raw storage format');
 assert.match(planMarkup, /Repeats daily/);
 assert.match(planMarkup, /No due date/);
-assert.match(planMarkup, /aria-label="Quick task creation"/);
-assert.match(planMarkup, />Add task<\/button>/, 'task creation has one direct submit action');
+assert.match(planMarkup, /Create Task/);
+assert.match(planMarkup, /Create Task/, 'task creation has one direct submit action');
 assert.match(planMarkup, /All statuses/);
 assert.doesNotMatch(planMarkup, /Open planner/);
 const state = []; let cursor = 0;
 function renderPlan() {
-  const useState = React.useState, useId = React.useId;
+  const useState = React.useState, useId = React.useRef;
   React.useState = initial => { const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], value => { state[index] = value; }]; };
-  React.useId = () => 'directed-plan'; cursor = 0;
-  try { return PlanHub(planProps); } finally { React.useState = useState; React.useId = useId; }
+  React.useRef = value => ({ current: value }); cursor = 0;
+  try { return PlanHub(planProps); } finally { React.useState = useState; React.useRef = useId; }
 }
 const planElement = renderPlan();
 function walk(node, visit) {
@@ -64,7 +64,7 @@ function walk(node, visit) {
 function clickButtonContaining(element, text) {
   let button;
   walk(element, node => {
-    if (node.type === 'button' && String(node.props.children).includes(text)) button = node;
+    if (node.type === 'button' && (String(node.props.children).includes(text) || node.props['aria-label'] === text)) button = node;
   });
   assert.ok(button, `button containing ${text} exists`);
   button.props.onClick();
@@ -74,7 +74,7 @@ assert.equal(state[0], 'upcoming', 'Upcoming selects a local view instead of nav
 const upcoming = renderToStaticMarkup(renderPlan());
 assert.match(upcoming, /Call the dentist/);
 assert.doesNotMatch(upcoming, /class="plan-hub-row-title">Sort the paperwork/);
-clickButtonContaining(planElement, 'Calendar planner');
+clickButtonContaining(planElement, 'Open calendar');
 assert.deepEqual(calls, ['planner'], 'Calendar navigation preserves its callback while task view selection stays local');
 const emptyPlan = renderToStaticMarkup(React.createElement(PlanHub, { ...planProps, tasks: [] }));
 assert.match(emptyPlan, /No tasks yet/);

@@ -21,7 +21,7 @@ assert.match(service, /getDeliveredNotifications\(\)/, 'diagnostics separate per
 assert.match(service, /lateCatchUp/, 'resume recovery retains a delayed still-persisted reminder instead of cancelling it as past');
 assert.match(service, /delivery-not-observable/, 'a missing pending record is not misreported as a confirmed delivery');
 assert.match(service, /setAndAllowWhileIdle|approximate/, 'denied exact-alarm access is explicitly approximate');
-assert.match(service, /allowWhileIdle: plan\.kind === 'taskReminders'/, 'only explicit task reminders consume the per-app idle-aware alarm quota');
+assert.match(service, /allowWhileIdle: plan\.kind === 'dueTime' \|\| plan\.kind === 'taskReminders'/, 'due-time and early task notifications use idle-aware scheduling');
 assert.match(service, /lifeos\.notificationLifecycle\.v1/, 'per-reminder request/acceptance/observation evidence survives pending-row removal');
 assert.match(service, /reminderLifecycle: readReminderLifecycleSummary\(\)/, 'diagnostics expose a bounded content-free reminder lifecycle');
 assert.match(app, /developerToolsEnabled && notificationDiagnostics\.reminderLifecycle\.length/, 'the delivery timeline is limited to developer diagnostics');

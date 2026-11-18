@@ -20,10 +20,10 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const task={id:'task-distinct',dueDate:'2030-01-02',dueTime:'12:00',reminderAt:reminder.toISOString(),completed:false};
   const prefs={...f.DEFAULT_NOTIFICATION_PREFERENCES,taskReminders:true,upcomingDeadlines:true,overdueAlerts:true};
   const plan=domain.buildTaskNotificationPlan(task,prefs,new Date(2030,0,2,8,0,0,0));
-  assert.deepEqual(plan.map(x=>x.kind),['taskReminders','upcomingDeadlines','overdueAlerts']);
-  assert.equal(plan[0].at.getTime(),reminder.getTime(),'reminder fires at user-selected instant');
-  assert.equal(plan[1].at.getTime(),due.getTime()-60*60_000,'deadline alert policy stays separate');
-  assert.equal(plan[2].at.getTime(),due.getTime()+60_000,'overdue alert follows due time');
+  assert.deepEqual(plan.map(x=>x.kind),['dueTime','taskReminders','upcomingDeadlines','overdueAlerts']);
+  assert.equal(plan.find(item=>item.kind==='taskReminders').at.getTime(),reminder.getTime(),'reminder fires at user-selected instant');
+  assert.equal(plan.find(item=>item.kind==='upcomingDeadlines').at.getTime(),due.getTime()-60*60_000,'deadline alert policy stays separate');
+  assert.equal(plan.find(item=>item.kind==='overdueAlerts').at.getTime(),due.getTime()+60_000,'overdue alert follows due time');
   assert.ok(Number.isInteger(domain.stableNotificationId('task:task-distinct:taskReminders')));
   assert.ok(domain.stableNotificationId('task:task-distinct:taskReminders') > 0 && domain.stableNotificationId('task:task-distinct:taskReminders') <= 2147483646);
   const dateOnly={id:'date-only',dueDate:'2030-01-02',completed:false};
@@ -48,8 +48,9 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const task={id:'idle-quota-task',title:'Synthetic',dueDate:'2030-01-02',dueTime:'12:00',reminderAt:new Date(Date.now()+60*60_000).toISOString(),completed:false};
   await ns.syncTasks([task],prefs);
   const taskEntries=[...f.pending.values()].filter(item=>item.extra?.taskId===task.id);
-  assert.equal(taskEntries.length,3,'reminder, deadline and overdue alert remain distinct schedules');
+  assert.equal(taskEntries.length,4,'reminder, deadline and overdue alert remain distinct schedules');
   assert.equal(taskEntries.find(item=>item.extra.kind==='taskReminders').schedule.allowWhileIdle,true);
+  assert.equal(taskEntries.find(item=>item.extra.kind==='dueTime').schedule.allowWhileIdle,true);
   assert.equal(taskEntries.find(item=>item.extra.kind==='upcomingDeadlines').schedule.allowWhileIdle,false);
   assert.equal(taskEntries.find(item=>item.extra.kind==='overdueAlerts').schedule.allowWhileIdle,false);
   await ns.syncHabits([{id:'idle-quota-habit',frequency:'daily',reminderTime:'09:00'}],{...prefs,taskReminders:false,habitReminders:true});

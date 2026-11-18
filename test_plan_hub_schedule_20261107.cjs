@@ -45,9 +45,9 @@ assert.match(markup, /role="group" aria-label="Task views"/, 'view controls are 
 assert.match(markup, /Upcoming/);
 assert.match(markup, /Unscheduled/);
 assert.match(markup, /All statuses/);
-assert.match(markup, /Calendar planner/);
-assert.match(markup, /Goals in Life/);
-assert.match(markup, /Calendar planner/, 'the calendar remains available without leaving the task workspace ambiguous');
+assert.match(markup, /Open calendar/);
+assert.doesNotMatch(markup, /Goals in Life/);
+assert.match(markup, /Open calendar/, 'the calendar remains available without leaving the task workspace ambiguous');
 assert.doesNotMatch(markup, /Open planner/);
 assert.doesNotMatch(markup, /Goals<\/h3>/, 'goal management stays in Life instead of being duplicated under Plan');
 assert.doesNotMatch(markup, /truncate/, 'long task and goal titles are not clipped by the Plan summary');

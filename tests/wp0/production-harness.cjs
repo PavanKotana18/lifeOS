@@ -259,6 +259,7 @@ async function fixture({ activate = true } = {}) {
       ...load('src/services/csvExportService.ts'), ...load('src/services/onboardingJourney.ts'), ...load('src/services/customAccent.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       reconcileNotificationPreferences: async () => {},
+      setDateOnlyAlertTime: () => {},
       CryptoService: load('src/services/cryptoService.ts').CryptoService,
       ensurePrivateStorageBeforeWrite: async () => {
         if (!db.isEncryptedStorageActivated() || !db.sessionManager.isUnlocked()) {

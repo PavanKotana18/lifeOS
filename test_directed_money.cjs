@@ -46,8 +46,8 @@ assert.match(home, /Showing 3 of 4 accounts\./, 'the summary makes omitted accou
 assert.match(home, /Wallet: \$80\.00/, 'account amount is accessible with its account name');
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="Edit Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
-assert.match(home, /Accounts, budgets and plans/);
-assert.match(home, /Upcoming bills/);
+assert.match(home, /This month at a glance/);
+assert.match(home, />Plans</);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],

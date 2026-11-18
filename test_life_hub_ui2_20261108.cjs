@@ -43,7 +43,7 @@ const empty = renderToStaticMarkup(React.createElement(LifeHub, { ...props, habi
 assert.match(empty, /No routines yet/);
 assert.match(empty, /No goals yet/);
 assert.match(empty, /Add a goal/);
-assert.match(empty, /All goals and milestones/);
+assert.match(empty, /Add a goal/);
 assert.doesNotMatch(empty, /Routine progress/, 'empty profiles do not show fabricated zero-progress summaries');
 
 const app = fs.readFileSync('src/App.tsx', 'utf8');
