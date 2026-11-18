@@ -296,8 +296,8 @@ async function main() {
       const testId = (testText.match(/^package: name='([^']+)'/m) || [])[1] || '';
       const testTarget = (targetText.match(/android:targetPackage[^=]*="([^"]+)"/) || [])[1] || '';
       fs.writeFileSync(path.join(out, 'apk-package.txt'), `app=${appId}\ninstrumentation_apk=${testId}\ninstrumentation_target=${testTarget}\n`);
-      if (appId !== 'com.lifeos.personal.dev' || testId !== 'com.lifeos.personal.dev.test' || testTarget !== 'com.lifeos.personal.dev') {
-        add('Android Dev APK identity', 'FAIL', `Expected app ID and instrumentation target com.lifeos.personal.dev; found app=${appId || 'unknown'}, test APK=${testId || 'unknown'}, target=${testTarget || 'unknown'}. No APK was installed.`, 'apk-package.txt');
+      if (appId !== 'com.lifeos.personal.debug' || testId !== 'com.lifeos.personal.debug.test' || testTarget !== 'com.lifeos.personal.debug') {
+        add('Android Dev APK identity', 'FAIL', `Expected app ID and instrumentation target com.lifeos.personal.debug; found app=${appId || 'unknown'}, test APK=${testId || 'unknown'}, target=${testTarget || 'unknown'}. No APK was installed.`, 'apk-package.txt');
         add('Android instrumentation', 'BLOCKED', 'APK package identity verification failed; no install was attempted.', '');
         add('Native notification OS post and tap', 'BLOCKED', 'Instrumentation did not run.', '');
         console.log(`FAIL: APK identity check (app=${appId || 'unknown'}, test=${testId || 'unknown'}); no install attempted.`);

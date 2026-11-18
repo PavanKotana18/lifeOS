@@ -58,7 +58,7 @@ try {
 const sdk = path.join(root, 'sdk'); fs.mkdirSync(path.join(sdk, 'emulator'), { recursive: true });
   const buildTools = path.join(sdk, 'build-tools', '34.0.0'); fs.mkdirSync(buildTools, { recursive: true });
 fs.writeFileSync(path.join(sdk, 'emulator', 'emulator'), `#!/usr/bin/env node\nif(process.argv.includes('-list-avds'))console.log('LifeOS-QA');\n`, { mode: 0o755 });
-  fs.writeFileSync(path.join(buildTools, 'aapt'), `#!/usr/bin/env node\nif(process.argv.includes('xmltree'))console.log('A: android:targetPackage(0x01010021)="com.lifeos.personal.dev"');else console.log("package: name='"+(process.argv.at(-1).includes('test')?'com.lifeos.personal.dev.test':'com.lifeos.personal.dev')+"'");\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(buildTools, 'aapt'), `#!/usr/bin/env node\nif(process.argv.includes('xmltree'))console.log('A: android:targetPackage(0x01010021)="com.lifeos.personal.debug"');else console.log("package: name='"+(process.argv.at(-1).includes('test')?'com.lifeos.personal.debug.test':'com.lifeos.personal.debug')+"'");\n`, { mode: 0o755 });
   fs.writeFileSync(path.join(buildTools, 'apksigner'), `#!/usr/bin/env node\nconsole.log('Signer #1 certificate SHA-256 digest: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');\n`, { mode: 0o755 });
   const excluded = path.join(root, 'excluded-tests.txt');
   fs.writeFileSync(excluded, 'com.lifeos.personal.BiometricDeviceAcceptanceTest#actualSetupCancelConcurrentResumeRecreateAndUnlock\n');
@@ -72,9 +72,9 @@ else if(a.includes('getprop ro.product.model')) console.log('I2304');
 else if(a.includes('getprop ro.product.name')) console.log('I2304T');
 else if(a.includes('getprop ro.build.version.release')) console.log('14');
 else if(a.includes('getprop ro.build.version.sdk')) console.log('34');
-else if(a.includes('shell pm path com.lifeos.personal.dev')) console.log('package:/data/app/~~synthetic/com.lifeos.personal.dev/base.apk');
-else if(a.includes('pm list packages')) { if(mode==='existing') console.log('package:com.lifeos.personal.dev'); }
-else if(a.includes('shell run-as com.lifeos.personal.dev pwd')) console.log('/data/user/0/com.lifeos.personal.dev');
+else if(a.includes('shell pm path com.lifeos.personal.debug')) console.log('package:/data/app/~~synthetic/com.lifeos.personal.debug/base.apk');
+else if(a.includes('pm list packages')) { if(mode==='existing') console.log('package:com.lifeos.personal.debug'); }
+else if(a.includes('shell run-as com.lifeos.personal.debug pwd')) console.log('/data/user/0/com.lifeos.personal.debug');
 else if(a.includes('dumpsys activity exit-info')) console.log('synthetic process exit information');
 else if(a.includes('dumpsys meminfo')) console.log('synthetic process memory information');
 else if(a.includes('logcat -b all -d')) console.log('E/AndroidRuntime: synthetic crash log contact=qa@example.com token=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ');

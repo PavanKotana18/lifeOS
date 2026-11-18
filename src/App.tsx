@@ -41,7 +41,7 @@ import CustomAccentPicker from './components/CustomAccentPicker';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
 import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
-import QuickTaskEntry, { type QuickTaskDetails } from './components/QuickTaskEntry';
+import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
 import { buildSpringSettle, readTranslateX } from './services/springMotion';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';

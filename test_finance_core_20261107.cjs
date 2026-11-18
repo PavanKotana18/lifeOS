@@ -50,7 +50,10 @@ for (const [minor, expected] of [
   [12135000n, '₹1,21,350.00'], [19900000n, '₹1,99,000.00'],
   [123456700n, '₹12,34,567.00'], [1234567800n, '₹1,23,45,678.00'],
   [14830000n, '₹1,48,300.00'],
-]) assert.equal(finance.formatMinorUnits(minor, 'INR'), expected);
+]) {
+  assert.equal(finance.formatMinorUnits(minor, 'INR'), expected);
+  assert.equal(finance.formatMinorUnits(minor, 'INR', 'en-IN'), expected);
+}
 assert.equal(finance.formatMinorUnits(12345678n, 'INR', 'en-US'), '₹123,456.78');
 assert.equal(preferences.getNumberLocale('INR', 'system'), 'en-IN');
 assert.equal(preferences.getNumberLocale('USD', 'system'), undefined);
