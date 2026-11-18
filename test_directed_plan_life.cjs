@@ -30,7 +30,7 @@ const tasks = [
 const planProps = {
   tasks, today: '2026-11-09', now: new Date('2026-11-09T09:00:00'),
   onNavigatePlanner: () => calls.push('planner'), onOpenTask: item => calls.push(`task:${item.id}`),
-  onToggleTask: noop, onCreateTask: () => calls.push('create-task'),
+  onToggleTask: noop, onQuickCreateTask: title => calls.push(`quick:${title}`),
   onSelectRange: range => calls.push(`range:${range}`), onOpenGoals: () => calls.push('goals'),
 };
 const planMarkup = renderToStaticMarkup(React.createElement(PlanHub, planProps));
@@ -52,18 +52,27 @@ function walk(node, visit) {
     walk(node.props.children, visit);
   } else if (Array.isArray(node)) node.forEach(child => walk(child, visit));
 }
-function clickButtonContaining(element, text) {
+function findButtonContaining(element, text) {
   let button;
   walk(element, node => {
     if (node.type === 'button' && String(node.props.children).includes(text)) button = node;
   });
   assert.ok(button, `button containing ${text} exists`);
-  button.props.onClick();
+  return button;
 }
-clickButtonContaining(planElement, 'Add task');
-clickButtonContaining(planElement, 'Tomorrow');
-clickButtonContaining(planElement, 'See all tasks');
-assert.deepEqual(calls, ['create-task', 'range:tomorrow', 'planner'], 'Plan actions preserve their existing navigation and creation callbacks');
+let quickForm;
+walk(planElement, node => { if (node.type === 'form' && node.props['aria-label'] === 'Quick task capture') quickForm = node; });
+assert.ok(quickForm, 'the Plan hub has one quick capture form as its Add task entry point');
+const nativeFormData = global.FormData;
+let reset = false;
+global.FormData = function (form) { return { get: name => name === 'title' ? form.capturedTitle : null }; };
+quickForm.props.onSubmit({ preventDefault() {}, currentTarget: { capturedTitle: '  Call the dentist  ', reset() { reset = true; } } });
+global.FormData = nativeFormData;
+assert.equal(reset, true, 'the quick capture clears only after submitting the title');
+assert.deepEqual(calls, ['quick:Call the dentist'], 'the title is trimmed and handed to the existing validated task form');
+findButtonContaining(planElement, 'Tomorrow').props.onClick();
+findButtonContaining(planElement, 'See all tasks').props.onClick();
+assert.deepEqual(calls, ['quick:Call the dentist', 'range:tomorrow', 'planner'], 'Plan actions preserve task creation and existing navigation callbacks');
 const emptyPlan = renderToStaticMarkup(React.createElement(PlanHub, { ...planProps, tasks: [] }));
 assert.match(emptyPlan, /No tasks yet/);
 assert.match(emptyPlan, /Start with one thing you want to remember/);

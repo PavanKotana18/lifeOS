@@ -1,3 +1,4 @@
+import type { FormEvent } from 'react';
 import { CalendarDays, ChevronRight, CircleCheck } from 'lucide-react';
 import type { Task } from '../types';
 import { getTaskStatus, sortTasksBySchedule } from '../services/domainUtils';
@@ -10,7 +11,7 @@ type Props = {
   onNavigatePlanner: () => void;
   onOpenTask: (task: Task) => void;
   onToggleTask: (task: Task) => void;
-  onCreateTask: () => void;
+  onQuickCreateTask: (title: string) => void;
   onSelectRange: (range: TaskRange) => void;
   onOpenGoals: () => void;
 };
@@ -25,7 +26,15 @@ function formatTaskDate(value: string, today: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date);
 }
 
-export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTask, onToggleTask, onCreateTask, onSelectRange, onOpenGoals }: Props) {
+export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTask, onToggleTask, onQuickCreateTask, onSelectRange, onOpenGoals }: Props) {
+  const submitQuickTask = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const title = String(new FormData(form).get('title') || '').trim();
+    if (!title) return;
+    onQuickCreateTask(title);
+    form.reset();
+  };
   const allOpenTasks = sortTasksBySchedule(tasks.filter(task => !task.completed));
   const openTasks = allOpenTasks.slice(0, 5);
   const dueToday = allOpenTasks.filter(task => task.dueDate === today && getTaskStatus(task, now) !== 'Overdue').length;
@@ -42,7 +51,12 @@ export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTa
     <header className="plan-hub-heading"><p className="type-eyebrow">YOUR TASKS</p><h2 id="plan-title" className="type-page-title">Plan</h2><p className="type-body text-secondary">See what’s next, then choose one thing to do.</p></header>
 
     <section aria-labelledby="plan-tasks-title" className="plan-hub-section plan-task-focus">
-      <div className="plan-hub-section-heading"><div><p className="type-eyebrow">START HERE</p><h3 id="plan-tasks-title" className="type-section-title">Next up</h3>{taskSummary && <p className="type-caption text-secondary" aria-live="polite">{taskSummary}</p>}</div><button type="button" onClick={onCreateTask} className="lifeos-accent-button plan-hub-link"><span aria-hidden="true">+</span> Add task</button></div>
+      <div className="plan-hub-section-heading"><div><p className="type-eyebrow">START HERE</p><h3 id="plan-tasks-title" className="type-section-title">Next up</h3>{taskSummary && <p className="type-caption text-secondary" aria-live="polite">{taskSummary}</p>}</div></div>
+      <form className="plan-quick-task" onSubmit={submitQuickTask} aria-label="Quick task capture">
+        <label className="sr-only" htmlFor="plan-quick-task-title">Quick task title</label>
+        <input id="plan-quick-task-title" name="title" required maxLength={160} placeholder="Add a task to your list…" className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm" />
+        <button type="submit" className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold">Add task</button>
+      </form>
 
       <div className="plan-date-nav-intro"><span className="type-caption">Go to a date in your planner</span></div>
       <div className="plan-date-nav" role="group" aria-label="Open tasks by date" data-no-tab-swipe>

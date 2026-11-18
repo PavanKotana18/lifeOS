@@ -1865,12 +1865,12 @@ export default function App() {
     showToast('Habit removed', 'info');
   };
 
-  const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string) => {
+  const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string, initialTitle = '') => {
     const now = new Date();
     const today = formatLocalDate(now);
     setCreateFormDirty(false);
     setCreateDraft({
-      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
+      title: initialTitle, amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       currencyCode: userPrefs.currency, accountId: '', type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
       goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
@@ -2581,7 +2581,7 @@ export default function App() {
           onNavigatePlanner={() => navigateTo('planner')}
           onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
-          onCreateTask={() => openCreateForm('task')}
+          onQuickCreateTask={title => openCreateForm('task', undefined, undefined, title)}
           onSelectRange={range => { setPlannerFilter(range); if (range === 'today') setPlannerSelectedDate(todayKey); if (range === 'tomorrow') setPlannerSelectedDate(tomorrowKey); navigateTo('planner'); }}
           onOpenGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }} /></Suspense>} />
 
