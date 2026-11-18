@@ -1,5 +1,5 @@
 ﻿import { useRef, useState } from 'react';
-import { Bell, CalendarDays, ChevronRight, CircleCheck, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
+import { Bell, ChevronRight, CircleCheck, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
 import type { Task } from '../types';
 import { getTaskStatus, sortTasksBySchedule } from '../services/domainUtils';
 
@@ -8,7 +8,7 @@ export type PlanView = 'today' | 'upcoming' | 'all' | 'unscheduled';
 export type PlanStatus = 'all' | 'open' | 'completed' | 'overdue';
 type Props = {
   tasks: Task[]; today: string; now: Date;
-  onNavigatePlanner: () => void; onOpenTask: (task: Task) => void;
+  onOpenTask: (task: Task) => void;
   onToggleTask: (task: Task) => void;
   onCreate: () => void;
 };
@@ -52,7 +52,7 @@ function formatTaskDate(value: string | undefined, today: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date);
 }
 
-export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTask, onToggleTask, onCreate }: Props) {
+export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, onCreate }: Props) {
   const [view, setView] = useState<PlanView>('all');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<PlanStatus>('all');
@@ -74,7 +74,6 @@ export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTa
       <div className="plan-toolbar">
         <input type="search" aria-label="Search tasks" placeholder="Search tasks" value={query} onChange={event => setQuery(event.target.value)} className="lifeos-input" />
         <button type="button" className="lifeos-input" aria-haspopup="dialog" onClick={() => { setDraft({ ...filters, status }); dialog.current?.showModal(); }}><SlidersHorizontal size={16} aria-hidden="true" />Filters{count ? ' (' + count + ')' : ''}</button>
-        <button type="button" className="lifeos-input" aria-label="Open calendar" onClick={onNavigatePlanner}><CalendarDays size={17} aria-hidden="true" /></button>
       </div>
       <dialog className="plan-filter-sheet lifeos-page" ref={dialog} data-plan-filters aria-label="Task filters" onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
         <form onSubmit={event => {

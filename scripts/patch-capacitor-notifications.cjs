@@ -65,3 +65,31 @@ if (!receiver.includes('lifeos_alarm_events')) {
       '        notificationManager.notify(id, notification);\n        if (notificationJson != null) LocalNotificationsPlugin.fireReceived(notificationJson);'
     ));
 }
+
+const patchedManager = fs.readFileSync(manager, 'utf8').replace(/\r\n/g, '\n');
+if (!patchedManager.includes('LifeOS: reject elapsed schedules before changing any alarm.')) {
+  const loop = '        for (LocalNotification localNotification : localNotifications) {';
+  const elapsed = '                Logger.error(Logger.tags("LN"), "Scheduled time must be *after* current time", null);\n                return;';
+  const cancelFlags = '        int flags = 0;\n        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {\n            flags = PendingIntent.FLAG_MUTABLE;\n        }\n        PendingIntent pi';
+  if (![loop, elapsed, cancelFlags].every(marker => patchedManager.includes(marker))) throw new Error('Capacitor schedule/cancel implementation changed.');
+  fs.writeFileSync(manager, patchedManager.replace(loop, [
+    '        // LifeOS: reject elapsed schedules before changing any alarm.',
+    '        for (LocalNotification entry : localNotifications) {',
+    '            LocalNotificationSchedule definition = entry.getSchedule();',
+    '            if (definition != null && definition.getAt() != null && definition.getAt().getTime() <= System.currentTimeMillis()) {',
+    '                if (call != null) call.reject("Reminder time has already passed");',
+    '                return null;',
+    '            }',
+    '        }',
+    loop,
+  ].join('\n')).replace(elapsed, '                throw new IllegalArgumentException("Reminder time elapsed during registration");')
+    .replace('            buildNotification(notificationManager, localNotification, call);', [
+      '            try { buildNotification(notificationManager, localNotification, call); }',
+      '            catch (RuntimeException error) {',
+      '                if (call != null) call.reject("Android could not register the reminder", error);',
+      '                return null;',
+      '            }',
+    ].join('\n'))
+    .replace(cancelFlags, cancelFlags.replace('int flags = 0', 'int flags = PendingIntent.FLAG_NO_CREATE').replace('flags = PendingIntent.FLAG_MUTABLE', 'flags |= PendingIntent.FLAG_MUTABLE'))
+    .replace('            alarmManager.cancel(pi);', '            alarmManager.cancel(pi);\n            pi.cancel();'));
+}

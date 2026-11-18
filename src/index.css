@@ -905,3 +905,29 @@ html.dark .text-amber-400 { color: var(--warning); }
 .record-composer-backdrop { z-index:80; }
 .money-home .money-destinations { grid-template-columns:repeat(2,minmax(0,1fr)); }
 @media (min-width:48rem) { .money-home .money-destinations { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+
+.money-period-control .money-period-value { color:var(--ink); font-weight:650; }
+.money-month-link { display:flex; align-items:center; justify-content:space-between; width:100%; min-height:3rem; border:1px solid var(--stroke); border-radius:.9rem; padding:.75rem 1rem; text-align:left; font-weight:650; }
+.plan-toolbar { grid-template-columns:minmax(0,1fr) auto; }
+.plan-filter-sheet form { gap:1.15rem; padding:1.15rem max(1rem,env(safe-area-inset-left)); }
+.plan-filter-fields :is(select,input) { min-height:3rem; }
+
+.transaction-detail-sheet { position:fixed; inset:auto 0 0; width:min(100%,34rem); max-height:90dvh; border:0; border-radius:1.3rem 1.3rem 0 0; margin:0 auto; padding:0; }
+.transaction-detail-sheet > section { display:grid; gap:1rem; padding:1rem 1rem max(1rem,env(safe-area-inset-bottom)); }
+.transaction-detail-sheet::backdrop { background:rgb(0 0 0 / .5); }
+.transaction-history-copy { min-height:3rem; }
+.record-transfer-link { margin-block:0 .7rem; }
+.ui-sheet-backdrop:has(.record-composer--page), .ui-sheet-backdrop[data-full-composer="true"] { align-items:stretch; padding:0; }
+.record-composer.record-composer--page, [data-full-composer="true"] .record-composer { max-height:100%; width:min(100%,44rem); border:0; border-radius:0; padding: max(1rem,env(safe-area-inset-top)) clamp(1rem,4vw,2rem) max(1rem,env(safe-area-inset-bottom)); }
+[data-full-composer="true"] #record-form-title { font-size:1.45rem; }
+.record-composer--page .ui-form-actions, [data-full-composer="true"] .ui-form-actions { position:sticky; bottom:0; z-index:1; background:var(--surface); padding-block:.75rem; }
+
+.life-daily-progress { display:block; width:100%; height:.55rem; margin-top:.8rem; accent-color:var(--accent); }
+.life-workspace .life-workspace-sections { gap:1rem; align-items:start; }
+.life-workspace .life-routine-section, .life-workspace .life-goal-section { border:1px solid var(--stroke); padding:.9rem; border-radius:1.2rem; background:var(--surface); }
+.life-workspace .life-habit-row { min-height:3.3rem; }
+.profile-settings-list > button:last-child { border-bottom:0; }
+.profile-subpage > header > button { flex:0 0 2.75rem; justify-content:center; }
+.profile-preferences summary { padding-inline:.35rem; }
+.profile-preferences :is(input,select) { min-height:3rem; }
+[aria-label="Planning views"] button[aria-pressed="true"] { background:var(--accent-tint); color:var(--accent); font-weight:650; }

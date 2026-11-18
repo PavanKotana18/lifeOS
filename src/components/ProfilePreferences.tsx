@@ -20,7 +20,7 @@ export default function ProfilePreferences({ preferences, hasFinancialRecords, o
     const matched = CURRENCY_CODES.filter(code => code.toLocaleLowerCase().includes(query) || currencyLabels.get(code)?.toLocaleLowerCase().includes(query));
     return matched.includes(preferences.currency) ? matched : [preferences.currency, ...matched];
   }, [currencySearch, currencyLabels, preferences.currency, preferences.locale]);
-  return <div className="space-y-4" data-testid="profile-preferences">
+  return <div className="profile-preferences space-y-4" data-testid="profile-preferences">
     <section className="lifeos-panel rounded-xl px-3 divide-y divide-[var(--stroke)]">
             <details><summary className="min-h-12 content-center cursor-pointer text-sm font-semibold">Currency and locale <span className="float-right text-secondary font-normal">{preferences.currency}</span></summary>
       <div className="grid gap-3 pb-4 sm:grid-cols-2">
@@ -58,7 +58,8 @@ export default function ProfilePreferences({ preferences, hasFinancialRecords, o
         </label>
       </div></details>
     </section>
-    <section className="lifeos-panel rounded-2xl border p-5 space-y-3" aria-label="Navigation preferences">
+    {onDateOnlyAlertTime && <section className="lifeos-panel rounded-xl border p-3"><div className="flex items-center justify-between gap-3"><label className="text-sm font-semibold" htmlFor="date-only-alert-time">Date-only task alerts</label><span className="text-xs text-secondary">{dateOnlyAlertTime ? "Device local time" : "Off"}</span></div><input id="date-only-alert-time" type="time" value={dateOnlyAlertTime || ""} onChange={event => onDateOnlyAlertTime(event.target.value)} className={selectClass} />{dateOnlyAlertTime && <button type="button" className="min-h-11 text-sm lifeos-accent-text" onClick={() => onDateOnlyAlertTime("")}>Turn off date-only alerts</button>}</section>}
+    <section className="lifeos-panel rounded-xl border p-3 space-y-3" aria-label="Navigation preferences">
       <div><h2 className="text-base font-semibold">Navigation</h2></div>
       <div className="lifeos-raised flex min-h-14 items-center justify-between gap-3 rounded-xl px-3"><span className="text-sm font-medium">Swipe between tabs</span><button type="button" role="switch" aria-checked={preferences.swipeNavigationEnabled} onClick={() => onChange('swipeNavigationEnabled', !preferences.swipeNavigationEnabled)} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-semibold ${preferences.swipeNavigationEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{preferences.swipeNavigationEnabled ? 'On' : 'Off'}</button></div>
     </section>

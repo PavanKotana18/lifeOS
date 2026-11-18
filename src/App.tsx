@@ -433,7 +433,14 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
 
   // Subtab & Filter States
-  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
+  const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics'>('overview');
+  const [transactionDetailId, setTransactionDetailId] = useState<string | null>(null);
+  const transactionDetailDialog = useRef<HTMLDialogElement>(null);
+  const transactionDetail = activeTab === 'finance' ? transactions.find(row => row.id === transactionDetailId) : undefined;
+  useEffect(() => {
+    const dialog = transactionDetailDialog.current;
+    if (transactionDetail && dialog && !dialog.open) dialog.showModal();
+  }, [transactionDetail]);
   const [openMoneyTransferOnAccounts, setOpenMoneyTransferOnAccounts] = useState(false);
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
@@ -762,7 +769,7 @@ export default function App() {
     }
     const state = backState.current;
     if (typeof document !== 'undefined') {
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open]');
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-transaction-details][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
@@ -1550,7 +1557,8 @@ export default function App() {
       const result = await NotificationService.requestExactAlarmPermission();
       await refreshNotificationDiagnostics();
       if (result === 'granted') {
-        await syncNotificationSchedules(tasks, habits, goals, milestones);
+        const synchronized = await syncNotificationSchedules(tasks, habits, goals, milestones);
+        if (!synchronized) { showToast('Precise access is on, but some reminders could not be updated.', 'danger'); return; }
         showToast('Exact alarm access is available for eligible reminders.', 'success');
       } else {
         showToast('Exact alarm access is off. Android may delay reminders; your saved reminders remain in place.', 'info');
@@ -2778,7 +2786,6 @@ export default function App() {
         /></Suspense>} />
 
         <RetainedScreen active={activeTab === 'plan'} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><PlanHub onCreate={() => openCreateForm('task')} tasks={tasks} today={todayKey} now={clockNow}
-          onNavigatePlanner={() => navigateTo('planner')}
           onOpenTask={task => { taskDetailReturnFocusRef.current = plannerHeadingRef.current; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter(task.dueDate ? 'all' : 'unscheduled'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
           /></Suspense>} />
@@ -2803,12 +2810,16 @@ export default function App() {
 
         <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
           <div className="money-page space-y-5" data-detail={financeSubtab}>
-            {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => navigateFinanceSubtab('overview')} />}
+            {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => { rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }} />}
 
             {/* Money home: recorded cash flow, never an inferred account balance. */}
-            {financeSubtab === 'overview' && (
+            {(financeSubtab === 'overview' || financeSubtab === 'monthly') && (
               <MoneyHome
                 month={financeMonth}
+                monthly={financeSubtab === 'monthly'}
+                onMonthly={() => navigateFinanceSubtab('monthly')}
+                monthSavings={financeSubtab === 'monthly' ? formatMinorUnits(savingsContributions.filter(row => row.date.startsWith(financeMonth) && (row.currencyCode || userPrefs.currency) === userPrefs.currency).reduce((total, row) => total + (row.amountMinor ? BigInt(row.amountMinor) : decimalToMinorUnits(row.amount, userPrefs.currency)), 0n), userPrefs.currency, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : undefined}
+                monthPlans={financeSubtab === 'monthly' && plannedCommitments.length > 0 ? <PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /> : undefined}
                 income={financeAnalytics.totalIncome}
                 expenses={financeAnalytics.totalExpenses}
                 netCashFlow={financeAnalytics.netSavings}
@@ -2838,7 +2849,7 @@ export default function App() {
                 accountSummaries={accountSummaries}
                 savingsGoals={savingsGoals}
                 legacyCurrency={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
-                onEditTransaction={openEditTransaction}
+                onEditTransaction={row => setTransactionDetailId(row.id)}
               />
             )}
 
@@ -2892,24 +2903,15 @@ export default function App() {
                     <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
                   ) : (
                     filteredTransactions.map(t => (
-                      <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border p-3.5">
+                      <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border px-3 py-1">
                         <div className="transaction-history-main">
-                          <button type="button" onClick={() => openEditTransaction(t)} aria-label={`Edit transaction ${t.description || t.category}`} className="transaction-history-copy">
+                          <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={`View transaction ${t.description || t.category}`} className="transaction-history-copy">
                             <strong>{t.description || t.category}</strong>
                             <span>{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ' · time not recorded'} &bull; {t.category} ({t.paymentMethod || 'Other'}){t.accountId ? ` · ${financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'}` : ''}</span>
                           </button>
                           <span className={`transaction-history-amount ${t.type === 'income' ? 'is-income' : 'is-expense'}`}>
                             {t.type === 'income' ? '+' : '−'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(t.amount, t.currencyCode || userPrefs.currency)}
                           </span>
-                        </div>
-                        <div className="transaction-history-actions">
-                          <button type="button" onClick={() => openDuplicateTransaction(t)} aria-label={`Duplicate transaction ${t.description || t.category}`}>Duplicate</button>
-                          <button type="button" onClick={async () => {
-                            if (!(await confirmAction({ title: 'Delete this transaction?', message: `“${t.description || t.category}” will be removed from your transaction history.`, confirmLabel: 'Delete transaction', destructive: true }))) return;
-                            await StorageService.transactions.delete(t.id);
-                            await reloadAllData();
-                            showToast('Transaction deleted', 'info');
-                          }} aria-label={`Delete transaction ${t.description || t.category}`}>Delete</button>
                         </div>
                       </article>
                     ))
@@ -2919,7 +2921,7 @@ export default function App() {
             )}
 
             {financeSubtab === 'budgets' && <div className="space-y-3">
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Posted spending plans</h3><p className="text-xs text-secondary">Compared only with posted expenses in {financeMonth}; planned bills stay separate.</p></div><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add budget</button></div>
+              <div className="flex justify-end"><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Add budget</button></div>
               {budgets.some(b => (!b.monthYear || b.monthYear === financeMonth) && b.currencyCode && b.currencyCode !== userPrefs.currency) && <p role="status" className="rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary">Budgets in another currency are hidden until a dated exchange rate is available.</p>}
               {budgets.filter(b => (!b.monthYear || b.monthYear === financeMonth) && (!b.currencyCode || b.currencyCode === userPrefs.currency)).length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No budget set for {financeMonth}.</div> : budgets.filter(b => (!b.monthYear || b.monthYear === financeMonth) && (!b.currencyCode || b.currencyCode === userPrefs.currency)).map(b => {
                 const budgetCategoryName = b.categoryId ? categories.find(category => category.id === b.categoryId)?.name : undefined;
@@ -3084,7 +3086,7 @@ export default function App() {
               } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
             }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
-            <QuickTaskEntry onAdd={addUnscheduledTask} />
+
             <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
             <div className="planner-range-nav" role="group" aria-label="Choose task range" data-no-tab-swipe>
               {(['today', 'tomorrow', 'upcoming', 'unscheduled'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
@@ -3216,7 +3218,7 @@ export default function App() {
               {(notificationDiagnostics.permission === 'denied' || notificationDiagnostics.appNotifications === 'disabled' || notificationDiagnostics.channel.startsWith('blocked')) &&
                 <button type="button" onClick={() => void openNotificationSettings()} className="min-h-11 text-sm font-semibold lifeos-accent-text">Allow in Android settings</button>}
               {notificationsEnabled && notificationDiagnostics.permission === 'granted' && notificationDiagnostics.exactAlarm !== 'granted' &&
-                <div className="flex items-center gap-1"><button type="button" onClick={() => void requestExactAlarmAccess()} className="min-h-11 text-sm font-semibold lifeos-accent-text">Allow precise reminders</button><InfoTip label="Precise reminders">Android can delay reminders when precise alarm access is off.</InfoTip></div>}
+                <div className="flex flex-wrap items-center gap-x-2"><span className="w-full text-sm font-medium">Precise reminders are off</span><button type="button" onClick={() => void requestExactAlarmAccess()} className="min-h-11 text-sm font-semibold lifeos-accent-text">Enable precise reminders</button><InfoTip label="Precise reminders">Allow LifeOS in Android?s Alarms &amp; Reminders settings to reduce delays.</InfoTip></div>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--stroke)] pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
             </section></ProfileSubpage>}
 
@@ -3355,8 +3357,24 @@ export default function App() {
             <button type="button" disabled={notificationOfferBusy} className="mt-2 min-h-11 w-full text-sm" onClick={() => void dismissNotificationOffer()}>Maybe later</button>
           </section>
         </div>}
+
+      {transactionDetail && <dialog ref={transactionDetailDialog} data-transaction-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transaction-detail-title" onClose={() => setTransactionDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
+        <section>
+          <header className="flex items-center justify-between gap-3"><h2 id="transaction-detail-title" className="text-xl font-semibold">{transactionDetail.description || transactionDetail.category}</h2><button type="button" className="min-h-11 px-3" onClick={() => transactionDetailDialog.current?.close()}>Close</button></header>
+          <strong className="type-display-amount tabular-nums">{transactionDetail.type === 'income' ? '+' : '-'}{transactionDetail.amountMinor != null && transactionDetail.currencyCode ? formatMinorUnits(BigInt(transactionDetail.amountMinor), transactionDetail.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(transactionDetail.amount, transactionDetail.currencyCode)}</strong>
+          <dl className="grid grid-cols-2 gap-3"><div><dt className="text-xs text-secondary">Date</dt><dd>{formatDate(transactionDetail.date)}</dd></div><div><dt className="text-xs text-secondary">Category</dt><dd>{transactionDetail.category}</dd></div><div><dt className="text-xs text-secondary">Payment</dt><dd>{transactionDetail.paymentMethod || 'Other'}</dd></div>{transactionDetail.accountId && <div><dt className="text-xs text-secondary">Account</dt><dd>{financialAccounts.find(account => account.id === transactionDetail.accountId)?.name || 'Archived account'}</dd></div>}</dl>
+          {transactionDetail.notes && <p className="whitespace-pre-wrap break-words text-sm">{transactionDetail.notes}</p>}
+          <div className="flex flex-wrap gap-3"><button type="button" className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 font-semibold" onClick={() => { transactionDetailDialog.current?.close(); openEditTransaction(transactionDetail); }}>Edit transaction</button><details className="lifeos-input rounded-xl px-3"><summary className="min-h-11 content-center cursor-pointer">More actions</summary><button type="button" className="block min-h-11 w-full text-left" onClick={() => { transactionDetailDialog.current?.close(); openDuplicateTransaction(transactionDetail); }}>Duplicate</button><button type="button" className="block min-h-11 w-full text-left text-[var(--danger)]" onClick={async () => {
+            const id = transactionDetail.id;
+            transactionDetailDialog.current?.close();
+            if (!await confirmAction({ title: 'Delete this transaction?', message: 'It will be removed from your history.', confirmLabel: 'Delete transaction', destructive: true })) return;
+            try { await StorageService.transactions.delete(id); await reloadAllData(); showToast('Transaction deleted', 'info'); }
+            catch { showToast('Could not finish deleting the transaction. Refresh before retrying.', 'danger'); }
+          }}>Delete transaction</button></details></div>
+        </section>
+      </dialog>}
       {createKind && (
-        <div className="ui-sheet-backdrop record-composer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
+        <div className="ui-sheet-backdrop record-composer-backdrop" data-full-composer={!["contribution","milestone","goal-progress"].includes(createKind)} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
           <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer" onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
@@ -3368,6 +3386,11 @@ export default function App() {
               <input autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {createKind === 'transaction' && <>
+              {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
+                if (createOperation.current || (createFormDirty && !await confirmAction({ title: 'Discard this transaction draft?', message: 'Transfers use a separate form.', confirmLabel: 'Open transfer', cancelLabel: 'Keep editing' }))) return;
+                setCreateKind(null); setCreateFormDirty(false);
+                navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
+              }}>Transfer between accounts</button>}
               <label className="mb-3 block text-xs text-secondary">Type<select value={createDraft.type} onChange={e => {
                 const type = e.target.value as 'income' | 'expense';
                 const category = categories.find(item => item.type === type)?.name || '';

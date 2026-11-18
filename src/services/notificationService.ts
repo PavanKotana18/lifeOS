@@ -270,7 +270,7 @@ export const NotificationService = {
         // Exact-alarm denial falls back to Android's idle-aware inexact alarm.
         // Reserve the per-app idle quota for reminders the user explicitly set;
         // deadline/overdue alerts are separate, lower-priority events.
-        schedule: { at: plan.at, allowWhileIdle: plan.kind === 'dueTime' || plan.kind === 'taskReminders' }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+        schedule: { at: plan.at, allowWhileIdle: plan.kind === 'dueTime' || plan.kind === 'taskReminders' }, channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
         extra: { kind: plan.kind, taskId: task.id, scheduleMode,
           ...(['dueTime', 'taskReminders'].includes(plan.kind) ? { originalReminderAt: plan.at.toISOString() } : {}) },
       })));
@@ -341,7 +341,7 @@ export const NotificationService = {
             title: 'Task reminder',
             body: 'Unlock LifeOS to view your reminder.',
             schedule: { at: new Date(now.getTime() + 5_000), allowWhileIdle: true },
-            channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+            channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
             extra: { kind: 'taskReminders', taskId, lateCatchUp: true, originalReminderAt: task.reminderAt },
           });
         }
@@ -443,14 +443,15 @@ export const NotificationService = {
         }
       }
       const finalPending = await LocalNotifications.getPending();
-      const finalIds = new Set(finalPending.notifications.map(item => item.id));
+      const taskPending = finalPending.notifications.filter(item => taskKinds.has(String(item.extra?.kind || '')));
+      const finalIds = new Set(taskPending.map(item => item.id));
       for (const task of tasks) {
         const reminderId = taskNotificationId(task, 'taskReminders');
-        if (finalIds.has(reminderId)) taskScheduleStatus.set(task.id, 'pending');
+        if (finalIds.has(reminderId) || finalIds.has(taskNotificationId(task, 'dueTime'))) taskScheduleStatus.set(task.id, 'pending');
         else taskScheduleStatus.delete(task.id);
       }
       writeLastError('');
-      updateDiagnostics({ lastScheduleResult: `pending-queue-verified:${notifications.length}` });
+      updateDiagnostics({ lastScheduleResult: 'Saved task entries: ' + taskPending.length + ' (' + retainedLateIds.size + ' retained after trigger); future planned: ' + notifications.length });
       } catch (error) {
         for (const task of tasks) taskScheduleStatus.set(task.id, 'schedule-failed');
         for (const task of tasks) {
@@ -658,7 +659,7 @@ export const NotificationService = {
       id: notificationId(`habit:${habit.id}:${weekday}`),
       title: 'Habit reminder', body: `Time for: ${habit.name}`,
       schedule: { on: { weekday, hour, minute }, allowWhileIdle: false },
-      channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+      channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
       extra: { kind: 'habitReminder', habitId: habit.id },
     })));
     } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS habit notification scheduling failed.'); throw error; }
@@ -689,7 +690,7 @@ export const NotificationService = {
       return [{
         id: notificationId(`milestone:${milestone.id}`),
         title: 'Goal milestone', body: `${milestone.title}${goal ? ` · ${goal.title}` : ''}`,
-        schedule: { at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
+        schedule: { at, allowWhileIdle: false }, channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
         extra: { kind: 'milestoneReminder', milestoneId: milestone.id },
       }];
     });
@@ -797,7 +798,7 @@ export const NotificationService = {
       await this.ensureChannel();
       await cancelIds([testId]);
       const at = new Date(Date.now() + Math.max(1_000, delayMs));
-      await schedule([{ id: testId, title: 'LifeOS test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent', extra: { kind: 'test' } }]);
+      await schedule([{ id: testId, title: 'LifeOS test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification', extra: { kind: 'test' } }]);
       const pending = await LocalNotifications.getPending();
       if (!pending.notifications.some(item => item.id === testId)) throw new Error('schedule-verification-missing:test-notification');
       writeLastError('');

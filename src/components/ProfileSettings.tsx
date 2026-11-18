@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ChevronRight, Bell, ChevronLeft, Palette, SlidersHorizontal, Shield, UserRound, Database, Info } from 'lucide-react';
+import { Bell, ChevronLeft, Palette, SlidersHorizontal, Shield, UserRound, Database, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer';
@@ -31,7 +31,6 @@ export function ProfileNavigationRow({ title, icon: Icon, onClick }: { title: st
   return <button type="button" onClick={onClick} className="profile-navigation-row lifeos-panel group flex min-h-14 w-full items-center gap-3 border-b px-3 py-2 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)] active:scale-[.995]">
     <span className="lifeos-tint flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lifeos-accent-text" aria-hidden="true"><Icon size={17} strokeWidth={1.9} /></span>
     <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span></span>
-    <ChevronRight size={17} className="shrink-0 text-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
   </button>;
 }
 
@@ -45,7 +44,7 @@ export function ProfileHome({ name, initial, onNameChange, onOpen, developerAllo
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
     <header><h1 className="type-page-title">Profile</h1></header>
     <ProfileIdentityCard name={name} initial={initial} onChange={onNameChange} />
-    <nav aria-label="Profile settings" className="grid overflow-hidden rounded-xl">
+    <nav aria-label="Profile settings" className="profile-settings-list grid overflow-hidden rounded-xl border border-[var(--stroke)]">
       {profileLinks.map(({ section, title, detail, Icon }) => <ProfileNavigationRow key={section} title={title} detail={detail} icon={Icon} onClick={() => onOpen(section)} />)}
       {developerAllowed && <ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} />}
     </nav>
@@ -53,9 +52,8 @@ export function ProfileHome({ name, initial, onNameChange, onOpen, developerAllo
 }
 
 export function ProfileSubpage({ title, onBack, children }: { title: string; description: string; onBack: () => void; children: ReactNode }) {
-  return <section className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-subpage">
-    <button type="button" onClick={onBack} className="flex min-h-11 items-center gap-2 rounded-xl px-1 text-sm font-semibold lifeos-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)]"><ChevronLeft size={19} aria-hidden="true" />Profile</button>
-    <header className="px-1"><h1 className="type-page-title mt-1">{title}</h1></header>
+  return <section className="profile-settings profile-subpage mx-auto w-full max-w-xl space-y-4" data-testid="profile-settings-subpage">
+    <header className="flex items-center gap-2"><button type="button" aria-label="Profile" onClick={onBack} className="flex min-h-11 items-center gap-2 rounded-xl px-1 text-sm font-semibold lifeos-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)]"><ChevronLeft size={19} aria-hidden="true" /></button><h1 className="type-page-title">{title}</h1></header>
     {children}
   </section>;
 }
