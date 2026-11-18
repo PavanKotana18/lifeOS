@@ -4,6 +4,7 @@ import android.Manifest;
 import android.app.AlarmManager;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.UiAutomation;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -13,7 +14,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.core.content.ContextCompat;
 import android.os.ParcelFileDescriptor;
+import android.os.SystemClock;
 import android.service.notification.StatusBarNotification;
+import android.view.accessibility.AccessibilityNodeInfo;
 import com.capacitorjs.plugins.localnotifications.NotificationStorage;
 import com.capacitorjs.plugins.localnotifications.TimedNotificationPublisher;
 import org.json.JSONObject;
@@ -57,6 +60,7 @@ public class LocalNotificationBridgeAcceptanceTest {
     @Test public void backgroundedSyntheticTaskReminderIsActuallyPosted() throws Exception {
         final int id = 2147000002;
         final String syntheticTaskId = "synthetic-background-task";
+        final String title = "LifeOS synthetic task reminder";
         Context context = ApplicationProvider.getApplicationContext();
         requireNotificationPermission(context);
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -69,7 +73,7 @@ public class LocalNotificationBridgeAcceptanceTest {
             String scheduled = WebViewTestSupport.evaluateAsync(scenario,
                 "(async()=>{const p=window.Capacitor.Plugins.LocalNotifications;" +
                 "await p.createChannel({id:'lifeos-reminders',name:'LifeOS reminders',importance:4,visibility:0});" +
-                "const at=new Date(Date.now()+8000);await p.schedule({notifications:[{id:" + id + ",title:'LifeOS synthetic task reminder'," +
+                "const at=new Date(Date.now()+8000);await p.schedule({notifications:[{id:" + id + ",title:" + JSONObject.quote(title) + "," +
                 "body:'Synthetic test only',schedule:{at,allowWhileIdle:true},channelId:'lifeos-reminders',smallIcon:'ic_transparent'," +
                 "extra:{kind:'taskReminders',taskId:'" + syntheticTaskId + "'}}]});" +
                 "const q=await p.getPending();return JSON.stringify({pending:q.notifications.some(n=>n.id===" + id + "),exact:(await p.checkExactNotificationSetting()).exact_alarm});})()");
@@ -108,14 +112,16 @@ public class LocalNotificationBridgeAcceptanceTest {
                     storage.getSavedNotificationIds().contains(String.valueOf(id)));
                 assertNotNull("Posted reminder must expose a native content tap action", postedNotification);
                 assertNotNull("Posted reminder content tap must be launchable", postedNotification.contentIntent);
-                postedNotification.contentIntent.send();
+                tapSystemNotification(title);
                 JSONObject tap = new JSONObject(WebViewTestSupport.evaluateAsync(scenario,
                     "(async()=>{const until=Date.now()+10000;while(Date.now()<until){if(window.__lifeosQaNotificationTap)" +
                     "return JSON.stringify(window.__lifeosQaNotificationTap);await new Promise(r=>setTimeout(r,50));}return '{}';})()"));
-                assertEquals("Actual OS notification tap must reach the Capacitor action listener", id,
-                    tap.optJSONObject("notification").optInt("id"));
-                assertEquals("Tap payload must retain only the isolated synthetic destination", syntheticTaskId,
-                    tap.optJSONObject("notification").optJSONObject("extra").optString("taskId"));
+                JSONObject notification = tap.optJSONObject("notification");
+                assertNotNull("System notification tap must reach the Capacitor action listener", notification);
+                assertEquals(id, notification.optInt("id"));
+                JSONObject extra = notification.optJSONObject("extra");
+                assertNotNull("Tap action must retain its destination payload", extra);
+                assertEquals(syntheticTaskId, extra.optString("taskId"));
             } finally {
                 manager.cancel(id);
                 if (scheduledAlarm != null) {
@@ -125,6 +131,29 @@ public class LocalNotificationBridgeAcceptanceTest {
                 storage.deleteNotification(String.valueOf(id));
             }
         }
+    }
+
+    private static void tapSystemNotification(String title) throws Exception {
+        UiAutomation ui = InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        ParcelFileDescriptor shade = ui.executeShellCommand("cmd statusbar expand-notifications");
+        if (shade != null) shade.close();
+
+        // Let SystemUI launch the action just as it does for a user tap.
+        // An app-side PendingIntent.send() can be denied while backgrounded.
+        long deadline = SystemClock.elapsedRealtime() + 10000L;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            AccessibilityNodeInfo root = ui.getRootInActiveWindow();
+            if (root != null && "com.android.systemui".equals(String.valueOf(root.getPackageName()))) {
+                for (AccessibilityNodeInfo match : root.findAccessibilityNodeInfosByText(title)) {
+                    if (!title.equals(String.valueOf(match.getText()))) continue;
+                    for (AccessibilityNodeInfo node = match; node != null; node = node.getParent()) {
+                        if (node.isClickable() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+                    }
+                }
+            }
+            Thread.sleep(100L);
+        }
+        fail("SystemUI did not expose the posted synthetic notification for a tap");
     }
 
     @Test public void immediatePostDoesNotRequireExactAlarmAccess() throws Exception {
