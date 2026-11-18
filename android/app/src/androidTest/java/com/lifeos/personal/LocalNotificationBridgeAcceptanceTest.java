@@ -127,6 +127,82 @@ public class LocalNotificationBridgeAcceptanceTest {
         }
     }
 
+    @Test public void immediatePostDoesNotRequireExactAlarmAccess() throws Exception {
+        final int id = 2147000003;
+        Context context = ApplicationProvider.getApplicationContext();
+        requireNotificationPermission(context);
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            WebViewTestSupport.awaitReactRoot(scenario);
+            WebViewTestSupport.evaluateAsync(scenario,
+                "(async()=>{const p=window.Capacitor.Plugins.LocalNotifications;" +
+                "await p.createChannel({id:'lifeos-reminders',name:'LifeOS reminders',importance:4,visibility:0});" +
+                "await p.schedule({notifications:[{id:" + id + ",title:'LifeOS immediate QA'," +
+                "body:'Synthetic test only',channelId:'lifeos-reminders',smallIcon:'ic_lifeos_notification'}]});return true;})()");
+            assertNotNull("Immediate bridge request must post through Android", awaitPost(manager, id, 5_000L));
+        } finally {
+            manager.cancel(id);
+        }
+    }
+
+    @Test public void exactAlarmFiresNaturallyWhileAppIsBackgrounded() throws Exception {
+        final int id = 2147000004;
+        Context context = ApplicationProvider.getApplicationContext();
+        requireNotificationPermission(context);
+        AlarmManager alarms = context.getSystemService(AlarmManager.class);
+        assumeTrue("Exact alarm access must be enabled on this disposable test device",
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms());
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
+        NotificationStorage storage = new NotificationStorage(context);
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            WebViewTestSupport.awaitReactRoot(scenario);
+            String result = WebViewTestSupport.evaluateAsync(scenario,
+                "(async()=>{const p=window.Capacitor.Plugins.LocalNotifications;" +
+                "await p.createChannel({id:'lifeos-reminders',name:'LifeOS reminders',importance:4,visibility:0});" +
+                "const at=Date.now()+10000;await p.schedule({notifications:[{id:" + id +
+                ",title:'LifeOS exact alarm QA',body:'Synthetic test only',channelId:'lifeos-reminders'," +
+                "smallIcon:'ic_lifeos_notification',schedule:{at:new Date(at),allowWhileIdle:true}}]});return at;})()");
+            long expected = Long.parseLong(result);
+            ParcelFileDescriptor home = InstrumentationRegistry.getInstrumentation().getUiAutomation()
+                .executeShellCommand("input keyevent 3");
+            if (home != null) home.close();
+
+            StatusBarNotification post = awaitPost(manager, id, 35_000L);
+            assertNotNull("AlarmManager must deliver the broadcast without test dispatch", post);
+            long drift = post.getPostTime() - expected;
+            android.util.Log.i("LifeOSNotificationQA",
+                "expected=" + expected + " posted=" + post.getPostTime() + " driftMs=" + drift);
+            assertTrue("Alarm posted before its requested time: " + drift, drift >= 0);
+            JSONObject pending = new JSONObject(WebViewTestSupport.evaluateAsync(scenario,
+                "(async()=>{const q=await window.Capacitor.Plugins.LocalNotifications.getPending();" +
+                "return JSON.stringify({pending:q.notifications.some(n=>n.id===" + id + ")});})()"));
+            assertFalse("The one-shot notification must leave the pending store", pending.optBoolean("pending"));
+        } finally {
+            manager.cancel(id);
+            Intent intent = new Intent(context, TimedNotificationPublisher.class);
+            int flags = PendingIntent.FLAG_NO_CREATE;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE;
+            PendingIntent token = PendingIntent.getBroadcast(context, id, intent, flags);
+            if (token != null) {
+                alarms.cancel(token);
+                token.cancel();
+            }
+            storage.deleteNotification(String.valueOf(id));
+        }
+    }
+
+    private static StatusBarNotification awaitPost(NotificationManager manager, int id, long timeoutMs)
+        throws InterruptedException {
+        long deadline = android.os.SystemClock.elapsedRealtime() + timeoutMs;
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            for (StatusBarNotification active : manager.getActiveNotifications()) {
+                if (active.getId() == id) return active;
+            }
+            Thread.sleep(50L);
+        }
+        return null;
+    }
+
     private static void requireNotificationPermission(Context context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             assumeTrue("BLOCKED: notification permission requires explicit user consent",
