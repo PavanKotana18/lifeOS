@@ -12,6 +12,6 @@ assert.match(source, /row\.hasRecords \? `income \$\{row\.incomeMinor === null \
 assert.equal((source.match(/fill="var\(--chart-[1-5]\)"/g) || []).length, 1, 'pie series uses semantic chart tokens');
 assert.equal((source.match(/role="status"/g) || []).length, 2, 'both chart empty states announce their status');
 assert.match(source, /formatMinorUnits\(BigInt\(entry\.amountMinor\), analytics\.currencyCode, locale\)/, 'category amounts use exact minor units and explicit currency alongside the chart');
-assert.match(source, /planned amounts excluded/, 'chart explanation explicitly separates posted values from planned amounts');
+assert.match(source, /Planned amounts are excluded/, 'chart explanation explicitly separates posted values from planned amounts');
 assert.match(source, /entry\.percentage\.toFixed\(1\)/, 'percentage shares remain available as readable text alongside the chart');
 console.log('FINANCE CHARTS THEME: 9 source-level token, data-summary and empty-state checks passed.');

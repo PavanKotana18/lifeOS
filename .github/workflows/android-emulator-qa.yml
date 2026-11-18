@@ -324,7 +324,7 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            ANDROID_TEST_FILTER='com.lifeos.personal.LocalNotificationBridgeAcceptanceTest' ANDROID_REQUIRED_TEST='LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder' ANDROID_EXPECTED_TESTS=2 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-notification-isolation-${{ matrix.attempt }}
+            ANDROID_TEST_FILTER='com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder,com.lifeos.personal.LocalNotificationBridgeAcceptanceTest#backgroundedSyntheticTaskReminderIsActuallyPosted' ANDROID_REQUIRED_TEST='LocalNotificationBridgeAcceptanceTest#registeredPluginCanScheduleAndReadBackSyntheticTaskReminder' ANDROID_EXPECTED_TESTS=2 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-notification-isolation-${{ matrix.attempt }}
       - name: Require both notification bridge tests to complete in sequence
         if: success()
         run: |

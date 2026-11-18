@@ -34,9 +34,9 @@ assert.equal(navigation.retainedScreenTransitionState(false, 'prepare'), 'inacti
 assert.equal(navigation.retainedScreenTransitionState(false, 'running'), 'inactive');
 
 const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
-for (const tab of ['dashboard', 'plan', 'life']) {
-  assert.match(app, new RegExp(`<RetainedScreen active=\\{activeTab === '${tab}'\\}(?! retainInactive)`), `${tab} is unmounted when inactive because its UI state is owned by App`);
-}
+assert.match(app, /<RetainedScreen active=\{activeTab === 'dashboard'\}(?! retainInactive)/, 'Today can unmount because App owns its state');
+assert.match(app, /<RetainedScreen active=\{activeTab === 'plan'\} retainInactive/, 'Tasks retains its local filters across Plan sections and detail routes');
+assert.doesNotMatch(app, /id="screen-life"/, 'Habits and Goals no longer use a separate Life landing screen');
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
   'Money retains local account and planning form drafts while another tab is briefly visited');
 assert.match(app, /prefers-reduced-motion/);

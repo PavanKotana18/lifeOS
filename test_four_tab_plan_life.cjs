@@ -59,7 +59,7 @@ assert.match(renderToStaticMarkup(tree), /No tasks match this view/);
 button(tree, 'Show every task').props.onClick(); tree = renderPlan(props);
 assert.equal(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').length, tasks.length);
 walk(tree, n => n.type === 'input' && n.props['aria-label'] === 'Mark done incomplete')[0].props.onChange();
-walk(tree, n => n.type === 'button' && n.props.className === 'plan-hub-task-open' && text(n).startsWith('future'))[0].props.onClick();
+walk(tree, n => n.type === 'button' && n.props.className === 'plan-hub-task-open' && text(n).startsWith('future'))[0].props.onClick({ currentTarget: {} });
 assert.match(markup, /Create Task/); assert.doesNotMatch(markup, /plan-compose/);
 assert.deepEqual(calls, ['toggle:done', 'open:future']);
 const many = renderToStaticMarkup(React.createElement(PlanHub, { ...props, tasks: Array.from({ length: 12 }, (_, i) => task('task' + i, today)) }));

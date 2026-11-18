@@ -31,7 +31,9 @@ const declaredTests = fs.readdirSync(pathToAndroidTests)
     return [...source.matchAll(/@Test\s+(?:public\s+)?void\s+(\w+)\s*\(/g)]
       .map(match => `com.lifeos.personal.${file.slice(0, -5)}#${match[1]}`);
   });
-assert.equal(declaredTests.length, 25, 'Android test inventory changed; update the hosted expected counts deliberately');
+// Timed and denied-access scenarios run with explicit exact-alarm state in the
+// disposable native lab. Unattended profiles keep their existing inventory.
+assert.equal(declaredTests.length, 27, 'Android test inventory changed; update the hosted expected counts deliberately');
 for (const [inventory, expectedCount, requiredTest] of [
   ['instrumentation-exclusions-api29.txt', 17, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
   ['instrumentation-exclusions-api34-35.txt', 22, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
