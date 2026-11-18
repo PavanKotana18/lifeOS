@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 // Full React application acceptance in an ephemeral Chromium context. The real
 // encrypted IndexedDB facade is exercised with tests/browser/bootstrap.ts's
@@ -297,6 +297,7 @@ async function main() {
       await clickButton('Add transaction', { exact: false });
       await fillDialogField('Amount', '125.50');
       await fillDialogField('Merchant or description', 'QA acceptance: expense');
+      await capture('add-transaction-composer-390');
       const category = dialog().getByLabel('Category', { exact: false }).last();
       await category.selectOption({ index: 1 });
       await saveDialog('Save transaction');
@@ -304,6 +305,7 @@ async function main() {
       await page.getByTestId('money-home').getByRole('button', { name: /^Budgets/ }).click();
       await clickButton('Add budget', { exact: false });
       await fillDialogField('Monthly limit', '1000');
+      await capture('add-budget-composer-390');
       await saveDialog('Save budget');
       const budgetState = await page.evaluate(async () => {
         const db = await import('/src/db.ts');
@@ -369,9 +371,11 @@ async function main() {
       await clickButton('Add goal', { exact: false });
       await fillDialogField('Goal title', 'QA acceptance: emergency reserve');
       await fillDialogField('Target amount', '5000');
+      await capture('add-savings-composer-390');
       await saveDialog('Save savings');
       await clickButton('Add contribution');
       await fillDialogField('Amount', '100');
+      await capture('add-contribution-composer-390');
       await saveDialog('Save contribution');
       const savingsState = await page.evaluate(async () => {
         const db = await import('/src/db.ts');
@@ -402,6 +406,7 @@ async function main() {
       await dialog().getByLabel('Progress tracking').selectOption('quantity');
       await fillDialogField('Daily quantity target', '4');
       await fillDialogField('Unit', 'glasses');
+      await capture('add-habit-composer-390');
       await saveDialog('Save habit');
       await page.getByRole('button', { name: /QA acceptance: drink water/ }).last().click();
       await page.getByRole('heading', { name: 'QA acceptance: drink water' }).waitFor();
@@ -419,11 +424,13 @@ async function main() {
       await fillDialogField('Goal title', 'QA acceptance: finish one course');
       await dialog().getByLabel('Target', { exact: true }).fill('10');
       await fillDialogField('Target date', '2026-12-31');
+      await capture('add-goal-composer-390');
       await saveDialog('Save goal');
       await page.getByRole('button', { name: 'QA acceptance: finish one course' }).click();
       await page.getByRole('heading', { name: 'QA acceptance: finish one course' }).waitFor();
       await clickButton('+ Milestone');
       await fillDialogField('Milestone title', 'QA acceptance: finish first module');
+      await capture('add-milestone-composer-390');
       await saveDialog('Save milestone');
       const milestoneToggle = page.locator('section[aria-labelledby="goal-detail-title"] label').filter({ hasText: 'QA acceptance: finish first module' }).locator('input[type="checkbox"]');
       await milestoneToggle.waitFor();
@@ -438,6 +445,7 @@ async function main() {
       await page.getByText('1 of 1 complete', { exact: true }).waitFor();
       await clickButton('Update progress');
       await fillDialogField('Current progress', '4');
+      await capture('goal-progress-composer-390');
       await saveDialog('Save progress');
       await page.getByRole('progressbar', { name: 'QA acceptance: finish one course progress' }).waitFor();
       await capture('life-goal-detail-390');
@@ -570,7 +578,12 @@ async function main() {
           await clickButton('Developer tools');
           await clickButton('Remove sample data');
           await page.getByRole('alertdialog').getByRole('button', { name: 'Remove sample data', exact: true }).click();
-          await page.getByText('Sample data removed').waitFor();
+          await page.waitForFunction(async () => {
+            const { StorageService } = await import('/src/db.ts');
+            const rows = await StorageService.transactions.getAll();
+            return !rows.some(row => row.id.startsWith('lifeos-demo-v2:')) &&
+              rows.some(row => row.description === 'QA acceptance: expense');
+          });
         }
         await clickButton('Profile');
       }
@@ -664,6 +677,48 @@ async function main() {
         const { StorageService } = await import('/src/db.ts');
         return !(await StorageService.transactions.getAll()).some(row => row.description === name);
       }, title);
+    });
+    await journey('accounts, transfer and recurring plan persist encrypted', async () => {
+      await clickButton('Money overview');
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Accounts', exact: true }).click();
+      for (const [name, balance] of [['QA cash account', '100'], ['QA reserve account', '0']]) {
+        await clickButton('Add account');
+        await fillDialogField('Account name', name);
+        await fillDialogField('Starting balance', balance);
+        if (balance === '100') await capture('add-account-composer-390');
+        await saveDialog('Save account');
+        await page.getByRole('heading', { name, exact: true }).waitFor();
+      }
+      await clickButton('Edit QA cash account');
+      await fillDialogField('Account name', 'QA edited cash account');
+      await capture('edit-account-composer-390');
+      await saveDialog('Save account');
+      await page.getByRole('heading', { name: 'QA edited cash account', exact: true }).waitFor();
+      await clickButton('Transfer');
+      await fillDialogField('Amount sent', '20.25');
+      await capture('transfer-composer-390');
+      await saveDialog('Save transfer');
+      await page.getByRole('heading', { name: 'Transfers', exact: true }).waitFor();
+      await capture('money-accounts-populated-390');
+      await clickButton('Money overview');
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Plans', exact: true }).click();
+      await clickButton('Add');
+      const name = 'QA recurring utility bill';
+      await dialog().getByRole('textbox', { name: 'Name', exact: true }).fill(name);
+      await fillDialogField('Amount', '30.50');
+      await capture('planned-bill-composer-390');
+      await saveDialog('Save plan');
+      await page.getByTestId('money-planning').getByText(name, { exact: true }).waitFor();
+      const persisted = await page.evaluate(async () => {
+        const { lifeOSDatabase } = await import('/src/db.ts');
+        const encrypted = row => row.__lifeosEncrypted === 1;
+        return {
+          accounts: (await lifeOSDatabase.financialAccounts.toArray()).filter(encrypted).length,
+          transfers: (await lifeOSDatabase.accountTransfers.toArray()).filter(encrypted).length,
+          commitments: (await lifeOSDatabase.plannedCommitments.toArray()).filter(encrypted).length,
+        };
+      });
+      assert.deepEqual(persisted, { accounts: 2, transfers: 1, commitments: 1 });
     });
   } catch (error) {
     report.fatal = { journey: currentJourney, message: error instanceof Error ? error.message : String(error) };
