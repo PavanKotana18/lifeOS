@@ -315,7 +315,8 @@ public class DirectedVisualAcceptanceTest {
                 WebViewTestSupport.awaitReactRoot(scenario);
                 mandatoryOnboardingVisuals();
                 assertEquals("false",js("!!document.querySelector('[data-testid=today-dashboard]')"));
-                assertEquals("true",js("!!document.querySelector('[aria-label=\"Set up your recovery kit\"]')"));
+                assertEquals("Recovery deferral must remain inside onboarding", "true",
+                    js("document.querySelector('.initial-setup .recovery-stage h1')?.textContent==='Recovery setup'"));
                 JSONObject key=new JSONObject(WebViewTestSupport.evaluateAsync(scenario,"window.Capacitor.Plugins.LifeOSCrypto.getKeyState()"));
                 assertFalse("Visual-only screenshots must not provision a key",key.getBoolean("keyProvisioned"));
                 scenario.onActivity(a->assertTrue("Onboarding remains screenshot protected",(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)!=0));
