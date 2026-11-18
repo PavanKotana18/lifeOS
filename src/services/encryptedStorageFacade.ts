@@ -1,3 +1,4 @@
+import { createSampleData, isSampleRecord } from './sampleData';
 import { withCommitmentWriteLock } from './commitmentWriteLock';
 import type {
   Transaction,
@@ -991,166 +992,48 @@ export function createEncryptedStorageFacade(
         for (const category of DEFAULT_CATEGORIES) ctx.add('categories', category);
       }),
 
-      seedDemoData: async () => {
-        const today = new Date().toISOString().split('T')[0];
-        const curMonth = today.substring(0, 7);
-        const now = new Date().toISOString();
-        const yesterday = new Date(Date.now() - 86400000)
-          .toISOString().split('T')[0];
+      seedDemoData: async () => coordinator.run(async ctx => {
+        if (await ctx.get('settings', 'sampleDataCreated')) return;
+        const sample = createSampleData();
+        const categories = new Map((await ctx.getAll<Category>('categories')).map(row => [row.id, row]));
+        for (const category of DEFAULT_CATEGORIES) {
+          if (!categories.has(category.id)) {
+            ctx.add('categories', category);
+            categories.set(category.id, category);
+          }
+        }
+        const budgets = await ctx.getAll<Budget>('budgets');
+        sample.budgets = sample.budgets.filter(row => categories.get(row.categoryId ?? '')?.type === 'expense' &&
+          !budgets.some(saved => saved.monthYear === row.monthYear && saved.categoryId === row.categoryId));
+        for (const transaction of sample.transactions) {
+          const category = categories.get(transaction.category);
+          if (!category || category.type !== transaction.type) throw new Error('A sample category conflicts with an existing category.');
+          transaction.category = category.name;
+          helpers.validateTransactionRecord(transaction, true);
+        }
+        for (const [key, rows] of Object.entries(sample)) {
+          for (const row of rows) ctx.add(key as keyof typeof sample, row);
+        }
+        ctx.add('settings', { key: 'sampleDataCreated', value: true });
+      }),
 
-        await coordinator.run(async ctx => {
-          if (await ctx.get<{ key: string; value: string }>('settings', 'previewDemoDataSeededAt')) return;
-          const categories = await ctx.getAll<Category>('categories');
-          const availableCategories = categories.length
-            ? categories
-            : DEFAULT_CATEGORIES;
-
-          if (!categories.length) {
-            for (const category of DEFAULT_CATEGORIES) {
-              ctx.add('categories', category);
+      removeSampleData: async () => coordinator.run(async ctx => {
+        const tables = Object.keys(createSampleData()) as (keyof ReturnType<typeof createSampleData>)[];
+        for (const table of tables) {
+          const rows = await ctx.getAll<{ id: string; habitId?: string; goalId?: string; recurrenceRootId?: string; commitmentId?: string }>(table);
+          for (const row of rows) {
+            if (isSampleRecord(row.id) ||
+              (table === 'tasks' && isSampleRecord(row.recurrenceRootId ?? '')) ||
+              (['habitLogs', 'milestones', 'savingsContributions'].includes(table) && isSampleRecord(row.habitId ?? row.goalId ?? ''))) {
+              ctx.delete(table, row.id);
+            } else if (row.commitmentId && isSampleRecord(row.commitmentId)) {
+              // Keep real posted activity when removing the corresponding plan.
+              ctx.put(table, { ...row, commitmentId: undefined, commitmentOccurrenceDate: undefined });
             }
           }
-
-          const demoTxs: Omit<Transaction, 'id' | 'createdAt'>[] = [
-            { type: 'income', amount: 95000, category: 'Salary', description: '[PREVIEW SAMPLE] Tech Consultancy Salary', date: `${curMonth}-01`, paymentMethod: 'Bank Transfer' },
-            { type: 'income', amount: 15000, category: 'Freelance', description: '[PREVIEW SAMPLE] Web Architecture Sprint', date: `${curMonth}-15`, paymentMethod: 'Net Banking' },
-            { type: 'expense', amount: 28000, category: 'Rent', description: '[PREVIEW SAMPLE] Apartment Monthly Rent', date: `${curMonth}-02`, paymentMethod: 'UPI' },
-            { type: 'expense', amount: 6500, category: 'Food', description: '[PREVIEW SAMPLE] Organic Pantry Provisions', date: `${curMonth}-08`, paymentMethod: 'Credit Card' },
-            { type: 'expense', amount: 2400, category: 'Utilities', description: '[PREVIEW SAMPLE] Fiber Broadband & Power', date: `${curMonth}-12`, paymentMethod: 'UPI' },
-            { type: 'expense', amount: 12000, category: 'Investments', description: '[PREVIEW SAMPLE] Index Equity SIP', date: `${curMonth}-05`, paymentMethod: 'Bank Transfer' }
-          ];
-
-          for (const input of demoTxs) {
-            const category = availableCategories.find(
-              row => row.name === input.category
-            );
-
-            if (!category) {
-              throw new Error(`Demo transaction category not found: ${input.category}`);
-            }
-            if (category.type !== input.type) {
-              throw new Error(`Demo transaction category type mismatch: ${input.category}`);
-            }
-
-            const record: Transaction = {
-              ...input,
-              id: helpers.createRecordId('tx'),
-              createdAt: now,
-            };
-            helpers.validateTransactionRecord(record, true);
-            ctx.add('transactions', record);
-          }
-
-          const budgets = await ctx.getAll<Budget>('budgets');
-          const foodCategory = availableCategories.find(
-            row => row.id === 'cat_food' && row.type === 'expense'
-          );
-
-          if (!foodCategory) {
-            throw new Error('Demo budget category not found: cat_food');
-          }
-
-          const budgetInputs: Omit<Budget, 'id' | 'createdAt'>[] = [
-            { monthlyAmount: 60000, monthYear: curMonth },
-            {
-              categoryId: foodCategory.id,
-              monthlyAmount: 12000,
-              monthYear: curMonth,
-            },
-          ];
-
-          for (const input of budgetInputs) {
-            const existing = budgets.find(
-              row => row.monthYear === input.monthYear &&
-                row.categoryId === input.categoryId
-            );
-            if (existing) {
-              ctx.put('budgets', { ...existing, monthlyAmount: input.monthlyAmount });
-            } else {
-              ctx.add('budgets', {
-                ...input,
-                id: helpers.createRecordId('budget'),
-                createdAt: now,
-              });
-            }
-          }
-
-          const goal: SavingsGoal = {
-            id: helpers.createRecordId('sg'),
-            title: '[PREVIEW SAMPLE] Emergency Reserve Fund',
-            targetAmount: 200000,
-            currentAmount: 105000,
-            targetDate: '2026-12-31',
-            category: 'Financial',
-            createdAt: now,
-          };
-          ctx.add('savingsGoals', goal);
-          ctx.add('savingsContributions', {
-            id: helpers.createRecordId('contrib'),
-            goalId: goal.id,
-            amount: 20000,
-            date: `${curMonth}-05`,
-            notes: 'Monthly savings contribution',
-            createdAt: now,
-          });
-
-          const habits: Habit[] = [
-            { id: helpers.createRecordId('habit'), name: '[PREVIEW SAMPLE] Drink water', frequency: 'daily', color: '#3b82f6', trackingMode: 'quantity', targetPerDay: 4, quantityUnit: 'glasses', createdAt: now },
-            { id: helpers.createRecordId('habit'), name: '[PREVIEW SAMPLE] Walk 10,000 steps', frequency: 'daily', color: '#10b981', createdAt: now },
-            { id: helpers.createRecordId('habit'), name: '[PREVIEW SAMPLE] Read 20 pages', frequency: 'daily', color: '#8b5cf6', createdAt: now },
-          ];
-          for (const habit of habits) ctx.add('habits', habit);
-
-          const habitLogs: HabitLog[] = [
-            { id: helpers.createRecordId('habitlog'), habitId: habits[0].id, date: yesterday, completed: true, quantity: 4, completedAt: now },
-            { id: helpers.createRecordId('habitlog'), habitId: habits[0].id, date: today, completed: false, quantity: 3 },
-            { id: helpers.createRecordId('habitlog'), habitId: habits[1].id, date: yesterday, completed: true, completedAt: now },
-          ];
-          for (const log of habitLogs) ctx.add('habitLogs', log);
-
-          const goalRecord: Goal = {
-            id: helpers.createRecordId('goal'),
-            title: '[PREVIEW SAMPLE] Run Half Marathon (21.1 km)',
-            description: 'Prepare endurance for state marathon event',
-            category: 'Fitness',
-            targetValue: 21.1,
-            currentValue: 10.0,
-            unit: 'km',
-            startDate: '2026-09-01',
-            targetDate: '2026-12-31',
-            priority: 'High',
-            status: 'In Progress',
-            createdAt: now,
-          };
-          ctx.add('goals', goalRecord);
-
-          const milestoneInputs: Omit<Milestone, 'id'>[] = [
-            { goalId: goalRecord.id, title: '[PREVIEW SAMPLE] 5km continuous run', completed: true },
-            { goalId: goalRecord.id, title: '[PREVIEW SAMPLE] 10km non-stop run', completed: true },
-            { goalId: goalRecord.id, title: '[PREVIEW SAMPLE] 15km long trail run', completed: false },
-          ];
-          for (const input of milestoneInputs) {
-            ctx.add('milestones', {
-              ...input,
-              id: helpers.createRecordId('milestone'),
-            });
-          }
-
-          const taskInputs: Omit<Task, 'id' | 'createdAt'>[] = [
-            { title: '[PREVIEW SAMPLE] Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false },
-            { title: '[PREVIEW SAMPLE] 5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true },
-            { title: '[PREVIEW SAMPLE] Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false },
-          ];
-          for (const input of taskInputs) {
-            ctx.add('tasks', {
-              ...input,
-              id: helpers.createRecordId('task'),
-              createdAt: now,
-            });
-          }
-          ctx.add('settings', { key: 'previewDemoDataSeededAt', value: now });
-        });
-      },
+        }
+        ctx.delete('settings', 'sampleDataCreated');
+      }),
     },
   };
 

@@ -1,3 +1,4 @@
+import { isSampleRecord } from './sampleData';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalNotifications, Weekday, type LocalNotificationSchema } from '@capacitor/local-notifications';
 import { buildTaskNotificationPlan, stableNotificationId } from './domainUtils';
@@ -264,13 +265,13 @@ export const NotificationService = {
         taskReminders: 'Task reminder', upcomingDeadlines: 'Upcoming deadline', overdueAlerts: 'Task overdue',
       };
       const now = new Date();
-      const notifications = tasks.flatMap(task => buildTaskNotificationPlan(task, preferences, now).map(plan => ({
+      const notifications = tasks.filter(task => !isSampleRecord(task.id) && !isSampleRecord(task.recurrenceRootId ?? '')).flatMap(task => buildTaskNotificationPlan(task, preferences, now).map(plan => ({
         id: taskNotificationId(task, plan.kind), title: labels[plan.kind] || 'LifeOS reminder', body: 'Unlock LifeOS to view your reminder.',
         // Exact-alarm denial falls back to Android's idle-aware inexact alarm.
         // Reserve the per-app idle quota for reminders the user explicitly set;
         // deadline/overdue alerts are separate, lower-priority events.
         schedule: { at: plan.at, allowWhileIdle: plan.kind === 'taskReminders' }, channelId: 'lifeos-reminders', smallIcon: 'ic_transparent',
-        extra: { kind: plan.kind, taskId: task.id,
+        extra: { kind: plan.kind, taskId: task.id, scheduleMode,
           ...(plan.kind === 'taskReminders' && task.reminderAt ? { originalReminderAt: task.reminderAt } : {}) },
       })));
       for (const task of tasks) {
@@ -301,7 +302,7 @@ export const NotificationService = {
         if (String(item.extra?.kind || '') !== 'taskReminders') continue;
         const taskId = String(item.extra?.taskId || '');
         const task = tasksById.get(taskId);
-        if (!task || task.completed || !task.dueDate || !preferences.taskReminders || !task.reminderAt) continue;
+        if (!task || isSampleRecord(task.id) || isSampleRecord(task.recurrenceRootId ?? '') || task.completed || !task.dueDate || !preferences.taskReminders || !task.reminderAt) continue;
         const selectedAt = new Date(task.reminderAt);
         if (!Number.isFinite(selectedAt.getTime()) || selectedAt > now) continue;
         const originalAt = item.extra?.originalReminderAt
@@ -318,7 +319,7 @@ export const NotificationService = {
           retainedLateIds.add(item.id);
           continue;
         }
-        const catchUpStillPending = item.extra?.lateCatchUp === true && existingTrigger !== null && existingTrigger > now;
+        const catchUpStillPending = existingTrigger !== null && existingTrigger > now;
         if (!catchUpStillPending) {
           // The Capacitor pending list is persisted plugin state, not direct
           // AlarmManager introspection. The plugin receiver removes the saved
@@ -343,11 +344,19 @@ export const NotificationService = {
         if (existing && existing !== owner) throw new Error('notification-id-collision');
         notificationOwners.set(item.id, owner);
       }
-      if (notifications.length || lateCatchUps.length) {
+      const pendingById = new Map(oldTaskNotifications.map(item => [item.id, item]));
+      const replacements = notifications.filter(item => {
+        const existing = pendingById.get(item.id);
+        return !existing || existing.extra?.scheduleMode !== scheduleMode ||
+          existing.extra?.taskId !== item.extra?.taskId ||
+          existing.extra?.kind !== item.extra?.kind ||
+          !pendingTimeMatches(existing.schedule?.at, item.schedule.at);
+      });
+      if (replacements.length || lateCatchUps.length) {
         // Queue the replacement set first. A failed update must not erase
         // reminders which were already queued successfully.
         const requestedAt = new Date().toISOString();
-        for (const item of notifications) {
+        for (const item of replacements) {
           if (String(item.extra?.kind) !== 'taskReminders') continue;
           const task = tasksById.get(String(item.extra?.taskId || ''));
           if (!task?.reminderAt) continue;
@@ -366,8 +375,8 @@ export const NotificationService = {
             cancellationAt: null, cancellationReason: null,
           });
         }
-        await schedule([...notifications, ...lateCatchUps]);
-        for (const item of [...notifications, ...lateCatchUps]) {
+        await schedule([...replacements, ...lateCatchUps]);
+        for (const item of [...replacements, ...lateCatchUps]) {
           if (String(item.extra?.kind) !== 'taskReminders') continue;
           const task = tasksById.get(String(item.extra?.taskId || ''));
           if (!task?.reminderAt) continue;
@@ -378,12 +387,12 @@ export const NotificationService = {
         }
         const after = await LocalNotifications.getPending();
         const pendingById = new Map(after.notifications.map(item => [item.id, item]));
-        const missing = [...notifications, ...lateCatchUps].filter(item => {
+        const missing = [...replacements, ...lateCatchUps].filter(item => {
           const pendingItem = pendingById.get(item.id);
           return !pendingItem || !pendingTimeMatches(pendingItem.schedule?.at, item.schedule.at);
         });
         if (missing.length) throw new Error(`schedule-verification-missing:${missing.length}`);
-        for (const item of [...notifications, ...lateCatchUps]) {
+        for (const item of [...replacements, ...lateCatchUps]) {
           if (String(item.extra?.kind) !== 'taskReminders') continue;
           const task = tasksById.get(String(item.extra?.taskId || ''));
           if (!task?.reminderAt) continue;
@@ -681,7 +690,7 @@ export const NotificationService = {
 
   async ensureChannel() {
     if (!requireNativeNotifications()) return;
-    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'LifeOS reminders', description: 'Local task, habit and goal reminders', importance: 4, visibility: 0 })
+    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'LifeOS reminders', description: 'Local task, habit and goal reminders', importance: 4, visibility: 0, vibration: true })
       .catch(error => { ensureChannelPromise = null; writeLastError(safeErrorCode(error)); console.warn('LifeOS notification channel creation failed.'); throw error; });
     const pending = ensureChannelPromise;
     try { await pending; }

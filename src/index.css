@@ -839,8 +839,8 @@ html.dark .text-amber-400 { color: var(--warning); }
    surface before pointerdown, rather than changing it after browser cancellation.
    Gesture-owning widgets and their complete subtree retain native arbitration. */
 .app-shell, .app-shell :where(*) { touch-action: pan-y pinch-zoom; }
-.app-shell :where([data-no-tab-swipe], [data-swipe-exclude], [data-gesture-owner="native"], [role="dialog"], [aria-modal="true"], .ui-bottom-sheet, [data-horizontal-scroll], .overflow-x-auto, .overflow-x-scroll, .recharts-wrapper, [data-chart], canvas, [role="slider"], input, textarea, select, [contenteditable="true"]),
-.app-shell :where([data-no-tab-swipe], [data-swipe-exclude], [data-gesture-owner="native"], [role="dialog"], [aria-modal="true"], .ui-bottom-sheet, [data-horizontal-scroll], .overflow-x-auto, .overflow-x-scroll, .recharts-wrapper, [data-chart], [role="slider"], [contenteditable="true"]) * { touch-action: auto; }
+.app-shell :where([data-no-tab-swipe], [data-swipe-exclude], [data-gesture-owner="native"], [role="dialog"], [aria-modal="true"], .ui-bottom-sheet, [data-horizontal-scroll], .overflow-x-auto, .overflow-x-scroll, [role="slider"], input, textarea, select, [contenteditable="true"]),
+.app-shell :where([data-no-tab-swipe], [data-swipe-exclude], [data-gesture-owner="native"], [role="dialog"], [aria-modal="true"], .ui-bottom-sheet, [data-horizontal-scroll], .overflow-x-auto, .overflow-x-scroll, [role="slider"], [contenteditable="true"]) * { touch-action: auto; }
 
 .initial-setup { position: fixed; inset: 0; z-index: 70; overflow-y: auto; min-height: 0; padding: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); }
 .initial-setup-inner { width: min(100%, 28rem); min-height: 100%; margin-inline: auto; display: flex; flex-direction: column; gap: clamp(1.4rem, 4dvh, 2.5rem); }
@@ -870,7 +870,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 .initial-setup-error { color: var(--danger); font-size: .9rem; line-height: 1.5; margin-top: 1rem; }
 .initial-setup :focus-visible { outline: 2px solid var(--focus-color); outline-offset: 4px; }
 .life-metric-tip { display:flex; justify-content:flex-end; align-items:center; gap:.4rem; color:var(--ink-secondary); font-size:.72rem; }
-.lifeos-info-trigger, .lifeos-info-close { display:grid; min-width:2.5rem; min-height:2.5rem; place-items:center; border:1px solid var(--stroke); border-radius:999px; color:var(--accent); background:var(--surface); }
+.lifeos-info-trigger, .lifeos-info-close { display:inline-grid; flex:none; width:2.75rem; height:2.75rem; place-items:center; border:0; border-radius:50%; color:var(--accent); background:transparent; }
 .lifeos-info-dialog { width:min(28rem, calc(100vw - 2rem)); max-width:none; max-height:min(75dvh, 32rem); margin:auto; padding:0; overflow:auto; border:1px solid var(--stroke); border-radius:1.1rem; background:var(--surface-raised); color:var(--ink); box-shadow:0 18px 56px rgb(0 0 0 / .28); }
 .lifeos-info-dialog::backdrop { background:rgb(0 0 0 / .48); }
 .lifeos-info-dialog-content { padding:1.1rem; }
@@ -881,3 +881,6 @@ html.dark .text-amber-400 { color: var(--warning); }
 .plan-filter-details > summary > span { color:var(--accent); font-size:.7rem; }
 .plan-filter-details .plan-search-controls { padding:0 0 .75rem; }
 .life-goal-date { display:none; }
+
+.money-period-unified { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; width: max-content; max-width: 100%; padding-inline: .75rem; white-space: nowrap; }
+.money-home-heading, .money-detail-title { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem 1rem; }

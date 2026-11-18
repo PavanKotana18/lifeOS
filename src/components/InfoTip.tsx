@@ -28,7 +28,7 @@ export default function InfoTip({ label, children }: { label: string; children: 
       <Info size={17} aria-hidden="true" />
     </button>
     <dialog ref={dialogRef} id={dialogId} className="lifeos-info-dialog" data-contextual-info="true" aria-labelledby={titleId}
-      aria-describedby={descriptionId} onClose={() => { setOpen(false); }} onCancel={event => { event.preventDefault(); dismiss(); }}
+      aria-describedby={descriptionId} onClose={dismiss} onCancel={event => { event.preventDefault(); dismiss(); }}
       onClick={event => { if (event.target === event.currentTarget) dismiss(); }}>
       <div className="lifeos-info-dialog-content">
         <div className="flex items-start justify-between gap-3"><h2 id={titleId} className="text-base font-semibold">{label}</h2>

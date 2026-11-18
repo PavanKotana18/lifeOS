@@ -207,6 +207,10 @@ export default function App() {
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
+  const [notificationOffer, setNotificationOffer] = useState(false);
+  const notificationOfferBack = useRef<(() => void) | null>(null);
+  const [notificationOfferBusy, setNotificationOfferBusy] = useState(false);
+  const [notificationOfferError, setNotificationOfferError] = useState('');
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingJourney, setOnboardingJourney] = useState<OnboardingJourney>(INITIAL_ONBOARDING_JOURNEY);
   const [startupError, setStartupError] = useState('');
@@ -573,7 +577,7 @@ export default function App() {
 
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    const hardExcluded = target.closest('[data-no-tab-swipe],[data-swipe-exclude],[data-gesture-owner="native"],[role="dialog"],[aria-modal="true"],.ui-bottom-sheet,[data-horizontal-scroll],.recharts-wrapper,[data-chart],canvas,[role="slider"],input[type="range"]');
+    const hardExcluded = target.closest('[data-no-tab-swipe],[data-swipe-exclude],[data-gesture-owner="native"],[role="dialog"],[aria-modal="true"],.ui-bottom-sheet,[data-horizontal-scroll],[role="slider"],input[type="range"]');
     const textEntry = target.closest('textarea,select,[contenteditable="true"],[role="textbox"],input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"])');
     const nativePicker = target.closest('[data-native-picker],input[type="date"],input[type="time"],input[type="month"],input[type="file"],input[type="color"]');
     const interactive = target.closest('button,a,label,summary,input[type="button"],input[type="submit"],input[type="reset"],input[type="checkbox"],input[type="radio"],[role="button"],[role="switch"],[role="checkbox"],[role="tab"]');
@@ -751,6 +755,10 @@ export default function App() {
   }, []);
 
   const navigateBack = () => {
+    if (notificationOfferBack.current) {
+      notificationOfferBack.current();
+      return;
+    }
     const state = backState.current;
     if (typeof document !== 'undefined') {
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
@@ -1201,7 +1209,7 @@ export default function App() {
       setDisplayName(await StorageService.settings.get<string>('onboardingNameDraft', ''));
       setOnboardingRequired(!completed);
       setOnboardingComplete(completed);
-      setOnboardingStep(0);
+      setOnboardingStep(savedOnboardingStep === 1 || savedOnboardingStep === 2 ? savedOnboardingStep : 0);
       if (!started && !completed) await StorageService.settings.set('onboardingStarted', true);
       const notificationPermission = await NotificationService.checkPermission();
       await reconcileNotificationPreferences(notificationPermission);
@@ -1238,7 +1246,7 @@ export default function App() {
     todayLayoutRef.current = savedTodayLayout;
     setTodayLayout(savedTodayLayout);
 
-    const savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>(
+    let savedNotificationPreferences = await StorageService.settings.get<NotificationPreferences>(
       'notificationPreferences',
       DEFAULT_NOTIFICATION_PREFERENCES
     );
@@ -1253,6 +1261,10 @@ export default function App() {
     const notificationsOn =
       savedNotificationsEnabled ?? Object.values(savedNotificationPreferences).some(Boolean);
 
+    if (notificationsOn && !Object.values(savedNotificationPreferences).some(Boolean) && await NotificationService.checkPermission() === 'granted') {
+      savedNotificationPreferences = { ...DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };
+      await StorageService.settings.set('notificationPreferences', savedNotificationPreferences);
+    }
     setNotificationsEnabled(notificationsOn);
     setNotificationPreferences({
       ...DEFAULT_NOTIFICATION_PREFERENCES,
@@ -1428,40 +1440,48 @@ export default function App() {
     }
   };
 
-  const requestNotificationsAfterWelcome = () => {
-    if (!NotificationService.isSupported()) return;
-    window.setTimeout(() => {
-      void (async () => {
-        const alreadyRequested = await StorageService.settings.get<boolean>('notificationPermissionRequested', false);
-        if (alreadyRequested) return;
-        const current = await NotificationService.checkPermission();
-        if (current === 'denied' || current === 'unsupported') return;
-        await StorageService.settings.set('notificationPermissionRequested', true);
-        setNotificationPermissionRequested(true);
-        if (current !== 'granted') {
-          showToast('LifeOS can remind you about tasks and routines. Android will ask whether to allow notifications.', 'info');
-          await new Promise(resolve => window.setTimeout(resolve, 900));
-          const result = await NotificationService.requestPermission();
-          if (result !== 'granted') return;
-        }
-
-        const saved = await StorageService.settings.get<Partial<NotificationPreferences> | undefined>('notificationPreferences', undefined);
-        if (saved) return;
-        const defaultsAfterConsent: NotificationPreferences = {
-          taskReminders: true,
-          upcomingDeadlines: true,
-          overdueAlerts: false,
-          habitReminders: true,
-          milestoneReminders: true,
-        };
-        await saveNotificationSelection(defaultsAfterConsent, true);
-        await syncNotificationSchedules(tasks, habits, goals, milestones, defaultsAfterConsent);
-      })().catch(error => {
-        console.warn('Initial notification permission request could not be completed.', error);
-        void refreshNotificationDiagnostics();
-      });
-    }, 700);
+  const dismissNotificationOffer = async () => {
+    await StorageService.settings.set('notificationDefaultsPending', false);
+    setNotificationOffer(false);
   };
+
+  notificationOfferBack.current = notificationOffer && activeTab === 'dashboard' && !createKind && !modalContent
+    ? () => { if (!notificationOfferBusy) void dismissNotificationOffer(); } : null;
+
+  const acceptNotificationOffer = async () => {
+    if (notificationOfferBusy) return;
+    setNotificationOfferBusy(true);
+    setNotificationOfferError('');
+    try {
+      const permission = await askNotificationPermission();
+      if (!permission.granted) {
+        setNotificationOfferError(permission.message || 'Allow notifications in Android settings.');
+        return;
+      }
+      const saved = await StorageService.settings.get<NotificationPreferences | undefined>('notificationPreferences', undefined);
+      const preferences = { ...DEFAULT_NOTIFICATION_PREFERENCES, ...saved, taskReminders: true };
+      await saveNotificationSelection(preferences, true);
+      await dismissNotificationOffer();
+      await syncNotificationSchedules(tasks, habits, goals, milestones, preferences);
+      if (permission.status === 'approximate') showToast('Reminders may arrive late. You can allow precise timing in Notifications.', 'info');
+    } catch {
+      setNotificationOfferError('Could not enable reminders. Try again in Notifications.');
+    } finally {
+      setNotificationOfferBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!appReady || !onboardingComplete || isLocked || activeTab !== 'dashboard' || !NotificationService.isSupported()) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setNotificationOfferError('');
+      void StorageService.settings.get<boolean>('notificationDefaultsPending', false).then(pending => {
+        if (active && pending) setNotificationOffer(true);
+      }).catch(() => {});
+    }, 450);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [appReady, onboardingComplete, isLocked, activeTab]);
 
   const saveNotificationSelection = async (preferences: NotificationPreferences, enabled = Object.values(preferences).some(Boolean)) => {
     setNotificationPreferences(preferences);
@@ -1512,9 +1532,10 @@ export default function App() {
       const permission = await askNotificationPermission();
       if (!permission.granted) { showToast(permission.message || `Notification permission: ${permission.status}`, 'danger'); return; }
     }
-    setNotificationsEnabled(enabled);
-    await StorageService.settings.set('notificationsEnabled', enabled);
-    await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(notificationPreferences, enabled));
+    const preferences = enabled && !Object.values(notificationPreferences).some(Boolean)
+      ? { ...notificationPreferences, taskReminders: true } : notificationPreferences;
+    await saveNotificationSelection(preferences, enabled);
+    await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(preferences, enabled));
     await refreshNotificationDiagnostics();
     showToast(enabled ? 'Notifications enabled' : 'Notifications paused', 'success');
   };
@@ -1699,6 +1720,7 @@ export default function App() {
   };
 
   const finishOnboarding = async () => {
+    if (!safeFirstRunBrowse.current && !sessionManager.isUnlocked()) await encryptedSession.open();
     const [state, savedJourney, nameDraft] = await Promise.all([
       CryptoService.getKeyState(),
       StorageService.settings.get<OnboardingJourney>('onboardingJourney', INITIAL_ONBOARDING_JOURNEY),
@@ -1726,14 +1748,14 @@ export default function App() {
     };
     await StorageService.settings.set('onboardingJourney', completedJourney);
     setOnboardingJourney(completedJourney);
+    if (NotificationService.isSupported() && !await StorageService.settings.get<boolean>('notificationsEnabled', false)) {
+      await StorageService.settings.set('notificationDefaultsPending', true);
+    }
     await StorageService.settings.set('onboardingCompleted', true);
     await StorageService.settings.set('onboardingStarted', false);
     await StorageService.settings.set('onboardingStep', 0);
     setOnboardingStep(0);
     setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; transitionToTab('dashboard');
-    // Give the main screen a visible moment after welcome, then request Android
-    // permission once. Existing choices and previously denied prompts persist.
-    requestNotificationsAfterWelcome();
   };
 
   const processPendingTaskNotification = async () => {
@@ -2542,7 +2564,17 @@ export default function App() {
 
   if (onboardingRequired && !onboardingComplete && !isLocked) return <Onboarding
     initialName={displayName}
+    step={onboardingStep}
+    protectionAvailable={biometricAvailability === 'Available'}
+    protectionReady={!safeFirstRunBrowse.current}
+    recoveryReady={recoveryProvisioned}
     onSaveIdentity={saveOnboardingIdentity}
+    onStep={async step => {
+      await StorageService.settings.set('onboardingStep', step);
+      setOnboardingStep(step);
+    }}
+    onProtect={provisionOnboardingProtection}
+    onRecover={() => confirmOnboardingRecovery('')}
     onFinish={finishOnboarding}
   />;
 
@@ -2833,7 +2865,7 @@ export default function App() {
                 onAccounts={() => navigateFinanceSubtab('accounts')}
                 accountSummaries={accountSummaries}
                 savingsGoals={savingsGoals}
-                legacyCurrency={userPrefs.currency}
+                legacyCurrency={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
                 onEditTransaction={openEditTransaction}
               />
             )}
@@ -3072,7 +3104,7 @@ export default function App() {
             {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'No scheduled reminder'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={<details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
             <QuickTaskEntry onAdd={addUnscheduledTask} />
-            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
+            <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
             <div className="planner-range-nav" role="group" aria-label="Choose task range" data-no-tab-swipe>
               {(['today', 'tomorrow', 'upcoming', 'unscheduled'] as const).map((range, index) => <button key={range} type="button" aria-pressed={plannerFilter === range || (plannerFilter === 'all' && range === 'today' && plannerSelectedDate === todayKey)} onClick={() => setPlannerFilter(range)}>{index === 2 ? 'Next 7 days' : range[0].toUpperCase() + range.slice(1)}</button>)}
             </div>
@@ -3193,17 +3225,12 @@ export default function App() {
             {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
 
             {profileSection === 'notifications' && <ProfileSubpage title="Notifications" description="Choose which local reminders LifeOS may send." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <p className="text-xs text-secondary">Task reminders use exact alarms when Android allows them. Without exact-alarm access, Android may delay reminders to save battery.</p>
               <div className="lifeos-raised flex min-h-11 items-center justify-between rounded-xl px-3"><span className="text-xs font-semibold">All notifications</span><button role="switch" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationsEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationsEnabled ? 'On' : 'Off'}</button></div>
-              <p className="text-[11px] text-secondary">Android permission: <strong className={notificationDiagnostics.permission === 'granted' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.permission === 'granted' ? 'Granted' : notificationDiagnostics.permission === 'denied' ? 'Denied · open settings to allow' : notificationDiagnostics.permission === 'prompt' || notificationDiagnostics.permission === 'prompt-with-rationale' ? 'Not requested yet' : notificationDiagnostics.permission}</strong></p>
-              {(notificationPreferences.taskReminders || notificationPreferences.upcomingDeadlines || notificationPreferences.overdueAlerts) && notificationDiagnostics.exactAlarm !== 'granted' && <div className="rounded-xl border border-[var(--stroke)] p-3 text-xs"><p>Exact-alarm access is {notificationDiagnostics.exactAlarm}. Your reminders can still use Android’s inexact fallback, which may be late.</p><button type="button" onClick={() => void requestExactAlarmAccess()} className="mt-2 min-h-11 text-left font-semibold lifeos-accent-text">Open exact alarm access</button></div>}
-              {notificationDiagnostics.appNotifications === 'disabled' && <div className="rounded-xl border border-[var(--stroke)] p-3 text-xs"><p>Android has turned LifeOS notifications off.</p><button type="button" onClick={() => void openNotificationSettings()} className="mt-2 min-h-11 text-left font-semibold lifeos-accent-text">Open Android notification settings</button></div>}
-              {notificationDiagnostics.channel.startsWith('blocked') && <p className="rounded-xl border border-[var(--stroke)] p-3 text-xs">The LifeOS reminders channel is muted in Android. Turn it back on in notification settings to receive reminders.</p>}
-              {notificationDiagnostics.capability === 'initializing' && <p role="status" className="text-[11px] text-secondary">Checking Android notification support…</p>}
-              {notificationDiagnostics.capability === 'unavailable' && <p className="text-[11px] text-[var(--warning)]">Android notification support is unavailable in this app build. Your reminder definitions remain saved.</p>}
-              {notificationDiagnostics.capability === 'error' && <p className="text-[11px] text-[var(--warning)]">Android notification diagnostics could not be read. Refresh to retry.</p>}
+              {(notificationDiagnostics.permission === 'denied' || notificationDiagnostics.appNotifications === 'disabled' || notificationDiagnostics.channel.startsWith('blocked')) &&
+                <button type="button" onClick={() => void openNotificationSettings()} className="min-h-11 text-sm font-semibold lifeos-accent-text">Allow in Android settings</button>}
+              {notificationsEnabled && notificationDiagnostics.permission === 'granted' && notificationDiagnostics.exactAlarm !== 'granted' &&
+                <div className="flex items-center gap-1"><button type="button" onClick={() => void requestExactAlarmAccess()} className="min-h-11 text-sm font-semibold lifeos-accent-text">Allow precise reminders</button><InfoTip label="Precise reminders">Android can delay reminders when precise alarm access is off.</InfoTip></div>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--stroke)] pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
-              {developerToolsEnabled && <p className="text-[11px] text-secondary">Developer diagnostics are available in the Developer tools section.</p>}
             </section></ProfileSubpage>}
 
             {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
@@ -3213,10 +3240,24 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android notification settings</button></div>
                 <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button><button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
               </section>
-              <section className="lifeos-panel rounded-xl border p-4 space-y-3"><h2 className="text-sm font-semibold">Sample data</h2><p className="text-xs text-secondary">Adds records labeled [DEBUG SAMPLE] to this isolated Debug workspace. The sample set is added once and does not clean itself up.</p>{!isEncryptedStorageActivated() && <p role="status" className="text-xs text-secondary">Protect a private record first to initialize encrypted storage before seeding.</p>}<button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => { if (!(await confirmAction({ title: 'Add sample records to this Debug workspace?', message: 'Clearly labeled demonstration transactions, habits, goals, and tasks will be added to this encrypted Debug workspace once.', confirmLabel: 'Add debug sample data', cancelLabel: 'Cancel' }))) return; await StorageService.backup.seedDemoData(); await reloadAllData(); showToast('Debug sample data added', 'success'); }} className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Add debug sample data</button></section>
+<button onClick={async () => { if (!(await confirmAction({ title: 'Reset onboarding for testing?', message: 'Your records will remain untouched. Choices made during onboarding may update your name, appearance, security, and notification preferences.', confirmLabel: 'Restart tour' }))) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Reset onboarding for testing</button>
+              <section className="lifeos-panel rounded-xl p-4 space-y-3">
+                <h2 className="text-sm font-semibold">Sample data</h2>
+                <p className="text-xs text-secondary">Six months of activity for exploring LifeOS. Sample task reminders are silent.</p>
+                <button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => {
+                  if (!await confirmAction({ title: 'Add six months of sample data?', message: 'Sample records will appear alongside records in this Debug workspace. You can remove them here.', confirmLabel: 'Add sample data' })) return;
+                  try { await StorageService.backup.seedDemoData(); await reloadAllData(); showToast('Sample data is ready', 'success'); }
+                  catch (error) { showToast(error instanceof Error ? error.message : 'Could not add sample data', 'danger'); }
+                }} className="lifeos-accent-button min-h-11 w-full rounded-xl px-3 text-sm disabled:opacity-50">Add sample data</button>
+                <button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => {
+                  if (!await confirmAction({ title: 'Remove sample data?', message: 'Removes the sample set and activity linked to its habits and goals.', confirmLabel: 'Remove sample data' })) return;
+                  try { await StorageService.backup.removeSampleData(); await reloadAllData(); showToast('Sample data removed', 'success'); }
+                  catch (error) { showToast(error instanceof Error ? error.message : 'Could not remove sample data', 'danger'); }
+                }} className="lifeos-input min-h-11 w-full rounded-xl px-3 text-sm disabled:opacity-50">Remove sample data</button>
+              </section>
             </ProfileSubpage>}
 
-            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'data' && <ProfileSubpage title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
             {/* Backup & Restore */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Backup & Restore</h3>
@@ -3309,7 +3350,7 @@ export default function App() {
             {profileSection === 'about' && <ProfileSubpage title="About LifeOS" description="A private, offline-first space for your plans and progress." onBack={() => navigateProfileSection('home')}>
             <section className="lifeos-panel rounded-xl border p-4 space-y-2">
               <h3 className="text-sm font-semibold">LifeOS information</h3><p className="text-xs text-secondary">Version {packageInfo.version} · Package com.lifeos.personal</p><p className="text-[11px] text-muted">Offline-first personal management. Your records are stored in the local app database.</p>
-              <button onClick={async () => { if (!(await confirmAction({ title: 'Restart the welcome tour?', message: 'Your records will remain untouched. Choices made during onboarding may update your name, appearance, security, and notification preferences.', confirmLabel: 'Restart tour' }))) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Restart onboarding</button>
+
             </section>
             </ProfileSubpage>}
           </div>
@@ -3317,6 +3358,16 @@ export default function App() {
         </div>
       </main>
 
+      {notificationOffer && activeTab === 'dashboard' && !createKind && !modalContent &&
+        <div className="ui-sheet-backdrop" onClick={event => { if (event.currentTarget === event.target && !notificationOfferBusy) void dismissNotificationOffer(); }}>
+          <section className="ui-bottom-sheet lifeos-panel w-full max-w-md rounded-2xl p-5" role="dialog" aria-modal="true" aria-labelledby="notification-offer-title">
+            <h2 id="notification-offer-title" className="text-xl font-semibold">Stay on top of what matters</h2>
+            <p className="mt-2 text-sm text-secondary">Get reminders for tasks and important plans, even when LifeOS isn't open.</p>
+            {notificationOfferError && <p role="alert" className="mt-3 text-sm text-secondary">{notificationOfferError}</p>}
+            <button autoFocus type="button" disabled={notificationOfferBusy} className="lifeos-accent-button mt-5 min-h-12 w-full rounded-xl" onClick={() => void acceptNotificationOffer()}>Enable notifications</button>
+            <button type="button" disabled={notificationOfferBusy} className="mt-2 min-h-11 w-full text-sm" onClick={() => void dismissNotificationOffer()}>Maybe later</button>
+          </section>
+        </div>}
       {createKind && (
         <div className="ui-sheet-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
           <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>

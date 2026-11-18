@@ -43,17 +43,13 @@ function formatTaskDate(value: string | undefined, today: string) {
 export default function PlanHub({ tasks, today, now, onNavigatePlanner, onOpenTask, onToggleTask, onOpenGoals, onQuickAdd }: Props) {
   const [view, setView] = useState<PlanView>('all');
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<PlanStatus>('open');
+  const [status, setStatus] = useState<PlanStatus>('all');
   const filterId = useId();
   const visible = selectPlanTasks(tasks, today, now, view, query, status);
-  const open = tasks.filter(task => !task.completed);
-  const overdue = open.filter(task => getTaskStatus(task, now) === 'Overdue').length;
-  const dueToday = open.filter(task => task.dueDate === today && getTaskStatus(task, now) !== 'Overdue').length;
-  const summary = [`${open.length} open`, ...(dueToday ? [`${dueToday} due today`] : []), ...(overdue ? [`${overdue} overdue`] : [])].join(' \u00b7 ');
-  const views: { id: PlanView; label: string }[] = [{ id: 'today', label: 'Today' }, { id: 'upcoming', label: 'Upcoming' }, { id: 'all', label: 'All' }, { id: 'unscheduled', label: 'Unscheduled' }];
-  const narrowed = Boolean(query.trim()) || status !== 'open' || view !== 'all';
+  const views: { id: PlanView; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'today', label: 'Today' }, { id: 'upcoming', label: 'Upcoming' }, { id: 'unscheduled', label: 'Unscheduled' }];
+  const narrowed = Boolean(query.trim()) || status !== 'all' || view !== 'all';
   return <section aria-labelledby="plan-title" className="plan-hub plan-workspace">
-    <header className="plan-workspace-heading"><div><p className="type-eyebrow">YOUR TASKS</p><h2 id="plan-title" className="type-page-title">Plan</h2><p className="type-caption text-secondary">{summary}</p></div></header>
+    <header className="plan-workspace-heading"><div><h2 id="plan-title" className="type-page-title">Plan</h2></div></header>
     {onQuickAdd && <div className="plan-quick-entry"><QuickTaskEntry onAdd={onQuickAdd} label="Quick task" /></div>}
     <div className="plan-view-controls" data-no-tab-swipe>
       <div className="plan-view-switch" role="group" aria-label="Task views">{views.map(item => <button type="button" key={item.id} aria-pressed={view === item.id} onClick={() => setView(item.id)}>{item.label}<span>{selectPlanTasks(tasks, today, now, item.id, '', status).length}</span></button>)}</div>

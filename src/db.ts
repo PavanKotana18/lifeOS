@@ -394,6 +394,7 @@ export interface IDataStorage {
     importData(jsonData: string, options?: { replaceExisting?: boolean }): Promise<{ success: boolean; counts: Record<string, number> }>;
     clearAll(): Promise<void>;
     seedDemoData(): Promise<void>;
+    removeSampleData(): Promise<void>;
   };
   accounts: {
     getAll(): Promise<FinancialAccount[]>;
@@ -1634,68 +1635,8 @@ const rawStorageService: IDataStorage = {
       // This parent operation already owns a session lease.
       await rawStorageService.categories.getAll();
     },
-        async seedDemoData() {
-      if (!encryptedStorageActivated) throw new Error('Preview sample data requires verified encrypted storage.');
-      // User-initiated optional demo data
-      const today = new Date().toISOString().split('T')[0];
-      const curMonth = today.substring(0, 7);
-
-      const demoTxs: Omit<Transaction, 'id' | 'createdAt'>[] = [
-        { type: 'income', amount: 95000, category: 'Salary', description: 'Tech Consultancy Salary', date: `${curMonth}-01`, paymentMethod: 'Bank Transfer' },
-        { type: 'income', amount: 15000, category: 'Freelance', description: 'Web Architecture Sprint', date: `${curMonth}-15`, paymentMethod: 'Net Banking' },
-        { type: 'expense', amount: 28000, category: 'Rent', description: 'Apartment Monthly Rent', date: `${curMonth}-02`, paymentMethod: 'UPI' },
-        { type: 'expense', amount: 6500, category: 'Food', description: 'Organic Pantry Provisions', date: `${curMonth}-08`, paymentMethod: 'Credit Card' },
-        { type: 'expense', amount: 2400, category: 'Utilities', description: 'Fiber Broadband & Power', date: `${curMonth}-12`, paymentMethod: 'UPI' },
-        { type: 'expense', amount: 12000, category: 'Investments', description: 'Index Equity SIP', date: `${curMonth}-05`, paymentMethod: 'Bank Transfer' }
-      ];
-      for (const tx of demoTxs) await rawStorageService.transactions.add(tx);
-
-      await rawStorageService.budgets.upsert({ monthlyAmount: 60000, monthYear: curMonth });
-      await rawStorageService.budgets.upsert({ categoryId: 'cat_food', monthlyAmount: 12000, monthYear: curMonth });
-
-      const goal = await rawStorageService.savings.addGoal({
-        title: 'Emergency Reserve Fund',
-        targetAmount: 200000,
-        currentAmount: 85000,
-        targetDate: '2026-12-31',
-        category: 'Financial'
-      });
-      await rawStorageService.savings.addContribution({
-        goalId: goal.id,
-        amount: 20000,
-        date: `${curMonth}-05`,
-        notes: 'Monthly savings contribution'
-      });
-
-      const h1 = await rawStorageService.habits.add({ name: 'Drink 3L Water', frequency: 'daily', color: '#3b82f6' });
-      const h2 = await rawStorageService.habits.add({ name: 'Walk 10,000 steps', frequency: 'daily', color: '#10b981' });
-      const h3 = await rawStorageService.habits.add({ name: 'Read 20 pages', frequency: 'daily', color: '#8b5cf6' });
-
-      // Add streaks
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-      await rawStorageService.habits.logCompletion(h1.id, yesterday, true);
-      await rawStorageService.habits.logCompletion(h1.id, today, true);
-      await rawStorageService.habits.logCompletion(h2.id, yesterday, true);
-
-      const g = await rawStorageService.goals.add({
-        title: 'Run Half Marathon (21.1 km)',
-        description: 'Prepare endurance for state marathon event',
-        category: 'Fitness',
-        targetValue: 21.1,
-        currentValue: 10.0,
-        unit: 'km',
-        startDate: '2026-09-01',
-        targetDate: '2026-12-31',
-        priority: 'High',
-        status: 'In Progress'
-      });
-      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '5km continuous run', completed: true });
-      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '10km non-stop run', completed: true });
-      await rawStorageService.goals.addMilestone({ goalId: g.id, title: '15km long trail run', completed: false });
-
-      await rawStorageService.tasks.add({ title: 'Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false });
-      await rawStorageService.tasks.add({ title: '5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true });
-      await rawStorageService.tasks.add({ title: 'Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false }); }
+    async seedDemoData() { throw new Error('Sample data requires encrypted storage.'); },
+    async removeSampleData() { throw new Error('Sample data removal requires encrypted storage.'); },
   }
 };
 

@@ -34,8 +34,7 @@ export default function FinanceCharts({
       <section className="lifeos-panel rounded-2xl border p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h4 className="text-sm font-semibold">Income & expenses</h4>
-            <p className="text-xs text-secondary">Posted monthly totals · planned estimates stay separate</p>
+            <h4 className="text-sm font-semibold">Monthly activity</h4>
           </div>
           <div className="flex items-center gap-2"><InfoTip label="Posted and planned amounts">This chart includes saved income and expenses. Planned estimates stay separate until you confirm and record an occurrence.</InfoTip><label className="shrink-0 text-[11px] text-secondary">Chart range<select aria-label="Chart range" value={range}
             onChange={event => onRangeChange(Number(event.target.value) as 3 | 6 | 12)}
