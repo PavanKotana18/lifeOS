@@ -1802,9 +1802,12 @@ export default function App() {
           if (action.actionId === 'lifeos-task-done') {
             if (!task.completed) await StorageService.tasks.toggleCompleted(task.id, true);
             const records = await reloadAllData();
+            const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
+            const master = await StorageService.settings.get('notificationsEnabled', Object.values(preferences).some(Boolean));
             await NotificationService.cancelTask(task);
-            await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
-            showToast('Task marked done', 'success');
+            const refreshed = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
+              effectiveNotificationPreferences(preferences, master));
+            showToast(refreshed ? 'Task marked done' : 'Task marked done. Some reminders could not refresh.', refreshed ? 'success' : 'danger');
           } else if (action.actionId === 'lifeos-task-snooze') {
             const enabled = await StorageService.settings.get('notificationsEnabled', false);
             const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
