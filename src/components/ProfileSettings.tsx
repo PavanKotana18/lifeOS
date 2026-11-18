@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { ArrowRight, Bell, ChevronLeft, Palette, SlidersHorizontal, Shield, UserRound, Database, Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about';
+export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer';
 
 const profileLinks = [
   { section: 'appearance', title: 'Appearance', detail: 'Theme, color and display mode', Icon: Palette },
@@ -35,17 +35,19 @@ export function ProfileNavigationRow({ title, detail, icon: Icon, onClick }: { t
   </button>;
 }
 
-export function ProfileHome({ name, initial, onNameChange, onOpen }: {
+export function ProfileHome({ name, initial, onNameChange, onOpen, developerAllowed = false }: {
   name: string;
   initial: string;
   onNameChange: (name: string) => void;
   onOpen: (section: Exclude<ProfileSection, 'home'>) => void;
+  developerAllowed?: boolean;
 }) {
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
     <header className="px-1"><p className="type-eyebrow">PROFILE</p><h1 className="type-page-title mt-1">Your space</h1><p className="type-body mt-1 text-secondary">Make LifeOS feel right for you.</p></header>
     <ProfileIdentityCard name={name} initial={initial} onChange={onNameChange} />
     <nav aria-label="Profile settings" className="grid gap-2">
       {profileLinks.map(({ section, title, detail, Icon }) => <ProfileNavigationRow key={section} title={title} detail={detail} icon={Icon} onClick={() => onOpen(section)} />)}
+      {developerAllowed && <ProfileNavigationRow title="Developer / Preview" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} />}
     </nav>
     <p className="px-1 text-xs leading-5 text-muted">LifeOS works offline. Your personal records are stored in encrypted local app storage.</p>
   </div>;

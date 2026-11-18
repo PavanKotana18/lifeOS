@@ -40,7 +40,7 @@ import CustomAccentPicker from './components/CustomAccentPicker';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
 import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
-import QuickTaskEntry from './components/QuickTaskEntry';
+import QuickTaskEntry, { type QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
 import { buildSpringSettle, readTranslateX } from './services/springMotion';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
@@ -70,6 +70,11 @@ const PlanHub = React.lazy(() => import('./components/PlanHub'));
 const InsightsHub = React.lazy(() => import('./components/InsightsHub'));
 
 const RuntimeInfo = registerPlugin<{ getSystemGestureInsets: () => Promise<{ left: number; right: number }> }>('LifeOSRuntimeInfo');
+
+function formatMonthYear(month: string, long = false) {
+  const date = /^\d{4}-(0[1-9]|1[0-2])$/.test(month) ? new Date(`${month}-01T12:00:00`) : new Date();
+  return date.toLocaleDateString(undefined, { month: long ? 'long' : 'short', year: 'numeric' });
+}
 
 function ScreenLoading({ label }: { label: string }) {
   return <div className="ui-loading-state p-6 text-center text-sm" role="status" aria-live="polite">{label}</div>;
@@ -196,6 +201,7 @@ export default function App() {
     lastScheduleAttempt: null, lastScheduleResult: 'unknown', lastCancellationReason: null,
     lastActionEvent: null, lastError: '',
   });
+  const developerPreviewEnabled = import.meta.env.DEV || notificationDiagnostics.packageName === 'com.lifeos.personal.preview';
   const [taskReminderDiagnostics, setTaskReminderDiagnostics] = useState<Record<string, unknown> | null>(null);
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
@@ -1190,9 +1196,6 @@ export default function App() {
       setOnboardingRequired(!completed);
       setOnboardingComplete(completed);
       setOnboardingStep(0);
-      if (!completed && await StorageService.settings.get<boolean>('notificationDefaultsPending', false) === false) {
-        await StorageService.settings.set('notificationDefaultsPending', true);
-      }
       if (!started && !completed) await StorageService.settings.set('onboardingStarted', true);
       const notificationPermission = await NotificationService.checkPermission();
       await reconcileNotificationPreferences(notificationPermission);
@@ -1631,66 +1634,48 @@ export default function App() {
   };
 
   const reconcileNotificationPreferences = async (permission: string) => {
-    const pendingNewUserDefaults = await StorageService.settings.get<boolean>('notificationDefaultsPending', false);
     const saved = await StorageService.settings.get<NotificationPreferences | undefined>('notificationPreferences', undefined);
-    if (permission === 'granted' && pendingNewUserDefaults && !saved) {
-      const defaults: NotificationPreferences = { taskReminders: true, upcomingDeadlines: true, overdueAlerts: true, habitReminders: true, milestoneReminders: true };
-      await StorageService.settings.set('notificationPreferences', defaults);
-      await StorageService.settings.set('notificationsEnabled', true);
-      await StorageService.settings.set('notificationDefaultsPending', false);
-      setNotificationPreferences(defaults);
-      setNotificationsEnabled(true);
-      return defaults;
-    }
-    if (permission === 'granted' && pendingNewUserDefaults && saved) {
-      await StorageService.settings.set('notificationDefaultsPending', false);
-    }
     if (saved) setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...saved });
     const enabled = permission === 'granted' && await StorageService.settings.get<boolean>('notificationsEnabled', false);
     setNotificationsEnabled(Boolean(enabled));
-    return saved || DEFAULT_NOTIFICATION_PREFERENCES;
+    return { ...DEFAULT_NOTIFICATION_PREFERENCES, ...saved };
   };
 
   const finishOnboarding = async () => {
-    const [state, savedJourney, savedName] = await Promise.all([
+    const [state, savedJourney, nameDraft] = await Promise.all([
       CryptoService.getKeyState(),
       StorageService.settings.get<OnboardingJourney>('onboardingJourney', INITIAL_ONBOARDING_JOURNEY),
-      StorageService.settings.get<string>('displayName', '')
+      StorageService.settings.get<string>('onboardingNameDraft', '')
     ]);
-    if (!state.metadataConsistent || !state.keyProvisioned || !state.recoveryProvisioned ||
-        state.recoveryDeferred || state.recoveryNeedsRebind || !state.unlocked ||
-        !sessionManager.isUnlocked() || !isEncryptedStorageActivated() || !savedName.trim() ||
-        normalizeOnboardingJourney(savedJourney).protection !== 'enabled' ||
-        normalizeOnboardingJourney(savedJourney).recovery !== 'confirmed') {
-      throw new Error('LifeOS has not verified every security step yet. Your private workspace remains closed.');
+    const safeToBrowse = !state.keyProvisioned && safeFirstRunBrowse.current && !state.recoveryNeedsRebind;
+    const secureWorkspaceOpen = state.metadataConsistent && state.keyProvisioned && state.unlocked &&
+      !state.recoveryNeedsRebind && (state.recoveryProvisioned || state.recoveryDeferred) &&
+      sessionManager.isUnlocked() && isEncryptedStorageActivated();
+    const savedName = secureWorkspaceOpen
+      ? await StorageService.settings.get<string>('displayName', '')
+      : '';
+    const identityName = nameDraft.trim() || savedName.trim();
+    if ((!safeToBrowse && !secureWorkspaceOpen) || !identityName)
+      throw new Error('LifeOS could not verify the workspace state. No protected records were opened.');
+    if (secureWorkspaceOpen && nameDraft.trim()) {
+      await StorageService.settings.set('displayName', identityName);
+      await StorageService.settings.delete('onboardingNameDraft');
     }
+    const completedJourney: OnboardingJourney = {
+      ...normalizeOnboardingJourney(savedJourney),
+      stage: 'recovery',
+      protection: state.keyProvisioned ? 'enabled' : 'pending',
+      recovery: state.recoveryProvisioned ? 'confirmed' : 'pending',
+    };
+    await StorageService.settings.set('onboardingJourney', completedJourney);
+    setOnboardingJourney(completedJourney);
     await StorageService.settings.set('onboardingCompleted', true);
     await StorageService.settings.set('onboardingStarted', false);
     await StorageService.settings.set('onboardingStep', 0);
     setOnboardingStep(0);
     setOnboardingComplete(true); setOnboardingRequired(false); navigationHistory.current = []; transitionToTab('dashboard');
-    // Let React commit Today and ensure the Android Activity is foregrounded
-    // before invoking the native permission API. Denial never blocks entry.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      void (async () => {
-        try {
-          if (!NotificationService.isSupported()) return;
-          await NotificationService.ensureChannel();
-          const permission = await NotificationService.checkPermission();
-          if (permission === 'prompt' || permission === 'prompt-with-rationale') {
-            setNotificationPermissionRequested(true);
-            const granted = await NotificationService.requestPermission();
-            await reconcileNotificationPreferences(granted);
-          } else {
-            await reconcileNotificationPreferences(permission);
-          }
-        } catch (error) {
-          console.warn('Welcome notification permission request did not complete.', error);
-        } finally {
-          await refreshNotificationDiagnostics();
-        }
-      })();
-    }));
+    // Permissions are requested only when the user turns on a notification
+    // category or the master notification switch.
   };
 
   const processPendingTaskNotification = async () => {
@@ -1915,6 +1900,19 @@ export default function App() {
     showToast(currentlyCompleted ? 'Habit unmarked' : 'Habit finished!', 'success');
   };
 
+  const handleHabitQuantity = async (habit: Habit, date: string, delta: number) => {
+    const existing = habitLogs.find(log => log.habitId === habit.id && log.date === date);
+    const current = existing?.quantity ?? 0;
+    const next = Math.max(0, current + delta);
+    try {
+      await StorageService.habits.logQuantity(habit.id, date, next);
+      await reloadAllData();
+      showToast(`${habit.name}: ${next} / ${habit.targetPerDay} ${habit.quantityUnit || 'items'}`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not update habit progress.', 'danger');
+    }
+  };
+
   const handleHabitDeletion = async (habit: Habit) => {
     try {
       await StorageService.habits.delete(habit.id);
@@ -1953,7 +1951,7 @@ export default function App() {
       title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: kind === 'task' ? taskDate || '' : taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       currencyCode: userPrefs.currency, accountId: '', type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
-      goalId: goalId || '', recurring: 'None', reminderWeekday: '2',
+      goalId: goalId || '', recurring: 'None', reminderWeekday: '2', trackingMode: 'binary', quantityUnit: '',
     });
     setEditingTaskId(null);
     setEditingHabitId(null);
@@ -2037,7 +2035,7 @@ export default function App() {
 
   const openEditHabit = (habit: Habit) => {
     setCreateFormDirty(false);
-    setCreateDraft({ title: habit.name, description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
+    setCreateDraft({ title: habit.name, description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), trackingMode: habit.trackingMode || 'binary', quantityUnit: habit.quantityUnit || '', frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
     setEditingHabitId(habit.id);
     setEditingTaskId(null);
     setCreateKind('habit');
@@ -2057,6 +2055,11 @@ export default function App() {
     }
     if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
       throw new Error('Encrypted storage could not be verified. No private record was saved.');
+    }
+    const pendingName = await StorageService.settings.get<string>('onboardingNameDraft', '');
+    if (pendingName.trim()) {
+      await StorageService.settings.set('displayName', pendingName.trim());
+      await StorageService.settings.delete('onboardingNameDraft');
     }
     safeFirstRunBrowse.current = false;
     setIsLocked(false);
@@ -2090,16 +2093,44 @@ export default function App() {
   };
 
   const quickTaskOperation = useRef(false);
-  const addUnscheduledTask = async (title: string) => {
+  const addUnscheduledTask = async (title: string, details: QuickTaskDetails = {}) => {
     const nextTitle = title.trim();
     if (!nextTitle || nextTitle.length > 200) throw new Error('Enter a task title of 1 to 200 characters.');
+    if (!details.dueDate && (details.dueTime || details.reminderAt)) throw new Error('Add a due date before choosing a time or reminder.');
+    if (details.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(details.dueDate)) throw new Error('Choose a valid due date.');
+    if (details.dueTime && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(details.dueTime)) throw new Error('Choose a valid task time.');
     if (quickTaskOperation.current) throw new Error('A task is already being saved.');
     quickTaskOperation.current = true;
     try {
+      let committed = false;
       await ensurePrivateStorageBeforeWrite();
-      await StorageService.tasks.add({ title: nextTitle, priority: 'Medium', recurring: 'None', completed: false });
-      try { await reloadAllData(); showToast('Task saved without a due date.', 'success'); }
-      catch { showToast('Task saved. Reopen Tasks to refresh your list.', 'info'); }
+      const reminderAt = details.reminderAt ? new Date(details.reminderAt).toISOString() : undefined;
+      let reminderCouldNotEnable = false;
+      let schedulePreferences = notificationPreferences;
+      let scheduleEnabled = notificationsEnabled;
+      if (reminderAt && (!notificationPreferences.taskReminders || !notificationsEnabled)) {
+        const permission = await askNotificationPermission();
+        if (permission.granted) {
+          schedulePreferences = { ...notificationPreferences, taskReminders: true };
+          scheduleEnabled = true;
+          await saveNotificationSelection(schedulePreferences, true);
+        } else reminderCouldNotEnable = true;
+      }
+      await StorageService.tasks.add({ title: nextTitle, dueDate: details.dueDate, dueTime: details.dueTime,
+        reminderAt, priority: details.priority || 'Medium', recurring: 'None', completed: false });
+      committed = true;
+      try {
+        const records = await reloadAllData();
+        const synchronized = await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
+          effectiveNotificationPreferences(schedulePreferences, scheduleEnabled));
+        showToast(reminderCouldNotEnable ? 'Task saved. Turn on task reminders in Settings to receive its reminder.'
+          : reminderAt && !synchronized ? 'Task saved, but its reminder could not be confirmed. Check task details.'
+            : details.dueDate ? 'Task saved with its schedule.' : 'Task saved without a due date.',
+          reminderCouldNotEnable || (reminderAt && !synchronized) ? 'danger' : 'success');
+      } catch {
+        if (!committed) throw new Error('Task could not be confirmed after saving. Retry from the Plan screen.');
+        showToast('Task saved, but Plan could not refresh. Reopen it to verify.', 'info');
+      }
     } finally { quickTaskOperation.current = false; }
   };
 
@@ -2141,8 +2172,11 @@ export default function App() {
       } else if (createKind === 'habit') {
         const targetPerDay = value('targetPerDay') ? Number(value('targetPerDay')) : undefined;
         if (targetPerDay !== undefined && (!Number.isFinite(targetPerDay) || targetPerDay <= 0)) throw new Error('Habit target must be greater than zero.');
+        const trackingMode = value('trackingMode') === 'quantity' ? 'quantity' : 'binary';
         const existingHabit = editingHabitId ? habits.find(habit => habit.id === editingHabitId) : undefined;
-        const habit: Partial<Habit> = { name: value('title'), description: value('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
+        if (editingHabitId && habitLogs.some(log => log.habitId === editingHabitId) && trackingMode !== (existingHabit?.trackingMode || 'binary')) throw new Error('Tracking mode cannot change after check-in history exists. Create another habit to use a different tracking mode.');
+        if (trackingMode === 'quantity' && (!targetPerDay || !value('quantityUnit').trim())) throw new Error('Quantity tracking needs a daily target and unit.');
+        const habit: Partial<Habit> = { name: value('title'), description: value('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, trackingMode, quantityUnit: trackingMode === 'quantity' ? value('quantityUnit').trim() : undefined, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
         if (editingHabitId) await StorageService.habits.update(editingHabitId, habit);
         else await StorageService.habits.add({ ...habit, name: habit.name!, frequency: habit.frequency!, color: habit.color! });
       } else if (createKind === 'budget') {
@@ -2360,7 +2394,10 @@ export default function App() {
   );
   const lifeHubHabits = useMemo(() => habits.map(habit => {
     const stats = getHabitStreaks(habit.id, todayKey);
-    return { id: habit.id, name: habit.name, completedToday: stats.completedToday, currentStreak: stats.currentStreak };
+    const quantityLog = habitLogs.find(log => log.habitId === habit.id && log.date === todayKey);
+    const quantityTracking = habit.trackingMode === 'quantity';
+    return { id: habit.id, name: habit.name, completedToday: stats.completedToday, currentStreak: stats.currentStreak,
+      ...(quantityTracking ? { quantity: quantityLog?.quantity ?? 0, targetPerDay: habit.targetPerDay, quantityUnit: habit.quantityUnit } : {}) };
   }), [habits, habitLogs, todayKey]);
   const lifeHubGoals = useMemo(() => goals.filter(goal => goal.status === 'In Progress').map(goal => {
     const goalMilestones = milestones.filter(milestone => milestone.goalId === goal.id);
@@ -2576,7 +2613,7 @@ export default function App() {
                 </div>
               </div>
               <div className="flex justify-between gap-3 text-xs text-secondary">
-                <span>Net this month: <strong className="text-primary tabular-nums">{formatMoney(financeAnalytics.netSavings)}</strong></span>
+                <span>Net cash flow: <strong className="text-primary tabular-nums">{formatMoney(financeAnalytics.netSavings)}</strong></span>
                 <span>Savings rate: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
               </div>
             </div>
@@ -2676,7 +2713,7 @@ export default function App() {
           completedRoutines={todayOverview.routinesCompleted}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
           weeklyTotal={todayOverview.weeklyRoutinesTotal}
-          onCheckIn={habit => { const original = habits.find(item => item.id === habit.id); if (original) void handleHabitCompletion(original.id, original.name, todayKey, habit.completedToday); }}
+          onCheckIn={habit => { const original = habits.find(item => item.id === habit.id); if (original) { if (original.trackingMode === 'quantity') void handleHabitQuantity(original, todayKey, 1); else void handleHabitCompletion(original.id, original.name, todayKey, habit.completedToday); } }}
           onCreateHabit={() => openCreateForm('habit')}
           onCreateGoal={() => openCreateForm('goal')}
           onHabits={() => { setLifeDetail(null); setHabitsSubtab('checklist'); navigateTo('habits'); }}
@@ -2898,9 +2935,9 @@ export default function App() {
               onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} /><details className="lifeos-panel rounded-2xl border p-4" onToggle={event => setProjectionExpanded(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer font-semibold">Explore a savings projection</summary><p className="mt-2 text-sm text-secondary">Compare savings scenarios using your own assumptions. This does not change your accounts or planned bills.</p>{activeTab === 'finance' && projectionExpanded && <Suspense fallback={<ScreenLoading label="Loading financial planning…" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}</details></div>}
 
             {financeSubtab === 'analytics' && <div className="space-y-4">
-              <div className="flex items-center justify-between gap-2"><div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-secondary">Posted transactions in {userPrefs.currency}; planned estimates stay separate in Financial Planning.</p></div><label className="text-[10px] text-secondary">Month<input type="month" aria-label="Analytics month" value={financeMonth} onChange={event => setFinanceMonth(event.target.value)} className="lifeos-input mt-1 block min-h-11 rounded-lg px-2 py-2 text-xs" /></label></div>
+              <div><h3 className="text-base font-semibold">Financial insights</h3><p className="text-xs text-secondary">Posted transactions in {userPrefs.currency} for {formatMonthYear(financeMonth)}; planned estimates stay separate in Financial Planning.</p></div>
               <div className="grid grid-cols-2 gap-2.5">
-                {[['Income', financeAnalytics.totalIncome, 'text-[var(--success)]'], ['Expenses', financeAnalytics.totalExpenses, 'text-[var(--danger)]'], ['Net savings', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-[var(--danger)]' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'lifeos-accent-text']].map(([label, value, color]) => <div key={String(label)} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><p className="text-xs text-secondary">{label}</p><p className={`mt-1 text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p></div>)}
+                {[['Income', financeAnalytics.totalIncome, 'text-[var(--success)]'], ['Expenses', financeAnalytics.totalExpenses, 'text-[var(--danger)]'], ['Net cash flow', financeAnalytics.netSavings, financeAnalytics.netSavings < 0 ? 'text-[var(--danger)]' : 'text-primary'], ['Savings rate', financeAnalytics.savingsRate === null ? null : `${financeAnalytics.savingsRate.toFixed(1)}%`, 'lifeos-accent-text']].map(([label, value, color]) => <div key={String(label)} className="min-w-0 rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><p className="text-xs text-secondary">{label}</p><p className={`mt-1 break-words text-lg font-semibold ${color}`}>{value === null ? '—' : typeof value === 'number' ? formatMoney(value) : value}</p><p className="mt-1 text-[10px] text-muted">{formatMonthYear(financeMonth)} · posted</p></div>)}
               </div>
               {activeTab === 'finance' && (hasFinanceChartData ? <Suspense fallback={<ScreenLoading label="Loading financial charts…" />}>
                 <FinanceCharts analytics={financeAnalytics} theme={theme} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatMoney={formatMoney} month={financeMonth} range={financeAnalyticsRange} onRangeChange={setFinanceAnalyticsRange} />
@@ -2923,7 +2960,18 @@ export default function App() {
             </div>
             <label className="block text-xs text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => setHabitsSelectedDate(e.target.value)} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>
 
-            {lifeDetail?.kind === 'habit' && habits.find(item => item.id === lifeDetail.id) && (() => { const habit = habits.find(item => item.id === lifeDetail.id)!; const stats = getHabitStreaks(habit.id, habitsSelectedDate); const weekly = calculateWeeklyHabitRate(habitLogs, habit.id, clockNow, habit.frequency); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="habit-detail-title"><div><p className="type-eyebrow">HABIT DETAIL</p><h3 id="habit-detail-title" className="type-section-title">{habit.name}</h3><p className="mt-1 text-sm text-secondary">{habit.description || `A ${habit.frequency} routine, tracked on your device.`}</p></div><div className="grid grid-cols-2 gap-3"><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">Current streak</p><p className="mt-1 text-xl font-semibold">{stats.currentStreak} days</p></div><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">This week</p><p className="mt-1 text-xl font-semibold">{weekly.completed}/{weekly.scheduled} · {weekly.rate}%</p></div></div><button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button><p className="text-xs text-secondary">Best streak: {stats.longestStreak} days{habit.reminderTime ? ` · Reminder ${habit.reminderTime} local` : ' · No reminder set'}</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditHabit(habit)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit habit</button><button type="button" onClick={() => void confirmAction({ title: 'Delete this habit?', message: `“${habit.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(habit); })} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm text-[var(--danger)]">Delete habit</button></div></section>; })()}
+            {lifeDetail?.kind === 'habit' && habits.find(item => item.id === lifeDetail.id) && (() => {
+              const habit = habits.find(item => item.id === lifeDetail.id)!;
+              const stats = getHabitStreaks(habit.id, habitsSelectedDate);
+              const weekly = calculateWeeklyHabitRate(habitLogs, habit.id, clockNow, habit.frequency);
+              const quantity = habitLogs.find(log => log.habitId === habit.id && log.date === habitsSelectedDate)?.quantity ?? 0;
+              return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="habit-detail-title">
+                <div><p className="type-eyebrow">HABIT DETAIL</p><h3 id="habit-detail-title" className="type-section-title">{habit.name}</h3><p className="mt-1 text-sm text-secondary">{habit.description || `A ${habit.frequency} routine, tracked on your device.`}</p></div>
+                <div className="grid grid-cols-2 gap-3"><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">Current streak</p><p className="mt-1 text-xl font-semibold">{stats.currentStreak} days</p></div><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">This week</p><p className="mt-1 text-xl font-semibold">{weekly.completed}/{weekly.scheduled} · {weekly.rate}%</p></div></div>
+                {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{quantity} / {habit.targetPerDay} {habit.quantityUnit}</p><div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
+                <p className="text-xs text-secondary">Best streak: {stats.longestStreak} days{habit.reminderTime ? ` · Reminder ${habit.reminderTime} local` : ' · No reminder set'}</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditHabit(habit)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit habit</button><button type="button" onClick={() => void confirmAction({ title: 'Delete this habit?', message: `“${habit.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(habit); })} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm text-[var(--danger)]">Delete habit</button></div>
+              </section>;
+            })()}
 
             <div className="space-y-2">
               {habits.length === 0 ? (
@@ -2975,7 +3023,7 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <>
-          {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'None'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={<details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No reminder is set. Edit this task to add one.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
+            {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : 'No scheduled reminder'} onBack={() => setPlannerDetailTaskId(null)} onEdit={() => openEditTask(plannerDetailTask)} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={<details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
             <QuickTaskEntry onAdd={addUnscheduledTask} />
             <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2><p className="type-caption text-secondary">Choose a range or a day.</p></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
@@ -3059,7 +3107,7 @@ export default function App() {
         {/* VIEW 6: SETTINGS */}
         <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
           <div className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerPreviewEnabled} onNameChange={name => { void updateDisplayName(name); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" description="Keep your personal records protected on this device." onBack={() => navigateProfileSection('home')}><section className="lifeos-panel rounded-2xl border p-5 space-y-3">
               <div><h3 className="text-base font-semibold">Security</h3><p className="mt-1 text-xs text-secondary">Device-level authentication for the app.</p></div>
@@ -3106,33 +3154,19 @@ export default function App() {
               {notificationDiagnostics.capability === 'unavailable' && <p className="text-[11px] text-[var(--warning)]">Android notification support is unavailable in this app build. Your reminder definitions remain saved.</p>}
               {notificationDiagnostics.capability === 'error' && <p className="text-[11px] text-[var(--warning)]">Android notification diagnostics could not be read. Refresh to retry.</p>}
               {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <div key={key} className="flex min-h-11 items-center justify-between gap-3 border-t border-[var(--stroke)] pt-2"><span className="text-xs">{notificationLabels[key]}</span><button role="switch" aria-checked={notificationPreferences[key]} onClick={() => void toggleNotificationCategory(key)} className={`min-h-11 min-w-14 rounded-full px-3 text-[11px] font-bold ${notificationPreferences[key] ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{notificationPreferences[key] ? 'On' : 'Off'}</button></div>)}
-              <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-[10px] text-secondary"><p>Capability: <span className={notificationDiagnostics.capability === 'available' ? 'text-[var(--success)]' : 'text-[var(--warning)]'}>{notificationDiagnostics.capability}</span> · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor core / local notifications: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Alarms &amp; reminders access: {notificationDiagnostics.exactAlarm}</p>{notificationDiagnostics.exactAlarm !== 'granted' && <p>Timing: approximate; Android may defer while idle or under device power management.</p>}<p>Power allowlist exemption: {notificationDiagnostics.batteryOptimizationExempt === null ? 'unknown' : String(notificationDiagnostics.batteryOptimizationExempt)} · OEM controls may differ</p><p>Channel: {notificationDiagnostics.channel}</p><p>Pending scheduled records: {notificationDiagnostics.pendingCount}</p><p>Currently visible in notification shade: {notificationDiagnostics.visibleNotificationCount} · IDs {notificationDiagnostics.visibleNotificationIds.join(', ') || 'none'}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation reason: {notificationDiagnostics.lastCancellationReason || 'none recorded'}</p><p>Last action event: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: <span className={notificationDiagnostics.lastError ? 'text-[var(--danger)]' : 'text-[var(--success)]'}>{notificationDiagnostics.lastError || 'None'}</span></p></div>
-              <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android settings</button></div>
-              <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button>
-              <button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
+              {developerPreviewEnabled && <p className="text-[11px] text-secondary">Developer diagnostics are available in the Developer / Preview section.</p>}
             </section></ProfileSubpage>}
 
-            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
-            {/* Kept available, but disclosed because these records are added to the live local database. */}
-            <details className="profile-demo-disclosure">
-              <summary>Sample data for demonstrations</summary>
-              <div className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Add demonstration records</h3>
-              <p className="text-xs text-secondary">This adds sample transactions, habits, goals, and tasks alongside your records. Export a backup first if you need to preserve the current state. LifeOS does not automatically remove these records later.</p>
-              <button
-                onClick={async () => {
-                  if (!(await confirmAction({ title: 'Add sample records to this device?', message: 'Demonstration transactions, habits, goals, and tasks will be added alongside your existing records. They are not automatically removed.', confirmLabel: 'Add sample records', cancelLabel: 'Cancel' }))) return;
-                  await StorageService.backup.seedDemoData();
-                  await reloadAllData();
-                  showToast('Sample demonstration data loaded', 'success');
-                }}
-                className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold transition"
-              >
-                Add sample records
-              </button>
-              </div>
-            </details>
+            {developerPreviewEnabled && profileSection === 'developer' && <ProfileSubpage title="Developer / Preview" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
+              <section className="lifeos-panel rounded-xl border p-4 space-y-3"><h2 className="text-sm font-semibold">Notification diagnostics</h2>
+                <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary"><p>Capability: {notificationDiagnostics.capability} · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Exact alarms: {notificationDiagnostics.exactAlarm} · Channel: {notificationDiagnostics.channel}</p><p>Pending records: {notificationDiagnostics.pendingCount} · Visible: {notificationDiagnostics.visibleNotificationCount} · IDs {notificationDiagnostics.visibleNotificationIds.join(', ') || 'none'}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation: {notificationDiagnostics.lastCancellationReason || 'none'} · Last action: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: {notificationDiagnostics.lastError || 'none'}</p></div>
+                <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android notification settings</button></div>
+                <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button><button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
+              </section>
+              <section className="lifeos-panel rounded-xl border p-4 space-y-3"><h2 className="text-sm font-semibold">Preview sample data</h2><p className="text-xs text-secondary">Adds records labeled [PREVIEW SAMPLE] to this isolated Preview workspace. The sample set is added once and does not clean itself up.</p>{!isEncryptedStorageActivated() && <p role="status" className="text-xs text-secondary">Protect a private record first to initialize encrypted storage before seeding.</p>}<button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => { if (!(await confirmAction({ title: 'Add sample records to this Preview workspace?', message: 'Clearly labeled demonstration transactions, habits, goals, and tasks will be added to this encrypted Preview workspace once.', confirmLabel: 'Add preview sample data', cancelLabel: 'Cancel' }))) return; await StorageService.backup.seedDemoData(); await reloadAllData(); showToast('Preview sample data added', 'success'); }} className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Add preview sample data</button></section>
+            </ProfileSubpage>}
 
+            {profileSection === 'data' && <ProfileSubpage title="Data & backup" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
             {/* Backup & Restore */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Backup & Restore</h3>
@@ -3275,7 +3309,9 @@ export default function App() {
             {createKind === 'habit' && <>
               <label className="mb-3 block text-xs text-secondary">How often?<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
               <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Daily target (optional)<input type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Progress tracking<select disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))} value={createDraft.trackingMode || 'binary'} onChange={e => setCreateDraft({ ...createDraft, trackingMode: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="binary">Completed / not completed</option><option value="quantity">Count a daily quantity</option></select>{editingHabitId && habitLogs.some(log => log.habitId === editingHabitId) && <span className="mt-1 block">Tracking mode is kept so saved check-in history stays unchanged.</span>}</label>
+              <label className="mb-3 block text-xs text-secondary">{createDraft.trackingMode === 'quantity' ? 'Daily quantity target' : 'Daily target (optional)'}<input required={createDraft.trackingMode === 'quantity'} type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              {createDraft.trackingMode === 'quantity' && <label className="mb-3 block text-xs text-secondary">Unit<input required maxLength={24} value={createDraft.quantityUnit || ''} onChange={e => setCreateDraft({ ...createDraft, quantityUnit: e.target.value })} placeholder="glasses, minutes, pages" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
               <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
             </>}

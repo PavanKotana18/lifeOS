@@ -27,6 +27,14 @@ assert.match(html, /Target · \$1\.00/);
 assert.match(html, /aria-valuenow="10"/);
 assert.doesNotMatch(html, /fallback/);
 assert.match(html, /View 1 contribution/);
+const fractionalHtml = renderToStaticMarkup(React.createElement(SavingsGoalProgress, {
+  goal: { id: 'g2', title: 'Travel fund', currencyCode: 'INR', targetAmount: 400000, currentAmount: 30000,
+    targetAmountMinor: '40000000', currentAmountMinor: '3000000', targetDate: '2027-12-31', createdAt: '2026-01-01' },
+  formatMoney: amount => String(amount), formatDate: value => value,
+  onContribute() {}, onEditGoal() {}, onDelete() {}, onEditContribution() {}, onDeleteContribution() {},
+}));
+assert.match(fractionalHtml, />7\.5%<\/span>/, 'savings progress retains a useful fractional percent');
+assert.match(fractionalHtml, /aria-label="7\.5% of ₹4,00,000\.00 saved"/);
 assert.match(app, /disabled=\{Boolean\(editingBudgetId\)\} value=\{createDraft\.categoryId/,
   'editing a budget cannot change its identity and create a second plan');
 assert.match(app, /Editing keeps this plan’s category, month and currency/);
@@ -37,6 +45,7 @@ assert.match(app, /handleHabitCompletion\(habit\.id, habit\.name, habitsSelected
 assert.match(app, /aria-labelledby="goal-detail-title"/);
 assert.match(app, /StorageService\.goals\.toggleMilestone\(row\.id, !row\.completed\)/,
   'goal detail reads and updates persisted milestone records');
-assert.match(app, /Posted transactions in \{userPrefs\.currency\}; planned estimates stay separate in Financial Planning/);
+assert.match(app, /Net cash flow/);
+assert.match(app, /formatMonthYear\(financeMonth\)/, 'analytics metrics name their selected reporting month');
 assert.match(fs.readFileSync('src/components/FinanceCharts.tsx', 'utf8'), /Posted monthly totals · planned estimates stay separate/);
 console.log('BUDGET/SAVINGS/LIFE DETAIL UX: exact minor-unit display and focused editor/detail contracts passed.');

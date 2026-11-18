@@ -19,15 +19,18 @@ assert.equal(BOOTSTRAP_SETTING_KEYS.has('displayName'), false, 'authoritative pr
 
 assert.match(app, /encryptedSession\.open\(\{\s*recoveryChoice:\s*'later'\s*\}\)/, 'protection stage provisions the native key while keeping recovery pending');
 assert.match(app, /CryptoService\.prepareRecovery\(\)[\s\S]*?requestSecureSetup\(prepared\)[\s\S]*?CryptoService\.confirmRecovery\(\)/, 'recovery stage uses the real native recovery kit and confirmation contract');
-assert.match(app, /state\.recoveryProvisioned[\s\S]*?isEncryptedStorageActivated\(\)/, 'Today remains gated until native recovery and encrypted storage verify');
+assert.match(app, /const safeToBrowse = !state\.keyProvisioned[\s\S]*?const secureWorkspaceOpen = state\.metadataConsistent/, 'first launch may finish into an empty workspace while protected writes remain gated');
 const protectionSetup = app.slice(app.indexOf('const provisionOnboardingProtection'), app.indexOf('const confirmOnboardingRecovery'));
 assert.doesNotMatch(protectionSetup, /setSensitiveScreenshotState\(false\)/, 'onboarding remains screenshot-protected through recovery until the workspace opens');
 assert.match(app, /onboardingNameDraft[\s\S]*?settings\.set\('displayName'[\s\S]*?settings\.delete\('onboardingNameDraft'\)/, 'temporary name is promoted to encrypted profile storage and removed from bootstrap storage');
-assert.match(app, /safeFirstRunState\)\s*\{[\s\S]*?settings\.set\('onboardingJourney', normalizedJourney\)/, 'an incomplete empty installation persists normalized mandatory progress before restart');
-assert.match(app, /if \(isEncryptedStorageActivated\(\) && sessionManager\.isUnlocked\(\)\) return;/, 'a successfully protected new user bypasses the legacy first-record prompt');
+assert.match(app, /safeFirstRunState\)\s*\{[\s\S]*?safeFirstRunBrowse\.current = true/, 'an empty installation can browse before provisioning encrypted storage');
+assert.match(app, /if \(isEncryptedStorageActivated\(\) && sessionManager\.isUnlocked\(\)\) return;/, 'protected writes reuse the verified encrypted workspace');
+const finish = app.slice(app.indexOf('const finishOnboarding'), app.indexOf('const processPendingTaskNotification'));
+assert.doesNotMatch(finish, /requestPermission\(\)/, 'welcome completion never requests notification permission');
+assert.match(app, /const choice = await requestFirstRecordSecurity\(\)/, 'security is presented in context before the first protected write');
 assert.doesNotMatch(onboarding, /Not now|Set this up later/);
-assert.match(onboarding, /Your space\. Just yours\./);
-assert.match(onboarding, /Keep a way back\./);
-assert.match(onboarding, /Create and save recovery kit/);
+assert.match(onboarding, /Welcome\. What should we call you\?/);
+assert.match(onboarding, /onFinish\(\)/, 'the name form enters the main application directly');
+assert.doesNotMatch(onboarding, /Create and save recovery kit|onProvisionProtection\(\)|onConfirmRecovery\(/, 'ordinary onboarding contains no recovery export or biometric prompt');
 
-console.log('ONBOARDING JOURNEY: required steps, legacy optional-state normalization, encrypted profile promotion, real recovery verification, and private workspace gating passed.');
+console.log('ONBOARDING JOURNEY: welcome/name entry, contextual protected-write security, deferred recovery, and no launch permission prompt passed.');

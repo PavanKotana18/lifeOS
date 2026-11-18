@@ -27,11 +27,12 @@ export default function SavingsGoalProgress({ goal, formatMoney, locale, formatD
     ? BigInt(goal.currentAmountMinor) : decimalToMinorUnits(String(goal.currentAmount), currency);
   const targetValid = targetMinor > 0n;
   const savedValid = savedMinor >= 0n;
-  const percent = targetValid && savedValid ? Number((savedMinor * 100n + targetMinor / 2n) / targetMinor) : null;
+  const percent = targetValid && savedValid ? Number((savedMinor * 1000n + targetMinor / 2n) / targetMinor) / 10 : null;
+  const percentLabel = percent === null ? '—' : Number.isInteger(percent) ? `${percent}%` : `${percent.toFixed(1)}%`;
   const visualProgress = Math.min(100, Math.max(0, percent || 0)) / 100;
   const targetLabel = targetValid ? formatMinorUnits(targetMinor, currency, locale) : 'Unavailable';
   const savedLabel = savedValid ? formatMinorUnits(savedMinor, currency, locale) : 'Unavailable';
-  const gaugeLabel = percent === null ? 'Savings progress unavailable' : `${percent}% of ${targetLabel} saved`;
+  const gaugeLabel = percent === null ? 'Savings progress unavailable' : `${percentLabel} of ${targetLabel} saved`;
   const status = percent === null ? 'Review the saved target and amount.'
     : savedMinor >= targetMinor ? `Target reached · ${savedLabel} saved`
       : `${savedLabel} saved · ${formatMinorUnits(targetMinor - savedMinor, currency, locale)} to go`;
@@ -43,7 +44,7 @@ export default function SavingsGoalProgress({ goal, formatMoney, locale, formatD
         <circle className="savings-goal-fill" cx="50" cy="50" r="39"
           strokeDasharray={`${(circumference * visualProgress).toFixed(2)} ${circumference.toFixed(2)}`} transform="rotate(-90 50 50)" />
       </svg>
-      <span className="savings-goal-percent tabular-nums">{percent === null ? '—' : `${percent}%`}</span>
+      <span className="savings-goal-percent tabular-nums">{percentLabel}</span>
     </div>
     <div className="savings-goal-content">
       <div className="savings-goal-heading"><div className="min-w-0"><p className="type-eyebrow">{goal.category || 'PERSONAL GOAL'}</p><h4 id={`savings-title-${goal.id}`} className="type-section-title truncate">{goal.title}</h4></div><span className="savings-goal-target-date">By {formatDate(goal.targetDate)}</span></div>

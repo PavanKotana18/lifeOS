@@ -426,7 +426,7 @@ body {
 .task-subtask-progress { height: .28rem; margin-top: .6rem; overflow: hidden; border-radius: 999px; background: var(--stroke); }
 .task-subtask-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 220ms cubic-bezier(.2, .8, .2, 1); }
 .task-subtasks input[type="checkbox"] { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; accent-color: var(--accent); }
-.task-detail-actions { display: flex; gap: .6rem; margin-top: auto; padding-top: .35rem; }
+.task-detail-actions { position: sticky; bottom: 0; display: flex; gap: .6rem; margin-top: .25rem; padding: .65rem 0 max(.35rem, env(safe-area-inset-bottom)); background: linear-gradient(180deg, transparent, var(--page) 18%); }
 @keyframes task-detail-enter { from { opacity: .85; transform: translate3d(0, 1rem, 0) scale(.99); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
 @media (min-width: 48rem) { .task-detail-screen { inset: 1rem max(calc((100vw - 42rem) / 2), 1rem); border: 1px solid var(--stroke); border-radius: 1.5rem; padding: calc(env(safe-area-inset-top) + 1.2rem) 1.5rem calc(env(safe-area-inset-bottom) + 1.2rem); box-shadow: 0 20px 80px rgb(0 0 0 / 18%); } }
 .planner-calendar-disclosure { overflow: hidden; border: 1px solid var(--stroke); border-radius: 1rem; background: var(--surface); }

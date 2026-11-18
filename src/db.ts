@@ -361,6 +361,7 @@ export interface IDataStorage {
     delete(id: string): Promise<void>;
     getLogs(habitId?: string): Promise<HabitLog[]>;
     logCompletion(habitId: string, date: string, completed: boolean): Promise<void>;
+    logQuantity(habitId: string, date: string, quantity: number): Promise<void>;
   };
   goals: {
     getAll(): Promise<Goal[]>;
@@ -1269,7 +1270,22 @@ const rawStorageService: IDataStorage = {
           await db.habitLogs.add({ id, habitId, date, completed, completedAt });
         }
       });
-    }
+    },
+    async logQuantity(habitId, date, quantity) {
+      if (!Number.isFinite(quantity) || quantity < 0) throw new Error('Habit quantity must be zero or greater.');
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Habit log date must use YYYY-MM-DD format');
+      const [year, month, day] = date.split('-').map(Number);
+      const parsedDate = new Date(Date.UTC(year, month - 1, day));
+      if (parsedDate.getUTCFullYear() !== year || parsedDate.getUTCMonth() !== month - 1 || parsedDate.getUTCDate() !== day) throw new Error('Habit log date must be a valid calendar date');
+      await db.transaction('rw', db.habits, db.habitLogs, async () => {
+        const habit = await db.habits.get(habitId);
+        if (!habit || habit.trackingMode !== 'quantity' || !habit.targetPerDay) throw new Error('This habit is not set up for quantity tracking.');
+        const existing = await db.habitLogs.where('[habitId+date]').equals([habitId, date]).first();
+        const log = { quantity, completed: quantity >= habit.targetPerDay, completedAt: quantity >= habit.targetPerDay ? new Date().toISOString() : undefined };
+        if (existing) await db.habitLogs.update(existing.id, log);
+        else await db.habitLogs.add({ id: createRecordId('habitlog'), habitId, date, ...log });
+      });
+    },
   },
   goals: {
     async getAll() {
@@ -1590,6 +1606,7 @@ const rawStorageService: IDataStorage = {
       await rawStorageService.categories.getAll();
     },
         async seedDemoData() {
+      if (!encryptedStorageActivated) throw new Error('Preview sample data requires verified encrypted storage.');
       // User-initiated optional demo data
       const today = new Date().toISOString().split('T')[0];
       const curMonth = today.substring(0, 7);

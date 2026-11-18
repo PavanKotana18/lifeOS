@@ -1,6 +1,6 @@
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
-  ResponsiveContainer, Tooltip, XAxis, YAxis
+  ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import { formatMinorUnits } from '../services/financeCore';
 
@@ -25,6 +25,8 @@ export default function FinanceCharts({
     borderColor: 'var(--stroke)',
     borderRadius: 12
   };
+  const maxAmount = Math.max(0, ...analytics.periodRows.flatMap(row => [row.income || 0, row.expenses || 0]));
+  const axisWidth = Math.min(132, Math.max(54, Math.ceil(Math.max(formatMoney(maxAmount).length, formatMoney(0).length) * 7.5 + 12)));
 
   return (
     <>
@@ -34,22 +36,23 @@ export default function FinanceCharts({
             <h4 className="text-sm font-semibold">Income & expenses</h4>
             <p className="text-xs text-secondary">Posted monthly totals · planned estimates stay separate</p>
           </div>
-          <select aria-label="Analytics time range" value={range}
+          <label className="shrink-0 text-[11px] text-secondary">Chart range<select aria-label="Chart range" value={range}
             onChange={event => onRangeChange(Number(event.target.value) as 3 | 6 | 12)}
             className="lifeos-input min-h-11 rounded-lg px-3 py-2 text-xs">
             <option value={3}>3 months</option>
             <option value={6}>6 months</option>
             <option value={12}>12 months</option>
-          </select>
+          </select></label>
         </div>
         <p className="sr-only">Monthly chart data in posted {analytics.currencyCode}: {analytics.periodRows.map(row => `${row.month}: ${row.hasRecords ? `income ${row.incomeMinor === null ? formatMoney(row.income) : formatMinorUnits(BigInt(row.incomeMinor), analytics.currencyCode, locale)}, expenses ${row.expensesMinor === null ? formatMoney(row.expenses) : formatMinorUnits(BigInt(row.expensesMinor), analytics.currencyCode, locale)}` : 'no saved records'}`).join('; ')}. Planned amounts are excluded.</p>
         {analytics.periodRows.some(row => row.hasRecords) ? (
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={analytics.periodRows} margin={{ top: 8, right: 4, left: -18, bottom: 2 }}>
+              <BarChart data={analytics.periodRows} margin={{ top: 8, right: 4, left: 4, bottom: 2 }}>
                 <CartesianGrid vertical={false} stroke="var(--stroke)" />
-                <XAxis dataKey="month" tick={{ fill: 'var(--ink-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={value => formatMoney(Number(value))} width={74} tick={{ fill: 'var(--ink-secondary)', fontSize: 10 }} tickLine={false} axisLine={false} />
+                <XAxis dataKey="key" tickFormatter={(_, index) => analytics.periodRows[index]?.month || ''} tick={{ fill: 'var(--ink-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={value => formatMoney(Number(value))} width={axisWidth} tick={{ fill: 'var(--ink-secondary)', fontSize: 10 }} tickLine={false} axisLine={false} />
+                {analytics.periodRows.some(row => row.key === month) && <ReferenceArea x1={month} x2={month} fill="var(--accent)" fillOpacity={0.12} strokeOpacity={0} ifOverflow="hidden" />}
                 <Tooltip contentStyle={tooltipStyle} formatter={(value: number | null, name: string, item: { payload?: { incomeMinor?: string | null; expensesMinor?: string | null } }) => {
                   const exact = name === 'Income' ? item.payload?.incomeMinor : item.payload?.expensesMinor;
                   return [value === null ? 'No records' : exact == null ? formatMoney(value) : formatMinorUnits(BigInt(exact), analytics.currencyCode, locale), name];

@@ -488,6 +488,23 @@ async function rejects(fn, pattern) {
     }
   });
 
+  await test('preview seed is labeled, measured and idempotent in encrypted storage', async () => {
+    storage = makeEnvironment();
+    await storage.backup.seedDemoData();
+    const firstCounts = Object.fromEntries(TABLES.map(table => [table, state[table].size]));
+    const waterHabit = (await storage.habits.getAll()).find(row => row.name === '[PREVIEW SAMPLE] Drink water');
+    const waterLogs = await storage.habits.getLogs(waterHabit.id);
+    assert.equal(waterHabit.trackingMode, 'quantity');
+    assert.equal(waterHabit.targetPerDay, 4);
+    assert.equal(waterHabit.quantityUnit, 'glasses');
+    assert.ok(waterLogs.some(row => row.quantity === 3 && row.completed === false));
+    assert.ok((await storage.tasks.getAll()).every(row => row.title.startsWith('[PREVIEW SAMPLE]')));
+    assert.ok(await storage.settings.get('previewDemoDataSeededAt', null));
+
+    await storage.backup.seedDemoData();
+    for (const table of TABLES) assert.equal(state[table].size, firstCounts[table], `${table} was duplicated on a second seed`);
+  });
+
   console.log('\n========================================');
   console.log(`ENCRYPTED STORAGE FACADE: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================');

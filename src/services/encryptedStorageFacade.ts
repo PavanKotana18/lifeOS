@@ -746,6 +746,19 @@ export function createEncryptedStorageFacade(
             });
           }
         }),
+      logQuantity: async (habitId: string, date: string, quantity: number) => coordinator.run(async ctx => {
+        const parsedDate = new Date(`${date}T00:00:00.000Z`);
+        if (!Number.isFinite(quantity) || quantity < 0) throw new Error('Habit quantity must be zero or greater.');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) throw new Error('Invalid habit completion date.');
+        const habit = await ctx.get<Habit>('habits', habitId);
+        if (!habit || habit.trackingMode !== 'quantity' || !habit.targetPerDay) throw new Error('This habit is not set up for quantity tracking.');
+        const logs = await ctx.getAll<HabitLog>('habitLogs');
+        const existing = logs.find(row => row.habitId === habitId && row.date === date);
+        const completed = quantity >= habit.targetPerDay;
+        const update = { quantity, completed, completedAt: completed ? new Date().toISOString() : undefined };
+        if (existing) ctx.put('habitLogs', { ...existing, ...update });
+        else ctx.add('habitLogs', { id: helpers.createRecordId('habitlog'), habitId, date, ...update });
+      }),
     },
 
     goals: {
@@ -964,6 +977,7 @@ export function createEncryptedStorageFacade(
           .toISOString().split('T')[0];
 
         await coordinator.run(async ctx => {
+          if (await ctx.get<{ key: string; value: string }>('settings', 'previewDemoDataSeededAt')) return;
           const categories = await ctx.getAll<Category>('categories');
           const availableCategories = categories.length
             ? categories
@@ -976,12 +990,12 @@ export function createEncryptedStorageFacade(
           }
 
           const demoTxs: Omit<Transaction, 'id' | 'createdAt'>[] = [
-            { type: 'income', amount: 95000, category: 'Salary', description: 'Tech Consultancy Salary', date: `${curMonth}-01`, paymentMethod: 'Bank Transfer' },
-            { type: 'income', amount: 15000, category: 'Freelance', description: 'Web Architecture Sprint', date: `${curMonth}-15`, paymentMethod: 'Net Banking' },
-            { type: 'expense', amount: 28000, category: 'Rent', description: 'Apartment Monthly Rent', date: `${curMonth}-02`, paymentMethod: 'UPI' },
-            { type: 'expense', amount: 6500, category: 'Food', description: 'Organic Pantry Provisions', date: `${curMonth}-08`, paymentMethod: 'Credit Card' },
-            { type: 'expense', amount: 2400, category: 'Utilities', description: 'Fiber Broadband & Power', date: `${curMonth}-12`, paymentMethod: 'UPI' },
-            { type: 'expense', amount: 12000, category: 'Investments', description: 'Index Equity SIP', date: `${curMonth}-05`, paymentMethod: 'Bank Transfer' }
+            { type: 'income', amount: 95000, category: 'Salary', description: '[PREVIEW SAMPLE] Tech Consultancy Salary', date: `${curMonth}-01`, paymentMethod: 'Bank Transfer' },
+            { type: 'income', amount: 15000, category: 'Freelance', description: '[PREVIEW SAMPLE] Web Architecture Sprint', date: `${curMonth}-15`, paymentMethod: 'Net Banking' },
+            { type: 'expense', amount: 28000, category: 'Rent', description: '[PREVIEW SAMPLE] Apartment Monthly Rent', date: `${curMonth}-02`, paymentMethod: 'UPI' },
+            { type: 'expense', amount: 6500, category: 'Food', description: '[PREVIEW SAMPLE] Organic Pantry Provisions', date: `${curMonth}-08`, paymentMethod: 'Credit Card' },
+            { type: 'expense', amount: 2400, category: 'Utilities', description: '[PREVIEW SAMPLE] Fiber Broadband & Power', date: `${curMonth}-12`, paymentMethod: 'UPI' },
+            { type: 'expense', amount: 12000, category: 'Investments', description: '[PREVIEW SAMPLE] Index Equity SIP', date: `${curMonth}-05`, paymentMethod: 'Bank Transfer' }
           ];
 
           for (const input of demoTxs) {
@@ -1041,7 +1055,7 @@ export function createEncryptedStorageFacade(
 
           const goal: SavingsGoal = {
             id: helpers.createRecordId('sg'),
-            title: 'Emergency Reserve Fund',
+            title: '[PREVIEW SAMPLE] Emergency Reserve Fund',
             targetAmount: 200000,
             currentAmount: 105000,
             targetDate: '2026-12-31',
@@ -1059,22 +1073,22 @@ export function createEncryptedStorageFacade(
           });
 
           const habits: Habit[] = [
-            { id: helpers.createRecordId('habit'), name: 'Drink 3L Water', frequency: 'daily', color: '#3b82f6', createdAt: now },
-            { id: helpers.createRecordId('habit'), name: 'Walk 10,000 steps', frequency: 'daily', color: '#10b981', createdAt: now },
-            { id: helpers.createRecordId('habit'), name: 'Read 20 pages', frequency: 'daily', color: '#8b5cf6', createdAt: now },
+            { id: helpers.createRecordId('habit'), name: '[PREVIEW SAMPLE] Drink water', frequency: 'daily', color: '#3b82f6', trackingMode: 'quantity', targetPerDay: 4, quantityUnit: 'glasses', createdAt: now },
+            { id: helpers.createRecordId('habit'), name: '[PREVIEW SAMPLE] Walk 10,000 steps', frequency: 'daily', color: '#10b981', createdAt: now },
+            { id: helpers.createRecordId('habit'), name: '[PREVIEW SAMPLE] Read 20 pages', frequency: 'daily', color: '#8b5cf6', createdAt: now },
           ];
           for (const habit of habits) ctx.add('habits', habit);
 
           const habitLogs: HabitLog[] = [
-            { id: helpers.createRecordId('habitlog'), habitId: habits[0].id, date: yesterday, completed: true, completedAt: now },
-            { id: helpers.createRecordId('habitlog'), habitId: habits[0].id, date: today, completed: true, completedAt: now },
+            { id: helpers.createRecordId('habitlog'), habitId: habits[0].id, date: yesterday, completed: true, quantity: 4, completedAt: now },
+            { id: helpers.createRecordId('habitlog'), habitId: habits[0].id, date: today, completed: false, quantity: 3 },
             { id: helpers.createRecordId('habitlog'), habitId: habits[1].id, date: yesterday, completed: true, completedAt: now },
           ];
           for (const log of habitLogs) ctx.add('habitLogs', log);
 
           const goalRecord: Goal = {
             id: helpers.createRecordId('goal'),
-            title: 'Run Half Marathon (21.1 km)',
+            title: '[PREVIEW SAMPLE] Run Half Marathon (21.1 km)',
             description: 'Prepare endurance for state marathon event',
             category: 'Fitness',
             targetValue: 21.1,
@@ -1089,9 +1103,9 @@ export function createEncryptedStorageFacade(
           ctx.add('goals', goalRecord);
 
           const milestoneInputs: Omit<Milestone, 'id'>[] = [
-            { goalId: goalRecord.id, title: '5km continuous run', completed: true },
-            { goalId: goalRecord.id, title: '10km non-stop run', completed: true },
-            { goalId: goalRecord.id, title: '15km long trail run', completed: false },
+            { goalId: goalRecord.id, title: '[PREVIEW SAMPLE] 5km continuous run', completed: true },
+            { goalId: goalRecord.id, title: '[PREVIEW SAMPLE] 10km non-stop run', completed: true },
+            { goalId: goalRecord.id, title: '[PREVIEW SAMPLE] 15km long trail run', completed: false },
           ];
           for (const input of milestoneInputs) {
             ctx.add('milestones', {
@@ -1101,9 +1115,9 @@ export function createEncryptedStorageFacade(
           }
 
           const taskInputs: Omit<Task, 'id' | 'createdAt'>[] = [
-            { title: 'Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false },
-            { title: '5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true },
-            { title: 'Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false },
+            { title: '[PREVIEW SAMPLE] Quarterly financial audit & mutual fund rebalancing', dueDate: today, priority: 'Urgent', category: 'Finance', recurring: 'None', completed: false },
+            { title: '[PREVIEW SAMPLE] 5km recovery jog at neighborhood track', dueDate: today, priority: 'Medium', category: 'Fitness', recurring: 'Daily', completed: true },
+            { title: '[PREVIEW SAMPLE] Android 16 offline build verification', dueDate: today, priority: 'High', category: 'Career', recurring: 'None', completed: false },
           ];
           for (const input of taskInputs) {
             ctx.add('tasks', {
@@ -1112,6 +1126,7 @@ export function createEncryptedStorageFacade(
               createdAt: now,
             });
           }
+          ctx.add('settings', { key: 'previewDemoDataSeededAt', value: now });
         });
       },
     },

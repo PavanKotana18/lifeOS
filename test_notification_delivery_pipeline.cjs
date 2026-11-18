@@ -30,12 +30,13 @@ assert.match(service, /visibility: 0/, 'new channel requests private lock-screen
 assert.match(manifest, /android\.permission\.POST_NOTIFICATIONS/);
 assert.match(manifest, /android\.permission\.RECEIVE_BOOT_COMPLETED/);
 assert.match(app, /const exactAlarm = await NotificationService\.checkExactAlarmPermission\(\);[\s\S]*?status: exactAlarm === 'granted' \? 'granted' : 'approximate'/, 'exact alarm access is reported as precision, not a hard delivery prerequisite');
-assert.match(permissionFlow, /setOnboardingComplete\(true\)[\s\S]*?requestAnimationFrame\(\(\) => requestAnimationFrame/, 'welcome permission waits until after onboarding has committed to Today');
-assert.match(permissionFlow, /checkPermission\(\)[\s\S]*?permission === 'prompt' \|\| permission === 'prompt-with-rationale'[\s\S]*?requestPermission\(\)/, 'already-granted and previously-denied states do not trigger duplicate prompts');
+assert.doesNotMatch(permissionFlow, /requestPermission\(\)/, 'welcome completion never prompts for notification permission');
+assert.match(app, /const toggleNotificationCategory[\s\S]*?askNotificationPermission\(\)/, 'permission is requested when a notification category is enabled');
+assert.match(app, /const setNotificationsMaster[\s\S]*?askNotificationPermission\(\)/, 'the notification master switch is a second explicit opt-in path');
 assert.match(notificationService, /sendImmediateTestNotification/);
 assert.match(notificationService, /schedule-verification-missing:test-notification/, 'test actions distinguish scheduling acceptance from delivery');
-assert.match(app, /taskReminders: true, upcomingDeadlines: true, overdueAlerts: true, habitReminders: true, milestoneReminders: true/, 'new users who grant permission receive defaults for supported categories');
-assert.match(bootstrap, /'notificationPreferences'[\s\S]*?'notificationDefaultsPending'/, 'permission preference initialization is recoverable before first encrypted record');
+assert.match(service, /taskReminders: false,[\s\S]*?overdueAlerts: false/, 'notification categories default off until the user enables one');
+assert.match(bootstrap, /'notificationPreferences'[\s\S]*?'notificationsEnabled'/, 'opt-in notification preferences remain available before the first encrypted record');
 assert.match(notificationService, /localNotificationActionPerformed/);
 assert.match(notificationService, /getInitialTapAction/);
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationTapLaunchPlugin.java', 'utf8'), /LocalNotficationObject[\s\S]*?getInitialAction[\s\S]*?acknowledgeInitialAction/, 'cold-start tap actions are held until JS routes them');

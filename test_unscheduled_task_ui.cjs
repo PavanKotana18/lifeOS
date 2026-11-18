@@ -8,10 +8,15 @@ const event = { preventDefault() {} };
   try {
     const quick = h.appFunction('addUnscheduledTask');
     const operation = { current: false }, messages = [];
-    let writes = 0, refreshes = 0;
+    let writes = 0, refreshes = 0, permissionRequests = 0;
+    const notificationPreferences = { taskReminders: false };
     const add = h.bind(quick, {
       quickTaskOperation: operation,
       ensurePrivateStorageBeforeWrite: async () => {},
+      notificationPreferences, notificationsEnabled: false,
+      askNotificationPermission: async () => { permissionRequests++; return { granted: false }; },
+      effectiveNotificationPreferences: preferences => preferences,
+      syncNotificationSchedules: async () => true,
       StorageService: { tasks: { add: async row => { writes++; return f.StorageService.tasks.add(row); } } },
       reloadAllData: async () => { refreshes++; throw Error('Synthetic refresh failure'); },
       showToast: (message, type) => messages.push({ message, type }),
@@ -21,6 +26,7 @@ const event = { preventDefault() {} };
     assert.equal(writes, 0);
     await assert.doesNotReject(add('  Synthetic unscheduled UI task  '), 'A committed save resolves even if refresh fails, so quick entry clears its draft rather than offering a duplicate retry');
     assert.equal(writes, 1); assert.equal(refreshes, 1); assert.equal(operation.current, false);
+    assert.equal(permissionRequests, 0, 'An unscheduled quick task never asks for notification permission');
     const rows = await f.StorageService.tasks.getAll();
     assert.equal(rows.length, 1); assert.equal(rows[0].title, 'Synthetic unscheduled UI task');
     assert.equal(rows[0].dueDate, undefined); assert.equal(rows[0].reminderAt, undefined);

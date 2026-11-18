@@ -143,6 +143,8 @@ export interface Habit {
   icon?: string;
   color: string;
   targetPerDay?: number;
+  trackingMode?: 'binary' | 'quantity';
+  quantityUnit?: string;
   reminderTime?: string; // HH:mm local time
   reminderWeekday?: number; // Capacitor weekday value, Sunday=1 through Saturday=7
   createdAt: string;
@@ -154,6 +156,7 @@ export interface HabitLog {
   habitId: string;
   date: string; // YYYY-MM-DD
   completed: boolean;
+  quantity?: number;
   completedAt?: string;
 }
 

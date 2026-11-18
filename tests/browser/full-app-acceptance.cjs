@@ -25,7 +25,7 @@ const report = {
   accessibility: [], overflow: [], networkBlocked: [], blocked: [],
 };
 const plannedJourneys = [
-  'first launch and synthetic encrypted setup', 'primary tab navigation and details',
+    'first launch and safe browsing', 'primary tab navigation and details',
   'create and complete a task', 'create a posted expense and budget',
   'create a savings goal and contribution', 'create and check in a habit',
   'create a goal, milestone and progress update', 'back navigation and ciphertext persistence',
@@ -124,7 +124,8 @@ async function inspectVisiblePage(label) {
     const visible = element => {
       const rect = element.getBoundingClientRect();
       const style = getComputedStyle(element);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none' &&
+        !element.closest('details:not([open])');
     };
     const unnamed = [...document.querySelectorAll('button,[role="button"],input:not([type="hidden"]),select,textarea,[role="checkbox"],[role="radio"]')]
       .filter(visible).filter(element => {
@@ -160,18 +161,29 @@ async function verifyProtectedRows() {
     const milestones = goals[0] ? await db.StorageService.goals.getMilestones(goals[0].id) : [];
     const raw = await Promise.all(['tasks', 'transactions', 'budgets', 'savingsGoals', 'habits', 'goals', 'milestones']
       .map(name => db.lifeOSDatabase.table(name).toArray()));
+    const quantityHabit = habits.find(habit => habit.name === 'QA acceptance: drink water');
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const quantityLog = quantityHabit ? (await db.StorageService.habits.getLogs(quantityHabit.id)).find(log => log.date === todayKey) : undefined;
     return { counts: [tasks.length, transactions.length, budgets.length, savings.length, habits.length, goals.length, milestones.length],
       ciphertext: raw.flat().every(row => row.__lifeosEncrypted === 1 && row.value === undefined),
       records: { task: tasks[0]?.title, transactionMinor: transactions[0]?.amountMinor, budgetMinor: budgets[0]?.amountMinor,
-        savingsMinor: savings[0]?.targetAmountMinor, habit: habits[0]?.name, goal: goals[0]?.title, milestone: milestones[0]?.title } };
+        savingsMinor: savings[0]?.targetAmountMinor, habit: habits[0]?.name, quantitativeHabit: quantityHabit?.name,
+        quantityTarget: quantityHabit?.targetPerDay, quantityUnit: quantityHabit?.quantityUnit,
+        quantity: quantityLog?.quantity, quantityCompleted: quantityLog?.completed, goal: goals[0]?.title, milestone: milestones[0]?.title } };
   });
-  assert.deepEqual(state.counts, [1, 1, 1, 1, 1, 1, 1]);
+  assert.deepEqual(state.counts, [1, 1, 1, 1, 2, 1, 1]);
   assert.equal(state.ciphertext, true, 'all private records must remain encrypted at rest');
   assert.equal(state.records.task, 'QA acceptance: review weekly plan');
   assert.equal(state.records.transactionMinor, '12550');
   assert.equal(state.records.budgetMinor, '100000');
   assert.equal(state.records.savingsMinor, '500000');
   assert.equal(state.records.habit, 'QA acceptance: read ten pages');
+  assert.equal(state.records.quantitativeHabit, 'QA acceptance: drink water');
+  assert.equal(state.records.quantityTarget, 4);
+  assert.equal(state.records.quantityUnit, 'glasses');
+  assert.equal(state.records.quantity, 1);
+  assert.equal(state.records.quantityCompleted, false);
   assert.equal(state.records.goal, 'QA acceptance: finish one course');
   assert.equal(state.records.milestone, 'QA acceptance: finish first module');
 }
@@ -194,23 +206,20 @@ async function main() {
   page.on('console', message => { if (message.type() === 'error') report.consoleErrors.push(message.text()); });
   const completed = new Set();
   try {
-    await journey('first launch and synthetic encrypted setup', async () => {
-      await page.goto(`${origin}/tests/browser/index.html`, { waitUntil: 'networkidle' });
+    await journey('first launch and safe browsing', async () => {
+      await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success`, { waitUntil: 'networkidle' });
       await page.locator('input[autocomplete="nickname"]').fill('Synthetic acceptance user');
       await clickButton('Continue');
-      await page.getByLabel('Protect your LifeOS space').waitFor();
-      await clickButton('Continue with secure unlock');
-      await page.getByLabel('Set up your recovery kit').waitFor();
-      await clickButton('Create and save recovery kit');
-      await page.getByTestId('copy-recovery-code').waitFor();
-      const code = await page.locator('[data-sensitive-recovery-code]').innerText();
-      assert.match(code, /^[A-Za-z0-9_-]{43}$/);
-      await clickButton('Save complete recovery kit');
-      await page.waitForFunction(() => window.__qaRecoveryKitSaved === true);
-      await page.getByTestId('recovery-code-confirmation').fill(code);
-      await page.getByTestId('continue-to-lifeos').click();
       await page.getByTestId('today-dashboard').waitFor();
-      completed.add('first launch and synthetic encrypted setup');
+      assert.equal(await page.getByRole('button', { name: /notification/i }).count(), 0,
+        'welcome does not request or expose notification permission');
+      const storage = await page.evaluate(async () => {
+        const db = await import('/src/db.ts');
+        return { active: db.isEncryptedStorageActivated(),
+          privateCount: await db.lifeOSDatabase.tasks.count() };
+      });
+      assert.deepEqual(storage, { active: false, privateCount: 0 }, 'welcome opens safe browsing without private storage');
+      completed.add('first launch and safe browsing');
     });
 
     await journey('primary tab navigation and details', async () => {
@@ -236,6 +245,12 @@ async function main() {
       const quick = page.getByLabel('Quick task', { exact: true });
       await quick.fill('QA acceptance: review weekly plan');
       await page.getByRole('button', { name: 'Add task', exact: true }).last().click();
+      await page.getByRole('dialog', { name: 'Protect your personal data' }).waitFor();
+      await clickButton('Protect this device and save');
+      await page.waitForFunction(async () => {
+        const db = await import('/src/db.ts');
+        return db.isEncryptedStorageActivated();
+      });
       await page.getByRole('button', { name: /QA acceptance: review weekly plan/ }).waitFor();
       const taskToggle = page.getByRole('checkbox', { name: 'Mark QA acceptance: review weekly plan complete' });
       await taskToggle.click();
@@ -277,9 +292,33 @@ async function main() {
       await page.getByRole('heading', { name: 'Financial insights' }).waitFor();
       await page.getByText(/Posted expenses/).waitFor();
       assert.ok(await page.locator('.recharts-wrapper').count() > 0, 'real finance chart is rendered from the saved expense');
-      await page.getByLabel('Analytics time range').selectOption('3');
-      assert.equal(await page.getByLabel('Analytics time range').inputValue(), '3');
+      await page.getByLabel('Chart range').selectOption('3');
+      assert.equal(await page.getByLabel('Chart range').inputValue(), '3');
       await capture('money-analytics-posted-390');
+      assert.match(await page.locator('.money-period-control input').getAttribute('aria-label'), /November 2026/,
+        'period selector retains a full accessible month name');
+      assert.equal(await page.locator('.money-period-value').innerText(), 'Nov 2026',
+        'period selector shows a compact month label');
+      for (const width of [320, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.waitForFunction(expected => innerWidth === expected, width);
+        const ticks = await page.locator('.recharts-yAxis .recharts-cartesian-axis-tick-value').evaluateAll(nodes => {
+          const chart = document.querySelector('.recharts-wrapper')?.getBoundingClientRect();
+          return nodes.map(node => {
+            const rect = node.getBoundingClientRect();
+            return { label: node.textContent?.trim() || '', left: rect.left, right: rect.right,
+              chartLeft: chart?.left ?? 0, chartRight: chart?.right ?? 0 };
+          });
+        });
+        assert.ok(ticks.length > 0, `finance chart renders Y-axis labels at ${width}px`);
+        assert.ok(ticks.every(tick => tick.label.startsWith('₹') && tick.left >= tick.chartLeft - 1 && tick.right <= tick.chartRight + 1),
+          `currency labels fit within the chart at ${width}px: ${JSON.stringify(ticks)}`);
+        const viewportWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+        assert.ok(viewportWidth <= width + 1, `analytics page has no horizontal overflow at ${width}px`);
+        await inspectVisiblePage(`analytics-${width}`);
+        await capture(`money-analytics-${width}`);
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
       completed.add('create a posted expense and budget');
     });
 
@@ -318,10 +357,23 @@ async function main() {
       await page.getByRole('heading', { name: 'QA acceptance: read ten pages' }).waitFor();
       await capture('life-habit-detail-390');
       await clickButton('Back to list');
+      await clickButton('Add habit', { exact: false });
+      await fillDialogField('Habit name', 'QA acceptance: drink water');
+      await dialog().getByLabel('Progress tracking').selectOption('quantity');
+      await fillDialogField('Daily quantity target', '4');
+      await fillDialogField('Unit', 'glasses');
+      await saveDialog('Save habit');
+      await page.getByRole('button', { name: /QA acceptance: drink water/ }).last().click();
+      await page.getByRole('heading', { name: 'QA acceptance: drink water' }).waitFor();
+      await page.getByText('0 / 4 glasses', { exact: true }).waitFor();
+      await page.getByRole('button', { name: 'Add one glasses to QA acceptance: drink water' }).click();
+      await page.getByText('1 / 4 glasses', { exact: true }).waitFor();
+      await capture('life-quantity-habit-detail-390');
       completed.add('create and check in a habit');
     });
 
     await journey('create a goal, milestone and progress update', async () => {
+      await clickButton('Back to list');
       await clickButton('Back to Life');
       await activeTab('life'); await clickButton('Add a goal', { exact: false });
       await fillDialogField('Goal title', 'QA acceptance: finish one course');

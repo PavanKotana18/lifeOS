@@ -28,13 +28,18 @@ assert.match(markup, /<label for="[^"]+"/);
 assert.match(markup, /aria-describedby="[^"]+-hint"/);
 assert.match(markup, /maxLength="200"/);
 assert.match(markup, /disabled=""[^>]*>Add task/);
-assert.match(markup, /Save without a date/);
-assert.ok(!markup.includes('type="date"') && !markup.includes('type="time"'), 'Quick entry does not fabricate a schedule');
+assert.match(markup, /Add the title now/);
+assert.match(markup, /Schedule, priority and reminder/);
+assert.match(markup, /type="date"/);
+assert.match(markup, /Priority/);
 const event = { preventDefault() {} };
 function harness(title, onAdd) {
   const operation = { current: false }, titles = [], busy = [], errors = [];
-  const handler = bind({ title, operation, onAdd, setTitle: value => titles.push(value), setSaving: value => busy.push(value), setError: value => errors.push(value) });
-  return { handler, operation, titles, busy, errors };
+  const details = { dueDate: '', dueTime: '', reminderAt: '', priority: 'Medium' };
+  const handler = bind({ title, operation, onAdd, dueDate: details.dueDate, dueTime: details.dueTime, reminderAt: details.reminderAt, priority: details.priority,
+    setDueDate: value => { details.dueDate = value; }, setDueTime: value => { details.dueTime = value; }, setReminderAt: value => { details.reminderAt = value; }, setPriority: value => { details.priority = value; },
+    setTitle: value => titles.push(value), setSaving: value => busy.push(value), setError: value => errors.push(value) });
+  return { handler, operation, titles, busy, errors, details };
 }
 (async () => {
   let calls = 0;
@@ -45,9 +50,9 @@ function harness(title, onAdd) {
     assert.ok(fixture.errors[0]); assert.deepEqual(fixture.busy, []);
   }
   const posted = [];
-  const success = harness('  Synthetic unscheduled task  ', async title => posted.push(title));
+  const success = harness('  Synthetic unscheduled task  ', async (...args) => posted.push(args));
   await success.handler(event);
-  assert.deepEqual(posted, ['Synthetic unscheduled task']); assert.deepEqual(success.titles, ['']);
+  assert.deepEqual(posted, [['Synthetic unscheduled task', { dueDate: undefined, dueTime: undefined, reminderAt: undefined, priority: 'Medium' }]]); assert.deepEqual(success.titles, ['']);
   assert.deepEqual(success.busy, [true, false]); assert.equal(success.operation.current, false);
 
   let attempts = 0;

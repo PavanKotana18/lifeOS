@@ -385,6 +385,19 @@ async function main() {
       'Repeated completion toggles update one existing log'
     );
 
+    await db.habits.add({ id: 'habit-quantity', name: 'Drink water', frequency: 'daily', color: '#123456',
+      trackingMode: 'quantity', targetPerDay: 4, quantityUnit: 'glasses', createdAt: stamp });
+    await StorageService.habits.logQuantity('habit-quantity', '2026-11-03', 2);
+    let quantityLog = await db.habitLogs.where('[habitId+date]').equals(['habit-quantity', '2026-11-03']).first();
+    check(quantityLog?.quantity === 2 && quantityLog.completed === false,
+      'Quantitative habit stores partial progress without marking its target complete');
+    await StorageService.habits.logQuantity('habit-quantity', '2026-11-03', 4);
+    quantityLog = await db.habitLogs.where('[habitId+date]').equals(['habit-quantity', '2026-11-03']).first();
+    check(quantityLog?.quantity === 4 && quantityLog.completed === true,
+      'Quantitative habit updates its daily quantity and completes at the saved target');
+    await assert.rejects(StorageService.habits.logQuantity('habit-log-race', '2026-11-03', 1), /quantity tracking/i,
+      'binary habits reject quantity writes instead of reinterpreting existing check-ins');
+
 
     // 10. Same-millisecond record creation must not collide.
     const originalNow = Date.now;
