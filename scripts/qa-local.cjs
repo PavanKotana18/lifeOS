@@ -157,7 +157,10 @@ async function main() {
   await commandCheck('Automated JavaScript suite', 'npm', ['test'], 'npm-test.log');
   await commandCheck('Sentinel security and resilience suite', 'npm', ['run', 'test:sentinel'], 'sentinel.log');
   await commandCheck('TypeScript', 'npx', ['--no-install', 'tsc', '--noEmit'], 'typescript.log');
-  await commandCheck('Vite web build', 'npm', ['run', 'build'], 'web-build.log');
+  const webBuild = await commandCheck('Vite web build', 'npm', ['run', 'build'], 'web-build.log');
+  const capacitorSync = webBuild.status === 'PASS'
+    ? await commandCheck('Capacitor Android sync', 'npx', ['--no-install', 'cap', 'sync', 'android'], 'cap-sync.log')
+    : null;
   await commandCheck('Android instrumentation parser self-test', 'node', ['scripts/android-instrumentation-to-junit.cjs', '--self-test'], 'android-parser.log');
 
   const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || defaultSdk;
@@ -232,6 +235,7 @@ async function main() {
   }
 
   const preBuildBlockers = [];
+  if (capacitorSync?.status !== 'PASS') preBuildBlockers.push('fresh Capacitor Android assets unavailable');
   if (!gradleReady) preBuildBlockers.push('Gradle 8.2.1 unavailable or failed version validation');
   if (!javaReady) preBuildBlockers.push('Java 17 unavailable or failed version validation');
   if (!sdkReady) preBuildBlockers.push('Android SDK 34 incomplete');
