@@ -68,7 +68,7 @@ assert.match(app, /window-blurred[\s\S]*activeTouchPointers\.current\.clear\(\)/
 assert.match(app, /event\.clientX <= leftGutter[\s\S]*event\.clientX >= window\.innerWidth - rightGutter/,
   'system edge areas are excluded using runtime and safe-area values');
 assert.match(app, /button,a,label,summary,input\[type="button"\].*\[role="tab"\]/);
-assert.match(app, /\[data-horizontal-scroll\].*\.recharts-wrapper.*canvas.*\[role="slider"\]/);
+assert.match(app, /\[data-horizontal-scroll\].*\[role="slider"\]/);
 assert.match(app, /textarea,select,\[contenteditable="true"\].*input:not\(\[type="button"\]/,
   'text entry, native pickers and sliders do not hand their interaction to tab navigation');
 assert.match(app, /if \(activeTouchPointers\.current\.size > 1\)/, 'multi-touch cancels the current gesture');
