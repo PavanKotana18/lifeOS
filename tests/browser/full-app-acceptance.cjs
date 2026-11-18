@@ -453,6 +453,44 @@ async function main() {
       completed.add('back navigation and ciphertext persistence');
     });
 
+    await journey('timed task and early reminder persist through edit and deletion', async () => {
+      await activeTab('plan');
+      const filterButton = page.getByRole('button', { name: /^Filters/ });
+      await filterButton.click();
+      await clickButton('Clear filters');
+      await clickButton('Apply filters');
+      await clickButton('Create Task');
+      const title = 'QA acceptance: timed task';
+      await fillDialogField('Task title', title);
+      await fillDialogField('Due date', '2099-04-22');
+      await fillDialogField('Time (optional)', '19:36');
+      await dialog().getByText('More task details', { exact: true }).click();
+      await dialog().getByLabel('Extra reminder').selectOption('15');
+      await capture('task-timed-composer-390');
+      await saveDialog('Save task');
+      const stored = () => page.evaluate(async name => {
+        const {StorageService} = await import('/src/db.ts');
+        return (await StorageService.tasks.getAll()).find(row => row.title === name);
+      }, title);
+      const first = await stored();
+      assert.equal(first.dueTime, '19:36');
+      assert.equal(first.reminderLeadMinutes, 15);
+      assert.equal(first.dueAlertDisabled, false);
+      await page.getByRole('button', { name: new RegExp(title) }).click();
+      await page.getByRole('heading', { name: title, exact: true }).waitFor();
+      await capture('task-timed-detail-390');
+      await clickButton('Edit task');
+      await dialog().getByLabel('Alert at due time').uncheck();
+      await saveDialog('Save task');
+      assert.equal((await stored()).dueAlertDisabled, true);
+      await clickButton('Delete task');
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Delete task', exact: true }).click();
+      await page.waitForFunction(async name => {
+        const {StorageService} = await import('/src/db.ts');
+        return !(await StorageService.tasks.getAll()).some(row => row.title === name);
+      }, title);
+    });
+
     await journey('Money swipe cancellation and repeated navigation', async () => {
       await page.setViewportSize({ width: 390, height: 844 });
       await activeTab('finance');
@@ -501,7 +539,7 @@ async function main() {
       await capture('profile-390');
       for (const name of ['Appearance', 'Preferences', 'Notifications', 'Privacy & Security', 'Backup & Restore', 'About', 'Developer tools']) {
         await clickButton(name);
-        await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true }).waitFor();
+        await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true, level: 1 }).waitFor();
         await inspectVisiblePage(name);
         await capture(name.toLowerCase().replaceAll(' ', '-') + '-390');
         if (name === 'Developer tools') {

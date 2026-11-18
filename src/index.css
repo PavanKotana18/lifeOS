@@ -901,3 +901,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 .record-composer :is(input,select,textarea):not([type=checkbox]):not([type=radio]) { min-height:2.75rem; }
 .record-composer button[type=submit] { min-height:3rem; }
 .money-destination-card { grid-template-columns:auto minmax(0,1fr); }
+
+.record-composer-backdrop { z-index:80; }
+.money-home .money-destinations { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media (min-width:48rem) { .money-home .money-destinations { grid-template-columns:repeat(3,minmax(0,1fr)); } }

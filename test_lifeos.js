@@ -23,7 +23,7 @@ function loadTsModule(path) {
   return loadedModule.exports;
 }
 const { createAuthCoordinator } = loadTsModule('./src/services/authCoordinator.ts');
-const { getTodayOverview } = loadTsModule('./src/services/domainUtils.ts');
+const { getTodayOverview, buildTaskNotificationPlan } = loadTsModule('./src/services/domainUtils.ts');
 const userPreferenceUtils = loadTsModule('./src/services/userPreferences.ts');
 const { buildFinanceAnalytics } = loadTsModule('./src/services/financeAnalytics.ts');
 const { pushTabHistory, popTabHistory } = loadTsModule('./src/services/tabHistory.ts');
@@ -36,7 +36,6 @@ const {
   sortTasksByDeadline,
   getGoalProgress,
   calculateWeeklyHabitRate,
-  buildTaskNotificationPlan,
   buildFinanceEntry,
   shouldShowOnboarding,
   profileInitial,

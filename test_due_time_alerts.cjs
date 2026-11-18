@@ -45,6 +45,13 @@ const { fixture } = require('./tests/wp0/production-harness.cjs');
     await rows.delete(recurring.id);
     await f.NotificationService.syncTasks(await rows.getAll(), prefs);
     assert.equal(f.pending.size, 0);
+    const simultaneousA = await rows.add({ ...task, title: 'Simultaneous A' });
+    const simultaneousB = await rows.add({ ...task, title: 'Simultaneous B' });
+    await f.NotificationService.syncTasks(await rows.getAll(), prefs);
+    assert.equal(f.pending.size, 2);
+    assert.deepEqual(new Set([...f.pending.values()].map(row => row.extra.taskId)), new Set([simultaneousA.id, simultaneousB.id]));
+    await f.NotificationService.syncTasks(await rows.getAll(), f.DEFAULT_NOTIFICATION_PREFERENCES);
+    assert.equal(f.pending.size, 0);
     console.log('PASS due-time and optional early reminders, opt-out, legacy dedupe, sample isolation, date-only policy, encrypted edit, recurrence and deletion. Native bridge simulated.');
   } finally { await f.dispose(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
