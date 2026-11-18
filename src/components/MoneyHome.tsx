@@ -1,4 +1,4 @@
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartNoAxesCombined, PiggyBank, Receipt, WalletCards } from 'lucide-react';
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, ChevronRight, Landmark, PiggyBank, Receipt, WalletCards } from 'lucide-react';
 import type { SavingsGoal, Transaction } from '../types';
 import { decimalToMinorUnits, formatMinorUnits } from '../services/financeCore';
 import MoneyPeriod from './MoneyPeriod';
@@ -40,11 +40,11 @@ type Props = {
 
 const moneyDestinations = [
   { id: 'transactions', label: 'Transactions', icon: Receipt },
-  { id: 'accounts', label: 'Accounts', icon: WalletCards },
+  { id: 'accounts', label: 'Accounts', icon: Landmark },
   { id: 'budgets', label: 'Budgets', icon: WalletCards },
   { id: 'savings', label: 'Savings', icon: PiggyBank },
   { id: 'analytics', label: 'Insights', icon: ChartNoAxesCombined },
-  { id: 'planning', label: 'Plans', icon: Receipt },
+  { id: 'planning', label: 'Plans', icon: CalendarDays },
 ] as const;
 
 export default function MoneyHome({ month, monthly = false, onMonthly, monthSavings, monthPlans, expenseChange, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
@@ -74,7 +74,7 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
       return <button type="button" key={item.id} onClick={destinationActions[item.id]} className={`money-destination-card money-destination-${item.id}`}><span className="money-destination-icon" aria-hidden="true"><Icon size={20} strokeWidth={1.8} /></span><strong>{item.label}</strong></button>;
     })}</nav>}
 
-    {!monthly && <button type="button" onClick={onMonthly} className="money-month-link lifeos-panel">This month <span aria-hidden="true">?</span></button>}
+    {!monthly && <button type="button" onClick={onMonthly} className="money-month-link lifeos-panel">This month <ChevronRight size={16} aria-hidden="true" /></button>}
     {monthly && <div className="space-y-4">
     {monthSavings && <section className="money-context"><h3 className="type-section-title">Savings contributions</h3><p className="mt-2 text-lg font-semibold tabular-nums">{monthSavings}</p></section>}
     {expenseChange != null && <section className="money-context"><h3 className="type-section-title">Spending trend</h3><p className="mt-2 text-sm">{expenseChange === 0 ? 'Unchanged from the previous month' : Math.abs(expenseChange).toFixed(1) + '% ' + (expenseChange > 0 ? 'higher' : 'lower') + ' than the previous month'}</p></section>}

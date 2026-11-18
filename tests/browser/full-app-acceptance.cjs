@@ -559,6 +559,15 @@ async function main() {
           });
           assert.equal(coverage.months, 6);
           assert.ok(coverage.transactions >= 55);
+          await activeTab('finance');
+          await capture('money-sample-390');
+          await clickButton('This month');
+          await capture('monthly-overview-sample-390');
+          await clickButton('Money overview');
+          await activeTab('life');
+          await capture('life-sample-390');
+          await clickButton('Open profile and settings');
+          await clickButton('Developer tools');
           await clickButton('Remove sample data');
           await page.getByRole('alertdialog').getByRole('button', { name: 'Remove sample data', exact: true }).click();
           await page.getByText('Sample data removed').waitFor();
