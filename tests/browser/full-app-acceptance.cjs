@@ -86,6 +86,13 @@ async function clickButton(name, options = {}) {
   await button.click();
 }
 
+async function planDestination(name) {
+  await activeTab('plan');
+  const button = page.getByRole('navigation', { name: 'Plan destinations' }).getByRole('button', { name, exact: true });
+  if (await button.getAttribute('aria-current') !== 'page') await button.click();
+  await button.waitFor();
+}
+
 async function activeTab(name) {
   const tab = page.locator(`[data-tab="${name}"]`);
   await tab.waitFor({ state: 'visible' });
@@ -216,25 +223,45 @@ async function main() {
       await clickButton('Not now');
       await page.getByRole('heading', { name: 'Recovery setup' }).waitFor();
       await capture('recovery-390');
+      await clickButton('Review deferral');
+      await capture('recovery-deferral-390');
       await clickButton('Do this later');
       await page.getByTestId('today-dashboard').waitFor();
-      await page.getByRole('dialog', { name: 'Stay on top of what matters' }).waitFor();
+      await page.getByRole('dialog', { name: 'Allow notifications' }).waitFor();
       await capture('today-notification-opt-in-390');
       assert.equal(await page.evaluate(() => sessionStorage.getItem('qa-notification-consent')), null);
-      await clickButton('Maybe later');
-      await page.getByRole('dialog', { name: 'Stay on top of what matters' }).waitFor({ state: 'hidden' });
+      await clickButton('Enable notifications');
+      const precise = page.getByRole('dialog', { name: 'Make reminders precise' });
+      await precise.waitFor();
+      await capture('today-precise-reminders-390');
+      await clickButton('Enable precise reminders');
+      await precise.getByText('Reminders may arrive late without precise access.').waitFor();
+      await clickButton('Enable precise reminders');
+      await page.evaluate(() => {
+        sessionStorage.setItem('qa-exact-alarm', 'true');
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await precise.waitFor({ state: 'hidden' });
+      const categories = await page.evaluate(async () => {
+        const { StorageService } = await import('/src/db.ts');
+        return StorageService.settings.get('notificationPreferences', null);
+      });
+      assert.deepEqual(categories, { taskReminders: true, upcomingDeadlines: true, overdueAlerts: false, habitReminders: true, milestoneReminders: true });
       const storage = await page.evaluate(async () => {
         const db = await import('/src/db.ts');
         return { active: db.isEncryptedStorageActivated(),
           privateCount: await db.lifeOSDatabase.tasks.count() };
       });
       assert.deepEqual(storage, { active: false, privateCount: 0 }, 'welcome opens safe browsing without private storage');
+      await page.getByText('Notifications enabled', { exact: true }).waitFor({ state: 'hidden' });
       completed.add('first launch and safe browsing');
     });
 
     await journey('primary tab navigation and details', async () => {
-      for (const [tab, label] of [['dashboard', 'today'], ['finance', 'money'], ['plan', 'plan'], ['life', 'life']]) {
-        await activeTab(tab); await inspectVisiblePage(`${label}-empty`); await capture(`${label}-empty-390`);
+      for (const [tab, label] of [['dashboard', 'today'], ['finance', 'money'], ['plan', 'plan']]) {
+        await activeTab(tab);
+        if (tab === 'plan') await page.getByRole('navigation', { name: 'Plan destinations' }).waitFor();
+        await inspectVisiblePage(`${label}-empty`); await capture(`${label}-empty-390`);
       }
       await activeTab('finance');
       await page.getByTestId('money-home').getByRole('button', { name: /^Budgets/ }).click();
@@ -244,8 +271,12 @@ async function main() {
       await activeTab('plan');
       assert.equal(await page.getByRole('button', { name: 'Open calendar' }).count(), 0);
       assert.equal(await page.locator('[data-tab="plan"]').getAttribute('aria-current'), 'page');
-      await activeTab('life');
-      await page.getByRole('button', { name: 'Add a habit', exact: true }).waitFor();
+      assert.deepEqual(await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button').allTextContents(), ['Today', 'Money', 'Plan']);
+      await planDestination('Habits');
+      await page.getByRole('button', { name: /Add habit/ }).waitFor();
+      await capture('habits-empty-390');
+      await planDestination('Goals');
+      await capture('goals-empty-390');
       await activeTab('finance');
       await clickButton('This month');
       await page.getByRole('heading', { name: 'This month', exact: true }).waitFor();
@@ -331,8 +362,8 @@ async function main() {
       assert.equal(await netCashflowInfo.evaluate(element => document.activeElement === element), true,
         'dismissal restores focus to the information control');
       await page.getByTestId('money-home').getByRole('button', { name: /^Insights/ }).click();
-      await page.getByRole('heading', { name: 'Financial insights' }).waitFor();
-      await page.getByText(/Posted expenses/).waitFor();
+      await page.getByRole('heading', { name: 'Insights', exact: true }).waitFor();
+      await page.getByRole('heading', { name: 'Expense categories' }).waitFor();
       assert.ok(await page.locator('.recharts-wrapper').count() > 0, 'real finance chart is rendered from the saved expense');
       await page.getByLabel('Time period').selectOption('3');
       assert.equal(await page.getByLabel('Time period').inputValue(), '3');
@@ -389,15 +420,15 @@ async function main() {
     });
 
     await journey('create and check in a habit', async () => {
-      await activeTab('life'); await clickButton('Add a habit', { exact: false });
+      await planDestination('Habits'); await clickButton('Add habit', { exact: false });
       await fillDialogField('Habit name', 'QA acceptance: read ten pages');
       await saveDialog('Save habit');
-      const checkIn = page.getByRole('button', { name: /Complete QA acceptance: read ten pages for today/ });
+      const checkIn = page.getByRole('button', { name: 'Mark QA acceptance: read ten pages complete' });
       await checkIn.click();
       const undoCheckIn = page.getByRole('button', { name: 'Mark QA acceptance: read ten pages incomplete' });
       await undoCheckIn.waitFor();
-      assert.equal(await undoCheckIn.getAttribute('aria-pressed'), 'true', 'LifeHub reflects the saved habit check-in');
-      await page.getByRole('button', { name: /QA acceptance: read ten pages/ }).last().click();
+      assert.equal(await undoCheckIn.getAttribute('aria-pressed'), 'true', 'Plan reflects the saved habit check-in');
+      await page.getByRole('button', { name: /^QA acceptance: read ten pages/ }).click();
       await page.getByRole('heading', { name: 'QA acceptance: read ten pages' }).waitFor();
       await capture('life-habit-detail-390');
       await clickButton('Back to list');
@@ -408,7 +439,7 @@ async function main() {
       await fillDialogField('Unit', 'glasses');
       await capture('add-habit-composer-390');
       await saveDialog('Save habit');
-      await page.getByRole('button', { name: /QA acceptance: drink water/ }).last().click();
+      await page.getByRole('button', { name: /^QA acceptance: drink water/ }).click();
       await page.getByRole('heading', { name: 'QA acceptance: drink water' }).waitFor();
       await page.getByText('0 / 4 glasses', { exact: true }).waitFor();
       await page.getByRole('button', { name: 'Add one glass to QA acceptance: drink water' }).click();
@@ -419,14 +450,13 @@ async function main() {
 
     await journey('create a goal, milestone and progress update', async () => {
       await clickButton('Back to list');
-      await clickButton('Back to Life');
-      await activeTab('life'); await clickButton('Add a goal', { exact: false });
+      await planDestination('Goals'); await clickButton('Add goal', { exact: false });
       await fillDialogField('Goal title', 'QA acceptance: finish one course');
       await dialog().getByLabel('Target', { exact: true }).fill('10');
       await fillDialogField('Target date', '2026-12-31');
       await capture('add-goal-composer-390');
       await saveDialog('Save goal');
-      await page.getByRole('button', { name: 'QA acceptance: finish one course' }).click();
+      await page.getByRole('button', { name: /^QA acceptance: finish one course/ }).click();
       await page.getByRole('heading', { name: 'QA acceptance: finish one course' }).waitFor();
       await clickButton('+ Milestone');
       await fillDialogField('Milestone title', 'QA acceptance: finish first module');
@@ -454,9 +484,8 @@ async function main() {
 
     await journey('back navigation and ciphertext persistence', async () => {
       await clickButton('Back to list');
-      await page.getByRole('heading', { name: 'Personal Goals' }).waitFor();
-      await clickButton('Back to Life');
-      await page.getByTestId('life-hub').waitFor();
+      await page.getByRole('heading', { name: 'Goals', exact: true }).waitFor();
+      await planDestination('Tasks');
       await activeTab('dashboard');
       await page.getByTestId('today-dashboard').waitFor();
       await activeTab('finance');
@@ -572,8 +601,10 @@ async function main() {
           await clickButton('This month');
           await capture('monthly-overview-sample-390');
           await clickButton('Money overview');
-          await activeTab('life');
-          await capture('life-sample-390');
+          await planDestination('Habits');
+          await capture('habits-sample-390');
+          await planDestination('Goals');
+          await capture('goals-sample-390');
           await clickButton('Open profile and settings');
           await clickButton('Developer tools');
           await clickButton('Remove sample data');
@@ -615,8 +646,9 @@ async function main() {
     await journey('responsive layouts and live accessibility audit', async () => {
       for (const width of [320, 390, 768, 1280]) {
         await page.setViewportSize({ width, height: 844 });
-        for (const [tab, label] of [['dashboard', 'today'], ['finance', 'money'], ['plan', 'plan'], ['life', 'life']]) {
-          await activeTab(tab);
+        for (const [tab, label] of [['dashboard', 'today'], ['finance', 'money'], ['plan', 'plan'], ['Habits', 'habits'], ['Goals', 'goals']]) {
+          if (tab === 'Habits' || tab === 'Goals') await planDestination(tab);
+          else await activeTab(tab);
           const status = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
           const overflow = status.document > width + 1 || status.body > width + 1;
           report.responsive.push({ width, screen: label, status: overflow ? 'FAIL' : 'PASS', ...status });
@@ -632,6 +664,8 @@ async function main() {
     await journey('appearance and date-only alert settings persist', async () => {
       await clickButton('Open profile and settings');
       await clickButton('Preferences');
+      await clickButton(/Time format/);
+      await page.getByRole('dialog', { name: 'Time format' }).getByRole('button', { name: '24-hour' }).click();
       const dateOnly = page.getByLabel('Date-only task alerts');
       await dateOnly.fill('09:00');
       await page.waitForFunction(async () => {
@@ -650,6 +684,7 @@ async function main() {
       await clickButton('Open profile and settings');
       await clickButton('Preferences');
       assert.equal(await page.getByLabel('Date-only task alerts').inputValue(), '09:00');
+      assert.ok(await page.getByRole('button', { name: 'Time format 24-hour' }).isVisible());
       await clickButton('Turn off date-only alerts');
       await page.waitForFunction(async () => {
         const { StorageService } = await import('/src/db.ts');
@@ -719,6 +754,115 @@ async function main() {
         };
       });
       assert.deepEqual(persisted, { accounts: 2, transfers: 1, commitments: 1 });
+    });
+    await journey('synthetic notification tap opens an encrypted Plan task', async () => {
+      await activeTab('dashboard');
+      await page.evaluate(async () => {
+        const { StorageService } = await import('/src/db.ts');
+        const rows = await StorageService.tasks.getAll();
+        const task = rows.find(row => row.title === 'QA acceptance: review weekly plan');
+        if (!task) throw new Error('Test task missing');
+        window.dispatchEvent(new CustomEvent('qa-notification-tap', { detail: { notification: { id: 2147000050, extra: { kind: 'dueTime', taskId: task.id } } } }));
+      });
+      await page.getByRole('heading', { name: 'QA acceptance: review weekly plan' }).waitFor();
+      assert.equal(await page.locator('[data-tab="plan"]').getAttribute('aria-current'), 'page');
+      await capture('plan-notification-tap-390');
+      await clickButton(/Back to tasks/);
+    });
+
+    await journey('dedicated savings projection calculates, breaks down and resets', async () => {
+      await activeTab('finance');
+      if (await page.getByRole('button', { name: 'Money overview' }).isVisible()) await clickButton('Money overview');
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Plans', exact: true }).click();
+      await clickButton('Savings projection');
+      const projection = page.getByTestId('savings-projection');
+      await projection.getByLabel('Starting savings').fill('1000');
+      await projection.getByLabel('Monthly contribution').fill('100');
+      await projection.getByLabel('Duration in months').fill('12');
+      assert.match(await projection.getByTestId('projected-value').innerText(), /2,200/);
+      await clickButton('Period breakdown');
+      assert.match(await projection.getByRole('row', { name: /12.*2,200/ }).innerText(), /2,200/);
+      await clickButton('Contribution growth and comparison');
+      await projection.getByLabel('Increase contribution every (months)').fill('6');
+      await projection.getByLabel('Contribution increase (%)').fill('10');
+      assert.match(await projection.getByTestId('projected-value').innerText(), /2,260/);
+      await capture('savings-projection-390');
+      await clickButton('Reset');
+      assert.equal(await projection.getByLabel('Starting savings').inputValue(), '0');
+      await page.getByRole('button', { name: 'Plans', exact: true }).first().click();
+      await page.getByTestId('money-planning').waitFor();
+    });
+
+    await journey('Profile nested destinations and notification choices persist', async () => {
+      await clickButton('Open profile and settings');
+      await clickButton('Edit name');
+      await page.getByLabel('Display name').fill('Synthetic acceptance profile');
+      await clickButton('Save name');
+      await page.getByRole('heading', { name: 'Synthetic acceptance profile' }).waitFor();
+      for (const [parent, back, children] of [
+        ['Appearance', 'Appearance', ['Themes', 'Accent color', 'Motion']],
+        ['Privacy & Security', 'Privacy & security', ['App lock', 'Recovery']],
+        ['About', 'About LifeOS', ['Open-source licenses']],
+      ]) {
+        await clickButton(parent);
+        for (const name of children) {
+          await clickButton(new RegExp('^' + name));
+          await page.getByRole('heading', { name, level: 1, exact: true }).waitFor();
+          await capture('profile-' + name.toLowerCase().replaceAll(' ', '-') + '-390');
+          await clickButton(back);
+        }
+        await clickButton('Profile');
+      }
+      await clickButton('Notifications');
+      const category = page.getByRole('switch', { name: 'Habit reminders' });
+      assert.equal(await category.getAttribute('aria-checked'), 'true');
+      await category.click();
+      await page.waitForFunction(() => document.querySelector('[role=switch][aria-label="Habit reminders"]')?.getAttribute('aria-checked') === 'false');
+      await page.reload();
+      await page.getByTestId('today-dashboard').waitFor();
+      assert.equal(await page.getByRole('dialog', { name: 'Allow notifications' }).count(), 0);
+      await clickButton('Open profile and settings');
+      await clickButton('Notifications');
+      assert.equal(await category.getAttribute('aria-checked'), 'false');
+      assert.equal(await page.getByRole('switch', { name: 'All notifications' }).getAttribute('aria-checked'), 'true');
+      await page.evaluate(() => { window.location.hash = '/life/goals'; });
+      await page.getByRole('navigation', { name: 'Plan destinations' }).getByRole('button', { name: 'Goals' }).waitFor();
+      assert.equal(await page.getByRole('navigation', { name: 'Plan destinations' }).getByRole('button', { name: 'Goals' }).getAttribute('aria-current'), 'page');
+    });
+
+    await journey('protected recovery save cancellation and confirmation', async () => {
+      const disposable = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', acceptDownloads: false });
+      const mainPage = page;
+      page = await disposable.newPage();
+      page.setDefaultTimeout(12_000);
+      try {
+        await page.goto(origin + '/tests/browser/index.html?onboarding-auth=success');
+        await page.getByLabel('Your name').fill('Synthetic recovery profile');
+        await clickButton('Continue');
+        await clickButton('Enable biometrics');
+        await page.getByRole('heading', { name: 'Recovery setup' }).waitFor();
+        await clickButton('Prepare recovery');
+        const save = page.getByTestId('save-complete-recovery-kit');
+        await save.waitFor();
+        assert.equal(await page.locator('[data-sensitive-recovery-code]').count(), 0);
+        await capture('recovery-save-step-390');
+        await page.evaluate(() => { window.__qaRecoveryExportMode = 'cancelled'; });
+        await save.click();
+        await page.getByText('Save cancelled. You can choose a file location again.').waitFor();
+        assert.equal(await page.getByTestId('continue-to-lifeos').count(), 0);
+        await page.evaluate(() => { window.__qaRecoveryExportMode = 'saved'; });
+        await save.click();
+        await page.getByTestId('recovery-code-confirmation').fill('A'.repeat(43));
+        await page.getByTestId('continue-to-lifeos').click();
+        await page.getByText('Your recovery file is saved and confirmed.').waitFor();
+        await capture('recovery-complete-step-390');
+        await clickButton('Continue to Today');
+        await page.getByTestId('today-dashboard').waitFor();
+        assert.equal(await page.evaluate(() => sessionStorage.getItem('qa-recovery-provisioned')), 'true');
+      } finally {
+        await disposable.close();
+        page = mainPage;
+      }
     });
   } catch (error) {
     report.fatal = { journey: currentJourney, message: error instanceof Error ? error.message : String(error) };

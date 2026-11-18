@@ -27,7 +27,7 @@ assert.match(app, /safeFirstRunState\)\s*\{[\s\S]*?safeFirstRunBrowse\.current =
 assert.match(app, /if \(isEncryptedStorageActivated\(\) && sessionManager\.isUnlocked\(\)\) return;/, 'protected writes reuse the verified encrypted workspace');
 const finish = app.slice(app.indexOf('const finishOnboarding'), app.indexOf('const processPendingTaskNotification'));
 assert.match(finish, /notificationDefaultsPending/);
-assert.match(app, /onClick=\{\(\) => void acceptNotificationOffer\(\)\}>Enable notifications/);
+assert.match(app, /notificationOfferStep === 'display' \? acceptNotificationOffer\(\) : openPreciseReminderSetup\(\)/);
 assert.match(onboarding, /onSaveIdentity[\s\S]*?onStep\(1\)/);
 assert.match(onboarding, /Biometric setup[\s\S]*?onProtect\(\)[\s\S]*?onStep\(2\)[\s\S]*?Recovery setup[\s\S]*?onRecover\(\)/);
 console.log('ONBOARDING: identity, protection, recovery and explicit notification opt-in contracts passed.');

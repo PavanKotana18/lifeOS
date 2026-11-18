@@ -13,6 +13,14 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   milestoneReminders: false,
 };
 
+export const FIRST_CONSENT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  taskReminders: true,
+  upcomingDeadlines: true,
+  overdueAlerts: false,
+  habitReminders: true,
+  milestoneReminders: true,
+};
+
 const notificationId = stableNotificationId;
 
 const taskNotificationId = (task: Task, kind: string) => notificationId(`task:${task.id}:${kind}`);

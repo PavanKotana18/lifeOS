@@ -47,7 +47,8 @@ assert.match(empty, /Add a goal/);
 assert.doesNotMatch(empty, /Routine progress/, 'empty profiles do not show fabricated zero-progress summaries');
 
 const app = fs.readFileSync('src/App.tsx', 'utf8');
-assert.match(app, /onCheckIn=\{habit =>[\s\S]*handleHabitCompletion\(original\.id, original\.name, todayKey, habit\.completedToday\)/);
-assert.match(app, /onCreateGoal=\{\(\) => openCreateForm\('goal'\)\}/);
-assert.match(app, /progress: getGoalProgress\(goal\.currentValue, goal\.targetValue\)/);
+assert.match(app, /handleHabitCompletion\(h\.id, h\.name, todayStr, stats\.completedToday\)/);
+assert.match(app, /handleHabitQuantity\(h, todayStr, 1\)/);
+assert.match(app, /onClick=\{\(\) => openCreateForm\('goal'\)\}/);
+assert.match(app, /goalProgress\(goal\)/);
 console.log('LIFE UI 2.0: daily check-ins, streaks, goal progress/milestones, empty states, and existing handler wiring passed.');

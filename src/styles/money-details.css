@@ -22,3 +22,6 @@
 @media(min-width:48rem) { .money-page[data-detail="budgets"] > .space-y-3, .money-page[data-detail="savings"] > .space-y-3 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; } .money-page[data-detail="budgets"] > .space-y-3 > :first-child, .money-page[data-detail="savings"] > .space-y-3 > :first-child { grid-column:1/-1; } }
 
 .money-back-button { scroll-margin-top: 6rem; }
+
+.projection-bars { display: flex; align-items: end; gap: clamp(1px, .7vw, 8px); height: 8rem; border-bottom: 1px solid var(--stroke); }
+.projection-bars span { flex: 1; min-width: 0; border-radius: 5px 5px 0 0; background: var(--accent); }

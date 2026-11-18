@@ -114,7 +114,7 @@ assert.match(accountsSource, /Exchange rate \(received for 1 sent\)/);
 assert.match(accountsSource, /rate of 2 means 10 sent equals 20 received/);
 assert.match(accountsSource, /openingBalanceMinor = decimalToMinorUnits\(accountDraft\.opening/);
 assert.match(accountsSource, /fromAmountMinor = decimalToMinorUnits\(transferDraft\.fromAmount/);
-assert.match(homeSource, /formatMinorUnits\(BigInt\(account\.balanceMinor\), account\.currencyCode, locale\)/);
+assert.match(accountsSource, /formatMinorUnits\([^;\n]+account\.currencyCode, locale\)/);
 console.log('DIRECTED MONEY: dashboard hierarchy, account clarity, readable amounts, optional accounts, transfer guidance and unchanged accounting callback paths passed.');
 
 for(const [currency,min] of [['JPY','1'],['USD','0.01'],['KWD','0.001']]) {

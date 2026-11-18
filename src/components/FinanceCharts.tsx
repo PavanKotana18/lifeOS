@@ -33,15 +33,13 @@ export default function FinanceCharts({
     <>
       <section className="lifeos-panel rounded-2xl border p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h4 className="text-sm font-semibold">Monthly activity</h4>
-          </div>
-          <div className="flex items-center gap-2"><InfoTip label="Posted and planned amounts">This chart includes saved income and expenses. Planned estimates stay separate until you confirm and record an occurrence.</InfoTip><label className="shrink-0 text-[11px] text-secondary">Time period<select aria-label="Time period" value={range}
+          <div className="flex items-center gap-1"><h4 className="text-sm font-semibold">Monthly trends</h4><InfoTip label="Monthly trends">Only recorded income and spending are included. Gaps mean no transactions that month.</InfoTip></div>
+          <div className="flex items-center gap-2"><label className="shrink-0 text-[11px] text-secondary"><span className="sr-only">Period</span><select aria-label="Time period" value={range}
             onChange={event => onRangeChange(Number(event.target.value) as 3 | 6 | 12)}
             className="lifeos-input min-h-11 rounded-lg px-3 py-2 text-xs">
-            <option value={3}>3 months</option>
-            <option value={6}>6 months</option>
-            <option value={12}>12 months</option>
+            <option value={3}>Last 3 months</option>
+            <option value={6}>Last 6 months</option>
+            <option value={12}>Last 12 months</option>
           </select></label></div>
         </div>
         <p className="sr-only">Monthly chart data in posted {analytics.currencyCode}: {analytics.periodRows.map(row => `${row.month}: ${row.hasRecords ? `income ${row.incomeMinor === null ? formatMoney(row.income) : formatMinorUnits(BigInt(row.incomeMinor), analytics.currencyCode, locale)}, expenses ${row.expensesMinor === null ? formatMoney(row.expenses) : formatMinorUnits(BigInt(row.expensesMinor), analytics.currencyCode, locale)}` : 'no saved records'}`).join('; ')}. Planned amounts are excluded.</p>
@@ -66,13 +64,12 @@ export default function FinanceCharts({
         ) : (
           <div role="status" className="finance-chart-empty"><strong>No monthly pattern yet</strong><span>Record income or spending to see how it changes over time.</span></div>
         )}
-        <p className="mt-2 text-[11px] text-secondary">Months without transactions are shown as missing data; a recorded month with zero income or expenses is a real zero.</p>
       </section>
 
       <section className="lifeos-panel rounded-2xl border p-4">
         <div className="mb-2">
           <h4 className="text-sm font-semibold">Expense categories</h4>
-          <p className="text-xs text-secondary">{month} · Posted expenses {formatMinorUnits(BigInt(analytics.totalExpensesMinor), analytics.currencyCode, locale)} · planned amounts excluded</p>
+          <p className="text-xs text-secondary">{monthLabel(month)}</p>
         </div>
         {analytics.categories.length === 0 ? (
           <div role="status" className="finance-chart-empty"><strong>No expense categories for {monthLabel(month)}.</strong><span>Category comparisons appear after you record spending.</span></div>

@@ -28,7 +28,7 @@ assert.match(moneyHome, /onClick=\{onAddTransaction\}/, 'income and expense are 
 assert.equal((moneyHome.match(/className="money-add-transaction"/g) || []).length, 1, 'Money has one primary transaction action');
 assert.match(accounts, /No accounts yet[\s\S]*Add an account to track its balance and transfers\./, 'the first-use state explains the purpose of optional accounts');
 assert.doesNotMatch(moneyHome, /money-account-nudge/, 'the overview does not repeat an account-creation prompt');
-assert.match(app, /<MoneyDetailHeader section=\{financeSubtab\}[^]*onBack=\{\(\) => \{ rememberActiveScroll\(\); financeSubtabHistory\.current = \[\]; setFinanceSubtab\('overview'\)/, 'Money overview restores its scroll and clears the nested history');
+assert.match(app, /<MoneyDetailHeader section=\{financeSubtab\}[^]*onBack=\{\(\) => \{[^]*rememberActiveScroll\(\); financeSubtabHistory\.current = \[\]; setFinanceSubtab\('overview'\)/, 'Money overview restores its scroll and clears the nested history');
 assert.match(accounts, /confirmAction\(\{ title: 'Reverse this transfer\?'/, 'transfer reversal remains explicitly confirmed');
 assert.match(accounts, /closeAccountDraft/, 'account edits have a shared dirty-form close path');
 assert.match(planning, /closeCommitment[\s\S]*closeRate/, 'planned commitment and manual-rate drafts protect unsaved edits');

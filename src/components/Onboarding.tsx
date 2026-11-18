@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { LifeOSBrand } from './LifeOSBrand';
+import RecoveryProgress from './RecoveryProgress';
 
 interface Props {
   initialName: string;
@@ -19,6 +20,7 @@ export default function Onboarding(props: Props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const pending = useRef(false);
+  const [reviewDeferral, setReviewDeferral] = useState(false);
   const step = props.step === 1 || props.step === 2 ? props.step : 0;
 
   const run = async (action: () => Promise<void>) => {
@@ -63,14 +65,22 @@ export default function Onboarding(props: Props) {
             <button type="button" disabled={busy} className="initial-setup-secondary" onClick={() => void run(() => props.onStep(2))}>Not now</button>
           </>}
         </>}
-        {step === 2 && <>
+        {step === 2 && <div className="recovery-stage" key={props.recoveryReady ? 'complete' : reviewDeferral ? 'defer' : 'prepare'}>
+          <RecoveryProgress step={props.recoveryReady ? 3 : 1} />
           <h1>Recovery setup</h1>
-          <p className="initial-setup-description">{props.recoveryReady ? 'Your recovery kit is set up.' : props.protectionReady ? 'Without a recovery file, losing access to this device can mean losing your encrypted records.' : 'You can set up a recovery kit once device protection is enabled. LifeOS requires protection before saving private records.'}</p>
-          {props.protectionReady && !props.recoveryReady && <button type="button" disabled={busy} className="lifeos-accent-button" onClick={() => void run(async () => {
-            if (await props.onRecover()) await props.onFinish();
-          })}>Save recovery file</button>}
-          <button type="button" disabled={busy} className={props.protectionReady && !props.recoveryReady ? 'initial-setup-secondary' : 'lifeos-accent-button'} onClick={() => void run(props.onFinish)}>{props.recoveryReady ? 'Continue' : 'Do this later'}</button>
-        </>}
+          {props.recoveryReady ? <>
+            <p className="initial-setup-description" role="status">Your recovery file is saved and confirmed.</p>
+            <button type="button" disabled={busy} className="lifeos-accent-button" onClick={() => void run(props.onFinish)}>Continue to Today</button>
+          </> : reviewDeferral ? <>
+            <p className="initial-setup-description">Without a recovery file, losing access to this device can mean losing your saved records. You can set up recovery later in Privacy &amp; Security.</p>
+            <button type="button" disabled={busy} className="lifeos-accent-button" onClick={() => void run(props.onFinish)}>Do this later</button>
+            {props.protectionReady && <button type="button" disabled={busy} className="initial-setup-secondary" onClick={() => setReviewDeferral(false)}>Back</button>}
+          </> : <>
+            <p className="initial-setup-description">{props.protectionReady ? 'Prepare a recovery file to regain access if you lose this device.' : 'Device protection is needed before you can prepare a recovery file.'}</p>
+            <button type="button" disabled={busy} className="lifeos-accent-button" onClick={() => props.protectionReady ? void run(async () => { await props.onRecover(); }) : setReviewDeferral(true)}>{props.protectionReady ? 'Prepare recovery' : 'Review deferral'}</button>
+            {props.protectionReady && <button type="button" disabled={busy} className="initial-setup-secondary" onClick={() => setReviewDeferral(true)}>Set up later</button>}
+          </>}
+        </div>}
         {message && <p role="alert" className="initial-setup-error">{message}</p>}
       </section>
     </div>

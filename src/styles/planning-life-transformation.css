@@ -53,3 +53,8 @@
 .plan-workspace button:focus-visible, .life-workspace button:focus-visible, .plan-workspace input:focus-visible, .plan-workspace select:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (min-width: 880px) { .life-workspace-sections { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
 @media (max-width: 360px) { .plan-view-switch button { font-size: .7rem; } .plan-search-controls { grid-template-columns: 1fr; } }
+
+.plan-destination-header { display: grid; gap: .8rem; }
+.plan-destinations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem; padding: .25rem; background: var(--surface-raised); border: 1px solid var(--stroke); border-radius: 1rem; }
+.plan-destinations button { min-height: 2.75rem; border-radius: .75rem; font-size: .875rem; font-weight: 600; }
+.plan-destinations button[aria-current="page"] { color: var(--accent-ink, var(--ink)); background: var(--accent-tint); }

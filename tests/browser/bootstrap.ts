@@ -51,6 +51,7 @@ registerPlugin('LifeOSCrypto', { web: () => ({
   isUnlocked: async () => ({ unlocked }),
   deferRecovery: async () => { if (!key || !unlocked) throw Error('Synthetic session locked'); sessionStorage.setItem('qa-recovery-deferred', 'true'); return { success: true }; },
   prepareRecovery: async () => ({ success: true, recoveryCode: 'A'.repeat(43), envelope: { version: 1, kdf: 'PBKDF2-HMAC-SHA-256', iterations: 600000, salt: btoa('0123456789abcdef'), iv: btoa('0123456789ab'), wrappedKey: btoa('012345678901234567890123456789012345678901234567') } }),
+  cancelPendingRecovery: async () => ({ success: true }),
   confirmRecovery: async () => { if (!key || !unlocked || sessionStorage.getItem('qa-recovery-deferred') !== 'true') throw Error('Synthetic recovery is not ready'); sessionStorage.setItem('qa-recovery-provisioned', 'true'); sessionStorage.removeItem('qa-recovery-deferred'); return { success: true }; },
   encrypt: async ({ plaintext, aad }: { plaintext: string; aad: string }) => {
     if (!key || !unlocked) throw Error('Synthetic session locked');
@@ -85,6 +86,21 @@ if (new URLSearchParams(location.search).has('onboarding-auth')) {
     granted = true;
     return 'granted';
   };
-  NotificationService.checkExactAlarmPermission = async () => 'denied';
+  NotificationService.checkExactAlarmPermission = async () => sessionStorage.getItem('qa-exact-alarm') === 'true' ? 'granted' : 'denied';
+  NotificationService.requestExactAlarmPermission = async () => {
+    const requests = Number(sessionStorage.getItem('qa-exact-requests') || 0) + 1;
+    sessionStorage.setItem('qa-exact-requests', String(requests));
+    return NotificationService.checkExactAlarmPermission();
+  };
+  NotificationService.addActionListener = async listener => {
+    const receive = (event: Event) => listener((event as CustomEvent).detail);
+    window.addEventListener('qa-notification-tap', receive);
+    return { remove: async () => { window.removeEventListener('qa-notification-tap', receive); } };
+  };
+  const runtimeDiagnostics = NotificationService.getDiagnostics.bind(NotificationService);
+  NotificationService.getDiagnostics = async () => ({
+    ...await runtimeDiagnostics(), permission: await NotificationService.checkPermission(),
+    exactAlarm: await NotificationService.checkExactAlarmPermission(), appNotifications: granted ? 'enabled' : 'disabled',
+  });
 }
 await import('../../src/main');

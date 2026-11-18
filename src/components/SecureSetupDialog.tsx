@@ -3,6 +3,7 @@ import { Check, Copy, Download, ShieldCheck } from 'lucide-react';
 import { exportBackupFile } from '../services/backupExportService';
 import { clearRecoveryCodeFromClipboard, copyRecoveryCode } from '../services/sensitiveClipboardService';
 import { matchesRecoveryCode } from '../services/recoveryCodeConfirmation';
+import RecoveryProgress from './RecoveryProgress';
 import type { PreparedRecovery } from '../services/cryptoService.ts';
 
 /** Recovery secrets live only in this mounted dialog and native pending state. */
@@ -80,8 +81,7 @@ export default function SecureSetupDialog({ cancelLabel, prepared, onDecision, o
         preservePendingRecovery: true
       });
       if (result.status === 'cancelled') {
-        if (cancelLabel) { await finish(false); return; }
-        announce('Save cancelled. Save the complete kit to continue.');
+        announce('Save cancelled. You can choose a file location again.');
       } else if (result.status === 'saved') {
         setKitExportState('saved');
         announce('Android confirmed the file save. LifeOS cannot verify its location.');
@@ -118,17 +118,17 @@ export default function SecureSetupDialog({ cancelLabel, prepared, onDecision, o
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-tint)] text-[var(--accent)]" aria-hidden="true">
         <ShieldCheck size={24} strokeWidth={1.8} />
       </div>
-      <h1 id="secure-setup-title" className="text-center text-2xl font-semibold">{prepared ? 'Keep a way back' : 'Protect your local LifeOS data'}</h1>
+      <h1 id="secure-setup-title" className="text-center text-2xl font-semibold">{prepared ? 'Recovery setup' : 'Protect your local LifeOS data'}</h1>
       {prepared ? <>
-        <p className="text-center text-sm leading-6 text-secondary">Save your complete recovery kit, copy its code and paste it below to confirm.</p>
-
-        <button type="button" data-testid="save-complete-recovery-kit" onClick={() => void saveKit()} disabled={exportBusy}
-          className="lifeos-raised flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold disabled:opacity-60">
-          {exportBusy ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" aria-hidden="true" /> : <Download size={18} aria-hidden="true" />}
-          {exportBusy ? 'Opening secure save…' : kitExported ? 'Save complete recovery kit again' : 'Save complete recovery kit'}
-        </button>
-        <p className="-mt-2 text-xs leading-5 text-secondary">The file contains both your recovery code and encrypted key envelope. Store it somewhere safe. LifeOS cannot verify the location you choose.</p>
-
+        <RecoveryProgress step={2} />
+        {!kitExported ? <div className="recovery-stage space-y-3">
+          <p className="text-sm text-secondary">Save your recovery file somewhere you can access if you lose this device.</p>
+          <button type="button" data-testid="save-complete-recovery-kit" onClick={() => void saveKit()} disabled={exportBusy}
+            className="lifeos-accent-button flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:opacity-60">
+            <Download size={18} aria-hidden="true" />{exportBusy ? 'Opening file picker' : 'Save recovery file'}
+          </button>
+        </div> : <div className="recovery-stage space-y-4">
+        <p role="status" className="text-sm font-medium">Recovery file saved. Confirm its code to finish.</p>
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-secondary">Your recovery code</p>
           <button type="button" data-testid="copy-recovery-code" onClick={() => void copyCode()} disabled={copyBusy}
@@ -153,13 +153,11 @@ export default function SecureSetupDialog({ cancelLabel, prepared, onDecision, o
         </label>
         {code && !exactMatch && <p id="recovery-code-mismatch" role="status" className="text-xs text-[var(--danger)]">That code does not match. Check it and try again.</p>}
         {exactMatch && <p role="status" className="text-xs font-medium text-[var(--accent)]">Recovery code confirmed.</p>}
-        {kitExportState === 'saved' && <p role="status" className="rounded-xl bg-[var(--accent-tint)] px-3 py-2 text-xs leading-5 text-secondary">Android confirmed the complete kit file was saved. Keep it in a safe place separate from this device when possible.</p>}
-        {kitExportState === 'started' && !kitExported && <p role="status" className="rounded-xl bg-[var(--accent-tint)] px-3 py-2 text-xs leading-5 text-secondary">A browser download was started, but LifeOS cannot confirm it finished. Save the kit with Android’s file picker to continue.</p>}
-        {!recoveryExportResumeReady && <div role="status" className="space-y-2 rounded-xl bg-[var(--accent-tint)] px-3 py-2 text-xs leading-5 text-secondary"><p>Unlock LifeOS to continue recovery setup.</p>{onRetryRecoveryExportResume && <button type="button" onClick={onRetryRecoveryExportResume} className="lifeos-input min-h-10 rounded-xl px-3 font-semibold">Unlock and continue</button>}</div>}
-        <p className="text-xs leading-5 text-secondary">Copying or pasting only confirms the code. It does not prove the exported kit is stored safely.</p>
-        <p data-testid="clipboard-feedback" role="status" aria-live="polite" className="min-h-5 text-center text-sm font-medium text-[var(--accent)]">{feedback}</p>
         <button type="button" data-testid="continue-to-lifeos" disabled={!kitExported || !exactMatch || !recoveryExportResumeReady} onClick={() => void finish(true)}
-          className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-40">Continue to LifeOS</button>
+          className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-40">Confirm recovery file</button>
+        </div>}
+        <p data-testid="clipboard-feedback" role="status" aria-live="polite" className="min-h-5 text-center text-sm font-medium text-[var(--accent)]">{feedback}</p>
+
       </> : <>
         <p className="text-sm leading-6 text-secondary">LifeOS encrypts your records on this device using an Android Keystore key protected by strong biometrics. Continue to authenticate and create your private recovery kit. Existing local records will be verified before encrypted copies replace them.</p>
         <button type="button" onClick={() => void finish(true)} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Set up secure storage</button>

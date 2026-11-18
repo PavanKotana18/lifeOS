@@ -234,7 +234,7 @@ export interface SavingsProjection {
  * amount remains integer minor units; monthly interest rounds half up.
  * Inflation is also applied monthly at annual rate/12 and is an estimate.
  */
-export function projectSavings(input: SavingsProjectionInput): SavingsProjection {
+export function projectSavings(input: SavingsProjectionInput, onMonth?: (month: number, balance: bigint) => void): SavingsProjection {
   const { startingMinorUnits, monthlyContributionMinorUnits, months } = input;
   const stepMonths = input.contributionStepUpMonths || 0;
   const stepBps = input.contributionStepUpBasisPoints || 0;
@@ -254,6 +254,7 @@ export function projectSavings(input: SavingsProjectionInput): SavingsProjection
   for (let month = 1; month <= months; month++) {
     balance = divideHalfUp(balance * returnNumerator, RATE_DENOMINATOR) + contribution;
     contributed += contribution;
+    onMonth?.(month, balance);
     if (stepMonths > 0 && month % stepMonths === 0 && month < months) {
       contribution = divideHalfUp(contribution * BigInt(10_000 + stepBps), 10_000n);
     }

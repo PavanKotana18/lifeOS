@@ -2,7 +2,6 @@ export const PRIMARY_NAVIGATION = Object.freeze([
   { tab: 'dashboard', label: 'Today', icon: 'home' },
   { tab: 'finance', label: 'Money', icon: 'wallet' },
   { tab: 'plan', label: 'Plan', icon: 'calendar' },
-  { tab: 'life', label: 'Life', icon: 'life' },
 ] as const);
 
 export const MODULE_CATALOG = Object.freeze([
@@ -14,11 +13,22 @@ export const MODULE_CATALOG = Object.freeze([
 
 export type PrimaryTab = typeof PRIMARY_NAVIGATION[number]['tab'];
 export type ModuleTab = typeof MODULE_CATALOG[number]['tab'];
-export type MainTab = PrimaryTab | ModuleTab | 'insights';
+export type MainTab = PrimaryTab | ModuleTab | 'insights' | 'life';
 
 export function primaryDestinationForTab(tab: MainTab): PrimaryTab | null {
-  if (tab === 'dashboard' || tab === 'finance' || tab === 'plan' || tab === 'life') return tab;
-  if (tab === 'planner') return 'plan';
-  if (tab === 'habits' || tab === 'goals' || tab === 'insights') return 'life';
+  if (tab === 'dashboard' || tab === 'finance' || tab === 'plan') return tab;
+  if (tab === 'planner' || tab === 'life') return 'plan';
+  if (tab === 'habits' || tab === 'goals' || tab === 'insights') return 'plan';
   return null;
+}
+
+// Keep old in-app links working after moving progress into Plan.
+export function resolvePlanPath(path: string): MainTab | null {
+  switch (path.replace(/^#?\/?/, '').replace(/\/$/, '').toLowerCase()) {
+    case 'life': case 'plan': case 'tasks': case 'plan/tasks': return 'plan';
+    case 'habits': case 'life/habits': case 'plan/habits': return 'habits';
+    case 'goals': case 'life/goals': case 'plan/goals': return 'goals';
+    case 'insights': case 'life/insights': case 'plan/insights': return 'insights';
+    default: return null;
+  }
 }
