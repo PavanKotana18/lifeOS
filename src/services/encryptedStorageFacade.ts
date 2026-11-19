@@ -819,9 +819,12 @@ export function createEncryptedStorageFacade(
 
       addMilestone: async (input: Omit<Milestone, 'id'>) =>
         coordinator.run(async ctx => {
-          if (!(await ctx.get<Goal>('goals', input.goalId))) throw new Error('Milestone goal does not exist.');
+          const goal = await ctx.get<Goal>('goals', input.goalId);
+          if (!goal) throw new Error('Milestone goal does not exist.');
           const record = { ...input, id: helpers.createRecordId('milestone') };
+          const rows = (await ctx.getAll<Milestone>('milestones')).filter(item => item.goalId === goal.id);
           ctx.add('milestones', record);
+          if (goal.mode === 'milestone') ctx.put('goals', reconcileGoal(goal, [...rows, record]));
           return record;
         }),
 
@@ -845,7 +848,14 @@ export function createEncryptedStorageFacade(
           }
         }),
 
-      deleteMilestone: (id: string) => remove('milestones', id),
+      deleteMilestone: (id: string) => coordinator.run(async ctx => {
+        const row = await ctx.get<Milestone>('milestones', id);
+        if (!row) return;
+        const goal = await ctx.get<Goal>('goals', row.goalId);
+        const remaining = (await ctx.getAll<Milestone>('milestones')).filter(item => item.goalId === row.goalId && item.id !== id);
+        ctx.delete('milestones', id);
+        if (goal?.mode === 'milestone') ctx.put('goals', reconcileGoal(goal, remaining));
+      }),
     },
 
     tasks: {

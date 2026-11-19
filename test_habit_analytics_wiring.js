@@ -151,11 +151,11 @@ check(
   'App passes frequency into streak calculation'
 );
 check(
-  app.includes('calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency)'),
+  app.includes('calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency, h)'),
   'App passes frequency into weekly rate calculation'
 );
 check(
-  domainSource.includes("habit.frequency !== 'weekly' && isHabitScheduledOnDate(habit.frequency, date)") &&
+  domainSource.includes("isHabitEligible(habit, date)") &&
   domainSource.includes('weeklyRoutinesCompleted'),
   'Dashboard summary respects scheduled routines and separates weekly routines'
 );

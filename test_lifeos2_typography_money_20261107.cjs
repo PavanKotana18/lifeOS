@@ -65,7 +65,7 @@ assert.match(markup, /<strong>Savings<\/strong>/, 'savings remains available thr
 assert.match(markup, />Accounts</);
 assert.match(markup, /<nav class="money-destinations" aria-label="Money destinations">/);
 assert.match(markup, /Insights/);
-assert.match(markup, />Plans</);
+assert.match(markup, />Scheduled</);
 assert.doesNotMatch(markup, /Track account balances \(optional\)/, 'optional account tracking does not compete with recording a transaction');
 assert.match(markup, /data-testid="money-add-transaction"/);
 assert.match(markup, /Add transaction/);

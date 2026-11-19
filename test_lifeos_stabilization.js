@@ -22,7 +22,8 @@ function fixture(run) {
 function financeRows(rows, sort = 'date-desc', filters = {}) {
   return h.bind(h.appFunction('filteredTransactions'), {
     useMemo: callback => callback(), sortTransactions,
-    transactions: rows, financeMonth: '2026-11',
+    transactions: rows, financeMonth: '2026-11', activityRange: {},
+    matchesActivityDate: date => date.startsWith('2026-11'), matchesActivityAmount: () => true,
     financeTypeFilter: 'all', financeCategoryFilter: 'all', financeAccountFilter: 'all', financeCurrencyFilter: 'all', userPrefs: { currency: 'INR' }, financeSearch: '', financeSort: sort, ...filters,
   });
 }

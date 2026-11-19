@@ -1020,3 +1020,9 @@ html.dark .text-amber-400 { color: var(--warning); }
 .task-composer-section { margin-block: .75rem; border-block-start: 1px solid var(--stroke); }
 .task-composer-section > summary { min-height: 2.75rem; display: list-item; align-content: center; cursor: pointer; font-weight: 600; }
 .task-composer-section[open] > summary { margin-block-end: .5rem; }
+
+.record-validation:not(:empty) { margin-bottom: .75rem; border-inline-start: 2px solid var(--danger); padding-inline-start: .65rem; }
+@media (prefers-reduced-motion: no-preference) {
+  .plan-filter-sheet[open], .preference-sheet[open] { animation: maturity-sheet-enter 160ms var(--motion-ease-tab, ease-out); }
+  @keyframes maturity-sheet-enter { from { opacity: 0; transform: translate3d(0, 10px, 0); } to { opacity: 1; transform: none; } }
+}

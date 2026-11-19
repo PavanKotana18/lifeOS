@@ -16,6 +16,6 @@ assert.ok(/<MoneyDetailHeader section={financeSubtab}/.test(finance), 'focused M
 assert.ok(/data-detail=\{financeSubtab\}/.test(finance), 'current Money destination drives the focused detail surface');
 assert.ok(!/overflow-x-auto[^\n]*financeSubtab/.test(finance), 'Money navigation has no horizontal finance tab strip');
 assert.match(finance, /role="progressbar"/);
-assert.ok(/filteredTransactions\.map\(t =>/.test(finance));
+assert.ok(/filteredTransactions\.filter/.test(finance));
 assert.ok(!finance.includes('text-white'), 'Finance controls use token-provided foregrounds');
 console.log('FINANCE VIEWS THEME: 13 source-level palette, navigation and accessibility checks passed.');

@@ -46,7 +46,7 @@ assert.doesNotMatch(home, /Showing 3 of 4 accounts/, "Balances appear on the mon
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="View Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
 assert.match(home, />This month/);
-assert.match(home, />Plans</);
+assert.match(home, />Scheduled</);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],

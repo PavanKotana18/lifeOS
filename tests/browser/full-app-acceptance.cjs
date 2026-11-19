@@ -95,7 +95,10 @@ async function planDestination(name) {
 
 async function activeTab(name) {
   const profileClose = page.getByRole('button', { name: 'Back from profile', exact: true });
-  if (await profileClose.isVisible()) await profileClose.click();
+  while (await profileClose.isVisible()) {
+    await profileClose.click();
+    await page.waitForTimeout(50);
+  }
   const tab = page.locator(`[data-tab="${name}"]`);
   await tab.waitFor({ state: 'visible' });
   if (await tab.getAttribute('aria-current') !== 'page') await tab.click();
@@ -516,10 +519,10 @@ async function main() {
       await fillDialogField('Task title', title);
       await fillDialogField('Due date', '2099-04-22');
       await fillDialogField('Time (optional)', '19:36');
-      await dialog().getByText('More task details', { exact: true }).click();
+      await dialog().getByText('Repeat and reminders', { exact: true }).click();
       await dialog().getByLabel('Extra reminder').selectOption('15');
       await capture('task-timed-composer-390');
-      await saveDialog('Save task');
+      await saveDialog('Create Task');
       const stored = () => page.evaluate(async name => {
         const {StorageService} = await import('/src/db.ts');
         return (await StorageService.tasks.getAll()).find(row => row.title === name);
@@ -587,7 +590,7 @@ async function main() {
 
     await journey('Profile drawer focus, scroll and encrypted photo lifecycle', async () => {
       await activeTab('finance');
-      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Activity', exact: true }).click();
       const opener = page.getByRole('button', { name: 'Open profile and settings' });
       const drawer = page.getByRole('main', { name: 'Profile and settings' });
       await opener.click();
@@ -646,6 +649,7 @@ async function main() {
       await image.waitFor({ state: 'detached' });
       assert.equal(await page.evaluate(async () => (await import('/src/db.ts')).StorageService.settings.get('profilePhoto', null)), null);
       await drawer.getByRole('button', { name: 'Back from profile' }).click();
+      await drawer.waitFor({ state: 'detached' });
     });
 
     await journey('compact settings and six-month sample data', async () => {
@@ -703,7 +707,7 @@ async function main() {
         assert.equal(metrics.length, 6);
         assert.ok(metrics.every(([w,h]) => Math.abs(w - metrics[0][0]) < 1 && Math.abs(h - metrics[0][1]) < 1), 'Money destinations have matching dimensions');
         if (width < 768) assert.equal(new Set(metrics.map(row => row[2])).size, 3, 'phones show two columns and three rows');
-        for (const name of ['Transactions', 'Accounts', 'Budgets', 'Savings', 'Insights', 'Plans']) {
+        for (const name of ['Activity', 'Accounts', 'Budgets', 'Savings', 'Insights', 'Scheduled']) {
           await menu.getByRole('button', { name, exact: true }).click();
           await page.getByRole('heading', { name, exact: true }).first().waitFor();
           const content = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -767,7 +771,7 @@ async function main() {
     await journey('transaction detail edits and deletes through the encrypted store', async () => {
       await page.setViewportSize({width:390,height:844});
       await activeTab('finance');
-      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Activity', exact: true }).click();
       await page.getByRole('button', { name: /View transaction QA acceptance:/ }).first().click();
       const detail = page.locator('dialog[data-transaction-details][open]');
       await detail.waitFor();
@@ -809,7 +813,7 @@ async function main() {
       await page.getByRole('heading', { name: 'Transfers', exact: true }).waitFor();
       await capture('money-accounts-populated-390');
       await clickButton('Money overview');
-      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Plans', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Scheduled', exact: true }).click();
       await clickButton('Add');
       const name = 'QA recurring utility bill';
       await dialog().getByRole('textbox', { name: 'Name', exact: true }).fill(name);
@@ -848,7 +852,7 @@ async function main() {
       await planDestination('Tasks');
       await clickButton('Create Task');
       await fillDialogField('Title', 'QA notification action task');
-      await saveDialog('Save task');
+      await saveDialog('Create Task');
       const completed = page.getByRole('checkbox', { name: 'Mark QA notification action task incomplete' });
       await page.evaluate(async () => {
         const { StorageService } = await import('/src/db.ts');
@@ -865,7 +869,7 @@ async function main() {
     await journey('dedicated savings projection calculates, breaks down and resets', async () => {
       await activeTab('finance');
       if (await page.getByRole('button', { name: 'Money overview' }).isVisible()) await clickButton('Money overview');
-      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Plans', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Scheduled', exact: true }).click();
       assert.equal(await page.getByText('Currency converter', { exact: true }).count(), 0);
       await clickButton('Savings projection');
       const projection = page.getByTestId('savings-projection');
@@ -883,7 +887,7 @@ async function main() {
       await capture('savings-projection-390');
       await clickButton('Reset');
       assert.equal(await projection.getByLabel('Starting savings').inputValue(), '0');
-      await page.getByRole('button', { name: 'Plans', exact: true }).first().click();
+      await page.getByRole('button', { name: 'Savings', exact: true }).first().click();
       await page.getByTestId('money-planning').waitFor();
     });
 

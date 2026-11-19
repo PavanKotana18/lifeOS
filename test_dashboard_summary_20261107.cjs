@@ -8,6 +8,7 @@ const overview = getTodayOverview(
     { dueDate: '2026-10-31', completed: true },
     { dueDate: '2026-10-31', completed: false },
     { dueDate: '2026-11-01', completed: false },
+    { dueDate: '2026-10-30', completed: false },
   ],
   [
     { id: 'daily', frequency: 'daily' },
@@ -21,7 +22,7 @@ const overview = getTodayOverview(
   '2026-10-31'
 );
 assert.deepEqual(overview, {
-  tasksCompleted: 1, tasksDue: 2,
+  tasksCompleted: 1, tasksDue: 3,
   routinesCompleted: 1, routinesDue: 1,
   weeklyRoutinesCompleted: 1, weeklyRoutinesTotal: 1,
 });

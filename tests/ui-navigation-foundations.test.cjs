@@ -80,11 +80,11 @@ assert.match(app, /pendingNotification\.current/, 'notification task routing rem
 
 const retained = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'RetainedScreen.tsx'), 'utf8');
 assert.match(retained, /if \(active && !visited\) setVisited\(true\)/);
-assert.match(retained, /if \(!active && \(!retainInactive \|\| !visited\)\) return null/);
-assert.match(retained, /hidden=\{!active\}/, 'only active content is painted; no outgoing ghost layer remains');
+assert.match(retained, /if \(!active && !outgoing && \(!retainInactive \|\| !visited\)\) return null/);
+assert.match(retained, /hidden=\{!active && !outgoing\}/, 'the single outgoing surface remains until motion settles');
 assert.match(retained, /aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/,
   'inactive retained screens are removed from accessibility and focus navigation');
-assert.match(retained, /data-transition-state=\{transitionState\}/);
+assert.match(retained, /data-transition-state=\{outgoing \? "outgoing" : transitionState\}/);
 assert.doesNotMatch(retained, /exiting|exit-prepare|onExitTransitionEnd/);
 
 const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.css'), 'utf8');
@@ -93,7 +93,7 @@ assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/);
 assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
 assert.match(css, /enter-prepare[^}]*opacity: \.92; transform: translate3d\(0, 4px, 0\)/);
-assert.match(css, /data-transition-direction="left"\]\[data-transition-state="enter-prepare"\][^}]*translate3d\(16px, 0, 0\)/);
+assert.match(css, /data-transition-direction="left"\]\[data-transition-state="enter-prepare"\][^}]*translate3d\(calc\(16px \+ var\(--tab-enter-offset, 0px\)\), 0, 0\)/);
 assert.match(css, /data-transition-state="entering"[^}]*transition: opacity var\(--motion-tab\)[^}]*transform var\(--motion-tab\)/);
 assert.match(css, /\.ui-tab-screen\[data-gesture-dragging="true"\][^}]*transition: none !important[^}]*translate3d\(var\(--gesture-x/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
