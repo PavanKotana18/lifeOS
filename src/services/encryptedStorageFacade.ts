@@ -363,6 +363,7 @@ export function createEncryptedStorageFacade(
               throw new Error('A budget cannot change currency without explicit reconciliation.');
             }
             const updated = { ...existing, monthlyAmount: input.monthlyAmount,
+              ...(input.carryover !== undefined ? { carryover: input.carryover } : {}),
               ...(input.amountMinor !== undefined ? { amountMinor: input.amountMinor } : {}),
               ...(input.currencyCode !== undefined ? { currencyCode: input.currencyCode } : {}) };
             ctx.put('budgets', updated);

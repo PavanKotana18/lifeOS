@@ -30,7 +30,7 @@ import { createAuthCoordinator } from './services/authCoordinator';
 import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, formatHabitQuantity, normalizeHabitUnit, type UserPreferences } from './services/userPreferences';
 import { createMoneyRecordAmount, decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
-import { getExactBudgetDisplayStatus } from './services/budgetDisplay';
+import { budgetCarryoverMinor, getExactBudgetDisplayStatus } from './services/budgetDisplay';
 import { buildDuplicateTransactionDraft } from './services/transactionDraft';
 import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodaySectionVisible, TODAY_SECTION_LABELS, type TodayLayout, type TodaySectionId } from './services/todayLayout';
 import { groupUpcomingTasks } from './services/taskViews';
@@ -2126,7 +2126,7 @@ export default function App() {
     const today = formatLocalDate(now);
     setCreateFormDirty(false);
     setCreateDraft({
-      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: kind === 'task' ? taskDate || '' : taskDate || today, month: financeMonth,
+      title: '', amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: kind === 'task' || kind === 'goal' ? taskDate || '' : taskDate || today, month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
       currencyCode: userPrefs.currency, accountId: '', type: 'expense', priority: 'Medium', frequency: 'daily', target: '', current: '0', unit: '',
       goalId: goalId || '', recurring: 'None', reminderWeekday: '2', trackingMode: 'binary', quantityUnit: '',
@@ -2145,7 +2145,7 @@ export default function App() {
   const openEditBudget = (budget: Budget) => {
     setCreateFormDirty(false);
     setEditingBudgetId(budget.id);
-    setCreateDraft({ categoryId: budget.categoryId || '', amount: budget.amountMinor && budget.currencyCode ? minorUnitsToDecimal(BigInt(budget.amountMinor), budget.currencyCode) : String(budget.monthlyAmount), month: budget.monthYear, currencyCode: budget.currencyCode || userPrefs.currency });
+    setCreateDraft({ categoryId: budget.categoryId || '', amount: budget.amountMinor && budget.currencyCode ? minorUnitsToDecimal(BigInt(budget.amountMinor), budget.currencyCode) : String(budget.monthlyAmount), month: budget.monthYear, currencyCode: budget.currencyCode || userPrefs.currency, carryover: budget.carryover ? 'yes' : 'no' });
     setCreateKind('budget');
   };
 
@@ -2385,7 +2385,7 @@ export default function App() {
       } else if (createKind === 'budget') {
         const code = editingBudgetId ? budgets.find(row => row.id === editingBudgetId)?.currencyCode || userPrefs.currency : userPrefs.currency;
         const money = createMoneyRecordAmount(value('amount'), code);
-        await StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month') });
+        await StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month'), ...(value('carryover') ? { carryover: value('carryover') === 'yes' } : {}) });
       } else if (createKind === 'savings') {
         const target = createMoneyRecordAmount(value('target'), editingSavingsGoalId ? savingsGoals.find(goal => goal.id === editingSavingsGoalId)?.currencyCode || userPrefs.currency : userPrefs.currency);
         if (editingSavingsGoalId) {
@@ -3117,7 +3117,8 @@ export default function App() {
                 const budgetName = b.categoryId ? (budgetCategoryName || 'Unavailable category') : 'Overall budget';
                 const categoryMissing = Boolean(b.categoryId && !budgetCategoryName);
                 const budgetCurrency = b.currencyCode || userPrefs.currency;
-                const allocatedMinor = b.amountMinor && /^(0|[1-9]\d*)$/.test(b.amountMinor) ? BigInt(b.amountMinor) : decimalToMinorUnits(String(b.monthlyAmount), budgetCurrency);
+                const carryoverMinor = budgetCarryoverMinor(b, budgets, transactions, categories, budgetCurrency);
+                const allocatedMinor = (b.amountMinor && /^(0|[1-9]\d*)$/.test(b.amountMinor) ? BigInt(b.amountMinor) : decimalToMinorUnits(String(b.monthlyAmount), budgetCurrency)) + carryoverMinor;
                 const spentTransactions = transactions.filter(tx => tx.type === 'expense' && tx.date?.startsWith(financeMonth) && (!tx.currencyCode || tx.currencyCode === budgetCurrency) && (!b.categoryId || tx.category === budgetCategoryName));
                 const spentMinor = spentTransactions.reduce((total, tx) => total + (tx.amountMinor && tx.currencyCode === budgetCurrency && /^(0|[1-9]\d*)$/.test(tx.amountMinor) ? BigInt(tx.amountMinor) : decimalToMinorUnits(String(tx.amount), budgetCurrency)), 0n);
                 const budgetStatus = getExactBudgetDisplayStatus(categoryMissing ? undefined : spentMinor, allocatedMinor);
@@ -3129,7 +3130,7 @@ export default function App() {
                 const amountLabel = categoryMissing ? 'Unavailable' : formatMinorUnits(spentMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
                 const allocationLabel = formatMinorUnits(allocatedMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
                 const remainingLabel = categoryMissing ? 'Restore category to track this plan' : budgetStatus.isOver ? 'Above plan' : budgetStatus.percentUsed === null ? 'Set a limit to track remaining' : `${remainingAmountLabel} remaining in plan`;
-                return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{budgetName}</strong><span>{amountLabel} / {allocationLabel}</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetName} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetStatus.barPercent)} aria-valuetext={budgetStatus.isOver ? overAccessibleLabel : budgetLabel}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${budgetStatus.barPercent}%`, backgroundColor: budgetStatus.isOver ? 'var(--warning)' : undefined }} /></div><div className="mt-2 flex flex-wrap justify-between gap-1 text-xs text-secondary"><span>{budgetStatus.isOver ? overLabel : budgetLabel}</span><span>{remainingLabel}</span></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => openEditBudget(b)} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text">Edit budget</button><button aria-label={`Delete ${budgetName}`} onClick={async () => {
+                return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{budgetName}</strong><span>{amountLabel} / {allocationLabel}</span></div>{carryoverMinor > 0n && <p className="mt-1 text-xs text-secondary">{formatMinorUnits(carryoverMinor, budgetCurrency, userPrefs.locale === "system" ? undefined : userPrefs.locale)} carried from last month</p>}<div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetName} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetStatus.barPercent)} aria-valuetext={budgetStatus.isOver ? overAccessibleLabel : budgetLabel}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${budgetStatus.barPercent}%`, backgroundColor: budgetStatus.isOver ? 'var(--warning)' : undefined }} /></div><div className="mt-2 flex flex-wrap justify-between gap-1 text-xs text-secondary"><span>{budgetStatus.isOver ? overLabel : budgetLabel}</span><span>{remainingLabel}</span></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => openEditBudget(b)} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text">Edit budget</button><button aria-label={`Delete ${budgetName}`} onClick={async () => {
                   if (!(await confirmAction({ title: 'Delete this budget?', message: `${budgetName} will be removed. Saved transactions will remain unchanged.`, confirmLabel: 'Delete budget', destructive: true }))) return;
                   try { await StorageService.budgets.delete(b.id); }
                   catch { showToast('Budget deletion could not be confirmed. Refresh before retrying.', 'danger'); return; }
@@ -3702,6 +3703,7 @@ export default function App() {
               {editingBudgetId && <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs text-secondary">Editing keeps this plan’s category, month and currency. Create a separate plan to change those details.</p>}
               <label className="mb-3 block text-xs text-secondary">Budget category (optional)<select disabled={Boolean(editingBudgetId)} value={createDraft.categoryId || ''} onChange={e => setCreateDraft({ ...createDraft, categoryId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="">Overall budget</option>{categories.filter(category => category.type === 'expense').map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
               {(() => { const code = editingBudgetId ? budgets.find(row => row.id === editingBudgetId)?.currencyCode || userPrefs.currency : userPrefs.currency; const digits = getCurrencyMetadata(code).fractionDigits; return <label className="mb-3 block text-xs text-secondary">Monthly limit · {code}<input required type="number" min={10 ** -digits} step={10 ** -digits} inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>; })()}
+              <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={createDraft.carryover === "yes"} onChange={event => setCreateDraft({ ...createDraft, carryover: event.target.checked ? "yes" : "no" })} /> Carry over unused budget from last month</label>
               <label className="mb-4 block text-xs text-secondary">Month<input disabled={Boolean(editingBudgetId)} required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'savings' && <>

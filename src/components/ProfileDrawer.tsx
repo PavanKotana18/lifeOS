@@ -1,10 +1,11 @@
 ﻿import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { buildSpringSettle, readTranslateX } from '../services/springMotion';
+import { profileParent, type ProfileSection } from './ProfileSettings';
 import type { MotionPresetId } from '../services/interfaceMotion';
 
 export default function ProfileDrawer({ section, scrollPositions, onBack, closing, onExited, preset, swipeEnabled, children }: {
-  section: string;
+  section: ProfileSection;
   scrollPositions: Record<string, number>;
   onBack: () => void;
   closing: boolean;
@@ -14,6 +15,7 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
   children: ReactNode;
 }) {
   const panel = useRef<HTMLElement>(null);
+  const previousSection = useRef(section);
   const animation = useRef<Animation | null>(null);
   const hasEntered = useRef(false);
   const exitCallback = useRef(onExited);
@@ -44,12 +46,18 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
     if (!element) return;
     const saveScroll = () => { scrollPositions[section] = element.scrollTop; };
     element.scrollTop = scrollPositions[section] ?? 0;
+    const from = previousSection.current;
+    previousSection.current = section;
+    const content = element.querySelector<HTMLElement>('.profile-settings');
     const heading = element.querySelector<HTMLElement>('.profile-settings h1');
     heading?.setAttribute('tabindex', '-1');
     heading?.focus({ preventScroll: true });
     element.addEventListener('scroll', saveScroll, { passive: true });
-    return () => element.removeEventListener('scroll', saveScroll);
-  }, [section, scrollPositions]);
+    const motion = from !== section && content && typeof content.animate === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? buildSpringSettle(profileParent(from) === section ? -22 : 22, 0, preset) : null;
+    const flight = motion && content?.animate(motion.keyframes, { duration: motion.duration });
+    return () => { flight?.cancel(); element.removeEventListener('scroll', saveScroll); };
+  }, [section, scrollPositions, preset]);
 
   useLayoutEffect(() => {
     const handleKey = (event: KeyboardEvent) => {

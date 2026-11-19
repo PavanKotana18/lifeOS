@@ -20,5 +20,5 @@ for(const section of ['transactions','accounts','budgets','savings','planning','
  walk(tree,node=>{if(node.type==='input'){node.props.onChange({target:{value:''}});assert.equal(month,'2026-11');node.props.onChange({target:{value:'2027-02'}});assert.equal(month,'2027-02');}if(node.type==='button')node.props.onClick();});assert.equal(back,1);
  if(section==='planning')assert.match(html,/Scheduled/);if(section==='analytics')assert.match(html,/Insights/);
 }
-const app=fs.readFileSync('src/App.tsx','utf8');assert.match(app,/aria-label="Search transactions"/);assert.match(app,/<summary>Filters<\/summary>/);assert.match(app,/setFinanceCategoryFilter\('all'\)/);assert.match(app,/formatMinorUnits\(BigInt\(t.amountMinor\)/);
+const app=fs.readFileSync('src/App.tsx','utf8');assert.match(app,/aria-label="Search transactions"/);assert.match(app,/data-activity-filters aria-label="Activity filters"/);assert.match(app,/setFinanceCategoryFilter\('all'\)/);assert.match(app,/formatMinorUnits\(BigInt\(t.amountMinor\)/);
 console.log('PASS Money detail headings, actual period validation/back handlers, explicit posted/planned labels and exact amount wiring');

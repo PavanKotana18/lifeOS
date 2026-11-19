@@ -144,7 +144,7 @@ body {
 .ui-tab-screen-stack > [data-lifeos-screen] { grid-area: 1 / 1; min-width: 0; }
 .ui-tab-screen { position: relative; min-width: 0; background: var(--page); }
 .ui-tab-screen[data-transition-state="outgoing"] { z-index: 0; pointer-events: none; }
-.ui-tab-screen:not([data-transition-state="outgoing"]) { z-index: 1; }
+.ui-tab-screen:is([data-transition-state="enter-prepare"], [data-transition-state="entering"]) { z-index: 1; }
 .ui-tab-screen[hidden] { display: none !important; }
 .ui-tab-screen[data-transition-state="inactive"] { pointer-events: none; }
 .ui-tab-screen[data-transition-state="enter-prepare"] { opacity: .92; transform: translate3d(0, 4px, 0); }

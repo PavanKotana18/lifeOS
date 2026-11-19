@@ -1,3 +1,20 @@
+import type { Budget, Transaction } from '../types';
+import { decimalToMinorUnits } from './financeCore';
+
+/** Add only the preceding month?s unused base limit for the same category and currency. */
+export function budgetCarryoverMinor(budget: Budget, budgets: Budget[], transactions: Transaction[], categories: { id: string; name: string }[], currency: string): bigint {
+  if (!budget.carryover || !/^\d{4}-(0[1-9]|1[0-2])$/.test(budget.monthYear)) return 0n;
+  const [year, month] = budget.monthYear.split('-').map(Number);
+  const previousKey = `${month === 1 ? year - 1 : year}-${String(month === 1 ? 12 : month - 1).padStart(2, "0")}`;
+  const previous = budgets.find(row => row.monthYear === previousKey && row.categoryId === budget.categoryId && (row.currencyCode || currency) === currency);
+  const category = categories.find(item => item.id === budget.categoryId);
+  if (!previous || (budget.categoryId && !category)) return 0n;
+  const limit = previous.amountMinor && previous.currencyCode === currency ? BigInt(previous.amountMinor) : decimalToMinorUnits(String(previous.monthlyAmount), currency);
+  const spent = transactions.filter(row => row.type === 'expense' && row.date.startsWith(previousKey) && (row.currencyCode || currency) === currency && (!category || row.category === category.name))
+    .reduce((total, row) => total + (row.amountMinor !== undefined && row.currencyCode === currency ? BigInt(row.amountMinor) : decimalToMinorUnits(String(row.amount), currency)), 0n);
+  return spent < limit ? limit - spent : 0n;
+}
+
 export interface BudgetDisplayStatus {
   percentUsed: number | null;
   barPercent: number;
