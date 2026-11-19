@@ -467,7 +467,9 @@ export default function App() {
   const [openMoneyTransferOnAccounts, setOpenMoneyTransferOnAccounts] = useState(false);
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
-  const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const activityFilterDialog = useRef<HTMLDialogElement>(null);
+  const [activityRange, setActivityRange] = useState({ from: '', through: '', min: '', max: '' });
+  const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [financeCategoryFilter, setFinanceCategoryFilter] = useState<string>('all');
   const [financeAccountFilter, setFinanceAccountFilter] = useState<string>('all');
   const [financeCurrencyFilter, setFinanceCurrencyFilter] = useState<string>('all');
@@ -834,7 +836,7 @@ export default function App() {
   const navigateBack = () => {
     const state = backState.current;
     if (typeof document !== 'undefined') {
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open]');
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
@@ -2668,17 +2670,39 @@ export default function App() {
   };
   const editingLegacyDateOnly = Boolean(createKind === 'transaction' && editingTransactionId
     && !transactions.find(tx => tx.id === editingTransactionId)?.occurredAt);
+  const matchesActivityDate = (date: string) => activityRange.from || activityRange.through
+    ? (!activityRange.from || date >= activityRange.from) && (!activityRange.through || date <= activityRange.through)
+    : date.startsWith(financeMonth);
+  const matchesActivityAmount = (minor: string | undefined, amount: number, currency: string) => {
+    if (!activityRange.min && !activityRange.max) return true;
+    try {
+      const value = minor === undefined ? decimalToMinorUnits(String(amount), currency) : BigInt(minor);
+      return (!activityRange.min || value >= decimalToMinorUnits(activityRange.min, currency))
+        && (!activityRange.max || value <= decimalToMinorUnits(activityRange.max, currency));
+    } catch { return false; }
+  };
+  const filteredTransfers = financeTypeFilter === 'all' || financeTypeFilter === 'transfer'
+    ? accountTransfers.filter(row => {
+      const names = financialAccounts.filter(account => account.id === row.fromAccountId || account.id === row.toAccountId).map(account => account.name);
+      const query = financeSearch.trim().toLowerCase();
+      return matchesActivityDate(row.date) && financeCategoryFilter === 'all'
+        && (financeAccountFilter === 'all' || financeAccountFilter === row.fromAccountId || financeAccountFilter === row.toAccountId)
+        && (financeCurrencyFilter === 'all' || financeCurrencyFilter === row.fromCurrencyCode || financeCurrencyFilter === row.toCurrencyCode)
+        && (matchesActivityAmount(row.fromAmountMinor, 0, row.fromCurrencyCode) && (financeCurrencyFilter === 'all' || financeCurrencyFilter === row.fromCurrencyCode)
+          || matchesActivityAmount(row.toAmountMinor, 0, row.toCurrencyCode) && financeCurrencyFilter === row.toCurrencyCode)
+        && (!query || [row.notes, ...names, 'transfer'].some(value => value?.toLowerCase().includes(query)));
+    }) : [];
   const filteredTransactions = useMemo(() => sortTransactions(transactions.filter(tx => {
     const query = financeSearch.trim().toLowerCase();
     const haystack = `${tx.description || ''} ${tx.category || ''} ${tx.notes || ''} ${tx.paymentMethod || ''}`.toLowerCase();
-    return tx.date?.startsWith(financeMonth)
+    return matchesActivityDate(tx.date) && matchesActivityAmount(tx.amountMinor, tx.amount, tx.currencyCode || userPrefs.currency)
       && (financeTypeFilter === 'all' || tx.type === financeTypeFilter)
       && (financeCategoryFilter === 'all' || tx.category === financeCategoryFilter)
       && (financeAccountFilter === 'all' || (financeAccountFilter === 'unassigned' ? !tx.accountId : tx.accountId === financeAccountFilter))
       && (financeCurrencyFilter === 'all' || (tx.currencyCode || userPrefs.currency) === financeCurrencyFilter)
       && (!query || haystack.includes(query));
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
-  [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeAccountFilter, financeCurrencyFilter, userPrefs.currency, financeSearch, financeSort]);
+  [transactions, financeMonth, activityRange, financeTypeFilter, financeCategoryFilter, financeAccountFilter, financeCurrencyFilter, userPrefs.currency, financeSearch, financeSort]);
   const financeOverviewTransactions = useMemo(
     () => sortTransactions(transactions.filter(tx => tx.date?.startsWith(financeMonth)), 'date-desc').slice(0, 4),
     [transactions, financeMonth]
@@ -2859,7 +2883,7 @@ export default function App() {
               </div>
               <div className="flex justify-between gap-3 text-xs text-secondary">
                 <span>Net cash flow: <strong className="text-primary tabular-nums">{formatMoney(financeAnalytics.netSavings)}</strong></span>
-                <span>Savings rate: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
+                <span>Cash-flow margin: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
               </div>
             </div>
 
@@ -3031,13 +3055,18 @@ export default function App() {
                   />
                   <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
                 </div>
-                <details className="money-detail-filters"><summary>Filters</summary><div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
+                <button type="button" aria-haspopup="dialog" className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold" onClick={() => activityFilterDialog.current?.showModal()}>Filters</button>
+                <dialog ref={activityFilterDialog} data-activity-filters aria-label="Activity filters" className="plan-filter-sheet lifeos-page" onClick={event => { if (event.target === event.currentTarget) activityFilterDialog.current?.close(); }}>
+                <form onSubmit={event => { event.preventDefault(); activityFilterDialog.current?.close(); }}>
+                <header className="flex items-center justify-between"><h3 className="type-section-title">Activity filters</h3><button type="button" className="min-h-11 px-3" onClick={() => activityFilterDialog.current?.close()}>Close</button></header>
+                <div className="plan-filter-fields">{(['from', 'through', 'min', 'max'] as const).map((key, index) => <label key={key}>{['From date', 'Through date', 'Minimum amount', 'Maximum amount'][index]}<input type={index < 2 ? 'date' : 'number'} min={key === 'through' ? activityRange.from || undefined : index >= 2 ? key === 'max' ? activityRange.min || '0' : '0' : undefined} max={key === 'from' ? activityRange.through || undefined : key === 'min' ? activityRange.max || undefined : undefined} step={index >= 2 ? 'any' : undefined} value={activityRange[key]} onChange={event => setActivityRange(current => ({ ...current, [key]: event.target.value }))} /></label>)}</div><div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
 
                 {/* Filters */}
                 <div role="group" aria-label="Filter transactions by type" className="flex flex-wrap gap-2 text-xs pb-1">
-                  {(['all', 'income', 'expense'] as const).map(t => (
+                  {(['all', 'income', 'expense', 'transfer'] as const).map(t => (
                     <button
                       key={t}
+                      type="button"
                       onClick={() => setFinanceTypeFilter(t)}
                       aria-pressed={financeTypeFilter === t}
                       className={`min-h-11 rounded-full px-3 capitalize ${financeTypeFilter === t ? 'lifeos-accent-button font-semibold' : 'lifeos-panel text-secondary border border-[var(--stroke)]'}`}
@@ -3048,14 +3077,17 @@ export default function App() {
                 </div>
                 <label className="flex items-center justify-between text-[10px] text-secondary">Sort<select value={financeSort} onChange={e => setFinanceSort(e.target.value)} className="lifeos-input min-h-11 rounded-lg px-2 py-2 text-xs"><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="amount-desc">Largest amount</option></select></label>
 
-                </details>
-                <div className="money-detail-results"><span role="status">{filteredTransactions.length} posted transaction{filteredTransactions.length === 1 ? '' : 's'}</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); }}>Clear filters</button></div>
+                <button type="submit" className="lifeos-accent-button min-h-11 rounded-xl px-4">Show activity</button></form></dialog>
+                <div className="money-detail-results"><span role="status">{filteredTransactions.length + filteredTransfers.length} items</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button></div>
                 {/* Transactions List */}
                 <div className="space-y-2">
-                  {filteredTransactions.length === 0 ? (
+                  {!filteredTransactions.length && !filteredTransfers.length ? (
                     <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
                   ) : (
-                    filteredTransactions.map(t => (
+                    [...new Set([...filteredTransactions.map(row => row.date), ...filteredTransfers.map(row => row.date)])].sort((a, b) => financeSort === 'date-asc' ? a.localeCompare(b) : b.localeCompare(a)).map(date => (
+                      <section key={date} className="space-y-2" aria-label={formatDate(date)}><h3 className="type-caption text-secondary">{formatDate(date)}</h3>
+                      {filteredTransfers.filter(row => row.date === date).map(row => <article className="transaction-history-item lifeos-panel rounded-xl border px-3 py-2" key={row.id}><div className="transaction-history-main"><button type="button" className="transaction-history-copy" onClick={() => navigateFinanceSubtab('accounts')}><strong>{row.reversalOfId ? 'Transfer reversal' : 'Transfer'}</strong><span>{financialAccounts.find(account => account.id === row.fromAccountId)?.name || 'Archived account'} ? {financialAccounts.find(account => account.id === row.toAccountId)?.name || 'Archived account'}</span>{row.notes && <span>{row.notes}</span>}</button><span className="transaction-history-amount">{formatMinorUnits(BigInt(row.fromAmountMinor), row.fromCurrencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</span></div></article>)}
+                      {filteredTransactions.filter(row => row.date === date).map(t => (
                       <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border px-3 py-1">
                         <div className="transaction-history-main">
                           <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={`View transaction ${t.description || t.category}`} className="transaction-history-copy">
@@ -3067,7 +3099,7 @@ export default function App() {
                           </span>
                         </div>
                       </article>
-                    ))
+                    ))}</section>))
                   )}
                 </div>
               </div>
@@ -3105,6 +3137,7 @@ export default function App() {
             </div>}
 
             {financeSubtab === 'savings' && <div className="space-y-3">
+              <button type="button" onClick={() => navigateFinanceSubtab('projection')} className="money-month-link lifeos-panel">Savings projection <ChevronRight size={16} aria-hidden="true" /></button>
               <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
                   if (!(await confirmAction({ title: 'Delete this contribution?', message: `${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} will be removed and the saved goal total will be adjusted.`, confirmLabel: 'Delete contribution', destructive: true }))) return;
@@ -3137,7 +3170,7 @@ export default function App() {
               onAddRate={async input => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.add(input)); }}
               onUpdateRate={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.update(id, input)); }}
               onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} />
-              <button type="button" onClick={() => navigateFinanceSubtab('projection')} className="money-month-link lifeos-panel">Savings projection <ChevronRight size={16} aria-hidden="true" /></button>
+              
             </div>}
             {financeSubtab === 'projection' && <Suspense fallback={<ScreenLoading label="Loading savings projection" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}
 

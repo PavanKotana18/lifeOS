@@ -33,12 +33,12 @@ type Props = {
 };
 
 const moneyDestinations = [
-  { id: 'transactions', label: 'Transactions', icon: Receipt },
+  { id: 'transactions', label: 'Activity', icon: Receipt },
   { id: 'accounts', label: 'Accounts', icon: Landmark },
   { id: 'budgets', label: 'Budgets', icon: WalletCards },
   { id: 'savings', label: 'Savings', icon: PiggyBank },
   { id: 'analytics', label: 'Insights', icon: ChartNoAxesCombined },
-  { id: 'planning', label: 'Plans', icon: CalendarDays },
+  { id: 'planning', label: 'Scheduled', icon: CalendarDays },
 ] as const;
 
 export default function MoneyHome({ month, monthly = false, onMonthly, monthSavings, expenseChange, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
@@ -81,7 +81,7 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
     </div>}
 
     <section className="money-activity" aria-labelledby="money-activity-title">
-      <div className="money-section-heading"><div><h3 id="money-activity-title" className="type-section-title">Activity</h3></div><button type="button" onClick={onTransactions} className="money-text-action">All transactions <ArrowRight size={15} aria-hidden="true" /></button></div>
+      <div className="money-section-heading"><div><h3 id="money-activity-title" className="type-section-title">Activity</h3></div><button type="button" onClick={onTransactions} className="money-text-action">View activity</button></div>
       {!transactions.length ? <p className="money-empty-action" role="status">No transactions this month.</p> : <ul className="money-transaction-list">{transactions.slice(0, 4).map(transaction => {
         const title = transaction.description?.trim() || transaction.category || (transaction.type === 'income' ? 'Income' : 'Expense');
         const amount = transaction.amountMinor !== undefined && transaction.amountMinor !== null
