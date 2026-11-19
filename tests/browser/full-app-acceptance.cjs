@@ -1032,41 +1032,37 @@ async function main() {
     });
 
     await journey('protected recovery save cancellation and confirmation', async () => {
-      const disposable = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', acceptDownloads: false });
-      const mainPage = page;
-      page = await disposable.newPage();
-      page.setDefaultTimeout(12_000);
-      try {
-        await page.goto(origin + '/tests/browser/index.html?onboarding-auth=success');
-        await page.getByLabel('Your name').fill('Synthetic recovery profile');
-        await clickButton('Continue');
-        await page.getByRole('heading', { name: 'Notifications', exact: true }).waitFor();
-        await clickButton('Not now');
-        await clickButton('Continue without precise reminders');
-        await clickButton('Enable biometrics');
-        await page.getByRole('heading', { name: 'Recovery setup' }).waitFor();
-        await clickButton('Prepare recovery');
-        const save = page.getByTestId('save-complete-recovery-kit');
-        await save.waitFor();
-        assert.equal(await page.locator('[data-sensitive-recovery-code]').count(), 0);
-        await capture('recovery-save-step-390');
-        await page.evaluate(() => { window.__qaRecoveryExportMode = 'cancelled'; });
-        await save.click();
-        await page.getByText('Save cancelled. You can choose a file location again.').waitFor();
-        assert.equal(await page.getByTestId('continue-to-lifeos').count(), 0);
-        await page.evaluate(() => { window.__qaRecoveryExportMode = 'saved'; });
-        await save.click();
-        await page.getByTestId('recovery-code-confirmation').fill('A'.repeat(43));
-        await page.getByTestId('continue-to-lifeos').click();
-        await page.getByText('Your recovery file is saved and confirmed.').waitFor();
-        await capture('recovery-complete-step-390');
-        await clickButton('Continue to Today');
-        await page.getByTestId('today-dashboard').waitFor();
-        assert.equal(await page.evaluate(() => sessionStorage.getItem('qa-recovery-provisioned')), 'true');
-      } finally {
-        await disposable.close();
-        page = mainPage;
-      }
+      // Release the populated workspace before testing a fresh profile.
+      await context.close();
+      context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', acceptDownloads: false });
+      page = await context.newPage();
+      page.setDefaultTimeout(20_000);
+      await page.goto(origin + '/tests/browser/index.html?onboarding-auth=success');
+      await page.getByLabel('Your name').fill('Synthetic recovery profile');
+      await clickButton('Continue');
+      await page.getByRole('heading', { name: 'Notifications', exact: true }).waitFor();
+      await clickButton('Not now');
+      await clickButton('Continue without precise reminders');
+      await clickButton('Enable biometrics');
+      await page.getByRole('heading', { name: 'Recovery setup' }).waitFor();
+      await clickButton('Prepare recovery');
+      const save = page.getByTestId('save-complete-recovery-kit');
+      await save.waitFor();
+      assert.equal(await page.locator('[data-sensitive-recovery-code]').count(), 0);
+      await capture('recovery-save-step-390');
+      await page.evaluate(() => { window.__qaRecoveryExportMode = 'cancelled'; });
+      await save.click();
+      await page.getByText('Save cancelled. You can choose a file location again.').waitFor();
+      assert.equal(await page.getByTestId('continue-to-lifeos').count(), 0);
+      await page.evaluate(() => { window.__qaRecoveryExportMode = 'saved'; });
+      await save.click();
+      await page.getByTestId('recovery-code-confirmation').fill('A'.repeat(43));
+      await page.getByTestId('continue-to-lifeos').click();
+      await page.getByText('Your recovery file is saved and confirmed.').waitFor();
+      await capture('recovery-complete-step-390');
+      await clickButton('Continue to Today');
+      await page.getByTestId('today-dashboard').waitFor();
+      assert.equal(await page.evaluate(() => sessionStorage.getItem('qa-recovery-provisioned')), 'true');
     });
   } catch (error) {
     report.fatal = { journey: currentJourney, message: error instanceof Error ? error.message : String(error) };
