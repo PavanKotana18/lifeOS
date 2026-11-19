@@ -94,7 +94,7 @@ async function planDestination(name) {
 }
 
 async function activeTab(name) {
-  const profileClose = page.getByRole('button', { name: 'Close profile', exact: true });
+  const profileClose = page.getByRole('button', { name: 'Back from profile', exact: true });
   if (await profileClose.isVisible()) await profileClose.click();
   const tab = page.locator(`[data-tab="${name}"]`);
   await tab.waitFor({ state: 'visible' });
@@ -589,10 +589,10 @@ async function main() {
       await activeTab('finance');
       await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
       const opener = page.getByRole('button', { name: 'Open profile and settings' });
-      const drawer = page.getByRole('dialog', { name: 'Profile and settings' });
+      const drawer = page.getByRole('main', { name: 'Profile and settings' });
       await opener.click();
       await drawer.waitFor();
-      assert.ok(await drawer.evaluate(element => Math.abs(element.getBoundingClientRect().width - innerWidth * .75) < 2));
+      assert.ok(await drawer.evaluate(element => Math.abs(element.getBoundingClientRect().width - innerWidth) < 2));
       assert.equal(await page.locator('.app-header-shell h1').count(), 0);
       assert.ok(await page.locator('.app-main').evaluate(element => element.inert));
       assert.equal(await page.locator('[data-tab]').count(), 3);
@@ -619,7 +619,7 @@ async function main() {
       await image.waitFor();
       const first = await image.getAttribute('src');
       await upload('Replace photo', 'gold');
-      await page.waitForFunction(previous => document.querySelector('.profile-drawer .profile-avatar-image')?.getAttribute('src') !== previous, first);
+      await page.waitForFunction(previous => document.querySelector('.profile-page-screen .profile-avatar-image')?.getAttribute('src') !== previous, first);
       const replacement = await image.getAttribute('src');
       assert.notEqual(first, replacement);
       const persisted = await page.evaluate(async () => {
@@ -645,7 +645,7 @@ async function main() {
       await drawer.getByRole('button', { name: 'Remove photo' }).click();
       await image.waitFor({ state: 'detached' });
       assert.equal(await page.evaluate(async () => (await import('/src/db.ts')).StorageService.settings.get('profilePhoto', null)), null);
-      await drawer.getByRole('button', { name: 'Close profile' }).click();
+      await drawer.getByRole('button', { name: 'Back from profile' }).click();
     });
 
     await journey('compact settings and six-month sample data', async () => {
@@ -944,7 +944,7 @@ async function main() {
             else resolve();
           };
           requestAnimationFrame(sample);
-          const destinations = ['dashboard', 'finance', 'plan', 'dashboard', 'finance'];
+          const destinations = Array.from({ length: 20 }, (_, index) => ['dashboard', 'finance', 'plan', 'dashboard', 'finance'][index % 5]);
           const advance = () => {
             const next = destinations.shift();
             if (next) { document.querySelector('[data-tab="' + next + '"]').click(); requestAnimationFrame(advance); }

@@ -46,7 +46,6 @@ import PlannedCashFlow from './components/PlannedCashFlow';
 import { buildSpringSettle, readTranslateX } from './services/springMotion';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
 import ProfileDrawer from './components/ProfileDrawer';
-import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import { pickProfilePhoto, prepareProfilePhoto, PROFILE_PHOTO_SETTING, readProfilePhoto } from './services/profilePhoto';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
@@ -120,7 +119,7 @@ export default function App() {
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const activeTabRef = useRef<MainTab>('dashboard');
-  const [tabTransition, setTabTransition] = useState<{ id: number; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right' } | null>(null);
+  const [tabTransition, setTabTransition] = useState<{ id: number; from: MainTab; outgoing?: { top: number; left: number; width: number }; offset: number; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right' } | null>(null);
   const tabTransitionSequence = useRef(0);
   const activeTransitionId = useRef<number | null>(null);
   const tabTransitionStarted = useRef(0);
@@ -134,6 +133,8 @@ export default function App() {
   const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
     const previous = activeTabRef.current;
     const outgoing = document.getElementById(`screen-${previous}`);
+    const bounds = outgoing?.getBoundingClientRect();
+    const offset = outgoing ? readTranslateX(getComputedStyle(outgoing).transform) : 0;
     outgoing?.removeAttribute('data-gesture-dragging');
     outgoing?.style.removeProperty('--gesture-x');
     swipeSettleAnimation.current?.cancel();
@@ -154,7 +155,11 @@ export default function App() {
     const id = ++tabTransitionSequence.current;
     activeTransitionId.current = id;
     tabTransitionStarted.current = performance.now();
-    setTabTransition({ id, to: tab, phase: 'prepare', direction });
+    const order = PRIMARY_NAVIGATION.map(item => item.tab);
+    const previousIndex = order.indexOf(primaryDestinationForTab(previous) ?? 'dashboard');
+    const nextIndex = order.indexOf(primaryDestinationForTab(tab) ?? 'dashboard');
+    setTabTransition({ id, from: previous, to: tab, phase: 'prepare', direction: direction ?? (nextIndex < previousIndex ? 'right' : 'left'),
+      offset: offset * .25, outgoing: bounds?.width ? { top: bounds.top, left: bounds.left, width: bounds.width } : undefined });
     setActiveTab(tab);
   };
   const navigationHistory = useRef<MainTab[]>([]);
@@ -173,6 +178,7 @@ export default function App() {
   const reminderProcessing = useRef(false);
   const handledNotificationIds = useRef(new Set<number>());
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profileClosing, setProfileClosing] = useState(false);
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
   const profileScroll = useRef<Record<string, number>>({});
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
@@ -1047,14 +1053,21 @@ export default function App() {
     closeTodayCustomization();
     cancelPrimaryGesture('profile-opened');
     setShowExitConfirmation(false);
+    if (backState.current.profileOpen) return;
+    setProfileClosing(false);
     setProfileSection('home');
     setProfileOpen(true);
   };
   const closeProfile = () => {
+    setProfileClosing(true);
+  };
+  const finishProfileClose = () => {
     navigateProfileSection('home');
     setProfileOpen(false);
+    setProfileClosing(false);
   };
   const backFromProfile = () => {
+    if (profileClosing) return;
     if (profileSection === 'home') closeProfile();
     else navigateProfileSection(profileParent(profileSection));
   };
@@ -1082,10 +1095,11 @@ export default function App() {
     const { id, phase } = tabTransition;
     if (phase === 'prepare') {
       // Commit the new opaque screen once before starting its short entrance.
-      const frame = window.requestAnimationFrame(() => {
-        setTabTransition(current => current?.id === id ? { ...current, phase: 'running' } : current);
+      let second = 0;
+      const first = window.requestAnimationFrame(() => {
+        second = window.requestAnimationFrame(() => setTabTransition(current => current?.id === id ? { ...current, phase: 'running' } : current));
       });
-      return () => window.cancelAnimationFrame(frame);
+      return () => { window.cancelAnimationFrame(first); window.cancelAnimationFrame(second); };
     }
     const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 260);
     const fallback = window.setTimeout(() => finishTabTransition(id), duration + 120);
@@ -1116,10 +1130,13 @@ export default function App() {
   }, [isLocked]);
 
   const transitionPropsFor = (screen: MainTab) => {
-    if (!tabTransition || tabTransition.to !== screen || activeTab !== screen) return {};
+    if (!tabTransition) return {};
+    if (tabTransition.from === screen && tabTransition.outgoing) return { outgoing: tabTransition.outgoing };
+    if (tabTransition.to !== screen || activeTab !== screen) return {};
     return {
       transitionPhase: tabTransition.phase,
       transitionDirection: tabTransition.direction,
+      enterOffset: tabTransition.offset,
       onTransitionEnd: (event: React.TransitionEvent<HTMLDivElement>) => {
         if (event.target === event.currentTarget && event.propertyName === 'transform') finishTabTransition(tabTransition.id);
       },
@@ -2732,10 +2749,9 @@ export default function App() {
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       <header data-profile-background className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between px-4 py-3 sm:px-5">
-        <button type="button" id="profile-opener" aria-haspopup="dialog" aria-expanded={profileOpen} aria-controls={profileOpen ? "screen-settings" : undefined} onClick={openProfile} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">
+        <button type="button" id="profile-opener" aria-expanded={profileOpen} aria-controls={profileOpen ? "screen-settings" : undefined} onClick={openProfile} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">
           <ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} />
         </button>
-        <div className="lifeos-mark grid h-9 w-9 shrink-0 place-items-center rounded-xl" aria-hidden="true"><BrandMark className="h-7 w-7" /></div>
       </header>
 
       {!isOnline && (
@@ -3298,7 +3314,7 @@ export default function App() {
       </main>
 
         {/* VIEW 6: SETTINGS */}
-      {profileOpen && <ProfileDrawer section={profileSection} scrollPositions={profileScroll.current} onBack={backFromProfile} onClose={closeProfile} swipeEnabled={userPrefs.swipeNavigationEnabled}>
+      {profileOpen && <ProfileDrawer section={profileSection} scrollPositions={profileScroll.current} onBack={backFromProfile} closing={profileClosing} onExited={finishProfileClose} preset={interfaceMotion.preset} swipeEnabled={userPrefs.swipeNavigationEnabled}>
           <div className="profile-page space-y-5">
             {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 

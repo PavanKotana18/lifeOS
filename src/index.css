@@ -142,12 +142,14 @@ body {
 .app-main { width: min(100%, var(--content-measure)); min-width: 0; margin-inline: auto; padding: var(--page-gutter); touch-action: pan-y pinch-zoom; overscroll-behavior-x: contain; overflow-x: clip; }
 .ui-tab-screen-stack { display: grid; min-width: 0; align-items: start; }
 .ui-tab-screen-stack > [data-lifeos-screen] { grid-area: 1 / 1; min-width: 0; }
-.ui-tab-screen { min-width: 0; background: var(--page); }
+.ui-tab-screen { position: relative; min-width: 0; background: var(--page); }
+.ui-tab-screen[data-transition-state="outgoing"] { z-index: 0; pointer-events: none; }
+.ui-tab-screen:not([data-transition-state="outgoing"]) { z-index: 1; }
 .ui-tab-screen[hidden] { display: none !important; }
 .ui-tab-screen[data-transition-state="inactive"] { pointer-events: none; }
 .ui-tab-screen[data-transition-state="enter-prepare"] { opacity: .92; transform: translate3d(0, 4px, 0); }
-.ui-tab-screen[data-transition-direction="left"][data-transition-state="enter-prepare"] { transform: translate3d(16px, 0, 0); }
-.ui-tab-screen[data-transition-direction="right"][data-transition-state="enter-prepare"] { transform: translate3d(-16px, 0, 0); }
+.ui-tab-screen[data-transition-direction="left"][data-transition-state="enter-prepare"] { transform: translate3d(calc(16px + var(--tab-enter-offset, 0px)), 0, 0); }
+.ui-tab-screen[data-transition-direction="right"][data-transition-state="enter-prepare"] { transform: translate3d(calc(-16px + var(--tab-enter-offset, 0px)), 0, 0); }
 .ui-tab-screen[data-transition-state="entering"] { opacity: 1; transform: none; will-change: opacity, transform; transition: opacity var(--motion-tab) var(--motion-ease-tab), transform var(--motion-tab) var(--motion-ease-tab); }
 .ui-tab-screen[data-transition-state="active"] { opacity: 1; transform: none; }
 .ui-tab-screen[data-gesture-dragging="true"] { transition: none !important; transform: translate3d(var(--gesture-x, 0px), 0, 0) !important; will-change: transform; }
@@ -985,44 +987,30 @@ html.dark .text-amber-400 { color: var(--warning); }
   .profile-identity-row > button { grid-column: 2; justify-self: start; }
 }
 
-.profile-drawer-backdrop {
+.profile-page-screen {
   position: fixed;
   inset: 0;
   z-index: 65;
-  background: rgb(8 14 19 / 52%);
-}
-.profile-drawer {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  width: 75%;
+  width: 100%;
   overflow: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
   color: var(--ink);
-  border-inline-end: 1px solid var(--stroke);
-  box-shadow: .8rem 0 2.5rem rgb(0 0 0 / 21%);
-  padding: calc(env(safe-area-inset-top) + 1rem) clamp(.75rem, 3vw, 2rem) calc(env(safe-area-inset-bottom) + 1rem);
-  padding-inline-start: max(clamp(.75rem, 3vw, 2rem), env(safe-area-inset-left));
-  animation: profile-drawer-enter 180ms var(--motion-enter-ease, ease-out);
+  background: var(--page);
+  padding: env(safe-area-inset-top) max(1rem, env(safe-area-inset-right)) calc(env(safe-area-inset-bottom) + 2rem) max(1rem, env(safe-area-inset-left));
 }
-@keyframes profile-drawer-enter { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-@media (prefers-reduced-motion: reduce) { .profile-drawer { animation: none; } }
-.profile-drawer-close {
+.profile-page-toolbar {
   position: sticky;
   top: 0;
   z-index: 1;
-  margin-inline-start: auto;
-  display: grid;
-  place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 50%;
+  padding-block: .5rem;
+  background: var(--page);
 }
-.profile-drawer .profile-page { min-width: 0; }
-.profile-drawer .preference-row { min-width: 0; overflow-wrap: anywhere; }
-.profile-drawer .profile-identity-row { flex-wrap: wrap; }
-.profile-drawer .profile-identity-row h2 { min-width: min(6rem, 100%); }
+.profile-page-back { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: 50%; }
+.profile-page-screen .profile-page { min-width: 0; }
+.profile-page-screen .preference-row { min-width: 0; overflow-wrap: anywhere; }
+.profile-page-screen .profile-identity-row { flex-wrap: wrap; }
+.profile-page-screen .profile-identity-row h2 { min-width: min(6rem, 100%); }
 .profile-avatar { overflow: hidden; }
 .profile-avatar-image { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .profile-photo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .85rem; margin-top: .5rem; }

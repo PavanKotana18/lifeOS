@@ -1,15 +1,23 @@
 ﻿import { useLayoutEffect, useRef, type ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
+import { buildSpringSettle, readTranslateX } from '../services/springMotion';
+import type { MotionPresetId } from '../services/interfaceMotion';
 
-export default function ProfileDrawer({ section, scrollPositions, onBack, onClose, swipeEnabled, children }: {
+export default function ProfileDrawer({ section, scrollPositions, onBack, closing, onExited, preset, swipeEnabled, children }: {
   section: string;
   scrollPositions: Record<string, number>;
   onBack: () => void;
-  onClose: () => void;
+  closing: boolean;
+  onExited: () => void;
+  preset: MotionPresetId;
   swipeEnabled: boolean;
   children: ReactNode;
 }) {
   const panel = useRef<HTMLElement>(null);
+  const animation = useRef<Animation | null>(null);
+  const hasEntered = useRef(false);
+  const exitCallback = useRef(onExited);
+  exitCallback.current = onExited;
   const pointer = useRef<{ id: number; x: number; y: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -60,10 +68,35 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, onClos
     return () => document.removeEventListener('keydown', handleKey);
   }, [onBack]);
 
-  return <div className="profile-drawer-backdrop" onClick={event => {
-    if (event.currentTarget === event.target) onClose();
-  }}>
-    <aside ref={panel} id="screen-settings" tabIndex={-1} className="profile-drawer lifeos-panel" role="dialog" aria-modal="true" aria-label="Profile and settings"
+  useLayoutEffect(() => {
+    const element = panel.current;
+    if (!element) return;
+    const prior = animation.current;
+    const width = element.clientWidth;
+    const current = prior ? readTranslateX(getComputedStyle(element).transform) : hasEntered.current ? 0 : width;
+    prior?.cancel();
+    animation.current = null;
+    hasEntered.current = true;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || typeof element.animate !== 'function') {
+      if (closing) exitCallback.current();
+      return;
+    }
+    const end = closing ? width : 0;
+    const spring = buildSpringSettle(current - end, 0, preset);
+    const frames = spring.keyframes.map(frame => ({ ...frame, transform: `translate3d(${end + readTranslateX(frame.transform) * Math.max(1, Math.abs(current - end) / 640)}px,0,0)` }));
+    const flight = element.animate(frames, { duration: spring.duration, fill: 'forwards' });
+    animation.current = flight;
+    void flight.finished.then(() => {
+      if (animation.current !== flight) return;
+      animation.current = null;
+      if (closing) exitCallback.current();
+      else flight.cancel();
+    }, () => undefined);
+  }, [closing, preset]);
+
+  useLayoutEffect(() => () => animation.current?.cancel(), []);
+
+  return <main ref={panel} id="screen-settings" tabIndex={-1} className="profile-page-screen lifeos-panel" aria-label="Profile and settings"
       onPointerDown={event => {
         const target = event.target;
         pointer.current = null;
@@ -76,11 +109,10 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, onClos
         const start = pointer.current;
         pointer.current = null;
         if (start?.id !== event.pointerId || window.getSelection()?.isCollapsed === false) return;
-        const travel = start.x - event.clientX;
-        if (travel >= 64 && travel > Math.abs(start.y - event.clientY) * 1.5) onBack();
+        const travel = event.clientX - start.x;
+        if (start.x > 28 && travel >= 64 && travel > Math.abs(start.y - event.clientY) * 1.5) onBack();
       }}>
-      <button type="button" aria-label="Close profile" className="profile-drawer-close lifeos-raised" onClick={onClose}><X size={20} aria-hidden="true" /></button>
+      <header className="profile-page-toolbar"><button type="button" aria-label="Back from profile" className="profile-page-back lifeos-raised" onClick={onBack}><ChevronLeft size={22} aria-hidden="true" /></button></header>
       {children}
-    </aside>
-  </div>;
+    </main>;
 }

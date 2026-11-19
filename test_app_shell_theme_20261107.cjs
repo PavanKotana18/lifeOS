@@ -32,8 +32,7 @@ assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await s
 assert.doesNotMatch(shell, /theme-toggle-btn|onClick=\{toggleTheme\}/, 'header has no duplicate theme shortcut');
 assert.match(fsSource, /aria-label="Theme previews"/, 'curated theme selection remains in Settings appearance');
 assert.match(fsSource, /aria-label="Open profile and settings"/, 'profile remains the header settings entry point');
-assert.match(fsSource, /lifeos-mark/, 'LifeOS mark uses its semantic shell class');
-assert.match(fsSource, /BrandMark/, 'App shell renders the shared original vector brand mark');
+assert.doesNotMatch(fsSource, /lifeos-mark|BrandMark/, 'The permanent shell has no visible brand mark');
 assert.match(fsSource, /todayOverview\.routinesCompleted\} of \{todayOverview\.routinesDue\} done today/, 'habit heading remains in the semantic palette');
 assert.match(fsSource, /habit\.reminderTime/, 'habit details retain their reminder time');
 assert.match(footer, /onClick=\{\(\) => void CapacitorApp\.exitApp\(\)\}/, 'exit action remains connected');
