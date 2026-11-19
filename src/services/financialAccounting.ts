@@ -44,13 +44,16 @@ export function validatePlannedCommitment(record: Pick<PlannedCommitment, 'title
   for (const value of [record.recurrenceAnchorDate, record.lastPostedDate]) {
     if (value !== undefined && !isValidLocalDate(value)) throw new Error('Invalid recurrence history date.');
   }
-  if (record.lastPostedDate && record.lastPostedDate >= record.nextDueDate) throw new Error('Next due date must be after the last recorded occurrence.');
+  const recordedOnce = record.frequency === 'once' && record.status === 'recorded';
+  if ((record.status === 'recorded' && !recordedOnce) || (recordedOnce && record.lastPostedDate !== record.nextDueDate) ||
+      (record.frequency === 'once' && !recordedOnce && record.lastPostedDate)) throw new Error('Invalid one-time commitment history.');
+  if (!recordedOnce && record.lastPostedDate && record.lastPostedDate >= record.nextDueDate) throw new Error('Next due date must be after the last recorded occurrence.');
   if (!Number.isFinite(record.amount) || record.amount <= 0) throw new Error('Commitment amount must be greater than zero.');
   if (getCurrencyMetadata(record.currencyCode).code !== record.currencyCode || !/^[1-9]\d*$/.test(record.amountMinor) ||
       decimalToMinorUnits(record.amount, record.currencyCode) !== BigInt(record.amountMinor)) throw new Error('Commitment amount and currency metadata do not agree.');
-  if (!['weekly', 'monthly', 'yearly'].includes(record.frequency)) throw new Error('Unsupported commitment frequency.');
+  if (!['once', 'weekly', 'monthly', 'yearly'].includes(record.frequency)) throw new Error('Unsupported commitment frequency.');
   if (!isValidLocalDate(record.nextDueDate)) throw new Error('Commitment due date must be a valid calendar date.');
-  if (!['active', 'paused'].includes(record.status)) throw new Error('Unsupported commitment state.');
+  if (!['active', 'paused', 'recorded'].includes(record.status)) throw new Error('Unsupported commitment state.');
 }
 
 export function validatePlannedCommitmentReferences(record: PlannedCommitment, accounts: FinancialAccount[], categories: Category[]): void {

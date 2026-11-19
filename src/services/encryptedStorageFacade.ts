@@ -658,12 +658,14 @@ export function createEncryptedStorageFacade(
           type: current.type || 'expense', amount: current.amount, amountMinor: current.amountMinor,
           currencyCode: current.currencyCode, accountId: current.accountId, category: category.name,
           description: current.title, notes: current.notes, date: current.nextDueDate,
-          paymentMethod: 'Other', isRecurring: true, commitmentId: id, commitmentOccurrenceDate: current.nextDueDate,
+          paymentMethod: 'Other', isRecurring: current.frequency !== 'once', commitmentId: id, commitmentOccurrenceDate: current.nextDueDate,
         };
         helpers.validateTransactionRecord(record, true);
         const recurrenceAnchorDate = current.recurrenceAnchorDate || current.nextDueDate;
         const next = { ...current, recurrenceAnchorDate, lastPostedDate: current.nextDueDate,
-          nextDueDate: advanceCommitmentDate(current.nextDueDate, current.frequency, recurrenceAnchorDate), updatedAt: new Date().toISOString() };
+          ...(current.frequency === 'once' ? { status: 'recorded' as const }
+            : { nextDueDate: advanceCommitmentDate(current.nextDueDate, current.frequency, recurrenceAnchorDate) }),
+          updatedAt: new Date().toISOString() };
         validatePlannedCommitment(next);
         ctx.add('transactions', record);
         ctx.put('plannedCommitments', next);
@@ -672,6 +674,7 @@ export function createEncryptedStorageFacade(
       getAll: async () => (await readAll<PlannedCommitment>('plannedCommitments'))
         .sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.title.localeCompare(b.title)),
       add: async input => {
+        if (input.status === 'recorded') throw new Error('Record the occurrence to complete this plan.');
         const record: PlannedCommitment = { ...input, recurrenceAnchorDate: input.nextDueDate, lastPostedDate: undefined, id: helpers.createRecordId('commitment'), createdAt: new Date().toISOString() };
         validatePlannedCommitment(record);
         await coordinator.run(async ctx => {

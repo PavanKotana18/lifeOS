@@ -112,8 +112,8 @@ export interface ManualExchangeRate {
   updatedAt?: string;
 }
 
-export type CommitmentFrequency = 'weekly' | 'monthly' | 'yearly';
-export type CommitmentStatus = 'active' | 'paused';
+export type CommitmentFrequency = 'once' | 'weekly' | 'monthly' | 'yearly';
+export type CommitmentStatus = 'active' | 'paused' | 'recorded';
 export interface PlannedCommitment {
   /** Missing on legacy plans means expense. */
   type?: TransactionType;

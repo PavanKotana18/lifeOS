@@ -66,7 +66,7 @@ export function buildPlannedCashFlow(
       break;
     }
     const plan = commitments[index];
-    if (plan.status === 'paused') continue;
+    if (plan.status !== 'active') continue;
     try {
       validatePlannedCommitment(plan);
       let due = plan.nextDueDate;
@@ -82,7 +82,7 @@ export function buildPlannedCashFlow(
         totalSteps++;
         if (due >= firstDay) dates.push(due);
         // Monthly/yearly plans occur at most once in this selected month.
-        if (due >= firstDay && plan.frequency !== 'weekly') break;
+        if (plan.frequency === 'once' || (due >= firstDay && plan.frequency !== 'weekly')) break;
         // There can be no representable weekly occurrence after this date.
         if (due.startsWith('9999-12-') && Number(due.slice(-2)) + 7 > 31) break;
         const next = advanceCommitmentDate(due, plan.frequency, anchor);

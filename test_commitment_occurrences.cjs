@@ -108,6 +108,11 @@ const h = require('./tests/wp0/production-harness.cjs');
     await refuseWithoutMutation(monthly, monthly, /already recorded/);
     // Remove the intentionally corrupted plan before checking a valid backup.
     await f.StorageService.commitments.delete(missingCategory.id);
+    const once = await f.StorageService.commitments.add(input({ title: 'One-time repair', frequency: 'once' }));
+    const oneTimePosts = await Promise.all(Array.from({ length: 3 }, () => f.StorageService.commitments.postOccurrence(once.id, once)));
+    const onceAfter = await planById(once.id);
+    check(new Set(oneTimePosts.map(row => row.id)).size === 1 && !oneTimePosts[0].isRecurring, 'One-time confirmation records exactly one non-recurring transaction');
+    check(onceAfter.status === 'recorded' && onceAfter.nextDueDate === once.nextDueDate, 'A recorded one-time plan never advances into another occurrence');
     const backup = await f.StorageService.backup.exportData();
     const backupRows = JSON.parse(backup).tables;
     check(backupRows.plannedCommitments.some(row => row.lastPostedDate) && backupRows.transactions.some(row => row.commitmentOccurrenceDate), 'Backup export includes durable plan and occurrence history');
@@ -143,6 +148,9 @@ const h = require('./tests/wp0/production-harness.cjs');
       delete salaryPlan(tables).recurrenceAnchorDate;
     });
     await f.StorageService.backup.importData(backup, { replaceExisting: true });
+    check((await planById(once.id)).status === 'recorded' &&
+      (await f.StorageService.commitments.postOccurrence(once.id, once)).id === oneTimePosts[0].id,
+      'Backup restores one-time recording status and durable retry identity');
     check((await f.StorageService.commitments.postOccurrence(salary.id, salary)).id === salaryPosted.id, 'Backup round-trip retains idempotent confirmation identity');
 
     f.sessionManager.lock(); await f.sessionManager.waitForIdle();
