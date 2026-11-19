@@ -435,7 +435,8 @@ jobs:
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
-          target: google_apis
+          # The AOSP image keeps real WebView and IME input while avoiding Pixel Launcher ANRs on this visual journey.
+          target: default
           arch: x86_64
           profile: pixel_6
           ram-size: 4096M
