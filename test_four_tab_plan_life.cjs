@@ -51,7 +51,7 @@ const view = label => walk(tree, n => n.type === 'button' && text(n).startsWith(
 view('Today').props.onClick(); tree = renderPlan(props); markup = renderToStaticMarkup(tree);
 assert.match(markup, /late/); assert.doesNotMatch(markup, /class="plan-hub-row-title">future/); assert.doesNotMatch(markup, /class="plan-hub-row-title">undated/);
 view('Unscheduled').props.onClick(); tree = renderPlan(props);
-assert.deepEqual(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').map(n => n.props['aria-label']), ['Mark done-undated incomplete', 'Mark undated complete']);
+assert.deepEqual(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').map(n => n.props['aria-label']), ['Mark undated complete', 'Mark done-undated incomplete']);
 walk(tree, n => n.type === 'select')[0].props.onChange({ target: { value: 'all' } }); tree = renderPlan(props);
 assert.equal(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').length, 2, 'Completed undated tasks are accessible');
 walk(tree, n => n.type === 'input' && n.props.type === 'search')[0].props.onChange({ target: { value: 'missing' } }); tree = renderPlan(props);

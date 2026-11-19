@@ -24,8 +24,10 @@ assert.match(app, /window\.addEventListener\('pointermove',[\s\S]*window\.addEve
 assert.match(app, /onClickCapture=\{handleContentClickCapture\}/, 'a horizontal drag suppresses only its pointer-generated control click');
 assert.match(app, /navigateTo\(target, deltaX < 0 \? 'left' : 'right'\)/, 'a committed drag updates navigation without an intermediate reset');
 assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/, 'vertical scroll and pinch remain browser-owned');
-assert.match(retained, /hidden=\{!active\}[\s\S]*aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/,
-  'inactive retained destinations are hidden from touch, focus and assistive technology');
+assert.match(retained, /hidden=\{!active && !outgoing\}[\s\S]*aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/,
+  'inactive retained destinations are hidden while an outgoing visual may finish its transition; every inactive destination stays unavailable to assistive technology and focus');
+assert.match(css, /\.ui-tab-screen\[data-transition-state="outgoing"\][^\n]*pointer-events: none/,
+  'outgoing transition visuals cannot intercept pointer interaction');
 assert.match(css, /prefers-reduced-motion: reduce/, 'reduced-motion rules remain present');
 
 console.log('PHOENIX SWIPE WIRING: pointer ownership, ordinary controls, browser scrolling, cancellation, click preservation, inactive-screen isolation and reduced motion contracts passed.');
