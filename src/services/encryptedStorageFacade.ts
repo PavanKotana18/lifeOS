@@ -122,9 +122,10 @@ function identity(table: EncryptedTable, row: any): string {
 
 function reconcileGoal(goal: Goal, milestones: Milestone[]): Goal {
   if (goal.status === 'Paused') return goal;
-  const eligible = Number(goal.targetValue) > 0 &&
-    Number(goal.currentValue) >= Number(goal.targetValue) &&
-    milestones.every(item => item.completed);
+  const reachedTarget = goal.mode === 'milestone' ? milestones.length > 0
+    : goal.mode === 'reduce' ? Number.isFinite(goal.baselineValue) && goal.currentValue <= goal.targetValue
+    : Number(goal.targetValue) > 0 && Number(goal.currentValue) >= Number(goal.targetValue);
+  const eligible = reachedTarget && milestones.every(item => item.completed);
   return { ...goal, status: eligible ? 'Completed' :
     (goal.status === 'Completed' ? 'In Progress' : goal.status) };
 }
@@ -799,8 +800,12 @@ export function createEncryptedStorageFacade(
         const existing = await ctx.get<Goal>('goals', id);
         if (!existing) return;
         const milestones = (await ctx.getAll<Milestone>('milestones')).filter(m => m.goalId === id);
-        ctx.put('goals', reconcileGoal({ ...existing, ...changes, id,
-          createdAt: existing.createdAt, updatedAt: new Date().toISOString() }, milestones));
+        const updatedAt = new Date().toISOString();
+        const next = { ...existing, ...changes, id, createdAt: existing.createdAt, updatedAt };
+        if (next.currentValue !== existing.currentValue || next.unit !== existing.unit) {
+          next.progressHistory = [...(existing.progressHistory || []), { at: updatedAt, value: next.currentValue, unit: next.unit }];
+        }
+        ctx.put('goals', reconcileGoal(next, milestones));
       }),
 
       delete: (id: string) => coordinator.run(async ctx => {

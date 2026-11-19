@@ -175,6 +175,10 @@ export interface Goal {
   category: GoalCategory;
   targetValue: number;
   currentValue: number;
+  mode?: 'accumulate' | 'reduce' | 'milestone' | 'frequency';
+  baselineValue?: number;
+  archived?: boolean;
+  progressHistory?: { at: string; value: number; unit?: string }[];
   unit?: string;
   startDate: string; // YYYY-MM-DD
   targetDate: string; // YYYY-MM-DD

@@ -690,7 +690,11 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredNumber(r, 'targetValue', 'goals', i);
     requiredNumber(r, 'currentValue', 'goals', i);
     requiredDate(r, 'startDate', 'goals', i);
-    requiredDate(r, 'targetDate', 'goals', i);
+    if (r.targetDate !== '') requiredDate(r, 'targetDate', 'goals', i);
+    if (r.mode !== undefined && !enumValue(r.mode, ['accumulate', 'reduce', 'milestone', 'frequency'])) fail('goals', i, 'mode');
+    if (r.mode === 'reduce' && (!num(r.baselineValue) || r.baselineValue <= r.targetValue)) fail('goals', i, 'baselineValue');
+    optionalBoolean(r, 'archived', 'goals', i);
+    if (r.progressHistory !== undefined && (!Array.isArray(r.progressHistory) || r.progressHistory.some((entry: any) => !obj(entry) || !instant(entry.at) || !num(entry.value) || entry.value < 0 || (entry.unit !== undefined && !str(entry.unit))))) fail('goals', i, 'progressHistory');
     if (!enumValue(r.priority, ['Low', 'Medium', 'High', 'Urgent'])) fail('goals', i, 'priority');
     if (!enumValue(r.status, ['In Progress', 'Completed', 'Paused'])) fail('goals', i, 'status');
     requiredString(r, 'createdAt', 'goals', i);
@@ -726,6 +730,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'updatedAt', 'tasks', i);
     optionalString(r, 'recurrenceRootId', 'tasks', i);
     optionalString(r, 'spawnedTaskId', 'tasks', i);
+    optionalString(r, 'goalId', 'tasks', i);
     try { normalizeTaskSchedule(r); } catch { fail('tasks', i, 'schedule'); }
     if (r.subtasks !== undefined) {
       if (!Array.isArray(r.subtasks)) fail('tasks', i, 'subtasks');
@@ -1355,8 +1360,7 @@ const rawStorageService: IDataStorage = {
         };
         const milestones = await db.milestones.where('goalId').equals(id).toArray();
         const eligible =
-          Number(next.targetValue) > 0 &&
-          Number(next.currentValue) >= Number(next.targetValue) &&
+          (next.mode === 'milestone' ? milestones.length > 0 : next.mode === 'reduce' ? Number.isFinite(next.baselineValue) && next.currentValue <= next.targetValue : Number(next.targetValue) > 0 && Number(next.currentValue) >= Number(next.targetValue)) &&
           milestones.every(item => item.completed);
 
         if (next.status !== 'Paused') {
@@ -1364,6 +1368,7 @@ const rawStorageService: IDataStorage = {
             (next.status === 'Completed' ? 'In Progress' : next.status);
         }
 
+        if (next.currentValue !== current.currentValue || next.unit !== current.unit) next.progressHistory = [...(current.progressHistory || []), { at: next.updatedAt, value: next.currentValue, unit: next.unit }];
         await db.goals.put(next);
       });
     },
@@ -1402,8 +1407,7 @@ const rawStorageService: IDataStorage = {
           .where('goalId').equals(milestone.goalId).toArray();
 
         const eligible =
-          Number(goal.targetValue) > 0 &&
-          Number(goal.currentValue) >= Number(goal.targetValue) &&
+          (goal.mode === 'milestone' ? milestones.length > 0 : goal.mode === 'reduce' ? Number.isFinite(goal.baselineValue) && goal.currentValue <= goal.targetValue : Number(goal.targetValue) > 0 && Number(goal.currentValue) >= Number(goal.targetValue)) &&
           milestones.every(item => item.completed);
 
         if (goal.status !== 'Paused') {
