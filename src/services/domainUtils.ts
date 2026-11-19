@@ -61,7 +61,7 @@ export function sortTransactions<T extends TransactionOrder>(rows: T[], order: '
     return compareTransactionOccurrence(a, b, order === 'date-asc' ? 'asc' : 'desc');
   });
 }
-export const getTasksForDate = <T extends { dueDate?: string }>(tasks: T[], date: string) => tasks.filter(task => task.dueDate === date || Boolean(task.dueDate && task.dueDate < date && !task.completed));
+export const getTasksForDate = <T extends { dueDate?: string }>(tasks: T[], date: string) => tasks.filter(task => task.dueDate === date);
 export function getMonthCalendarDays(year: number, monthIndex: number, weekStartsOnMonday = true): string[] {
   const first = new Date(year, monthIndex, 1);
   const offset = weekStartsOnMonday ? (first.getDay() + 6) % 7 : first.getDay();
@@ -219,7 +219,7 @@ export function getTodayOverview(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || today.getFullYear() !== year || today.getMonth() !== month - 1 || today.getDate() !== day) {
     throw new TypeError('Today overview requires a valid local calendar date.');
   }
-  const dueTasks = tasks.filter(task => task.dueDate === date);
+  const dueTasks = tasks.filter(task => task.dueDate === date || Boolean(task.dueDate && task.dueDate < date && !task.completed));
   const routines = habits.filter(habit => (habit.frequency !== 'weekly' || habit.schedule?.length) && isHabitEligible(habit, date));
   const weeklyRoutines = habits.filter(habit => habit.frequency === 'weekly' && !habit.schedule?.length && isHabitEligible(habit, date));
   return {
@@ -236,7 +236,8 @@ export function calculateStreaks(
   logs: { habitId: string; date: string; completed: boolean }[],
   habitId: string,
   today: string,
-  frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly' = 'daily'
+  frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly' = 'daily',
+  habit?: Pick<Habit, 'frequency' | 'schedule' | 'pauses'>
 ) {
   const isValidCalendarDate = (date: string) => {
     if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -294,8 +295,7 @@ export function calculateStreaks(
   }
 
   const scheduled = (date: string) => habit ? isHabitEligible(habit, date) : isHabitScheduledOnDate(frequency, date);
-  const minimum = ordinal(datesFloor());
-  function datesFloor() { return [...completedDates, today].sort()[0]; }
+  const minimum = ordinal([...completedDates, today].sort()[0]);
   const dates = [...completedDates].filter(scheduled).sort();
   if (!dates.length) return { currentStreak: 0, longestStreak: 0, completedToday };
 
