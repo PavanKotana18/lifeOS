@@ -174,14 +174,42 @@ public class DirectedVisualAcceptanceTest {
         WebViewTestSupport.evaluateAsync(scenario,"new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))");
         String selectorLiteral=JSONObject.quote(selector);
         WebViewTestSupport.evaluateAsync(scenario,"new Promise(resolve=>{const field=document.querySelector("+selectorLiteral+");if(!field){resolve(false);return;}field.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true)));})");
-        JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector("+JSONObject.quote(selector)+").getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
-        final int[] xy={0,0,0};
-        scenario.onActivity(a->{int[] o=new int[2];a.getBridge().getWebView().getLocationOnScreen(o);xy[0]=o[0];xy[1]=o[1];xy[2]=a.getBridge().getWebView().getWidth();});
-        float scale=xy[2]/(float)p.getDouble(2),x=xy[0]+(float)p.getDouble(0)*scale,y=xy[1]+(float)p.getDouble(1)*scale;
-        UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();long down=SystemClock.uptimeMillis();
-        MotionEvent e=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
-        e=MotionEvent.obtain(down,SystemClock.uptimeMillis()+40,MotionEvent.ACTION_UP,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
-        until(focusCondition);
+        UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();
+        final int[] bounds = new int[4];
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            until("(()=>{const field=document.querySelector(" + selectorLiteral + ");if(!field||field.disabled)return false;" +
+                "const r=field.getBoundingClientRect();return r.width>0&&r.height>0&&document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)===field})()");
+            long focusDeadline = SystemClock.elapsedRealtime() + 5000;
+            do {
+                scenario.onActivity(a -> {
+                    android.webkit.WebView web = a.getBridge().getWebView();
+                    web.getLocationOnScreen(bounds);
+                    bounds[2] = web.getWidth();
+                    bounds[3] = web.hasWindowFocus() && web.isShown() ? 1 : 0;
+                });
+                if (bounds[3] == 0) Thread.sleep(100);
+            } while (bounds[3] == 0 && SystemClock.elapsedRealtime() < focusDeadline);
+            assertEquals("Android WebView window must own focus before tapping", 1, bounds[3]);
+            JSONArray point = new JSONArray(js("(()=>{const r=document.querySelector(" + selectorLiteral + ").getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
+            float scale = bounds[2] / (float) point.getDouble(2);
+            float x = bounds[0] + scale * (float) point.getDouble(0);
+            float y = bounds[1] + scale * (float) point.getDouble(1);
+            keyboardDiagnostics.put("tapAttempt", attempt).put("tapX", x).put("tapY", y).put("windowFocused", true);
+            long down = SystemClock.uptimeMillis();
+            MotionEvent touch = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, y, 0);
+            touch.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            try { assertTrue("Android accepts the field touch down", auto.injectInputEvent(touch, true)); }
+            finally { touch.recycle(); }
+            SystemClock.sleep(45);
+            touch = MotionEvent.obtain(down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y, 0);
+            touch.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            try { assertTrue("Android accepts the field touch up", auto.injectInputEvent(touch, true)); }
+            finally { touch.recycle(); }
+            focusDeadline = SystemClock.elapsedRealtime() + 1000;
+            while (SystemClock.elapsedRealtime() < focusDeadline && !"true".equals(js(focusCondition))) Thread.sleep(50);
+            if ("true".equals(js(focusCondition))) break;
+        }
+        assertEquals("Trusted Android taps must focus the expected field", "true", js(focusCondition));
         scenario.onActivity(a -> assertFalse("Field-aware WebView input must not be replaced by a generic capture connection",a.getBridge().getConfig().isInputCaptured()));
         long end=SystemClock.elapsedRealtime()+10000;final boolean[] visible={false};
         while(SystemClock.elapsedRealtime()<end) {
@@ -300,7 +328,7 @@ public class DirectedVisualAcceptanceTest {
     private void swipeFromTodayText() throws Exception {
         swipeFromContent(".today-focus h3","finance",true,"center");
         swipeFromContent(".money-cashflow","dashboard",false,"center");
-        swipeFromContent(".app-brand-name","finance",true,"start");
+        swipeFromContent(".app-header-shell","finance",true,"start");
         swipeFromContent(".money-action-income","dashboard",false,"center");
         swipeFromContent(".today-focus h3","finance",true,"center");
         swipeFromContent(".money-tools summary","dashboard",false,"end");
