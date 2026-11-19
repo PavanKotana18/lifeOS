@@ -30,7 +30,7 @@ check(
 // F-02: Form submission must persist the selected category.
 check(
   app.includes("const money = createMoneyRecordAmount(value('amount'), userPrefs.currency)") &&
-  app.includes("StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month') })"),
+  app.includes("StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month'),"),
   'Budget submission persists category, exact minor units, and explicit currency'
 );
 
@@ -128,8 +128,8 @@ check(
 
 // F-05: Reminder must propagate to generated recurring tasks.
 check(
-  db.includes('reminderAt: task.reminderAt'),
-  'Recurring task creation propagates reminderAt'
+  db.includes('reminderAt: shiftRecurringTaskReminder(task, nextDueDate)'),
+  'Recurring task creation shifts the legacy reminder to the new occurrence'
 );
 
 // Dashboard presents transparent per-domain counts and does not publish an opaque composite score.

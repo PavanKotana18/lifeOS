@@ -38,6 +38,13 @@ assert.equal(budgetCarryoverMinor({ ...plan, carryover: false }, [prior], expens
     assert.equal((await storage.goals.getAll()).find(item => item.id === milestones.id).status, 'Completed');
     await storage.goals.deleteMilestone(step.id);
     assert.equal((await storage.goals.getAll()).find(item => item.id === milestones.id).status, 'In Progress');
+    const recurring = await storage.tasks.add({ title: 'Monthly checklist', dueDate: '2099-02-25', recurrenceScheduledDate: '2099-02-28', recurrenceAnchorDay: 31, recurring: 'Monthly', completed: false, priority: 'Medium', subtasks: [{ id: 'step', title: 'Prepare', completed: true, createdAt: '2026-11-19T12:00:00.000Z' }] });
+    await storage.tasks.toggleCompleted(recurring.id, true);
+    const next = (await storage.tasks.getAll()).find(item => item.recurrenceRootId === recurring.id);
+    assert.equal(next.dueDate, '2099-03-31');
+    assert.equal(next.subtasks[0].completed, false);
+    await storage.tasks.toggleCompleted(recurring.id, false);
+    assert.equal((await storage.tasks.getAll()).some(item => item.id === next.id), false);
     const raw = JSON.parse(await storage.backup.exportData());
     fixture.validateBackupTables(raw.tables);
     assert.equal(raw.tables.goals.find(item => item.id === goal.id).targetDate, '');

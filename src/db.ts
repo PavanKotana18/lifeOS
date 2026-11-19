@@ -171,13 +171,23 @@ export function normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime'
   return { ...task, dueDate, dueTime, reminderAt, recurring };
 }
 
+function shiftRecurringTaskReminder(task: Task, nextDate: string): string | undefined {
+  if (!task.reminderAt || !task.dueDate) return undefined;
+  const reminder = new Date(task.reminderAt);
+  const dayOffset = (Date.parse(nextDate) - Date.parse(task.dueDate)) / 86_400_000;
+  if (!Number.isFinite(reminder.getTime()) || !Number.isInteger(dayOffset)) return undefined;
+  reminder.setDate(reminder.getDate() + dayOffset);
+  return reminder.toISOString();
+}
+
 export function getNextRecurringTaskDate(
   dueDate: string | undefined,
   recurring: Task['recurring'],
   todayLocalDate = (() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  })()
+  })(),
+  monthlyAnchorDay?: number,
 ): string {
   const parseDate = (value: string) => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -197,6 +207,7 @@ export function getNextRecurringTaskDate(
   if (!dueDate) throw new Error('Invalid recurring task due date');
   const nextDate = parseDate(dueDate);
   const today = parseDate(todayLocalDate);
+  const anchorDay = monthlyAnchorDay ?? nextDate.getUTCDate();
 
   const advance = () => {
     if (recurring === 'Daily') {
@@ -204,7 +215,6 @@ export function getNextRecurringTaskDate(
     } else if (recurring === 'Weekly') {
       nextDate.setUTCDate(nextDate.getUTCDate() + 7);
     } else if (recurring === 'Monthly') {
-      const originalDay = nextDate.getUTCDate();
       nextDate.setUTCDate(1);
       nextDate.setUTCMonth(nextDate.getUTCMonth() + 1);
       const lastDay = new Date(Date.UTC(
@@ -212,7 +222,7 @@ export function getNextRecurringTaskDate(
         nextDate.getUTCMonth() + 1,
         0
       )).getUTCDate();
-      nextDate.setUTCDate(Math.min(originalDay, lastDay));
+      nextDate.setUTCDate(Math.min(anchorDay, lastDay));
     } else {
       throw new Error('Unsupported recurrence frequency');
     }
@@ -663,6 +673,7 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredString(r, 'createdAt', 'habits', i);
     optionalString(r, 'description', 'habits', i);
     optionalString(r, 'icon', 'habits', i);
+    optionalString(r, 'goalId', 'habits', i);
     optionalBoolean(r, 'archived', 'habits', i);
     if (r.schedule !== undefined && (!Array.isArray(r.schedule) || r.schedule.some((item: any) => !obj(item) || !date(item.from) || !Array.isArray(item.weekdays) || !item.weekdays.length || new Set(item.weekdays).size !== item.weekdays.length || item.weekdays.some((day: number) => !Number.isInteger(day) || day < 0 || day > 6) || (item.sessionsPerWeek !== undefined && (!Number.isInteger(item.sessionsPerWeek) || item.sessionsPerWeek < 1 || item.sessionsPerWeek > item.weekdays.length))))) fail('habits', i, 'schedule');
     if (r.pauses !== undefined && (!Array.isArray(r.pauses) || r.pauses.some((item: any) => !obj(item) || !date(item.from) || (item.through !== undefined && (!date(item.through) || item.through < item.from))))) fail('habits', i, 'pauses');
@@ -731,6 +742,8 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'updatedAt', 'tasks', i);
     optionalString(r, 'recurrenceRootId', 'tasks', i);
     optionalString(r, 'spawnedTaskId', 'tasks', i);
+    if (r.recurrenceScheduledDate !== undefined && !date(r.recurrenceScheduledDate)) fail('tasks', i, 'recurrenceScheduledDate');
+    if (r.recurrenceAnchorDay !== undefined && (!Number.isInteger(r.recurrenceAnchorDay) || r.recurrenceAnchorDay < 1 || r.recurrenceAnchorDay > 31)) fail('tasks', i, 'recurrenceAnchorDay');
     optionalString(r, 'goalId', 'tasks', i);
     try { normalizeTaskSchedule(r); } catch { fail('tasks', i, 'schedule'); }
     if (r.subtasks !== undefined) {
@@ -1477,7 +1490,9 @@ const rawStorageService: IDataStorage = {
 
         normalizeTaskSchedule(task);
         if (task.dueDate && task.recurring && task.recurring !== 'None' && !task.completed) {
-          const nextDueDate = getNextRecurringTaskDate(task.dueDate, task.recurring);
+          const scheduled = task.recurrenceScheduledDate || task.dueDate;
+          const anchorDay = task.recurrenceAnchorDay ?? Number(scheduled.slice(-2));
+          const nextDueDate = getNextRecurringTaskDate(scheduled, task.recurring, undefined, anchorDay);
           const rootId = getRecurrenceRootId(task);
           const nextTaskId = `rec_${rootId}_${nextDueDate}`;
           const existingOccurrence = await db.tasks.get(nextTaskId);
@@ -1489,7 +1504,9 @@ const rawStorageService: IDataStorage = {
               description: task.description,
               dueDate: nextDueDate,
               dueTime: task.dueTime,
-              reminderAt: task.reminderAt,
+              reminderAt: shiftRecurringTaskReminder(task, nextDueDate),
+              goalId: task.goalId,
+              subtasks: task.subtasks?.map(({ id, title }) => ({ id, title, completed: false, createdAt: new Date().toISOString() })),
               reminderLeadMinutes: task.reminderLeadMinutes,
               dueAlertDisabled: task.dueAlertDisabled,
               priority: task.priority,
@@ -1497,6 +1514,8 @@ const rawStorageService: IDataStorage = {
               notes: task.notes,
               recurring: task.recurring,
               recurrenceRootId: rootId,
+              recurrenceAnchorDay: anchorDay,
+              recurrenceScheduledDate: nextDueDate,
               completed: false,
               createdAt: new Date().toISOString()
             });
@@ -1671,8 +1690,9 @@ export const encryptedStorageRuntime = createLifeOSEncryptedRuntime(
     validateBackupTables,
     normalizeTaskSchedule,
     getNextRecurringTaskDate: (task, fromDate) =>
-      task.dueDate ? getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate) : null,
+      task.dueDate ? getNextRecurringTaskDate(task.recurrenceScheduledDate || task.dueDate, task.recurring, fromDate, task.recurrenceAnchorDay) : null,
     getRecurrenceRootId,
+    shiftRecurringTaskReminder,
   }
 );
 

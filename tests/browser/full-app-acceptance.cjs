@@ -869,7 +869,7 @@ async function main() {
     await journey('dedicated savings projection calculates, breaks down and resets', async () => {
       await activeTab('finance');
       if (await page.getByRole('button', { name: 'Money overview' }).isVisible()) await clickButton('Money overview');
-      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Scheduled', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Savings', exact: true }).click();
       assert.equal(await page.getByText('Currency converter', { exact: true }).count(), 0);
       await clickButton('Savings projection');
       const projection = page.getByTestId('savings-projection');
@@ -888,7 +888,7 @@ async function main() {
       await clickButton('Reset');
       assert.equal(await projection.getByLabel('Starting savings').inputValue(), '0');
       await page.getByRole('button', { name: 'Savings', exact: true }).first().click();
-      await page.getByTestId('money-planning').waitFor();
+      await page.getByRole('heading', { name: 'Savings', exact: true }).waitFor();
     });
 
     await journey('Profile nested destinations and notification choices persist', async () => {

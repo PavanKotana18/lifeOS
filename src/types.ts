@@ -149,6 +149,7 @@ export interface Habit {
   reminderTime?: string; // HH:mm local time
   schedule?: { from: string; weekdays: number[]; sessionsPerWeek?: number }[];
   pauses?: { from: string; through?: string }[];
+  goalId?: string;
   reminderWeekday?: number; // Capacitor weekday value, Sunday=1 through Saturday=7
   createdAt: string;
   archived?: boolean;
@@ -226,6 +227,8 @@ export interface Task {
   createdAt: string;
   updatedAt?: string;
   recurrenceRootId?: string;
+  recurrenceAnchorDay?: number;
+  recurrenceScheduledDate?: string;
   spawnedTaskId?: string;
   goalId?: string;
   /** Optional child checklist stored inside the same encrypted task record. */
