@@ -298,6 +298,10 @@ async function main() {
       assert.equal(await views.first().getAttribute('aria-pressed'), 'true');
       await clickButton('Create Task');
       await fillDialogField('Task title', 'QA acceptance: review weekly plan');
+      const footerAtBottom = await dialog().getByRole('button', { name: 'Create Task', exact: true }).evaluate(button =>
+        innerHeight - button.getBoundingClientRect().bottom < 36,
+      );
+      assert.equal(footerAtBottom, true, 'the primary action stays at the bottom of a short composer');
       await capture('task-composer-390');
       await dialog().locator('button[type=submit]').click();
       await page.getByRole('dialog', { name: 'Protect your personal data' }).waitFor();
@@ -841,6 +845,31 @@ async function main() {
         };
       });
       assert.deepEqual(persisted, { accounts: 2, transfers: 1, commitments: 1 });
+      await clickButton('Add');
+      const once = 'QA one-time repair';
+      await dialog().getByRole('textbox', { name: 'Name', exact: true }).fill(once);
+      await fillDialogField('Amount', '12.75');
+      await dialog().getByLabel('Frequency').selectOption('once');
+      const category = dialog().getByLabel('Category (optional)', { exact: true });
+      const categoryId = await category.locator('option').nth(1).getAttribute('value');
+      assert.ok(categoryId);
+      await category.selectOption(categoryId);
+      await saveDialog('Save plan');
+      await clickButton('Record occurrence for ' + once);
+      await clickButton('Record occurrence');
+      await clickButton('History');
+      await page.getByRole('region', { name: 'Recorded occurrences' }).getByText(once, { exact: true }).waitFor();
+      const onceResult = await page.evaluate(async title => {
+        const { StorageService } = await import('/src/db.ts');
+        const plans = await StorageService.commitments.getAll();
+        const plan = plans.find(row => row.title === title);
+        const rows = (await StorageService.transactions.getAll()).filter(row => row.commitmentId === plan?.id);
+        return { status: plan?.status, count: rows.length, recurring: rows[0]?.isRecurring, amount: rows[0]?.amountMinor };
+      }, once);
+      assert.deepEqual(onceResult, { status: 'recorded', count: 1, recurring: false, amount: '1275' });
+      await clickButton('Upcoming');
+      await page.getByTestId('money-planning').getByText(name, { exact: true }).waitFor();
+      assert.equal(await page.getByTestId('money-planning').getByText(once, { exact: true }).count(), 0);
     });
     await journey('synthetic notification tap opens an encrypted Plan task', async () => {
       await activeTab('dashboard');
@@ -949,19 +978,31 @@ async function main() {
       await page.evaluate(async () => {
         document.documentElement.style.fontSize = '125%';
         window.__qaNavigationFrames = [];
-        let last = performance.now();
+        window.__qaBlankFrames = 0;
+        window.__qaCommitMs = [];
+        let last = null;
         await new Promise(resolve => {
           const sample = time => {
-            window.__qaNavigationFrames.push(time - last);
+            if (last !== null) window.__qaNavigationFrames.push(time - last);
+            const active = [...document.querySelectorAll('[data-lifeos-screen]')].filter(screen => !screen.hidden && screen.getAttribute('aria-hidden') === 'false');
+            window.__qaBlankFrames += active.length === 1 && active[0].getBoundingClientRect().width > 0 ? 0 : 1;
             last = time;
-            if (window.__qaNavigationFrames.length < 24) requestAnimationFrame(sample);
+            if (window.__qaNavigationFrames.length < 36) requestAnimationFrame(sample);
             else resolve();
           };
           requestAnimationFrame(sample);
-          const destinations = Array.from({ length: 20 }, (_, index) => ['dashboard', 'finance', 'plan', 'dashboard', 'finance'][index % 5]);
+          const destinations = Array.from({ length: 30 }, (_, index) => ['dashboard', 'plan', 'finance'][index % 3]);
           const advance = () => {
             const next = destinations.shift();
-            if (next) { document.querySelector('[data-tab="' + next + '"]').click(); requestAnimationFrame(advance); }
+            if (next) {
+              const started = performance.now();
+              document.querySelector('[data-tab="' + next + '"]').click();
+              requestAnimationFrame(() => {
+                const selected = document.querySelector('[data-tab="' + next + '"][aria-current="page"]');
+                if (selected) window.__qaCommitMs.push(performance.now() - started);
+                advance();
+              });
+            }
           };
           advance();
         });
@@ -970,9 +1011,14 @@ async function main() {
       report.navigationTiming = await page.evaluate(() => ({
         lastTransitionMs: performance.getEntriesByName('lifeos-tab-transition').slice(-1)[0]?.duration || 0,
         samples: window.__qaNavigationFrames.length,
+        blankLayoutSamples: window.__qaBlankFrames,
+        switchesCommitted: window.__qaCommitMs.length,
+        medianClickToNextFrameMs: [...window.__qaCommitMs].sort((a, b) => a - b)[Math.floor(window.__qaCommitMs.length / 2)],
+        frameIntervalsMs: window.__qaNavigationFrames,
+        samplesOver32Ms: window.__qaNavigationFrames.filter(ms => ms > 32).length,
         longestSampleMs: Math.max(...window.__qaNavigationFrames),
       }));
-      assert.ok(report.navigationTiming.lastTransitionMs > 0 && report.navigationTiming.samples === 24);
+      assert.ok(report.navigationTiming.lastTransitionMs > 0 && report.navigationTiming.samples === 36 && report.navigationTiming.blankLayoutSamples === 0 && report.navigationTiming.switchesCommitted === 30);
       await clickButton('Open profile and settings');
       await clickButton('Edit name');
       await page.getByLabel('Display name').fill('AlexandriaWithAnUnusuallyLongUnbrokenDisplayName');

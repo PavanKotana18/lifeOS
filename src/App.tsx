@@ -120,7 +120,7 @@ export default function App() {
   // Navigation & Theme State
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const activeTabRef = useRef<MainTab>('dashboard');
-  const [tabTransition, setTabTransition] = useState<{ id: number; from: MainTab; outgoing?: { top: number; left: number; width: number }; offset: number; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right' } | null>(null);
+  const [tabTransition, setTabTransition] = useState<{ id: number; from: MainTab; outgoing?: { top: number; left: number; width: number }; offset: number; to: MainTab; direction?: 'left' | 'right' } | null>(null);
   const tabTransitionSequence = useRef(0);
   const activeTransitionId = useRef<number | null>(null);
   const tabTransitionStarted = useRef(0);
@@ -159,7 +159,7 @@ export default function App() {
     const order = PRIMARY_NAVIGATION.map(item => item.tab);
     const previousIndex = order.indexOf(primaryDestinationForTab(previous) ?? 'dashboard');
     const nextIndex = order.indexOf(primaryDestinationForTab(tab) ?? 'dashboard');
-    setTabTransition({ id, from: previous, to: tab, phase: 'prepare', direction: direction ?? (nextIndex < previousIndex ? 'right' : 'left'),
+    setTabTransition({ id, from: previous, to: tab, direction: direction ?? (nextIndex < previousIndex ? 'right' : 'left'),
       offset: offset * .25, outgoing: bounds?.width ? { top: bounds.top, left: bounds.left, width: bounds.width } : undefined });
     setActiveTab(tab);
   };
@@ -202,6 +202,7 @@ export default function App() {
   const nativeGestureInsets = useRef<{ left: number; right: number } | null>(null);
   const swipeMoveFrame = useRef<number | null>(null);
   const swipeSettleAnimation = useRef<Animation | null>(null);
+  const swipeStartingOffset = useRef(0);
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
@@ -457,6 +458,8 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
 
   // Subtab & Filter States
+  const moneyPageRef = useRef<HTMLDivElement>(null);
+  const moneyRoute = useRef({ depth: 0, section: 'overview' });
   const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics' | 'projection'>('overview');
   const [transactionDetailId, setTransactionDetailId] = useState<string | null>(null);
   const transactionDetailDialog = useRef<HTMLDialogElement>(null);
@@ -580,7 +583,7 @@ export default function App() {
     releaseGestureCapture(pointerId);
     swipeOriginAction.current = null;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
-    clearGestureDrag(false);
+    clearGestureDrag(reason !== 'app-locked' && reason !== 'document-hidden');
   };
 
   useEffect(() => {
@@ -641,8 +644,6 @@ export default function App() {
       return;
     }
     if (swipeSuppressed.current) return;
-    swipeSettleAnimation.current?.cancel();
-    swipeSettleAnimation.current = null;
     swipePointer.current = null;
 
     const target = event.target instanceof Element ? event.target : null;
@@ -703,6 +704,14 @@ export default function App() {
     recordGestureTrace({ event: 'pointermove', pointerId: event.pointerId, deltaX: update.deltaX, deltaY: update.deltaY, state: update.session.axis }, import.meta.env.DEV);
     if (update.session.axis === 'vertical') { clearGestureDrag(false); return; }
     if (update.session.axis === 'horizontal' && start.axis !== 'horizontal') {
+      const movingScreen = document.getElementById(`screen-${activeTabRef.current}`);
+      swipeStartingOffset.current = movingScreen ? readTranslateX(getComputedStyle(movingScreen).transform) : 0;
+      swipeSettleAnimation.current?.cancel();
+      swipeSettleAnimation.current = null;
+      if (movingScreen) {
+        movingScreen.style.setProperty('--gesture-x', `${swipeStartingOffset.current}px`);
+        movingScreen.setAttribute('data-gesture-dragging', 'true');
+      }
       // Capture only after horizontal intent is clear. A normal button tap and
       // browser-owned vertical scroll keep their native pointer/click lifecycle.
       try { gestureSurfaceElement.current?.setPointerCapture(event.pointerId); } catch { /* Window tracking remains active if capture is unavailable. */ }
@@ -714,7 +723,7 @@ export default function App() {
       swipeMoveFrame.current = null;
       if (swipePointer.current?.pointerId !== start.pointerId || swipePointer.current.axis !== 'horizontal') return;
       screen.setAttribute('data-gesture-dragging', 'true');
-      screen.style.setProperty('--gesture-x', `${resistDrag(swipePointer.current.latestOffsetX, window.innerWidth, interfaceMotion.preset)}px`);
+      screen.style.setProperty('--gesture-x', `${swipeStartingOffset.current + resistDrag(swipePointer.current.latestOffsetX, window.innerWidth, interfaceMotion.preset)}px`);
     });
   };
 
@@ -831,7 +840,7 @@ export default function App() {
     taskDetailReturnTabRef.current = null;
     if (!destination) return;
     if (navigationHistory.current[navigationHistory.current.length - 1] === destination) navigationHistory.current = navigationHistory.current.slice(0, -1);
-    transitionToTab(destination);
+    transitionToTab(destination, 'right');
   };
 
   const navigateBack = () => {
@@ -875,7 +884,7 @@ export default function App() {
     const previous = history.next;
     if (action === 'previous-tab' && previous) {
       rememberActiveScroll();
-      transitionToTab(previous);
+      transitionToTab(previous, primaryDestinationForTab(previous) === primaryDestinationForTab(state.activeTab) ? 'right' : undefined);
       return;
     }
     if (action === 'home') {
@@ -1083,6 +1092,21 @@ export default function App() {
     root.style.scrollBehavior = previous;
   }, [activeScreenKey]);
 
+  useLayoutEffect(() => {
+    const depth = financeSubtabHistory.current.length;
+    const previous = moneyRoute.current;
+    moneyRoute.current = { depth, section: financeSubtab };
+    const page = moneyPageRef.current;
+    if (activeTab !== 'finance' || tabTransition || previous.section === financeSubtab || !page?.animate || interfaceMotion.reducedMotion) return;
+    const direction = depth < previous.depth || financeSubtab === 'overview' ? -1 : 1;
+    const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 220);
+    const animation = page.animate([
+      { translate: `${direction * 16}px`, opacity: .92 },
+      { translate: '0px', opacity: 1 },
+    ], { duration, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    return () => animation.cancel();
+  }, [activeTab, financeSubtab, interfaceMotion.reducedMotion]);
+
   const finishTabTransition = (id: number) => {
     if (activeTransitionId.current !== id) return;
     activeTransitionId.current = null;
@@ -1095,15 +1119,7 @@ export default function App() {
 
   useEffect(() => {
     if (!tabTransition) return;
-    const { id, phase } = tabTransition;
-    if (phase === 'prepare') {
-      // Commit the new opaque screen once before starting its short entrance.
-      let second = 0;
-      const first = window.requestAnimationFrame(() => {
-        second = window.requestAnimationFrame(() => setTabTransition(current => current?.id === id ? { ...current, phase: 'running' } : current));
-      });
-      return () => { window.cancelAnimationFrame(first); window.cancelAnimationFrame(second); };
-    }
+    const { id } = tabTransition;
     const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 260);
     const fallback = window.setTimeout(() => finishTabTransition(id), duration + 120);
     return () => window.clearTimeout(fallback);
@@ -1134,14 +1150,14 @@ export default function App() {
 
   const transitionPropsFor = (screen: MainTab) => {
     if (!tabTransition) return {};
-    if (tabTransition.from === screen && tabTransition.outgoing) return { outgoing: tabTransition.outgoing };
+    if (tabTransition.from === screen && tabTransition.outgoing) return { outgoing: tabTransition.outgoing, transitionDirection: tabTransition.direction };
     if (tabTransition.to !== screen || activeTab !== screen) return {};
     return {
-      transitionPhase: tabTransition.phase,
+      transitionPhase: 'running' as const,
       transitionDirection: tabTransition.direction,
       enterOffset: tabTransition.offset,
-      onTransitionEnd: (event: React.TransitionEvent<HTMLDivElement>) => {
-        if (event.target === event.currentTarget && event.propertyName === 'transform') finishTabTransition(tabTransition.id);
+      onAnimationEnd: (event: React.AnimationEvent<HTMLDivElement>) => {
+        if (event.target === event.currentTarget && event.animationName === 'lifeos-tab-enter') finishTabTransition(tabTransition.id);
       },
     };
   };
@@ -3015,7 +3031,7 @@ export default function App() {
         /></Suspense>} />
 
         <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
-          <div className="money-page space-y-5" data-detail={financeSubtab}>
+          <div ref={moneyPageRef} className="money-page space-y-5" data-detail={financeSubtab}>
             {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => { if (financeSubtab === 'projection') { navigateBack(); return; } rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }} />}
 
             {/* Money home: recorded cash flow, never an inferred account balance. */}
@@ -3181,7 +3197,7 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5"><PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+            {financeSubtab === 'planning' && <div className="space-y-5"><PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /><MoneyPlanning draftState={planningDrafts} transactions={transactions} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
               onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
               onRecordOccurrence={async row => { await runPreparedFinanceWrite(() => StorageService.commitments.postOccurrence(row.id, row)); }}
@@ -3255,21 +3271,26 @@ export default function App() {
                   const logged = h.trackingMode === 'quantity' ? habitLogs.find(log => log.habitId === h.id && log.date === todayStr && log.quantity !== undefined) : undefined;
                   const stats = getHabitStreaks(h.id, todayStr);
                   const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency, h);
+                  const scheduledToday = isHabitEligible(h, todayStr);
+                  const paused = h.pauses?.some(pause => pause.from <= todayStr && !pause.through);
+                  const nextCheckIn = !paused && !scheduledToday ? Array.from({ length: 7 }, (_, index) =>
+                    formatLocalDate(new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + index + 1)),
+                  ).find(date => isHabitEligible(h, date)) : undefined;
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
                       <div className="flex items-center gap-3">
                         <button type="button" className="min-h-11 min-w-0 flex-1 text-left" onClick={() => { setHistoricalQuantityUnit(''); setHabitsSelectedDate(todayKey); showLifeDetail({ kind: 'habit', id: h.id }); }}>
                           <span className="block safe-wrap text-sm font-semibold">{h.name}</span>
-                                                    <span className="block text-xs text-secondary">{h.trackingMode === 'quantity' ?
+                                                    <span className="block text-xs text-secondary">{paused ? 'Paused' : !scheduledToday ? (nextCheckIn ? 'Next check-in ' + formatDate(nextCheckIn) : 'No check-in scheduled') : h.trackingMode === 'quantity' ?
                             (logged?.quantityUnit && logged.quantityUnit !== h.quantityUnit ? formatHabitQuantity(logged.quantity || 0, logged.quantityUnit) :
                               logged && !logged.quantityUnit ? formatHabitQuantity(logged.quantity || 0) :
                               formatHabitQuantity(logged?.quantity || 0, h.quantityUnit) + ' / ' + formatHabitQuantity(h.targetPerDay || 0, h.quantityUnit))
                             : stats.completedToday ? 'Checked in today' : 'Ready to check in'}</span>
                           {stats.currentStreak > 0 && <span className="block text-xs text-secondary">{stats.currentStreak} day streak</span>}
                         </button>
-                        {h.trackingMode === 'quantity' ? <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-label={`Add one ${h.quantityUnit} to ${h.name}`} onClick={() => void handleHabitQuantity(h, todayStr, 1)}>+1</button>
-                          : <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? 'Done' : 'Check in'}</button>}
+                        {h.trackingMode === 'quantity' ? <button type="button" disabled={!scheduledToday} className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-label={`Add one ${h.quantityUnit} to ${h.name}`} onClick={() => void handleHabitQuantity(h, todayStr, 1)}>+1</button>
+                          : <button type="button" disabled={!scheduledToday} className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? 'Done' : 'Check in'}</button>}
                       </div>
                       <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
                     </div>
@@ -3295,13 +3316,13 @@ export default function App() {
               if (!visibleGoals.length) return <p className="goal-empty-state text-sm text-secondary">{goalsCategoryFilter !== 'all' ? 'No goals in this category.' : goalsSubtab === 'completed' ? 'No completed goals yet.' : goalsSubtab === 'paused' ? 'No paused goals.' : goalsSubtab === 'archived' ? 'No archived goals.' : 'No active goals yet.'}</p>;
               return <div className="goal-list">{visibleGoals.map(g => {
                 const pct = goalProgress(g);
-                return <article key={g.id} className="lifeos-panel goal-journey-card">
+                return <article key={g.id} className="lifeos-panel goal-journey-card" data-complete={g.status === 'Completed'}>
                   <button type="button" onClick={() => showLifeDetail({ kind: 'goal', id: g.id })} className="goal-card-open">
                     <span className="min-w-0 safe-wrap"><strong>{g.title}</strong><small>{g.category}{g.targetDate ? ` ? ${formatDate(g.targetDate)}` : ""}</small></span>
                     <span className="goal-percent tabular-nums">{pct}%</span>
                   </button>
                   <div className="lifeos-progress-track h-2 overflow-hidden rounded-full" role="progressbar" aria-label={g.title + ' progress'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: pct + '%' }} /></div>
-                  <p className="text-sm text-secondary safe-wrap">{g.mode === "milestone" ? "Milestones" : `${displayGoalMeasure(g.currentValue, g.unit)} / ${displayGoalMeasure(g.targetValue, g.unit)}`}</p>
+                  <p className="text-sm text-secondary safe-wrap">{g.mode === "milestone" ? `${milestones.filter(row => row.goalId === g.id && row.completed).length} of ${milestones.filter(row => row.goalId === g.id).length} milestones` : `${displayGoalMeasure(g.currentValue, g.unit)} / ${displayGoalMeasure(g.targetValue, g.unit)}`} {g.status === 'Completed' && <strong className="goal-completed-label">Completed</strong>}</p>
                 </article>;
               })}</div>;
             })()}
@@ -3646,7 +3667,7 @@ export default function App() {
             const error = event.currentTarget.querySelector('[data-record-validation]');
             if (error) error.textContent = target.validity.valueMissing ? 'Complete the highlighted field.' : 'Check the highlighted value.';
             if (!event.currentTarget.contains(document.activeElement) || !event.currentTarget.querySelector(':focus:invalid')) target.focus();
-          }} onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer" onMouseDown={event => event.stopPropagation()}>
+          }} onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className={`ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer${createKind === 'task' ? ' task-composer' : ''}`} onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : createKind === 'task' ? 'Create Task' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
@@ -3655,7 +3676,7 @@ export default function App() {
             <p id="record-form-description" className="sr-only">Enter the record details and save your changes.</p>
             {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
               {createKind === 'transaction' ? 'Merchant or description (optional)' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
-              <input autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
+              <input placeholder={createKind === 'task' ? 'What needs to be done?' : undefined} autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {createKind === 'transaction' && <>
               {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
@@ -3734,10 +3755,10 @@ export default function App() {
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', reminderLead: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
+              <div className="task-schedule-card grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', reminderLead: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
               <PreferenceChoice label="Priority" value={createDraft.priority || "Medium"} options={[["Low","Low"],["Medium","Medium"],["High","High"],["Urgent","Urgent"]]} onSelect={priority => { setCreateFormDirty(true); setCreateDraft({ ...createDraft, priority }); }} />
 <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={!createDraft.date || !(createDraft.time || dateOnlyAlertTime)} checked={createDraft.dueAlert !== 'off'} onChange={event => setCreateDraft({ ...createDraft, dueAlert: event.target.checked ? 'on' : 'off' })} /> Alert at due time</label>
-              <details className="task-composer-section"><summary>Notes and organization</summary>
+              <details className="task-composer-section"><summary>Add details</summary>
                 <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 {goals.length > 0 && <label className="mb-3 block text-xs text-secondary">Linked goal<select value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1 block min-h-11 w-full rounded-xl px-3"><option value="">No linked goal</option>{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
@@ -3765,7 +3786,7 @@ export default function App() {
       )}
 
       {/* Floating Bottom Nav */}
-      <nav data-profile-background ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
+      <nav data-profile-background ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2">
         <div className="app-nav-items">
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays })[icon];
@@ -3784,7 +3805,7 @@ export default function App() {
             }}
             aria-label={label}
             aria-current={isSelected ? 'page' : undefined}
-            className={`nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium ${isSelected ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
+            className={`nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium ${isSelected ? 'lifeos-accent-text font-semibold' : 'text-secondary'}`}
           >
             <Icon size={18} strokeWidth={isSelected ? 2.4 : 1.8} aria-hidden="true" />
             <span>{label}</span>

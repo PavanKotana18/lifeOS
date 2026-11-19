@@ -42,10 +42,9 @@ assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInac
 assert.match(app, /prefers-reduced-motion/);
 assert.match(app, /navigateTo\('planner'\)/, 'Today routes into the task destination');
 assert.match(app, /resolveBackAction/);
-assert.match(app, /window\.requestAnimationFrame\(\(\) =>[\s\S]*setTabTransition\(current => current\?\.id === id/,
-  'the incoming screen is painted in its prepared state before the transition starts');
-assert.match(app, /onTransitionEnd: \(event[\s\S]*propertyName === 'transform'[\s\S]*finishTabTransition/,
-  'the active transition settles on its own transform lifecycle event');
+assert.match(app, /transitionPhase: 'running'/, 'tab movement starts on the destination commit');
+assert.match(app, /onAnimationEnd: \(event[\s\S]*animationName === 'lifeos-tab-enter'[\s\S]*finishTabTransition/,
+  'only the incoming screen animation settles the tab change');
 assert.match(app, /duration \+ 120/, 'a bounded fallback resolves missing transition events');
 assert.match(app, /activeTransitionId\.current !== id/, 'obsolete transition callbacks cannot settle a newer navigation');
 assert.match(app, /transitionToTab\(tab, direction\)/, 'tap and swipe destinations share one transition path');
@@ -92,9 +91,9 @@ assert.match(css, /--motion-tab: 190ms/);
 assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/);
 assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
-assert.match(css, /enter-prepare[^}]*opacity: \.92; transform: translate3d\(0, 4px, 0\)/);
-assert.match(css, /data-transition-direction="left"\]\[data-transition-state="enter-prepare"\][^}]*translate3d\(calc\(16px \+ var\(--tab-enter-offset, 0px\)\), 0, 0\)/);
-assert.match(css, /data-transition-state="entering"[^}]*transition: opacity var\(--motion-tab\)[^}]*transform var\(--motion-tab\)/);
+assert.match(css, /data-transition-state="entering"[^}]*animation: lifeos-tab-enter/);
+assert.match(css, /data-transition-state="outgoing"[^}]*pointer-events: none[^}]*animation: lifeos-tab-exit/);
+assert.match(css, /@keyframes lifeos-tab-enter[\s\S]*var\(--tab-enter-offset/);
 assert.match(css, /\.ui-tab-screen\[data-gesture-dragging="true"\][^}]*transition: none !important[^}]*translate3d\(var\(--gesture-x/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 assert.match(css, /\.app-bottom-nav[^\n]*safe-area-inset-bottom/);

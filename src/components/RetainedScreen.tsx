@@ -1,4 +1,4 @@
-import React, { useState, type ReactNode, type TransitionEvent } from 'react';
+import React, { useLayoutEffect, useRef, useState, type ReactNode, type AnimationEvent } from 'react';
 import { retainedScreenTransitionState } from '../services/uiNavigation';
 
 type Props = {
@@ -10,12 +10,15 @@ type Props = {
   transitionDirection?: 'left' | 'right';
   id: string;
   render: () => ReactNode;
-  onTransitionEnd?: (event: TransitionEvent<HTMLDivElement>) => void;
+  onAnimationEnd?: (event: AnimationEvent<HTMLDivElement>) => void;
 };
 
 /** Mount destinations on first visit; inactive routes are never painted or interactive. */
-function RetainedScreen({ active, retainInactive = false, transitionPhase = null, transitionDirection, outgoing, enterOffset, id, render, onTransitionEnd }: Props) {
+function RetainedScreen({ active, retainInactive = false, transitionPhase = null, transitionDirection, outgoing, enterOffset, id, render, onAnimationEnd }: Props) {
   const [visited, setVisited] = useState(active);
+  const lastPaint = useRef<ReactNode>(null);
+  const content = active ? render() : lastPaint.current;
+  useLayoutEffect(() => { if (active) lastPaint.current = content; }, [active, content]);
   if (active && !visited) setVisited(true);
   if (!active && !outgoing && (!retainInactive || !visited)) return null;
 
@@ -31,9 +34,9 @@ function RetainedScreen({ active, retainInactive = false, transitionPhase = null
     hidden={!active && !outgoing}
     aria-hidden={!active}
     ref={element => element?.toggleAttribute('inert', !active)}
-    onTransitionEnd={active ? onTransitionEnd : undefined}
+    onAnimationEnd={active ? onAnimationEnd : undefined}
   >
-    {render()}
+    {content}
   </div>;
 }
 
@@ -45,6 +48,6 @@ export default React.memo(RetainedScreen, (previous, next) =>
   && previous.retainInactive === next.retainInactive
   && previous.transitionPhase === next.transitionPhase
   && previous.transitionDirection === next.transitionDirection
-  && previous.onTransitionEnd === next.onTransitionEnd
+  && previous.onAnimationEnd === next.onAnimationEnd
   && (!next.active || previous.render === next.render),
 );

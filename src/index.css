@@ -143,16 +143,25 @@ body {
 .ui-tab-screen-stack { display: grid; min-width: 0; align-items: start; }
 .ui-tab-screen-stack > [data-lifeos-screen] { grid-area: 1 / 1; min-width: 0; }
 .ui-tab-screen { position: relative; min-width: 0; background: var(--page); }
-.ui-tab-screen[data-transition-state="outgoing"] { z-index: 0; pointer-events: none; }
+.ui-tab-screen[data-transition-state="outgoing"] { z-index: 0; pointer-events: none; animation: lifeos-tab-exit var(--motion-tab) var(--motion-ease-tab) both; }
 .ui-tab-screen:is([data-transition-state="enter-prepare"], [data-transition-state="entering"]) { z-index: 1; }
 .ui-tab-screen[hidden] { display: none !important; }
 .ui-tab-screen[data-transition-state="inactive"] { pointer-events: none; }
 .ui-tab-screen[data-transition-state="enter-prepare"] { opacity: .92; transform: translate3d(0, 4px, 0); }
 .ui-tab-screen[data-transition-direction="left"][data-transition-state="enter-prepare"] { transform: translate3d(calc(16px + var(--tab-enter-offset, 0px)), 0, 0); }
 .ui-tab-screen[data-transition-direction="right"][data-transition-state="enter-prepare"] { transform: translate3d(calc(-16px + var(--tab-enter-offset, 0px)), 0, 0); }
-.ui-tab-screen[data-transition-state="entering"] { opacity: 1; transform: none; will-change: opacity, transform; transition: opacity var(--motion-tab) var(--motion-ease-tab), transform var(--motion-tab) var(--motion-ease-tab); }
+.ui-tab-screen[data-transition-direction="left"] { --tab-shift: 14px; --tab-exit-shift: -8px; }
+.ui-tab-screen[data-transition-direction="right"] { --tab-shift: -14px; --tab-exit-shift: 8px; }
+.ui-tab-screen[data-transition-state="entering"] { z-index: 1; animation: lifeos-tab-enter var(--motion-tab) var(--motion-ease-tab) both; }
+@keyframes lifeos-tab-enter {
+  from { opacity: .94; transform: translate3d(calc(var(--tab-shift, 0px) + var(--tab-enter-offset, 0px)), 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes lifeos-tab-exit {
+  to { opacity: .88; transform: translate3d(var(--tab-exit-shift, 0px), 0, 0); }
+}
 .ui-tab-screen[data-transition-state="active"] { opacity: 1; transform: none; }
-.ui-tab-screen[data-gesture-dragging="true"] { transition: none !important; transform: translate3d(var(--gesture-x, 0px), 0, 0) !important; will-change: transform; }
+.ui-tab-screen[data-gesture-dragging="true"] { transition: none !important; animation: none !important; transform: translate3d(var(--gesture-x, 0px), 0, 0) !important; will-change: transform; }
 .ui-tab-screen[data-gesture-dragging="true"] * { user-select: none; }
 .lifeos-safe-area-probe { position: fixed; z-index: -1; width: 0; height: 0; visibility: hidden; pointer-events: none; padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
 .app-bottom-nav { left: 50%; width: min(100%, var(--nav-measure)); transform: translateX(-50%); padding-bottom: calc(env(safe-area-inset-bottom) + .5rem); }
@@ -429,7 +438,7 @@ body {
 .task-subtask-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 220ms cubic-bezier(.2, .8, .2, 1); }
 .task-subtasks input[type="checkbox"] { width: 1.15rem; height: 1.15rem; flex: 0 0 auto; accent-color: var(--accent); }
 .task-detail-actions { position: sticky; bottom: 0; display: flex; gap: .6rem; margin-top: .25rem; padding: .65rem 0 max(.35rem, env(safe-area-inset-bottom)); background: linear-gradient(180deg, transparent, var(--page) 18%); }
-@keyframes task-detail-enter { from { opacity: .85; transform: translate3d(0, 1rem, 0) scale(.99); } to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); } }
+@keyframes task-detail-enter { from { opacity: .92; translate: 16px; } to { opacity: 1; translate: 0; } }
 @media (min-width: 48rem) { .task-detail-screen { inset: 1rem max(calc((100vw - 42rem) / 2), 1rem); border: 1px solid var(--stroke); border-radius: 1.5rem; padding: calc(env(safe-area-inset-top) + 1.2rem) 1.5rem calc(env(safe-area-inset-bottom) + 1.2rem); box-shadow: 0 20px 80px rgb(0 0 0 / 18%); } }
 .planner-calendar-disclosure { overflow: hidden; border: 1px solid var(--stroke); border-radius: 1rem; background: var(--surface); }
 .planner-calendar-disclosure > summary { display: flex; min-height: 3rem; align-items: center; justify-content: space-between; gap: 0.75rem; padding-inline: 0.9rem; color: var(--ink); font-size: 0.82rem; font-weight: 600; cursor: pointer; list-style-position: inside; }
@@ -943,7 +952,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 .preference-toggle { position: relative; width: 2.45rem; height: 1.45rem; flex-shrink: 0; border: 1px solid var(--stroke); border-radius: 1rem; background: var(--surface-raised); }
 .preference-toggle::after { position: absolute; content: ""; width: .95rem; height: .95rem; top: .19rem; left: .19rem; border-radius: 50%; background: var(--ink-secondary); }
 [role="switch"][aria-checked="true"] .preference-toggle { background: var(--accent); border-color: var(--accent); }
-[role="switch"][aria-checked="true"] .preference-toggle::after { left: 1.17rem; background: var(--accent-contrast, white); }
+[role="switch"][aria-checked="true"] .preference-toggle::after { transform: translateX(.98rem); background: var(--accent-contrast, white); }
 
 .recovery-stage { animation: recovery-stage-in 190ms ease-out; }
 @keyframes recovery-stage-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
@@ -1026,3 +1035,70 @@ html.dark .text-amber-400 { color: var(--warning); }
   .plan-filter-sheet[open], .preference-sheet[open] { animation: maturity-sheet-enter 160ms var(--motion-ease-tab, ease-out); }
   @keyframes maturity-sheet-enter { from { opacity: 0; transform: translate3d(0, 10px, 0); } to { opacity: 1; transform: none; } }
 }
+
+/* One feedback vocabulary for controls with real actions. */
+:where(.app-shell button, .app-shell summary, .app-shell input[type="checkbox"]):not(:disabled) {
+  transition: transform var(--motion-feedback) cubic-bezier(.18,.8,.28,1.18),
+    background-color var(--motion-feedback) ease-out, color var(--motion-feedback) ease-out,
+    border-color var(--motion-feedback) ease-out;
+}
+:where(.app-shell button, .app-shell summary, .app-shell input[type="checkbox"]):not(:disabled):active {
+  transform: scale(.98);
+  transition-duration: 55ms;
+}
+.lifeos-nav.app-bottom-nav { background: var(--surface); }
+.app-nav-items { position: relative; isolation: isolate; }
+.app-nav-items::before {
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  inset: 0 auto 0 0; width: calc(100% / 3); border-radius: .85rem;
+  background: color-mix(in srgb, var(--accent) 13%, var(--surface));
+  transform: translateX(var(--nav-selection, 0%));
+  transition: transform var(--motion-tab) var(--motion-ease-tab);
+}
+.app-nav-items:has([data-tab="finance"][aria-current]) { --nav-selection: 100%; }
+.app-nav-items:has([data-tab="plan"][aria-current]) { --nav-selection: 200%; }
+.preference-toggle, .preference-toggle::after,
+.lifeos-progress-fill, .today-focus-progress span {
+  transition: width var(--motion-panel) var(--motion-ease-tab), transform var(--motion-feedback) var(--motion-ease-tab),
+    background-color var(--motion-feedback) ease-out;
+}
+.profile-avatar-placeholder {
+  display: grid; place-items: center; width: 100%; height: 100%; border-radius: inherit;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.profile-avatar-image, .record-validation:not(:empty) { animation: lifeos-feedback-in var(--motion-feedback) ease-out both; }
+@keyframes lifeos-feedback-in { from { opacity: 0; } to { opacity: 1; } }
+.record-composer.task-composer { display: flex; flex-direction: column; background: var(--page); }
+.task-composer > * { flex-shrink: 0; }
+.task-composer input[placeholder="What needs to be done?"] {
+  min-height: 4.25rem; font-size: clamp(1.05rem, 4.6vw, 1.55rem); font-weight: 650;
+  padding-inline: 1rem; border-radius: 1rem;
+}
+.task-schedule-card {
+  margin-block: 1rem .5rem; padding: .8rem; background: var(--surface); border: 1px solid var(--stroke); border-radius: 1rem;
+}
+.task-composer .task-composer-section[open] > :not(summary) { animation: lifeos-feedback-in var(--motion-feedback) ease-out both; }
+.task-composer .ui-form-actions { margin-top: auto; border-top: 1px solid var(--stroke); background: var(--page); }
+.plan-hub-row-title::before { content: ""; display: inline-block; width: .4rem; height: .4rem; border-radius: 50%; margin-inline-end: .45rem; vertical-align: .12em; background: var(--ink-secondary); }
+.plan-hub-row-title[data-priority="High"]::before { background: var(--warning); }
+.plan-hub-row-title[data-priority="Urgent"]::before { background: var(--danger); }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *, .app-shell *::before, .app-shell *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
+  :where(.app-shell button, .app-shell summary, .app-shell input[type="checkbox"]):not(:disabled):active { transform: none; }
+}
+
+@supports (interpolate-size: allow-keywords) {
+  .task-composer .task-composer-section { interpolate-size: allow-keywords; }
+  .task-composer .task-composer-section::details-content {
+    height: 0; overflow: clip;
+    transition: height var(--motion-panel) var(--motion-ease-tab), content-visibility var(--motion-panel) allow-discrete;
+  }
+  .task-composer .task-composer-section[open]::details-content { height: auto; }
+}
+
+.scheduled-tabs { display: flex; flex-wrap: wrap; gap: .4rem; }
+.scheduled-tabs button { padding-inline: .75rem; min-height: 2.75rem; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+.scheduled-tabs button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-color: var(--accent); }
+.scheduled-plan-row, .scheduled-history-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .6rem; padding: .85rem; }
+.scheduled-plan-row[data-next="true"] { border-inline-start: 3px solid var(--accent); border-radius: .65rem; background: var(--surface-raised); }
+.scheduled-history-row + .scheduled-history-row { border-top: 1px solid var(--stroke); }

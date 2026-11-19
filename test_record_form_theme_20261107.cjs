@@ -10,7 +10,7 @@ assert.ok(start >= 0 && end > start, 'shared create/edit dialog boundaries are p
 const dialog = app.slice(start, end);
 assert.ok(/role="dialog" aria-modal="true" aria-labelledby="record-form-title"/.test(dialog));
 assert.ok(/id="record-form-title"/.test(dialog));
-assert.ok(/className="(?:ui-sheet-motion )?(?:ui-bottom-sheet )?lifeos-panel record-composer/.test(dialog));
+assert.ok(/className=(?:"|\{`)(?:ui-sheet-motion )?(?:ui-bottom-sheet )?lifeos-panel record-composer/.test(dialog));
 assert.match(fs.readFileSync('src/index.css', 'utf8'), /\.record-composer \{[^}]*max-height:[^}]*overflow:auto/);
 assert.ok(/aria-label="Close"[^\n]*min-h-11 min-w-11/.test(dialog));
 assert.ok(!/\b(?:text|bg|border)-(?:slate|indigo|emerald|amber|rose)-\d{2,3}(?:\/\d+)?\b/.test(dialog), 'dialog surfaces use semantic theme colors');

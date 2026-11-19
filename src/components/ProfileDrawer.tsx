@@ -54,7 +54,7 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
     heading?.focus({ preventScroll: true });
     element.addEventListener('scroll', saveScroll, { passive: true });
     const motion = from !== section && content && typeof content.animate === 'function' && !matchMedia('(prefers-reduced-motion: reduce)').matches
-      ? buildSpringSettle(profileParent(from) === section ? -22 : 22, 0, preset) : null;
+      ? buildSpringSettle(profileParent(from) === section ? -16 : 16, 0, preset) : null;
     const flight = motion && content?.animate(motion.keyframes, { duration: motion.duration });
     return () => { flight?.cancel(); element.removeEventListener('scroll', saveScroll); };
   }, [section, scrollPositions, preset]);

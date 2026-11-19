@@ -24,8 +24,8 @@ const profileLinks = [
   { section: 'about', title: 'About', detail: 'Version and privacy information', Icon: Info },
 ] as const;
 
-export function ProfileAvatar({ photo, initial }: { photo?: string | null; initial: string }) {
-  return photo ? <img className="profile-avatar-image" src={photo} alt="" draggable={false} /> : <span aria-hidden="true">{initial || <UserRound size={20} />}</span>;
+export function ProfileAvatar({ photo }: { photo?: string | null; initial?: string }) {
+  return photo ? <img className="profile-avatar-image" src={photo} alt="" draggable={false} /> : <span className="profile-avatar-placeholder" aria-hidden="true"><UserRound size="56%" strokeWidth={1.55} /></span>;
 }
 
 export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoError, onPhotoChange, onChange }: { name: string; initial: string; photo?: string | null; photoBusy?: boolean; photoError?: string; onPhotoChange?: (remove?: boolean) => Promise<void>; onChange: (name: string) => Promise<void> }) {
