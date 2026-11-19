@@ -172,8 +172,8 @@ async function main() {
       await db.tasks.get('rec_reminder-source_2026-11-03');
 
     check(
-      firstReminderOccurrence?.reminderAt === reminderAt,
-      'Recurring occurrence preserves the original reminder timestamp'
+      firstReminderOccurrence?.reminderAt === '2026-11-03T08:00:00.000Z',
+      'Recurring occurrence moves the reminder with the due date'
     );
 
     await StorageService.tasks.toggleCompleted(
@@ -184,9 +184,9 @@ async function main() {
       await db.tasks.get('rec_reminder-source_2026-11-04');
 
     check(
-      secondReminderOccurrence?.reminderAt === reminderAt &&
+      secondReminderOccurrence?.reminderAt === '2026-11-04T08:00:00.000Z' &&
       secondReminderOccurrence?.recurrenceRootId === 'reminder-source',
-      'Second recurrence keeps the stable root ID and reminder timestamp'
+      'Second recurrence keeps the stable root ID and moves the reminder again'
     );
 
     await add('parallel', '2026-11-03', 'Daily');
