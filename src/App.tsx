@@ -7,7 +7,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -45,10 +45,12 @@ import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
 import { buildSpringSettle, readTranslateX } from './services/springMotion';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
+import ProfileDrawer from './components/ProfileDrawer';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
+import { pickProfilePhoto, prepareProfilePhoto, PROFILE_PHOTO_SETTING, readProfilePhoto } from './services/profilePhoto';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
-import { ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, type ProfileSection } from './components/ProfileSettings';
+import { ProfileAvatar, ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences, { PreferenceChoice } from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
@@ -170,7 +172,14 @@ export default function App() {
   const pendingNotification = useRef<ReminderAction | null>(null);
   const reminderProcessing = useRef(false);
   const handledNotificationIds = useRef(new Set<number>());
+  const [profileOpen, setProfileOpen] = useState(false);
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
+  const profileScroll = useRef<Record<string, number>>({});
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+  const [pendingProfilePhoto, setPendingProfilePhoto] = useState<File | null>(null);
+  const [profilePhotoBusy, setProfilePhotoBusy] = useState(false);
+  const [profilePhotoError, setProfilePhotoError] = useState('');
+  const profilePhotoOperation = useRef(false);
   const swipePointer = useRef<PrimaryGestureSession | null>(null);
   const activeTouchPointers = useRef(new Set<number>());
   const swipeSuppressed = useRef(false);
@@ -201,7 +210,6 @@ export default function App() {
   const [displayName, setDisplayName] = useState('');
   const [clockNow, setClockNow] = useState(() => new Date());
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
-  const [logoPhase, setLogoPhase] = useState<'brand' | 'rest'>('brand');
   const logoIntroPlayed = useRef(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
@@ -389,7 +397,7 @@ export default function App() {
     }
   };
 
-  const sensitiveScreenshot = activityResumeGuard || isSensitiveScreenshotState({
+  const sensitiveScreenshot = activityResumeGuard || profileOpen || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -492,15 +500,16 @@ export default function App() {
   const [editingSavingsGoalId, setEditingSavingsGoalId] = useState<string | null>(null);
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
 
-  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail });
-  backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail };
+  const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileOpen, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail });
+  backState.current = { createKind, modalContent, plannerDetailTaskId, profileOpen, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail };
 
   const navigateTo = (destination: MainTab, direction?: 'left' | 'right') => {
+    if (destination === 'settings') { openProfile(); return; }
+    if (backState.current.profileOpen) closeProfile();
     const tab = destination === 'life' ? 'plan' : destination;
     const previous = activeTabRef.current;
     if (previous === tab) return;
     rememberActiveScroll();
-    if (tab === 'settings') navigateProfileSection('home');
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     setShowExitConfirmation(false);
     transitionToTab(tab, direction);
@@ -660,7 +669,7 @@ export default function App() {
     const context = {
       enabled: userPrefs.swipeNavigationEnabled,
       pointerType: event.pointerType,
-      settingsScreen: activeTab === 'settings',
+      settingsScreen: profileOpen,
       modalOpen: Boolean(createKind || modalContent || (activeTab === 'finance' && (financeSubtab === 'accounts' ? (accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && (planningDrafts.commitment || planningDrafts.rate)))),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
@@ -825,7 +834,9 @@ export default function App() {
       if (contextualInfo) { contextualInfo.close(); return; }
     }
     if (confirmationResolver.current) { settleConfirmation(false); return; }
-    if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(false).catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
+    if (state.profileOpen && backupPassphraseResolver.current) { backupPassphraseResolver.current(null); return; }
+    if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(state.profileOpen).catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
+    if (state.profileOpen && !state.isLocked && !backupPrompt && !recoveryOpen && secureSetup === null) { backFromProfile(); return; }
     if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
       void requestCloseFinanceDraft(); return;
     }
@@ -848,7 +859,6 @@ export default function App() {
       }
       if (state.activeTab === 'habits') { rememberActiveScroll(); setHabitsSubtab('checklist'); }
       if (state.activeTab === 'goals') { rememberActiveScroll(); setGoalsSubtab('active'); }
-      if (state.activeTab === 'settings') navigateProfileSection(profileParent(state.profileSection));
       return;
     }
     const history = popTabHistory(navigationHistory.current, 'dashboard');
@@ -1018,14 +1028,6 @@ export default function App() {
     applyDomTheme(theme, themePreviewId || visualThemeId, customAccent);
   }, [theme, visualThemeId, themePreviewId, customAccent]);
 
-  useEffect(() => {
-    if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
-    logoIntroPlayed.current = true;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setLogoPhase('rest'); return; }
-    const toRest = window.setTimeout(() => setLogoPhase('rest'), 240);
-    return () => window.clearTimeout(toRest);
-  }, [appReady, isLocked, onboardingRequired, onboardingComplete]);
-
   const activeScreenKey = screenScrollKey({
     tab: activeTab,
     financeSubtab,
@@ -1039,8 +1041,22 @@ export default function App() {
   const showLifeDetail = (detail: typeof lifeDetail) => { rememberActiveScroll(); setLifeDetail(detail); };
   const navigateProfileSection = (section: ProfileSection) => {
     if (profileSection === 'themes' && section !== 'themes' && themePreviewId) cancelVisualThemePreview();
-    rememberActiveScroll();
     setProfileSection(section);
+  };
+  const openProfile = () => {
+    closeTodayCustomization();
+    cancelPrimaryGesture('profile-opened');
+    setShowExitConfirmation(false);
+    setProfileSection('home');
+    setProfileOpen(true);
+  };
+  const closeProfile = () => {
+    navigateProfileSection('home');
+    setProfileOpen(false);
+  };
+  const backFromProfile = () => {
+    if (profileSection === 'home') closeProfile();
+    else navigateProfileSection(profileParent(profileSection));
   };
 
   useLayoutEffect(() => {
@@ -1975,7 +1991,7 @@ export default function App() {
   };
 
   const reloadAllData = async () => {
-    const [txs, cats, bgs, sgs, scs, accounts, transfers, rates, commitments, hbs, hLogs, gls, mls, tks] = await Promise.all([
+    const [txs, cats, bgs, sgs, scs, accounts, transfers, rates, commitments, hbs, hLogs, gls, mls, tks, storedPhoto] = await Promise.all([
       StorageService.transactions.getAll(),
       StorageService.categories.getAll(),
       StorageService.budgets.getAll(),
@@ -1989,7 +2005,8 @@ export default function App() {
       StorageService.habits.getLogs(),
       StorageService.goals.getAll(),
       StorageService.goals.getAllMilestones(),
-      StorageService.tasks.getAll()
+      StorageService.tasks.getAll(),
+      isEncryptedStorageActivated() && sessionManager.isUnlocked() ? StorageService.settings.get<unknown>(PROFILE_PHOTO_SETTING, null) : null,
     ]);
 
     setTransactions(txs);
@@ -2006,6 +2023,7 @@ export default function App() {
     setGoals(gls);
     setMilestones(mls);
     setTasks(tks);
+    setProfilePhoto(readProfilePhoto(storedPhoto));
     return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
   };
 
@@ -2216,6 +2234,42 @@ export default function App() {
     await StorageService.settings.set('biometricLockEnabled', true);
     await reloadAllData();
   };
+
+  const changeProfilePhoto = async (remove = false) => {
+    if (profilePhotoOperation.current) return;
+    profilePhotoOperation.current = true;
+    setProfilePhotoBusy(true);
+    setProfilePhotoError('');
+    let selected = false;
+    try {
+      if (remove) {
+        await StorageService.settings.delete(PROFILE_PHOTO_SETTING);
+        setProfilePhoto(null);
+      } else {
+        const file = await pickProfilePhoto();
+        if (file) { selected = true; setPendingProfilePhoto(file); }
+      }
+    } catch { setProfilePhotoError('Could not change your profile photo. Try again.'); }
+    finally {
+      if (!selected) { profilePhotoOperation.current = false; setProfilePhotoBusy(false); }
+    }
+  };
+
+  useEffect(() => {
+    if (!pendingProfilePhoto || !appReady || isLocked || activityResumeGuard) return;
+    setPendingProfilePhoto(null);
+    void (async () => {
+      try {
+        const photo = await prepareProfilePhoto(pendingProfilePhoto);
+        await ensurePrivateStorageBeforeWrite();
+        if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Unlock LifeOS and choose your photo again.');
+        await StorageService.settings.set(PROFILE_PHOTO_SETTING, photo);
+        setProfilePhoto(photo);
+        showToast('Profile photo saved', 'success');
+      } catch (error) { setProfilePhotoError(error instanceof Error ? error.message : 'Could not save your profile photo.'); }
+      finally { profilePhotoOperation.current = false; setProfilePhotoBusy(false); }
+    })();
+  }, [pendingProfilePhoto, appReady, isLocked, activityResumeGuard]);
 
   const runPreparedFinanceWrite = async (write: () => Promise<unknown>) => {
     if (financeWriteOperation.current) throw new Error('A financial record is already being saved.');
@@ -2613,7 +2667,7 @@ export default function App() {
   if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 lifeos-border" style={{ borderTopColor: 'var(--accent)' }} aria-hidden="true" />}</div>;
 
   if (firstRecordSecurityOpen) return <FirstRecordSecurityDialog onDecision={choice => {
-    void setSensitiveScreenshotState(false).catch(() => {});
+    void setSensitiveScreenshotState(profileOpen).catch(() => {});
     firstRecordSecurityResolver.current?.(choice);
   }} />;
 
@@ -2677,21 +2731,15 @@ export default function App() {
   return (
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
-      {/* Top Mobile Header */}
-      <header className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
-            <BrandMark className="h-8 w-8" />
-          </div>
-          <h1 className="app-brand-name">LifeOS</h1>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button type="button" onClick={() => activeTab === 'settings' ? navigateProfileSection('home') : navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
-        </div>
+      <header data-profile-background className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between px-4 py-3 sm:px-5">
+        <button type="button" id="profile-opener" aria-haspopup="dialog" aria-expanded={profileOpen} aria-controls={profileOpen ? "screen-settings" : undefined} onClick={openProfile} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">
+          <ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} />
+        </button>
+        <div className="lifeos-mark grid h-9 w-9 shrink-0 place-items-center rounded-xl" aria-hidden="true"><BrandMark className="h-7 w-7" /></div>
       </header>
 
       {!isOnline && (
-        <div role="status" aria-live="polite" className="app-content-width px-4 pt-2">
+        <div data-profile-background role="status" aria-live="polite" className="app-content-width px-4 pt-2">
           <div className="lifeos-warning lifeos-panel rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'var(--warning)' }}>
             Offline — LifeOS records remain stored on this device. Internet-dependent services may be unavailable.
           </div>
@@ -2699,7 +2747,7 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className="app-main">
+      <main data-profile-background className="app-main">
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
@@ -3246,10 +3294,13 @@ export default function App() {
           </>
         )} />
 
+        </div>
+      </main>
+
         {/* VIEW 6: SETTINGS */}
-        <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
+      {profileOpen && <ProfileDrawer section={profileSection} scrollPositions={profileScroll.current} onBack={backFromProfile} onClose={closeProfile} swipeEnabled={userPrefs.swipeNavigationEnabled}>
           <div className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
@@ -3463,9 +3514,7 @@ export default function App() {
               <div className="preference-group"><a href="./licenses/capacitor-local-notifications.txt" target="_blank" rel="noreferrer" className="preference-row lifeos-accent-text">Capacitor Local Notifications</a></div>
             </ProfileSubpage>}
           </div>
-        )} />
-        </div>
-      </main>
+      </ProfileDrawer>}
 
       {transactionDetail && <dialog ref={transactionDetailDialog} data-transaction-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transaction-detail-title" onClose={() => setTransactionDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
         <section>
@@ -3586,7 +3635,7 @@ export default function App() {
       )}
 
       {/* Floating Bottom Nav */}
-      <nav ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
+      <nav data-profile-background ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
         <div className="app-nav-items">
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays })[icon];
@@ -3621,7 +3670,7 @@ export default function App() {
 
       {/* In-app Toast Notification */}
       {toast && (
-        <div role="status" aria-live="polite" className={`ui-toast lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl ${toast.type === 'success' ? 'ui-success-feedback' : ''}`}>
+        <div role="status" aria-live="polite" className={`ui-toast lifeos-raised lifeos-border fixed top-4 left-1/2 z-[75] flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl ${toast.type === 'success' ? 'ui-success-feedback' : ''}`}>
           <span>{toast.message}</span>
         </div>
       )}

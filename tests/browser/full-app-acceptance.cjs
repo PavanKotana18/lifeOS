@@ -94,6 +94,8 @@ async function planDestination(name) {
 }
 
 async function activeTab(name) {
+  const profileClose = page.getByRole('button', { name: 'Close profile', exact: true });
+  if (await profileClose.isVisible()) await profileClose.click();
   const tab = page.locator(`[data-tab="${name}"]`);
   await tab.waitFor({ state: 'visible' });
   if (await tab.getAttribute('aria-current') !== 'page') await tab.click();
@@ -581,6 +583,69 @@ async function main() {
       } finally {
         await cdp.detach();
       }
+    });
+
+    await journey('Profile drawer focus, scroll and encrypted photo lifecycle', async () => {
+      await activeTab('finance');
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
+      const opener = page.getByRole('button', { name: 'Open profile and settings' });
+      const drawer = page.getByRole('dialog', { name: 'Profile and settings' });
+      await opener.click();
+      await drawer.waitFor();
+      assert.ok(await drawer.evaluate(element => Math.abs(element.getBoundingClientRect().width - innerWidth * .75) < 2));
+      assert.equal(await page.locator('.app-header-shell h1').count(), 0);
+      assert.ok(await page.locator('.app-main').evaluate(element => element.inert));
+      assert.equal(await page.locator('[data-tab]').count(), 3);
+      await drawer.getByRole('button', { name: 'Appearance' }).click();
+      await drawer.getByRole('button', { name: 'Themes' }).click();
+      await page.keyboard.press('Escape');
+      await drawer.getByRole('heading', { name: 'Appearance' }).waitFor();
+      await page.keyboard.press('Escape');
+      await drawer.getByRole('heading', { name: 'Profile' }).waitFor();
+      const upload = async (label, color, mimeType = 'image/png') => {
+        const data = await page.evaluate(fill => {
+          const canvas = document.createElement('canvas'); canvas.width = canvas.height = 12;
+          const context = canvas.getContext('2d'); context.fillStyle = fill; context.fillRect(0, 0, 12, 12);
+          return canvas.toDataURL().split(',')[1];
+        }, color);
+        const chooser = page.waitForEvent('filechooser');
+        await drawer.getByRole('button', { name: label }).click();
+        await (await chooser).setFiles({ name: 'synthetic-profile.png', mimeType, buffer: Buffer.from(data, 'base64') });
+      };
+      await upload('Choose photo', 'navy', 'text/plain');
+      await page.getByText('Choose a JPEG, PNG, WebP or AVIF photo under 12 MB.').waitFor();
+      await upload('Choose photo', 'navy');
+      const image = drawer.locator('img.profile-avatar-image');
+      await image.waitFor();
+      const first = await image.getAttribute('src');
+      await upload('Replace photo', 'gold');
+      await page.waitForFunction(previous => document.querySelector('.profile-drawer .profile-avatar-image')?.getAttribute('src') !== previous, first);
+      const replacement = await image.getAttribute('src');
+      assert.notEqual(first, replacement);
+      const persisted = await page.evaluate(async () => {
+        const { StorageService, lifeOSDatabase, validateBackupTables } = await import('/src/db.ts');
+        const { encryptBackup, decryptBackup } = await import('/src/services/backupCryptoService.ts');
+        const exported = await StorageService.backup.exportData();
+        const sealed = await encryptBackup(exported, 'Disposable-browser-passphrase-2026');
+        const restored = JSON.parse(await decryptBackup(sealed, 'Disposable-browser-passphrase-2026'));
+        validateBackupTables(restored.tables);
+        const raw = await lifeOSDatabase.settings.get('profilePhoto');
+        return { photo: restored.tables.settings.find(row => row.key === 'profilePhoto')?.value, rowIsEncrypted: raw?.__lifeosEncrypted === 1 && raw.value === undefined, ciphertextHasPhoto: sealed.includes('data:image/jpeg') };
+      });
+      assert.equal(persisted.photo, replacement);
+      assert.equal(persisted.rowIsEncrypted, true);
+      assert.equal(persisted.ciphertextHasPhoto, false);
+      await page.keyboard.press('Escape');
+      await drawer.waitFor({ state: 'detached' });
+      assert.ok(await opener.evaluate(element => element === document.activeElement));
+      await page.getByRole('button', { name: /View transaction QA acceptance:/ }).first().waitFor();
+      await page.reload();
+      await opener.click();
+      assert.equal(await image.getAttribute('src'), replacement);
+      await drawer.getByRole('button', { name: 'Remove photo' }).click();
+      await image.waitFor({ state: 'detached' });
+      assert.equal(await page.evaluate(async () => (await import('/src/db.ts')).StorageService.settings.get('profilePhoto', null)), null);
+      await drawer.getByRole('button', { name: 'Close profile' }).click();
     });
 
     await journey('compact settings and six-month sample data', async () => {

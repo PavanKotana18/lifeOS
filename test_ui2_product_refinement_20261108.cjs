@@ -40,7 +40,7 @@ assert.match(app, /hasFinanceChartData \? <Suspense[\s\S]*No recorded patterns y
 assert.match(app, /row => row\.hasRecords\) \|\| financeAnalytics\.categories\.length > 0/, 'chart loading depends on actual recorded data');
 assert.match(app, /data-testid="today-dashboard"/, 'the focused Today experience remains directly addressable in QA');
 const plannerStart = app.indexOf('id="screen-planner"');
-const plannerEnd = app.indexOf('id="screen-settings"', plannerStart);
+const plannerEnd = app.indexOf('{profileOpen && <ProfileDrawer', plannerStart);
 const planner = app.slice(plannerStart, plannerEnd > plannerStart ? plannerEnd : plannerStart + 40000);
 assert.match(planner, /Tasks by date/, 'the nested planner leads with tasks rather than its calendar');
 assert.match(planner, /Choose task range[\s\S]*\['today', 'tomorrow', 'upcoming', 'unscheduled'\][\s\S]*Next 7 days/, 'Today, Tomorrow, the next seven days and Unscheduled are one tap away');
