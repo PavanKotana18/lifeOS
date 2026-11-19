@@ -683,9 +683,10 @@ export const NotificationService = {
     try {
     await this.ensureChannel();
     const weekdays = [Weekday.Sunday, Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday, Weekday.Thursday, Weekday.Friday, Weekday.Saturday];
-    const entries = habits.filter(habit => !isSampleRecord(habit.id) && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(habit.reminderTime || '')).flatMap(habit => {
+    const entries = habits.filter(habit => !isSampleRecord(habit.id) && !habit.pauses?.some(pause => !pause.through) && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(habit.reminderTime || '')).flatMap(habit => {
       const [hour, minute] = (habit.reminderTime || '').split(':').map(Number);
-      const days = habit.frequency === 'weekdays' ? weekdays.slice(1, 6)
+      const selected = habit.schedule?.[habit.schedule.length - 1]?.weekdays;
+      const days = selected?.length ? selected.map(day => weekdays[day]) : habit.frequency === 'weekdays' ? weekdays.slice(1, 6)
         : habit.frequency === 'weekends' ? [Weekday.Saturday, Weekday.Sunday]
           : habit.frequency === 'weekly' ? [habit.reminderWeekday || Weekday.Monday] : weekdays;
       return days.map(weekday => ({ habit, hour, minute, weekday }));

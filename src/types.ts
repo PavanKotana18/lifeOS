@@ -146,6 +146,8 @@ export interface Habit {
   trackingMode?: 'binary' | 'quantity';
   quantityUnit?: string;
   reminderTime?: string; // HH:mm local time
+  schedule?: { from: string; weekdays: number[]; sessionsPerWeek?: number }[];
+  pauses?: { from: string; through?: string }[];
   reminderWeekday?: number; // Capacitor weekday value, Sunday=1 through Saturday=7
   createdAt: string;
   archived?: boolean;
