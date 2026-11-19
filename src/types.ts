@@ -220,6 +220,7 @@ export interface Task {
   updatedAt?: string;
   recurrenceRootId?: string;
   spawnedTaskId?: string;
+  goalId?: string;
   /** Optional child checklist stored inside the same encrypted task record. */
   subtasks?: TaskSubtask[];
 }

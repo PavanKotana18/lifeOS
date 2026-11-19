@@ -1016,3 +1016,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 .profile-photo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .85rem; margin-top: .5rem; }
 .profile-photo-actions button { min-height: 2.75rem; color: var(--accent-text, var(--accent)); font-size: .875rem; font-weight: 600; }
 .profile-photo-actions button:disabled { opacity: .6; }
+
+.task-composer-section { margin-block: .75rem; border-block-start: 1px solid var(--stroke); }
+.task-composer-section > summary { min-height: 2.75rem; display: list-item; align-content: center; cursor: pointer; font-weight: 600; }
+.task-composer-section[open] > summary { margin-block-end: .5rem; }
