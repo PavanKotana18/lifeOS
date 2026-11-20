@@ -14,12 +14,13 @@ const port = Number(process.env.LIFEOS_MOTION_PORT || 4183);
 const origin = 'http://127.0.0.1:' + port;
 const reduced = process.env.LIFEOS_MOTION_REDUCED === '1';
 const viewport = { width: 390, height: 844 };
+const colorScheme = process.env.LIFEOS_MOTION_SCHEME === 'dark' ? 'dark' : 'light';
 const primaryOnly = process.env.LIFEOS_MOTION_PRIMARY === '1';
 fs.mkdirSync(evidence, { recursive: false });
 
 const report = {
   source: process.env.LIFEOS_MOTION_SOURCE || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  viewport, reduced, sequences: {}, errors: [], interactions: [],
+  viewport, reduced, colorScheme, sequences: {}, errors: [], interactions: [],
   worktreeStatus: execFileSync('git', ['status', '--short'], { cwd: root, encoding: 'utf8' }).trim(),
 };
 let server, browser;
@@ -49,7 +50,7 @@ async function main() {
     ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' : undefined);
   browser = await chromium.launch({ executablePath, headless: true });
   report.browser = browser.version();
-  const context = await browser.newContext({ viewport, deviceScaleFactor: 1, colorScheme: 'light',
+  const context = await browser.newContext({ viewport, deviceScaleFactor: 1, colorScheme,
     reducedMotion: reduced ? 'reduce' : 'no-preference', isMobile: true, hasTouch: true });
   await context.route('**/*', route => route.request().url().startsWith(origin + '/')
     || /^(data|blob):/.test(route.request().url()) ? route.continue() : route.abort());
@@ -92,6 +93,8 @@ async function main() {
   await button('Do this later').click();
   await page.getByTestId('today-dashboard').waitFor();
 
+  assert.equal(await page.locator('html').evaluate(root => root.classList.contains('dark')), colorScheme === 'dark');
+
   const cdp = await context.newCDPSession(page);
   await cdp.send('Performance.enable');
   let frames = null;
@@ -115,6 +118,7 @@ async function main() {
     frames = [];
     const captureOrigin = Date.now() / 1000;
     await page.evaluate(({ selector, swipe, geometry }) => {
+      const masthead = document.getElementById('primary-route-title');
       const result = { frames: [], longTasks: [], longFrames: [], events: [], shifts: [], input: null, press: null, commitIndex: 0 };
       window.__ALIVE_QA_SAMPLE__ = result;
       let began;
@@ -171,12 +175,16 @@ async function main() {
             const title = heading?.getBoundingClientRect();
             return { id: node.id || query, left: rect?.left, right: rect?.right, top: rect?.top,
               heading: title ? { left: title.left, right: title.right, text: heading.textContent } : undefined, x: position.m41, y: position.m42, translate: style.translate,
-              opacity: Number(style.opacity), visibility: style.visibility, height: query.includes('disclosure') ? node.getBoundingClientRect().height : undefined,
+              width: node.matches('.alive-nav-indicator') ? node.offsetWidth : undefined, opacity: Number(style.opacity), visibility: style.visibility, height: query.includes('disclosure') ? node.getBoundingClientRect().height : undefined,
               stroke: style.strokeDashoffset, position: style.position, inert: node.inert, state: node.dataset.transitionState,
               animations: node.getAnimations().map(animation => ({ name: animation.animationName, state: animation.playState,
                 current: animation.currentTime, duration: animation.effect?.getComputedTiming().endTime })) };
           }));
-        if (began !== undefined) result.frames.push({ time: time - began, surfaces });
+        if (began !== undefined) {
+          const mastheadRect = masthead?.getBoundingClientRect();
+          const title = mastheadRect ? { x: mastheadRect.x, y: mastheadRect.y, text: masthead.textContent } : undefined;
+          result.frames.push({ time: time - began, surfaces, title });
+        }
         else if (result.press !== null) {
           const style = pressed && getComputedStyle(pressed);
           preClick.push({ time: time - result.press, surfaces, pressTransform: style?.transform ?? 'none' });
@@ -244,9 +252,27 @@ async function main() {
       const plan = page.getByRole('navigation', { name: 'Plan destinations' });
       await capture('plan-tasks-habits', button('Habits', plan), screens);
       await capture('plan-habits-goals', button('Goals', plan), screens);
+      if (await page.locator('#primary-route-title').count()) {
+        await tab('finance').click();
+        const scroll = await page.evaluate(() => {
+          window.scrollTo({ top: 160, behavior: 'instant' });
+          return window.scrollY;
+        });
+        assert.ok(scroll > 0, 'Money fixture can reproduce a scrolled route before dragging');
+        await capture('swipe-scrolled-money-plan', tab('plan'), screens, 'left');
+        assert.equal(await tab('plan').getAttribute('aria-current'), 'page');
+        await capture('swipe-plan-scrolled-money', tab('finance'), screens, 'right');
+        assert.equal(await tab('finance').getAttribute('aria-current'), 'page');
+        assert.equal(await page.evaluate(() => window.scrollY), scroll, 'swiping back restores the Money scroll offset');
+      }
       if (await page.locator('.ui-tab-viewport').count()) {
         for (const [name, sequence] of Object.entries(report.sequences)) {
+          const anchored = sequence.frames.find(frame => frame.title)?.title;
           for (const frame of sequence.frames) {
+            if (anchored) {
+              assert.equal(frame.title?.x, anchored.x, name + ' keeps the route title horizontally anchored');
+              assert.equal(frame.title?.y, anchored.y, name + ' keeps the route title vertically anchored');
+            }
             const sorted = frame.surfaces.filter(surface => surface.left != null && surface.visibility === 'visible').sort((a, b) => a.left - b.left);
             if (name.startsWith('plan-') && name !== 'plan-today') {
               assert.ok(sorted.length <= 1, name + ' renders one Plan header');
@@ -255,6 +281,17 @@ async function main() {
               assert.ok(Math.abs(sorted[0].right - sorted[1].left) < 1, name + ' panels share one seam');
               assert.equal(sorted[0].opacity, 1, name + ' foreground remains opaque');
               assert.equal(sorted[1].opacity, 1, name + ' neighboring panel remains opaque');
+              if (anchored && name.startsWith('swipe-')) {
+                const indicator = frame.surfaces.find(surface => surface.id === '.alive-nav-indicator');
+                const slotWidth = viewport.width / 3;
+                const first = ['screen-dashboard', 'screen-finance', 'screen-plan'].indexOf(sorted[0].id);
+                if (first >= 0 && indicator) {
+                  const left = Math.max(0, Math.min(1, -sorted[0].left / viewport.width));
+                  const expectedSlot = first + left;
+                  const indicatorSlot = indicator.x / (indicator.width || slotWidth);
+                  assert.ok(Math.abs(expectedSlot - indicatorSlot) < .08, name + ' indicator tracks panel progress');
+                }
+              }
             }
           }
         }

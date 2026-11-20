@@ -5,7 +5,7 @@ import ComposerShell from './ComposerShell';
 import LifeDoodle from './LifeDoodle';
 import { useState } from 'react';
 import type { Dispatch, FormEvent, SetStateAction } from 'react';
-import { ArrowDownLeft, ArrowUpRight, CalendarClock, Plus, RefreshCw } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarClock, Plus, RefreshCw } from 'lucide-react';
 import type { Category, FinancialAccount, ManualExchangeRate, PlannedCommitment, Transaction } from '../types';
 import { CURRENCY_CODES } from '../services/userPreferences';
 import { decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, minorUnitsToDecimal } from '../services/financeCore';
@@ -202,11 +202,15 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
       title={commitment.id ? 'Edit scheduled item' : 'Add scheduled item'} submitLabel={commitment.id ? 'Save changes' : 'Add scheduled item'} saving={saving} reduced={reduced}
       dismiss={() => { if (!saving) void closeCommitment(); }} onSubmit={saveCommitment} onChange={() => setCommitmentDirty(true)} onChoiceChange={() => setCommitmentDirty(true)}>
       <label className="feather-composer-lead">Name<input required maxLength={80} className={inputClass} value={commitment.title} onChange={e => setCommitment(current => current ? { ...current, title: e.target.value } : current)} /></label>
-      <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Type" value={commitment.type || 'expense'}
-                options={[["expense", "Expense"], ["income", "Income"]]} onSelect={event => setCommitment(current => current ? { ...current, type: event as 'income' | 'expense', categoryId: '' } : current)} /></div><div className="grid grid-cols-2 gap-3"><label className="block text-xs text-secondary">Amount<input required type="number" min={minorUnitsToDecimal(1n, commitment.currency)} step="any" inputMode="decimal" className={inputClass} value={commitment.amount} onChange={e => setCommitment(current => current ? { ...current, amount: e.target.value } : current)} /></label>
-      <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Frequency" value={commitment.frequency}
-                options={[["once", "One time"], ["weekly", "Weekly"], ["monthly", "Monthly"], ["yearly", "Yearly"]]} onSelect={e => setCommitment(current => current ? { ...current, frequency: e as PlannedCommitment['frequency'] } : current)} /></div>
-      <label className="block text-xs text-secondary">Next due date<input required type="date" className={inputClass} value={commitment.date} onChange={e => setCommitment(current => current ? { ...current, date: e.target.value } : current)} /></label>
+      <div className="task-quick-actions" role="group" aria-label="Scheduled item options">
+        <PreferenceChoice variant="quick" icon={<ArrowLeftRight size={18} aria-hidden="true" />} label="Type" value={commitment.type || 'expense'}
+                options={[["expense", "Expense"], ["income", "Income"]]} onSelect={event => setCommitment(current => current ? { ...current, type: event as 'income' | 'expense', categoryId: '' } : current)} />
+        <PreferenceChoice variant="quick" icon={<CalendarClock size={18} aria-hidden="true" />} label="Frequency" value={commitment.frequency}
+                options={[["once", "One time"], ["weekly", "Weekly"], ["monthly", "Monthly"], ["yearly", "Yearly"]]} onSelect={e => setCommitment(current => current ? { ...current, frequency: e as PlannedCommitment['frequency'] } : current)} />
+      </div>
+      <div className="composer-field-grid">
+        <label className="block text-xs text-secondary">Amount<input required type="number" min={minorUnitsToDecimal(1n, commitment.currency)} step="any" inputMode="decimal" className={inputClass} value={commitment.amount} onChange={e => setCommitment(current => current ? { ...current, amount: e.target.value } : current)} /></label>
+        <label className="block text-xs text-secondary">Next due date<input required type="date" className={inputClass} value={commitment.date} onChange={e => setCommitment(current => current ? { ...current, date: e.target.value } : current)} /></label>
       </div>
       <AliveDisclosure label="Currency, account and category">
       <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Currency" value={commitment.currency} searchable

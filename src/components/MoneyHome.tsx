@@ -8,6 +8,7 @@ import InfoTip from './InfoTip';
 type Props = {
   month: string;
   monthly?: boolean;
+  showHeader?: boolean;
   onMonthly?: () => void;
   monthSavings?: string;
   income: number;
@@ -42,12 +43,12 @@ const moneyDestinations = [
   { id: 'planning', label: 'Scheduled', icon: CalendarDays },
 ] as const;
 
-export default function MoneyHome({ month, monthly = false, onMonthly, monthSavings, expenseChange, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
+export default function MoneyHome({ month, monthly = false, showHeader = true, onMonthly, monthSavings, expenseChange, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
   onAddTransaction, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, legacyCurrency, locale, onEditTransaction }: Props) {
   const destinationActions = { transactions: onTransactions, accounts: onAccounts, budgets: onBudgets, savings: onSavings, analytics: onAnalytics, planning: onPlanning };
 
   return <div className="money-home" data-testid="money-home">
-    {!monthly && <FeatherHeader title="Money" heading="h1" action={<MoneyPeriod label="Money" month={month} onChange={onMonthChange} />} />}
+    {!monthly && showHeader && <FeatherHeader title="Money" heading="h1" action={<MoneyPeriod label="Money" month={month} onChange={onMonthChange} />} />}
 
     {!monthly && <button type="button" onClick={onAddTransaction} className="money-add-transaction" data-testid="money-add-transaction"><span aria-hidden="true">+</span><span><strong>Add transaction</strong></span></button>}
 

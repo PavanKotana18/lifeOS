@@ -130,7 +130,7 @@
 }
 .feather-expressive .app-main { padding-block-start: var(--space-3); }
 .feather-expressive .today-heading { gap: var(--space-2); }
-.feather-expressive .today-heading h2 { font-size: var(--type-page-title); color: var(--ink); font-weight: 640; letter-spacing: -.045em; }
+.feather-expressive .today-greeting { font-size: var(--type-section-title); color: var(--ink); }
 .feather-expressive .today-focus { border: 0; background: var(--feather-highlight); box-shadow: none; }
 .feather-expressive .today-sections { gap: var(--feather-section-gap); }
 .feather-expressive :is(.today-agenda, .today-habit-summary, .today-money-summary) {
@@ -277,8 +277,47 @@
   top: var(--gesture-top);
   left: var(--gesture-left);
   width: var(--gesture-width);
-  min-height: min(100dvh, 100%);
+  min-height: calc(100dvh - min(0px, var(--gesture-top, 0px)));
   pointer-events: none;
   transform: none;
 }
-.ui-tab-screen-stack > .ui-tab-screen[data-transition-state="outgoing"] { min-height: min(100dvh, 100%); }
+.ui-tab-screen-stack > .ui-tab-screen[data-transition-state="outgoing"] { min-height: calc(100dvh - min(0px, var(--outgoing-top, 0px))); }
+
+/* The titles stay in the masthead. Each moving panel carries both of its insets. */
+.feather-expressive .primary-masthead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block-end: var(--space-2);
+}
+.primary-masthead .app-profile-button { flex: none; }
+.primary-route-title {
+  flex: 1;
+  min-width: 0;
+  font-size: clamp(1.25rem, 5vw, 1.6rem);
+  font-weight: 650;
+  letter-spacing: -.035em;
+}
+.primary-masthead .money-period-control { flex: none; margin-inline-start: auto; }
+.feather-expressive .app-main {
+  width: 100%;
+  max-width: var(--content-measure);
+  padding-inline: 0;
+}
+.feather-expressive .ui-tab-screen-stack > .ui-tab-screen {
+  box-sizing: border-box;
+  padding-inline: var(--page-gutter);
+  overflow-x: clip;
+}
+.feather-expressive .app-bottom-nav .nav-item { color: var(--ink); }
+
+.composer-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.composer-field-grid input { min-width: 0; }
+.feather-composer button, .choice-sheet button { touch-action: manipulation; }
+.feather-composer button:active:not(:disabled), .choice-sheet button:active:not(:disabled) {
+  box-shadow: inset 0 0 0 100vmax color-mix(in srgb, currentColor 14%, transparent);
+}

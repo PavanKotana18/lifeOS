@@ -18,12 +18,18 @@ const evidence = process.env.LIFEOS_BROWSER_EVIDENCE_DIR || path.join(localAppDa
 if (fs.existsSync(evidence)) throw new Error(`Evidence directory already exists; refusing to overwrite: ${evidence}`);
 fs.mkdirSync(evidence, { recursive: true });
 
+const touchReview = process.env.LIFEOS_TOUCH_REVIEW === '1';
+const touchComposers = new Set([
+  'task-composer-390', 'add-habit-composer-390', 'add-goal-composer-390',
+  'add-transaction-composer-390', 'add-savings-composer-390', 'planned-bill-composer-390',
+]);
+
 const report = {
   startedAt: new Date().toISOString(), repository: root, commit: '',
   environment: 'Actual React application, ephemeral browser context, disposable synthetic native crypto plugin, isolated IndexedDB; no Android/physical device',
   evidence, journeys: [], responsive: [], screenshots: [], consoleErrors: [], pageErrors: [],
   accessibility: [], overflow: [], networkBlocked: [], blocked: [],
-  auditedControls: {}, controlActions: [],
+  auditedControls: {}, controlActions: [], touchFeedback: [],
 };
 const plannedJourneys = [
     'first launch and safe browsing', 'primary tab navigation and details',
@@ -31,7 +37,7 @@ const plannedJourneys = [
   'create a savings goal and contribution', 'create and check in a habit',
   'create a goal, milestone and progress update', 'back navigation and ciphertext persistence',
 ];
-let browser, context, page, vite;
+let browser, context, page, vite, touchCdp;
 let port;
 let currentJourney = 'boot';
 let failures = 0;
@@ -146,6 +152,33 @@ async function capture(name, fullPage = true) {
   const file = path.join(evidence, `${name}.png`);
   await page.screenshot({ path: file, fullPage, animations: 'disabled', timeout: 15_000 });
   report.screenshots.push(path.basename(file));
+  if (!touchReview || !touchComposers.has(name)) return;
+  touchCdp ??= await page.context().newCDPSession(page);
+  const composer = page.locator('.feather-composer:visible').last();
+  for (const selector of ['.task-option:not(:disabled), .alive-disclosure > button', 'button[type="submit"]']) {
+    const control = composer.locator(selector).first();
+    await control.scrollIntoViewIfNeeded();
+    const rect = await control.boundingBox();
+    assert.ok(rect, name + ' has a visible control for ' + selector);
+    const rest = await control.evaluate(element => getComputedStyle(element).boxShadow);
+    const handle = await control.elementHandle();
+    const touchPoints = [{ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, id: 1 }];
+    let pressed;
+    try {
+      await touchCdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints });
+      await page.waitForFunction(({ element, rest }) => getComputedStyle(element).boxShadow !== rest,
+        { element: handle, rest }, { timeout: 1200 });
+      pressed = await control.evaluate(element => getComputedStyle(element).boxShadow);
+    } finally {
+      await touchCdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+      await handle.dispose();
+    }
+    await page.waitForFunction(({ x, y, rest }) => {
+      const element = document.elementFromPoint(x, y)?.closest('button');
+      return element && getComputedStyle(element).boxShadow === rest;
+    }, { ...touchPoints[0], rest }, { timeout: 1200 });
+    report.touchFeedback.push({ scenario: name, control: await control.innerText(), rest, pressed });
+  }
 }
 
 async function inspectVisiblePage(label) {
@@ -224,7 +257,7 @@ async function main() {
     ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' : undefined);
   browser = await chromium.launch({ ...(edge ? { executablePath: edge } : {}), headless: true, timeout: 30_000 });
   context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1,
-    reducedMotion: 'reduce', acceptDownloads: false });
+    reducedMotion: 'reduce', acceptDownloads: false, isMobile: touchReview, hasTouch: touchReview });
   await context.route('**/*', route => {
     const url = route.request().url();
     if (url.startsWith(origin + '/') || url.startsWith('data:') || url.startsWith('blob:')) return route.continue();

@@ -4,7 +4,7 @@ import { useAliveNavigation } from './hooks/useAliveNavigation';
 import TaskComposerOptions from './components/TaskComposerOptions';
 import { AnimatePresence, LazyMotion, domAnimation } from 'motion/react';
 import ComposerShell from './components/ComposerShell';
-import { FeatherHeader } from './components/FeatherHeader';
+import MoneyPeriod from './components/MoneyPeriod';
 import { animateRoute } from './services/aliveMotion';
 import { useInterfaceMotion } from './hooks/useInterfaceMotion';
 import MotionPreferences from './components/MotionPreferences';
@@ -15,7 +15,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal, flushSync } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { Activity, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Flag, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, Target, WalletCards } from 'lucide-react';
+import { Activity, ArrowLeftRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Flag, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, Tag, Target, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -546,7 +546,6 @@ export default function App() {
 
   const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals') => (
     <header className="plan-destination-header">
-      <FeatherHeader title="Plan" heading="h1" />
       <nav aria-label="Plan destinations" className="plan-destinations feather-segments">
         {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }] as const).map(({ tab, label }) =>
           <button key={tab} type="button" aria-current={selected === tab ? 'page' : undefined} onClick={() => {
@@ -722,9 +721,11 @@ export default function App() {
     if (swipeSuppressed.current) return;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
     if (!start || start.pointerId !== event.pointerId) return;
-    const target = resolvePrimaryGestureEnd(activeTabRef.current, start, event.pointerId, event.clientX, event.clientY, performance.now(), userPrefs.swipeNavigationEnabled);
+    const requestedTab = resolvePrimaryGestureEnd(activeTabRef.current, start, event.pointerId, event.clientX, event.clientY, performance.now(), userPrefs.swipeNavigationEnabled);
     const deltaX = event.clientX - start.startX;
     const deltaY = event.clientY - start.startY;
+    if (start.axis === 'horizontal') navigationMotion.moveDrag(deltaX);
+    const target = requestedTab && navigationMotion.canCommitDrag(requestedTab) ? requestedTab : null;
     recordGestureTrace({ event: 'pointerup', pointerId: event.pointerId, deltaX, deltaY, state: start.axis, decision: target || 'settle-back' }, import.meta.env.DEV);
     const velocity = estimateDragVelocity([...swipeSamples.current, { x: event.clientX, time: performance.now() }], interfaceMotion.preset);
     swipeSamples.current = [];
@@ -735,7 +736,6 @@ export default function App() {
         swipeClickSuppression.current = { pointerId: event.pointerId, target: originAction, expiresAt: performance.now() + 500 };
       }
       swipeOriginAction.current = null;
-      navigationMotion.moveDrag(deltaX);
       flushSync(() => navigateTo(target, deltaX < 0 ? 'left' : 'right', velocity));
     } else {
       if (shouldSuppressPrimaryGestureClick(start) && swipeOriginAction.current) {
@@ -1086,6 +1086,7 @@ export default function App() {
     const previous = root.style.scrollBehavior;
     root.style.scrollBehavior = 'auto';
     window.scrollTo(0, scrollPositions.current[activeScreenKey] || 0);
+    navigationMotion.alignOutgoingScroll();
     root.style.scrollBehavior = previous;
   }, [activeScreenKey]);
 
@@ -2782,14 +2783,20 @@ export default function App() {
     );
   }
 
+  const primarySection = primaryDestinationForTab(activeTab);
+  const sectionTitle = PRIMARY_NAVIGATION.find(item => item.tab === primarySection)?.label;
+
   return (
     <LazyMotion features={domAnimation} strict>
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell feather-expressive" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
-      <header data-profile-background className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between px-4 py-3 sm:px-5">
+      <header data-profile-background className="app-header app-header-shell primary-masthead sticky top-0 z-40">
         <button type="button" id="profile-opener" aria-expanded={profileOpen} aria-controls={profileOpen ? "screen-settings" : undefined} onClick={openProfile} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">
           <ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} />
         </button>
+        {sectionTitle && <h1 id="primary-route-title" tabIndex={-1} className="primary-route-title">{sectionTitle}</h1>}
+        {activeTab === 'finance' && financeSubtab === 'overview' &&
+          <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />}
       </header>
 
       {!isOnline && (
@@ -2806,7 +2813,7 @@ export default function App() {
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
           <div className="today-sections command-centre" data-testid="today-dashboard">
-            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><p className="today-greeting font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</p></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
             {todayCustomizationOpen && createPortal(<div className="ui-sheet-backdrop" onMouseDown={dismissTodayCustomizationBackdrop}>
             <section id="today-customization" role="dialog" aria-modal="true" aria-labelledby="today-customization-title" aria-describedby="today-customization-description" className="today-customization ui-sheet-motion ui-bottom-sheet lifeos-panel max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border p-4">
@@ -2991,6 +2998,7 @@ export default function App() {
             {/* Money home: recorded cash flow, never an inferred account balance. */}
             {(financeSubtab === 'overview' || financeSubtab === 'monthly') && (
               <MoneyHome
+                showHeader={false}
                 month={financeMonth}
                 monthly={financeSubtab === 'monthly'}
                 onMonthly={() => navigateFinanceSubtab('monthly')}
@@ -3648,17 +3656,19 @@ export default function App() {
             </label>}
             {createKind === 'transaction' && <>
               <label className="feather-composer-lead">Amount · {createDraft.currencyCode || userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Type" value={createDraft.type}
+              <div className="task-quick-actions" role="group" aria-label="Transaction options">
+              <PreferenceChoice variant="quick" icon={<ArrowLeftRight size={18} aria-hidden="true" />} label="Type" value={createDraft.type}
                 options={[["expense", "Expense"], ["income", "Income"]]} onSelect={e => {
                 const type = e as 'income' | 'expense';
                 const category = categories.find(item => item.type === type)?.name || '';
                 setCreateDraft({ ...createDraft, type, category });
-              }} /></div>
-              <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Category" required={isEncryptedStorageActivated()} value={createDraft.category || ''} searchable
+              }} />
+              <PreferenceChoice variant="quick" icon={<Tag size={18} aria-hidden="true" />} label="Category" required={isEncryptedStorageActivated()} value={createDraft.category || ''} searchable
                 options={[["", "Select category"], ...(createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type)
                   ? [[createDraft.category, 'Legacy category: ' + createDraft.category] as const] : []), ...(categories.filter(category => category.type === createDraft.type).map(category => (
                   [String(category.name), category.name] as const
-                )))]} onSelect={e => setCreateDraft({ ...createDraft, category: e })} /></div>
+                )))]} onSelect={e => setCreateDraft({ ...createDraft, category: e })} />
+              </div>
               <label className="block text-xs text-secondary">Merchant or description (optional)<input maxLength={120} value={createDraft.title || ''} onChange={event => setCreateDraft({ ...createDraft, title: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
               {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
               <AliveDisclosure label="Currency, account, date and notes">
@@ -3732,10 +3742,12 @@ export default function App() {
               <label className="mb-4 block text-xs text-secondary">Month<input disabled={Boolean(editingBudgetId)} required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
             </>}
             {createKind === 'savings' && <>
-              <label className="text-xs text-secondary">Target amount · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="block text-xs text-secondary">Target date
-              <input type="date" required value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
-              </label>
+              <div className="composer-field-grid">
+                <label className="text-xs text-secondary">Target amount · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="block text-xs text-secondary">Target date
+                <input type="date" required value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
+                </label>
+              </div>
               <AliveDisclosure label="Savings options">
                 {!editingSavingsGoalId && <label className="text-xs text-secondary">Already saved<input type="number" min="0" step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
               <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={40} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
@@ -3787,9 +3799,9 @@ export default function App() {
             }}
             aria-label={label}
             aria-current={isSelected ? 'page' : undefined}
-            className={`nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium ${isSelected ? 'lifeos-accent-text font-semibold' : 'text-secondary'}`}
+            className="nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium"
           >
-            <Icon size={18} strokeWidth={isSelected ? 2.4 : 1.8} aria-hidden="true" />
+            <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
             <span>{label}</span>
           </button>
           );
