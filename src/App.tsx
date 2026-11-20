@@ -3588,6 +3588,7 @@ export default function App() {
             </ProfileSubpage>}
             {profileSection === 'licenses' && <ProfileSubpage title="Open-source licenses" backLabel="About LifeOS" onBack={() => navigateProfileSection('about')}>
               <LicenseText />
+              <LicenseText title="Motion" source="./licenses/motion.txt" />
             </ProfileSubpage>}
           </div>
       </ProfileDrawer>}
