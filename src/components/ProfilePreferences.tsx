@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { CURRENCY_CODES, type UserPreferences } from '../services/userPreferences';
 import { formatCurrencyChoice } from '../services/financeCore';
@@ -13,8 +13,8 @@ type Props = {
 
 type Option = readonly [value: string, name: string];
 
-export function PreferenceChoice({ label, value, options, onSelect, searchable = false, disabled = false }: {
-  label: string; value: string; options: readonly Option[]; onSelect: (value: string) => void; searchable?: boolean; disabled?: boolean;
+export function PreferenceChoice({ label, value, options, onSelect, searchable = false, disabled = false, icon, disabledHint }: {
+  label: string; value: string; options: readonly Option[]; onSelect: (value: string) => void; searchable?: boolean; disabled?: boolean; icon?: ReactNode; disabledHint?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [search, setSearch] = useState('');
@@ -22,10 +22,10 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
   const choices = searchable ? options.filter(([key, name]) => (key + ' ' + name).toLocaleLowerCase().includes(query)) : options;
   const selected = options.find(([key]) => key === value)?.[1] || value;
   return <>
-    <button type="button" className="preference-row" aria-haspopup="dialog" disabled={disabled} onClick={() => { setSearch(''); dialog.current?.showModal(); }}>
-      <span>{label}</span><span className="text-secondary text-right">{selected}</span>
+    <button type="button" className={icon ? "task-option" : "preference-row"} aria-haspopup="dialog" disabled={disabled} onClick={() => { setSearch(''); dialog.current?.showModal(); }}>
+      {icon}{icon ? <span><strong>{label}</strong><small>{disabled ? disabledHint : selected}</small></span> : <><span>{label}</span><span className="text-secondary text-right">{disabled && disabledHint ? disabledHint : selected}</span></>}
     </button>
-    {disabled && <p className="pb-2 text-xs text-secondary">Currency is locked for existing financial records.</p>}
+    {disabled && !disabledHint && <p className="pb-2 text-xs text-secondary">Currency is locked for existing financial records.</p>}
     <dialog ref={dialog} className="preference-sheet lifeos-page" data-preference-choice aria-label={label} onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
       <section className="space-y-2">
         <header className="flex items-center justify-between gap-3"><h2 className="type-section-title">{label}</h2><button type="button" className="min-h-11 px-2 text-sm" onClick={() => dialog.current?.close()}>Close</button></header>

@@ -1,20 +1,18 @@
-import React, { useLayoutEffect, useRef, useState, type ReactNode, type AnimationEvent } from 'react';
+import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { retainedScreenTransitionState } from '../services/uiNavigation';
 
 type Props = {
   active: boolean;
   retainInactive?: boolean;
   outgoing?: { top: number; left: number; width: number };
-  enterOffset?: number;
   transitionPhase?: 'prepare' | 'running' | null;
   transitionDirection?: 'left' | 'right';
   id: string;
   render: () => ReactNode;
-  onAnimationEnd?: (event: AnimationEvent<HTMLDivElement>) => void;
 };
 
 /** Mount destinations on first visit; inactive routes are never painted or interactive. */
-function RetainedScreen({ active, retainInactive = false, transitionPhase = null, transitionDirection, outgoing, enterOffset, id, render, onAnimationEnd }: Props) {
+function RetainedScreen({ active, retainInactive = false, transitionPhase = null, transitionDirection, outgoing, id, render }: Props) {
   const [visited, setVisited] = useState(active);
   const lastPaint = useRef<ReactNode>(null);
   const content = active ? render() : lastPaint.current;
@@ -30,11 +28,10 @@ function RetainedScreen({ active, retainInactive = false, transitionPhase = null
     data-transition-state={outgoing ? "outgoing" : transitionState}
     data-transition-direction={transitionDirection}
     className="ui-tab-screen alive-route"
-    style={outgoing ? { position: "fixed", ...outgoing } : { "--tab-enter-offset": `${enterOffset ?? 0}px` } as React.CSSProperties}
+    style={outgoing ? { position: "fixed", ...outgoing } : undefined}
     hidden={!active && !outgoing}
     aria-hidden={!active}
     ref={element => element?.toggleAttribute('inert', !active)}
-    onAnimationEnd={active ? onAnimationEnd : undefined}
   >
     {content}
   </div>;
@@ -44,10 +41,8 @@ export default React.memo(RetainedScreen, (previous, next) =>
   previous.id === next.id
   && previous.active === next.active
   && previous.outgoing === next.outgoing
-  && previous.enterOffset === next.enterOffset
   && previous.retainInactive === next.retainInactive
   && previous.transitionPhase === next.transitionPhase
   && previous.transitionDirection === next.transitionDirection
-  && previous.onAnimationEnd === next.onAnimationEnd
   && (!next.active || previous.render === next.render),
 );

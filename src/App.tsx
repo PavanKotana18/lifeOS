@@ -1,4 +1,5 @@
-import { AliveDisclosure } from './components/AliveDisclosure';
+import { useAliveNavigation } from './hooks/useAliveNavigation';
+import TaskComposerOptions from './components/TaskComposerOptions';
 import { AnimatePresence, motion } from 'motion/react';
 import { RecordComposerLayer } from './components/RecordComposerLayer';
 import { animateRoute } from './services/aliveMotion';
@@ -6,7 +7,7 @@ import { useInterfaceMotion } from './hooks/useInterfaceMotion';
 import MotionPreferences from './components/MotionPreferences';
 import MoneyDetailHeader from './components/MoneyDetailHeader';
 import InfoTip from './components/InfoTip';
-import { resistDrag } from './services/interfaceMotion';
+import { estimateDragVelocity, type MotionSample } from './services/interfaceMotion';
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -47,7 +48,6 @@ import MoneyHome from './components/MoneyHome';
 import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
 import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
-import { buildSpringSettle, readTranslateX } from './services/springMotion';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
 import ProfileDrawer from './components/ProfileDrawer';
 import LicenseText from './components/LicenseText';
@@ -62,8 +62,8 @@ import { useRecordDialog } from './hooks/useRecordDialog';
 import { useBottomNavigationInset } from './hooks/useBottomNavigationInset';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, resolvePlanPath, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
-import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
-import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
+import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
+import { screenScrollKey } from './services/uiNavigation';
 import { normalizeNotificationTone, NOTIFICATION_TONES, reminderCopy, type NotificationTone } from './services/notificationCopy';
 import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics, type ReminderAction } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
@@ -122,12 +122,8 @@ import {
 export default function App() {
   const interfaceMotion = useInterfaceMotion();
   // Navigation & Theme State
-  const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
-  const activeTabRef = useRef<MainTab>('dashboard');
-  const [tabTransition, setTabTransition] = useState<{ id: number; from: MainTab; outgoing?: { top: number; left: number; width: number }; offset: number; to: MainTab; direction?: 'left' | 'right' } | null>(null);
-  const tabTransitionSequence = useRef(0);
-  const activeTransitionId = useRef<number | null>(null);
-  const tabTransitionStarted = useRef(0);
+  const navigationMotion = useAliveNavigation(interfaceMotion.preset, interfaceMotion.reducedMotion);
+  const { activeTab, activeTabRef, tabTransition, transitionPropsFor } = navigationMotion;
   const releaseGestureCapture = (pointerId?: number) => {
     if (pointerId == null) return;
     const surface = gestureSurfaceElement.current;
@@ -135,37 +131,12 @@ export default function App() {
       try { surface.releasePointerCapture(pointerId); } catch { /* Pointer may already have ended. */ }
     }
   };
-  const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
-    const previous = activeTabRef.current;
-    const outgoing = document.getElementById(`screen-${previous}`);
-    const bounds = outgoing?.getBoundingClientRect();
-    const offset = outgoing ? readTranslateX(getComputedStyle(outgoing).transform) : 0;
-    outgoing?.removeAttribute('data-gesture-dragging');
-    outgoing?.style.removeProperty('--gesture-x');
-    swipeSettleAnimation.current?.cancel();
-    swipeSettleAnimation.current = null;
+  const transitionToTab = (tab: MainTab, direction?: 'left' | 'right', velocity = 0) => {
     const pointerId = swipePointer.current?.pointerId;
     swipePointer.current = null;
     swipeOriginAction.current = null;
     releaseGestureCapture(pointerId);
-    activeTabRef.current = tab;
-    if (previous === tab) { setActiveTab(tab); return; }
-    const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reducedMotion) {
-      activeTransitionId.current = null;
-      setTabTransition(null);
-      setActiveTab(tab);
-      return;
-    }
-    const id = ++tabTransitionSequence.current;
-    activeTransitionId.current = id;
-    tabTransitionStarted.current = performance.now();
-    const order = PRIMARY_NAVIGATION.map(item => item.tab);
-    const previousIndex = order.indexOf(primaryDestinationForTab(previous) ?? 'dashboard');
-    const nextIndex = order.indexOf(primaryDestinationForTab(tab) ?? 'dashboard');
-    setTabTransition({ id, from: previous, to: tab, direction: direction ?? (nextIndex < previousIndex ? 'right' : 'left'),
-      offset, outgoing: bounds?.width ? { top: bounds.top, left: bounds.left - offset, width: bounds.width } : undefined });
-    setActiveTab(tab);
+    navigationMotion.jumpTo(tab, direction, velocity);
   };
   const navigationHistory = useRef<MainTab[]>([]);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
@@ -205,8 +176,7 @@ export default function App() {
   });
   const nativeGestureInsets = useRef<{ left: number; right: number } | null>(null);
   const swipeMoveFrame = useRef<number | null>(null);
-  const swipeSettleAnimation = useRef<Animation | null>(null);
-  const swipeStartingOffset = useRef(0);
+  const swipeSamples = useRef<MotionSample[]>([]);
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
@@ -519,7 +489,7 @@ export default function App() {
   const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileOpen, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail });
   backState.current = { createKind, modalContent, plannerDetailTaskId, profileOpen, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail };
 
-  const navigateTo = (destination: MainTab, direction?: 'left' | 'right') => {
+  const navigateTo = (destination: MainTab, direction?: 'left' | 'right', velocity = 0) => {
     if (destination === 'settings') { openProfile(); return; }
     if (backState.current.profileOpen) closeProfile();
     const tab = destination === 'life' ? 'plan' : destination;
@@ -528,7 +498,7 @@ export default function App() {
     rememberActiveScroll();
     navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
     setShowExitConfirmation(false);
-    transitionToTab(tab, direction);
+    transitionToTab(tab, direction, velocity);
   };
 
   const planPathHandler = useRef<(path: string) => void>(() => undefined);
@@ -564,21 +534,7 @@ export default function App() {
     </header>
   );
 
-  const clearGestureDrag = (animateBack: boolean, velocity = 0) => {
-    const screen = document.getElementById(`screen-${activeTabRef.current}`);
-    if (!screen?.hasAttribute('data-gesture-dragging')) return;
-    const transform = getComputedStyle(screen).transform;
-    screen.removeAttribute('data-gesture-dragging');
-    screen.style.removeProperty('--gesture-x');
-    if (!animateBack || !shouldAnimatePrimaryGestureSettlement(window.matchMedia('(prefers-reduced-motion: reduce)').matches) || typeof screen.animate !== 'function') return;
-    const settle = buildSpringSettle(readTranslateX(transform), velocity, interfaceMotion.preset);
-    if (!settle.duration) return;
-    const animation = screen.animate(settle.keyframes, { duration: settle.duration, easing: 'linear' });
-    swipeSettleAnimation.current = animation;
-    void animation.finished.catch(() => undefined).finally(() => {
-      if (swipeSettleAnimation.current === animation) swipeSettleAnimation.current = null;
-    });
-  };
+  const clearGestureDrag = (animateBack: boolean, velocity = 0) => navigationMotion.endDrag(animateBack, velocity);
 
   const cancelPrimaryGesture = (reason: string, pointerId = swipePointer.current?.pointerId ?? -1) => {
     const session = swipePointer.current;
@@ -603,12 +559,14 @@ export default function App() {
 
   useEffect(() => {
     const cancelForEnvironmentChange = () => {
+      navigationMotion.cancel();
       cancelPrimaryGesture('window-resized');
       activeTouchPointers.current.clear();
       swipeSuppressed.current = false;
     };
     const cancelForBackground = () => {
       if (document.visibilityState !== 'visible') {
+        navigationMotion.cancel();
         cancelPrimaryGesture('document-hidden');
         activeTouchPointers.current.clear();
         swipeSuppressed.current = false;
@@ -703,31 +661,24 @@ export default function App() {
     const start = swipePointer.current;
     if (!start || start.pointerId !== event.pointerId) return;
     if (start.viewportWidth !== window.innerWidth) { cancelPrimaryGesture('viewport-changed', event.pointerId); return; }
+    if (start.axis === 'pending') swipeSamples.current = [{ x: start.startX, time: start.startedAt }];
     const update = updatePrimaryGesture(start, event.pointerId, event.clientX, event.clientY);
     swipePointer.current = update.session;
+    swipeSamples.current = [...swipeSamples.current.slice(-7), { x: event.clientX, time: performance.now() }];
     recordGestureTrace({ event: 'pointermove', pointerId: event.pointerId, deltaX: update.deltaX, deltaY: update.deltaY, state: update.session.axis }, import.meta.env.DEV);
     if (update.session.axis === 'vertical') { clearGestureDrag(false); return; }
     if (update.session.axis === 'horizontal' && start.axis !== 'horizontal') {
-      const movingScreen = document.getElementById(`screen-${activeTabRef.current}`);
-      swipeStartingOffset.current = movingScreen ? readTranslateX(getComputedStyle(movingScreen).transform) : 0;
-      swipeSettleAnimation.current?.cancel();
-      swipeSettleAnimation.current = null;
-      if (movingScreen) {
-        movingScreen.style.setProperty('--gesture-x', `${swipeStartingOffset.current}px`);
-        movingScreen.setAttribute('data-gesture-dragging', 'true');
-      }
+      navigationMotion.beginDrag();
       // Capture only after horizontal intent is clear. A normal button tap and
       // browser-owned vertical scroll keep their native pointer/click lifecycle.
       try { gestureSurfaceElement.current?.setPointerCapture(event.pointerId); } catch { /* Window tracking remains active if capture is unavailable. */ }
     }
     if (!update.accepted || swipeMoveFrame.current !== null) return;
-    const screen = document.getElementById(`screen-${activeTabRef.current}`);
-    if (!screen) return;
     swipeMoveFrame.current = window.requestAnimationFrame(() => {
       swipeMoveFrame.current = null;
-      if (swipePointer.current?.pointerId !== start.pointerId || swipePointer.current.axis !== 'horizontal') return;
-      screen.setAttribute('data-gesture-dragging', 'true');
-      screen.style.setProperty('--gesture-x', `${swipeStartingOffset.current + resistDrag(swipePointer.current.latestOffsetX, window.innerWidth, interfaceMotion.preset)}px`);
+      const current = swipePointer.current;
+      if (current?.pointerId !== start.pointerId || current.axis !== 'horizontal') return;
+      navigationMotion.moveDrag(current.latestOffsetX / .92);
     });
   };
 
@@ -746,6 +697,8 @@ export default function App() {
     const deltaX = event.clientX - start.startX;
     const deltaY = event.clientY - start.startY;
     recordGestureTrace({ event: 'pointerup', pointerId: event.pointerId, deltaX, deltaY, state: start.axis, decision: target || 'settle-back' }, import.meta.env.DEV);
+    const velocity = estimateDragVelocity([...swipeSamples.current, { x: event.clientX, time: performance.now() }], interfaceMotion.preset);
+    swipeSamples.current = [];
     swipePointer.current = null;
     if (target) {
       const originAction = swipeOriginAction.current;
@@ -753,13 +706,13 @@ export default function App() {
         swipeClickSuppression.current = { pointerId: event.pointerId, target: originAction, expiresAt: performance.now() + 500 };
       }
       swipeOriginAction.current = null;
-      navigateTo(target, deltaX < 0 ? 'left' : 'right');
+      navigateTo(target, deltaX < 0 ? 'left' : 'right', velocity);
     } else {
       if (shouldSuppressPrimaryGestureClick(start) && swipeOriginAction.current) {
         swipeClickSuppression.current = { pointerId: event.pointerId, target: swipeOriginAction.current, expiresAt: performance.now() + 500 };
       }
       swipeOriginAction.current = null;
-      clearGestureDrag(true, deltaX * 1000 / Math.max(1, performance.now() - start.startedAt));
+      clearGestureDrag(true, velocity);
     }
   };
 
@@ -850,6 +803,8 @@ export default function App() {
   const navigateBack = () => {
     const state = backState.current;
     if (typeof document !== 'undefined') {
+      const scheduledDetail = document.querySelector<HTMLElement>('dialog[data-scheduled-details][open] [data-motion-back]');
+      if (scheduledDetail) { scheduledDetail.click(); return; }
       const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
@@ -1107,67 +1062,14 @@ export default function App() {
     return () => flight.cancel();
   }, [activeTab, financeSubtab, interfaceMotion.reducedMotion]);
 
-  const finishTabTransition = (id: number) => {
-    if (activeTransitionId.current !== id) return;
-    activeTransitionId.current = null;
-    if (import.meta.env.DEV) {
-      performance.clearMeasures('lifeos-tab-transition');
-      performance.measure('lifeos-tab-transition', { start: tabTransitionStarted.current, end: performance.now() });
-    }
-    setTabTransition(current => current?.id === id ? null : current);
-  };
-
-  useLayoutEffect(() => {
-    if (!tabTransition) return;
-    const { id, from, to, direction, offset } = tabTransition;
-    const incoming = document.getElementById(`screen-${to}`);
-    const outgoing = document.getElementById(`screen-${from}`);
-    if (!incoming || interfaceMotion.reducedMotion) { finishTabTransition(id); return; }
-    const sign = direction === 'right' ? -1 : 1;
-    const enter = animateRoute(incoming, { x: sign * 52, opacity: .98 }, { x: 0, opacity: 1 }, interfaceMotion.preset);
-    const exit = outgoing && animateRoute(outgoing, { x: offset, opacity: 1 }, { x: sign * -36, opacity: .78 }, interfaceMotion.preset);
-    let current = true;
-    void Promise.all(exit ? [enter, exit] : [enter]).then(() => {
-      if (current) finishTabTransition(id);
-    }, () => {
-      if (current) finishTabTransition(id);
-    });
-    return () => { current = false; enter.cancel(); exit?.cancel(); };
-  }, [tabTransition, interfaceMotion.reducedMotion, interfaceMotion.preset]);
-
-  useEffect(() => {
-    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const settleImmediately = () => {
-      if (!preference.matches) return;
-      swipeSettleAnimation.current?.cancel();
-      swipeSettleAnimation.current = null;
-      activeTransitionId.current = null;
-      setTabTransition(null);
-    };
-    preference.addEventListener?.('change', settleImmediately);
-    return () => preference.removeEventListener?.('change', settleImmediately);
-  }, []);
-
   useEffect(() => {
     if (!isLocked) return;
     cancelPrimaryGesture('app-locked');
     activeTouchPointers.current.clear();
     swipeSuppressed.current = false;
     swipeClickSuppression.current = null;
-    activeTransitionId.current = null;
-    setTabTransition(null);
-  }, [isLocked]);
-
-  const transitionPropsFor = (screen: MainTab) => {
-    if (!tabTransition) return {};
-    if (tabTransition.from === screen && tabTransition.outgoing) return { outgoing: tabTransition.outgoing, transitionDirection: tabTransition.direction };
-    if (tabTransition.to !== screen || activeTab !== screen) return {};
-    return {
-      transitionPhase: 'running' as const,
-      transitionDirection: tabTransition.direction,
-
-    };
-  };
+    navigationMotion.cancel();
+  }, [isLocked, navigationMotion.cancel]);
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
     setToast({ message, type });
@@ -3679,15 +3581,15 @@ export default function App() {
             const target = event.target as HTMLInputElement;
             const error = event.currentTarget.querySelector('[data-record-validation]');
             if (error) error.textContent = target.validity.valueMissing ? 'Complete the highlighted field.' : 'Check the highlighted value.';
-            if (!event.currentTarget.contains(document.activeElement) || !event.currentTarget.querySelector(':focus:invalid')) target.focus();
+            if (!event.currentTarget.querySelector(':focus:invalid')) requestAnimationFrame(() => { if (target.isConnected) target.focus(); });
           }} onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className={`ui-bottom-sheet lifeos-panel record-composer ${createKind === 'task' ? 'task-composer' : 'ui-sheet-motion'}`} onMouseDown={event => event.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="record-composer-header mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : createKind === 'task' ? 'Create Task' : `Add ${createKind}`}</h2>
-              <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
+              <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">{createKind === 'task' ? <ChevronLeft size={22} aria-hidden="true" /> : '✕'}</button>
             </div>
             <p data-record-validation role="alert" className="record-validation text-sm text-[var(--danger)]" />
             <p id="record-form-description" className="sr-only">Enter the record details and save your changes.</p>
-            {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
+            {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className={createKind === 'task' ? "task-title-field block text-xs text-secondary" : "mb-3 block text-xs text-secondary"}>
               {createKind === 'transaction' ? 'Merchant or description (optional)' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
               <input placeholder={createKind === 'task' ? 'What needs to be done?' : undefined} autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
@@ -3767,26 +3669,8 @@ export default function App() {
             </>}
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
-            {createKind === 'task' && <>
-              <div className="task-schedule-card grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', reminderLead: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
-              <PreferenceChoice label="Priority" value={createDraft.priority || "Medium"} options={[["Low","Low"],["Medium","Medium"],["High","High"],["Urgent","Urgent"]]} onSelect={priority => { setCreateFormDirty(true); setCreateDraft({ ...createDraft, priority }); }} />
-<label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={!createDraft.date || !(createDraft.time || dateOnlyAlertTime)} checked={createDraft.dueAlert !== 'off'} onChange={event => setCreateDraft({ ...createDraft, dueAlert: event.target.checked ? 'on' : 'off' })} /> Alert at due time</label>
-              <AliveDisclosure label="Add details">
-                <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                {goals.length > 0 && <label className="mb-3 block text-xs text-secondary">Linked goal<select value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1 block min-h-11 w-full rounded-xl px-3"><option value="">No linked goal</option>{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
-                {!editingTaskId && <label className="mb-3 block text-xs text-secondary">Subtasks (one per line)<textarea rows={3} value={createDraft.subtasks || ''} onChange={e => setCreateDraft({ ...createDraft, subtasks: e.target.value })} className="lifeos-input mt-1 block min-h-11 w-full rounded-xl px-3 py-2" /></label>}
-              </AliveDisclosure>
-              <AliveDisclosure label="Repeat and reminders">
-                <label className="mb-3 block text-sm">Extra reminder
-                  <select disabled={!createDraft.date || (!createDraft.time && !dateOnlyAlertTime && !createDraft.reminderAt)} value={['', '5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead || '') ? createDraft.reminderLead || '' : 'custom'} onChange={event => setCreateDraft({ ...createDraft, reminderLead: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3">
-                    <option value="">None</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="custom">Custom lead time</option>{createDraft.reminderAt && <option value="legacy">Keep saved reminder</option>}
-                  </select>
-                </label>
-                {createDraft.reminderLead && !['5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead) && <label className="mb-3 block text-sm">Minutes before<input type="number" min="1" max="10080" required value={createDraft.reminderCustom || (createDraft.reminderLead === 'custom' ? '' : createDraft.reminderLead)} onChange={event => setCreateDraft({ ...createDraft, reminderLead: 'custom', reminderCustom: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
-                <label className="mb-3 block text-xs text-secondary">Repeat<select disabled={!createDraft.date} value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
-              </AliveDisclosure>
-            </>}
+            {createKind === 'task' && <TaskComposerOptions draft={createDraft} update={setCreateDraft}
+              dateOnlyAlertTime={dateOnlyAlertTime} goals={goals} editing={Boolean(editingTaskId)} dirty={() => setCreateFormDirty(true)} />}
             {['goal', 'savings', 'milestone'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">
               {createKind === 'savings' ? 'Target date' : 'Target date (optional)'}
               <input type="date" required={createKind === 'savings'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
