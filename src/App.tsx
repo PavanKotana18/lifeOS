@@ -141,7 +141,7 @@ export default function App() {
       try { surface.releasePointerCapture(pointerId); } catch { /* Pointer may already have ended. */ }
     }
   };
-  const transitionToTab = (tab: MainTab, direction?: 'left' | 'right', velocity = 0, onCommit?: (from: MainTab) => void) => {
+  const transitionToTab = (tab: MainTab, direction?: 'left' | 'right', velocity = 0, onCommit?: (from: MainTab, scrollBefore: number) => void) => {
     const pointerId = swipePointer.current?.pointerId;
     swipePointer.current = null;
     swipeOriginAction.current = null;
@@ -510,8 +510,8 @@ export default function App() {
     const previous = activeTabRef.current;
     if (previous === tab) return;
     setShowExitConfirmation(false);
-    transitionToTab(tab, direction, velocity, from => {
-      scrollPositions.current[routeScrollKey(from)] = window.scrollY;
+    transitionToTab(tab, direction, velocity, (from, scrollBefore) => {
+      scrollPositions.current[routeScrollKey(from)] = scrollBefore;
       navigationHistory.current = pushTabHistory(navigationHistory.current, from, tab);
     });
   };
@@ -700,6 +700,7 @@ export default function App() {
       // Capture only after horizontal intent is clear. A normal button tap and
       // browser-owned vertical scroll keep their native pointer/click lifecycle.
       try { gestureSurfaceElement.current?.setPointerCapture(event.pointerId); } catch { /* Window tracking remains active if capture is unavailable. */ }
+      return;
     }
     if (!update.accepted || swipeMoveFrame.current !== null) return;
     swipeMoveFrame.current = window.requestAnimationFrame(() => {
@@ -1082,12 +1083,8 @@ export default function App() {
   };
 
   useLayoutEffect(() => {
-    const root = document.documentElement;
-    const previous = root.style.scrollBehavior;
-    root.style.scrollBehavior = 'auto';
-    window.scrollTo(0, scrollPositions.current[activeScreenKey] || 0);
+    window.scrollTo({ top: scrollPositions.current[activeScreenKey] || 0, left: 0, behavior: 'instant' });
     navigationMotion.alignOutgoingScroll();
-    root.style.scrollBehavior = previous;
   }, [activeScreenKey]);
 
   useLayoutEffect(() => {

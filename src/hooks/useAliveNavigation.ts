@@ -7,7 +7,7 @@ import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from '../s
 type Direction = 'left' | 'right';
 type Bounds = { top: number; left: number; width: number };
 const pose = (x: number): RoutePose => ({ x, opacity: 1 });
-type Drag = { element: HTMLElement; width: number; origin: number; position: number; scrollOffset: (tab: MainTab) => number; preview: HTMLElement | null; previewTab: MainTab | null };
+type Drag = { element: HTMLElement; width: number; origin: number; position: number; scrollTop: number; scrollOffset: (tab: MainTab) => number; preview: HTMLElement | null; previewTab: MainTab | null };
 type Flight = {
   followedFinger: boolean;
   id: number;
@@ -92,7 +92,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     setTabTransition(null);
   }, []);
 
-  const jumpTo = (to: MainTab, direction?: Direction, velocity = 0, targetScroll = 0, onCommit?: (from: MainTab) => void) => {
+  const jumpTo = (to: MainTab, direction?: Direction, velocity = 0, targetScroll = 0, onCommit?: (from: MainTab, scrollBefore: number) => void) => {
     const from = activeTabRef.current;
     if (from === to) { clearDrag(); return; }
     const started = performance.now();
@@ -114,11 +114,11 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     const sign = travelDirection === 'right' ? -1 : 1;
     const followedFinger = !!next && activeDrag?.preview === next;
     const trackFrom = sign * width + (followedFinger || previous?.from === to ? fromPose.x : 0);
-    const scrollBefore = window.scrollY;
+    const scrollBefore = activeDrag?.scrollTop ?? window.scrollY;
 
     clearDrag();
     cancel();
-    onCommit?.(from);
+    onCommit?.(from, scrollBefore);
     activeTabRef.current = to;
     setActiveTab(to);
     if (reduced || !old || !next || !width || tabIndex(from) === tabIndex(to)) {
@@ -205,9 +205,10 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     const width = stageWidth.current || element.clientWidth;
     if (!width) return;
     const origin = transition.current || settle.current ? readRoutePose(track.current).x : 0;
+    const scrollTop = window.scrollY;
     if (transition.current) cancel();
     clearDrag();
-    drag.current = { element, origin, width, position: origin, scrollOffset, preview: null, previewTab: null };
+    drag.current = { element, origin, width, position: origin, scrollTop, scrollOffset, preview: null, previewTab: null };
     track.current?.style.setProperty('--gesture-x', `${origin}px`);
     track.current?.setAttribute('data-track-dragging', 'true');
     element.setAttribute('data-gesture-dragging', 'true');
@@ -225,7 +226,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
       current.preview = preview;
       current.previewTab = preview ? nextTab ?? null : null;
       if (preview && nextTab) {
-        const top = window.scrollY - current.scrollOffset(nextTab);
+        const top = current.scrollTop - current.scrollOffset(nextTab);
         preview.style.setProperty('--gesture-top', `${top}px`);
         preview.style.setProperty('--gesture-left', `${offset < 0 ? width : -width}px`);
         preview.style.setProperty('--gesture-width', `${width}px`);
@@ -235,6 +236,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     const position = preview
       ? Math.max(-width, Math.min(width, offset))
       : resistDrag(offset, width, preset) * .5;
+    if (position === current.position) return;
     current.position = position;
     track.current?.style.setProperty('--gesture-x', `${current.position}px`);
     indicator.current?.style.setProperty('--track-indicator', `translate3d(${dragIndicator(current)}%,0,0)`);
@@ -279,7 +281,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   const alignOutgoingScroll = () => {
     const flight = transition.current;
     const outgoing = flight && routeElement(flight.from);
-    if (!flight || !outgoing) return;
+    if (!flight || !outgoing || (flight.scrollBefore === 0 && flight.outgoing.top === 0)) return;
     const top = `${window.scrollY - flight.scrollBefore}px`;
     outgoing.style.top = top;
     outgoing.style.setProperty('--outgoing-top', top);
