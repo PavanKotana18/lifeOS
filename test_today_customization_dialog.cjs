@@ -74,6 +74,7 @@ class Element {
   constructor(name) { this.name = name; this.isConnected = true; this.style = documentValue.documentElement.style; }
   focus() { documentValue.activeElement = this; }
   getClientRects() { return [{}]; }
+  closest() { return null; }
   scrollIntoView() {}
 }
 const opener = new Element('Customize'), first = new Element('First toggle'), last = new Element('Done'), outside = new Element('Nested confirmation');
