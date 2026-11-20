@@ -105,7 +105,7 @@ async function main() {
   await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 88, maxWidth: viewport.width, maxHeight: viewport.height, everyNthFrame: 1 });
   const metrics = async () => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(({ name, value }) => [name, value]));
 
-  async function capture(name, target, selector, swipeDirection) {
+  async function capture(name, target, selector, swipeDirection, swipeY = 215) {
     await target.scrollIntoViewIfNeeded();
     await page.waitForTimeout(580);
     const bounds = await target.boundingBox();
@@ -198,7 +198,7 @@ async function main() {
     if (swipeDirection) {
       const right = swipeDirection === 'right';
       const start = right ? 74 : viewport.width - 74;
-      const send = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x == null ? [] : [{ x, y: 215, id: 1 }] });
+      const send = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x == null ? [] : [{ x, y: swipeY, id: 1 }] });
       await send('touchStart', start);
       for (const step of [5, 11, 28, 56, 88, 116, 155]) {
         await page.waitForTimeout(18);
@@ -243,7 +243,7 @@ async function main() {
       ['swipe-today-money', 'finance', 'left'], ['swipe-money-plan', 'plan', 'left'],
       ['swipe-plan-money', 'finance', 'right'], ['swipe-money-today', 'dashboard', 'right'],
     ]) {
-      await capture(name, tab(destination), screens, direction);
+      await capture(name, tab(destination), screens, direction, name === 'swipe-plan-money' ? 395 : 215);
       assert.equal(await tab(destination).getAttribute('aria-current'), 'page', name + ' commits the target');
       assert.equal(await page.locator('[data-gesture-preview],[data-gesture-dragging]').count(), 0, name + ' removes drag surfaces');
     }
@@ -253,15 +253,17 @@ async function main() {
       await capture('plan-tasks-habits', button('Habits', plan), screens);
       await capture('plan-habits-goals', button('Goals', plan), screens);
       if (await page.locator('#primary-route-title').count()) {
+        await page.setViewportSize({ width: viewport.width, height: 640 });
         await tab('finance').click();
+        await page.waitForTimeout(580);
         const scroll = await page.evaluate(() => {
-          window.scrollTo({ top: 160, behavior: 'instant' });
+          window.scrollTo({ top: 115, behavior: 'instant' });
           return window.scrollY;
         });
         assert.ok(scroll > 0, 'Money fixture can reproduce a scrolled route before dragging');
-        await capture('swipe-scrolled-money-plan', tab('plan'), screens, 'left');
+        await capture('swipe-scrolled-money-plan', tab('plan'), screens, 'left', 195);
         assert.equal(await tab('plan').getAttribute('aria-current'), 'page');
-        await capture('swipe-plan-scrolled-money', tab('finance'), screens, 'right');
+        await capture('swipe-plan-scrolled-money', tab('finance'), screens, 'right', 195);
         assert.equal(await tab('finance').getAttribute('aria-current'), 'page');
         assert.equal(await page.evaluate(() => window.scrollY), scroll, 'swiping back restores the Money scroll offset');
       }

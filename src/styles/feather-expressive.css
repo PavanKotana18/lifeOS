@@ -267,7 +267,7 @@
 .feather-expressive .feather-composer-content .alive-disclosure { border: 0; }
 
 /* The viewport clips both panels as a single opaque track. */
-.ui-tab-viewport { overflow-x: clip; isolation: isolate; min-width: 0; }
+.ui-tab-viewport { display: grid; flex: 1; overflow: clip; isolation: isolate; min-width: 0; }
 .ui-tab-screen-stack[data-track-dragging] { transform: translate3d(var(--gesture-x, 0px), 0, 0); }
 .ui-tab-screen-stack > .ui-tab-screen[data-gesture-preview][hidden] {
   display: block !important;
@@ -290,7 +290,7 @@
   gap: var(--space-3);
   padding-block-end: var(--space-2);
 }
-.primary-masthead .app-profile-button { flex: none; }
+.primary-masthead .app-profile-button { flex: none; block-size: var(--masthead-control-size); }
 .primary-route-title {
   flex: 1;
   min-width: 0;
@@ -298,12 +298,19 @@
   font-weight: 650;
   letter-spacing: -.035em;
 }
-.primary-masthead .money-period-control { flex: none; margin-inline-start: auto; }
+.primary-masthead .money-period-control {
+  flex: none;
+  block-size: var(--masthead-control-size);
+  margin-inline-start: auto;
+  padding-block: 0;
+}
+.app-shell.feather-expressive { display: flex; flex-direction: column; }
 .feather-expressive .app-main {
   width: 100%;
   max-width: var(--content-measure);
   padding-inline: 0;
 }
+.feather-expressive .ui-tab-screen-stack { align-items: stretch; }
 .feather-expressive .ui-tab-screen-stack > .ui-tab-screen {
   box-sizing: border-box;
   padding-inline: var(--page-gutter);
