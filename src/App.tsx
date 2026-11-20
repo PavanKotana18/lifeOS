@@ -127,6 +127,7 @@ export default function App() {
   // Navigation & Theme State
   const navigationMotion = useAliveNavigation(interfaceMotion.preset, interfaceMotion.reducedMotion);
   const { activeTab, activeTabRef, tabTransition, transitionPropsFor } = navigationMotion;
+  const [moneyPrepared, setMoneyPrepared] = useState(false);
   const releaseGestureCapture = (pointerId?: number) => {
     if (pointerId == null) return;
     const surface = gestureSurfaceElement.current;
@@ -522,12 +523,15 @@ export default function App() {
 
   useEffect(() => {
     if (!appReady || isLocked || !onboardingComplete) return;
-    const warmPlan = () => { void import('./components/PlanHub').catch(() => undefined); };
+    const warmRoutes = () => {
+      setMoneyPrepared(true);
+      void import('./components/PlanHub').catch(() => undefined);
+    };
     if (typeof window.requestIdleCallback === 'function') {
-      const request = window.requestIdleCallback(warmPlan);
+      const request = window.requestIdleCallback(warmRoutes, { timeout: 900 });
       return () => window.cancelIdleCallback(request);
     }
-    const timer = window.setTimeout(warmPlan, 500);
+    const timer = window.setTimeout(warmRoutes, 500);
     return () => window.clearTimeout(timer);
   }, [appReady, isLocked, onboardingComplete]);
 
@@ -624,7 +628,7 @@ export default function App() {
     swipePointer.current = null;
 
     const target = event.target instanceof Element ? event.target : null;
-    if (!target) return;
+    if (!target?.closest('.app-main') || event.pointerType === 'mouse') return;
     const hardExcluded = target.closest('[data-no-tab-swipe],[data-swipe-exclude],[data-gesture-owner="native"],[role="dialog"],[aria-modal="true"],.ui-bottom-sheet,[data-horizontal-scroll],[role="slider"],input[type="range"]');
     const textEntry = target.closest('textarea,select,[contenteditable="true"],[role="textbox"],input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="checkbox"]):not([type="radio"])');
     const nativePicker = target.closest('[data-native-picker],input[type="date"],input[type="time"],input[type="month"],input[type="file"],input[type="color"]');
@@ -2964,7 +2968,7 @@ export default function App() {
           onGoals={() => { setLifeDetail(null); setGoalsSubtab('active'); navigateTo('goals'); }}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
+        <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" prepare={moneyPrepared} {...transitionPropsFor('finance')} render={() => (
           <div ref={moneyPageRef} className="money-page space-y-5" data-detail={financeSubtab}>
             {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => { if (financeSubtab === 'projection') { navigateBack(); return; } rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }} />}
 

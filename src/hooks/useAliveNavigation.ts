@@ -1,4 +1,4 @@
-﻿import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { animateRoute, readRoutePose, type RoutePose } from '../services/aliveMotion';
 import { getMotionPreset, resistDrag, type MotionPresetId } from '../services/interfaceMotion';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from '../services/navigationCatalog';
@@ -126,7 +126,12 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
         slowRuns.current = overruns >= 2 || median > 25 ? Math.min(5, slowRuns.current + 1) : Math.max(0, slowRuns.current - 1);
         document.documentElement.dataset.motionBudget = slowRuns.current >= 3 ? 'constrained' : 'normal';
       }
-      latest.current = { durationMs: performance.now() - flight.started, interrupted: false, p95FrameMs, overruns };
+      const ended = performance.now();
+      if (measure.current) {
+        performance.clearMeasures('lifeos-tab-transition');
+        performance.measure('lifeos-tab-transition', { start: flight.started, end: ended });
+      }
+      latest.current = { durationMs: ended - flight.started, interrupted: false, p95FrameMs, overruns };
       setTabTransition(current => current?.id === flight.id ? null : current);
     };
     void Promise.all(exit ? [enter, exit] : [enter]).then(finish, finish);

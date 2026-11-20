@@ -76,8 +76,8 @@ assert.match(app, /rememberActiveScroll\(\)/);
 assert.match(app, /pendingNotification\.current/, 'notification task routing remains connected');
 
 const retained = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'RetainedScreen.tsx'), 'utf8');
-assert.match(retained, /if \(active && !visited\) setVisited\(true\)/);
-assert.match(retained, /if \(!active && !outgoing && \(!retainInactive \|\| !visited\)\) return null/);
+assert.match(retained, /useLayoutEffect\(\(\) => \{[\s\S]*visited\.current = true/, 'visits are recorded without a second render');
+assert.match(retained, /if \(!active && !outgoing && !refresh && \(!retainInactive \|\| !visited\.current\)\) return null/);
 assert.match(retained, /hidden=\{!active && !outgoing\}/, 'the single outgoing surface remains until motion settles');
 assert.match(retained, /aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/,
   'inactive retained screens are removed from accessibility and focus navigation');

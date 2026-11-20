@@ -1,9 +1,10 @@
-import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { retainedScreenTransitionState } from '../services/uiNavigation';
 
 type Props = {
   active: boolean;
   retainInactive?: boolean;
+  prepare?: boolean;
   outgoing?: { top: number; left: number; width: number };
   transitionPhase?: 'prepare' | 'running' | null;
   transitionDirection?: 'left' | 'right';
@@ -12,13 +13,18 @@ type Props = {
 };
 
 /** Mount destinations on first visit; inactive routes are never painted or interactive. */
-function RetainedScreen({ active, retainInactive = false, transitionPhase = null, transitionDirection, outgoing, id, render }: Props) {
-  const [visited, setVisited] = useState(active);
+function RetainedScreen({ active, retainInactive = false, prepare = false, transitionPhase = null, transitionDirection, outgoing, id, render }: Props) {
+  const visited = useRef(false);
   const lastPaint = useRef<ReactNode>(null);
-  const content = active ? render() : lastPaint.current;
-  useLayoutEffect(() => { if (active) lastPaint.current = content; }, [active, content]);
-  if (active && !visited) setVisited(true);
-  if (!active && !outgoing && (!retainInactive || !visited)) return null;
+  const refresh = active || (prepare && !visited.current);
+  const content = refresh ? render() : lastPaint.current;
+  useLayoutEffect(() => {
+    if (refresh) {
+      visited.current = true;
+      lastPaint.current = content;
+    }
+  }, [refresh, content]);
+  if (!active && !outgoing && !refresh && (!retainInactive || !visited.current)) return null;
 
   const transitionState = retainedScreenTransitionState(active, transitionPhase);
 
@@ -42,6 +48,7 @@ export default React.memo(RetainedScreen, (previous, next) =>
   && previous.active === next.active
   && previous.outgoing === next.outgoing
   && previous.retainInactive === next.retainInactive
+  && previous.prepare === next.prepare
   && previous.transitionPhase === next.transitionPhase
   && previous.transitionDirection === next.transitionDirection
   && (!next.active || previous.render === next.render),
