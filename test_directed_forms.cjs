@@ -2,13 +2,14 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript'),Module=require('node:module');
 let effect;
 const props=new Map(),events=new Map(),viewportEvents=new Map();
-class Element { constructor(){this.isConnected=true;} focus(){document.activeElement=this;} scrollIntoView(){this.scrolled=true;} getClientRects(){return [{}];} }
+class Element { constructor(){this.isConnected=true;} focus(){document.activeElement=this;} scrollIntoView(){this.scrolled=true;} getClientRects(){return [{}];} closest(selector){return selector==='[inert]' && this.inert ? this : null;} }
 global.HTMLElement=Element;
 const opener=new Element(),first=new Element(),last=new Element(),nested=new Element();
+const closedDisclosureControl=new Element();closedDisclosureControl.inert=true;
 let actionHeight=96,actionResized,actionObserved,actionDisconnected=false;
 global.ResizeObserver=class {constructor(callback){actionResized=callback;}observe(element){actionObserved=element;}disconnect(){actionDisconnected=true;}};
 const actions={getBoundingClientRect:()=>({height:actionHeight})};
-const dialog={style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)},contains:e=>e===first||e===last,querySelectorAll:()=>[first,last],getClientRects:()=>[{}],querySelector:selector=>selector==='.ui-form-actions'?actions:first};
+const dialog={style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)},contains:e=>e===first||e===last,querySelectorAll:()=>[closedDisclosureControl,first,last],getClientRects:()=>[{}],querySelector:selector=>selector==='.ui-form-actions'?actions:first};
 global.document={activeElement:opener,getElementById:id=>id==='active-form'?dialog:null,querySelector:()=>dialog,querySelectorAll:()=>[{getClientRects:()=>[]},dialog],documentElement:{style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)}},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)};
 global.window={innerHeight:800,visualViewport:{height:450,offsetTop:30,addEventListener:(k,v)=>viewportEvents.set(k,v),removeEventListener:k=>viewportEvents.delete(k)}};
 const file=process.cwd()+'/src/hooks/useRecordDialog.ts',m=new Module(file,module);
