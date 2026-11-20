@@ -325,6 +325,6 @@
 }
 .composer-field-grid input { min-width: 0; }
 .feather-composer button, .choice-sheet button { touch-action: manipulation; }
-.feather-composer button:active:not(:disabled), .choice-sheet button:active:not(:disabled) {
+.feather-composer button:is(:active, [data-composer-pressed]):not(:disabled), .choice-sheet button:active:not(:disabled) {
   box-shadow: inset 0 0 0 100vmax color-mix(in srgb, currentColor 14%, transparent);
 }

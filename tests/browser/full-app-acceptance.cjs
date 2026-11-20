@@ -170,13 +170,14 @@ async function capture(name, fullPage = true) {
         { element: handle, rest }, { timeout: 1200 });
       pressed = await control.evaluate(element => getComputedStyle(element).boxShadow);
     } finally {
-      await touchCdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
-      await handle.dispose();
+      try {
+        await touchCdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+        await page.waitForFunction(({ element, rest }) => getComputedStyle(element).boxShadow === rest,
+          { element: handle, rest }, { timeout: 1200 });
+      } finally {
+        await handle.dispose();
+      }
     }
-    await page.waitForFunction(({ x, y, rest }) => {
-      const element = document.elementFromPoint(x, y)?.closest('button');
-      return element && getComputedStyle(element).boxShadow === rest;
-    }, { ...touchPoints[0], rest }, { timeout: 1200 });
     report.touchFeedback.push({ scenario: name, control: await control.innerText(), rest, pressed });
   }
 }

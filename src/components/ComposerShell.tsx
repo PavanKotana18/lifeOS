@@ -1,6 +1,6 @@
 ﻿import * as m from 'motion/react-m';
 import { useIsPresent } from 'motion/react';
-import type { FormEventHandler, ReactNode } from 'react';
+import { useRef, type FormEventHandler, type PointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { FeatherHeader } from './FeatherHeader';
 import { ChoiceCommitContext } from './PreferenceChoice';
@@ -22,6 +22,12 @@ type Props = {
 };
 
 export default function ComposerShell({ id, title, accessibleName, submitLabel, mode, saving, reduced, dismiss, onSubmit, onChange, onChoiceChange, portal, children }: Props) {
+  const pressed = useRef<{ button: HTMLButtonElement; pointerId: number } | null>(null);
+  const releasePress = (event: PointerEvent<HTMLFormElement>) => {
+    if (pressed.current?.pointerId !== event.pointerId) return;
+    pressed.current.button.removeAttribute('data-composer-pressed');
+    pressed.current = null;
+  };
   const present = useIsPresent();
   const page = mode === 'page';
   const titleId = id + '-title';
@@ -37,6 +43,15 @@ export default function ComposerShell({ id, title, accessibleName, submitLabel, 
       animate={{ transform: rest, opacity: 1 }}
       exit={reduced ? undefined : { transform: outside, opacity: page ? 1 : 0, transition: { duration: .24, ease: [.32, 0, .67, 1] } }}
       transition={reduced ? { duration: 0 } : { duration: .32, ease: [.22, .7, .22, 1] }}
+      onPointerDownCapture={event => {
+        if (!event.isPrimary || event.pointerType === 'mouse' || !(event.target instanceof Element)) return;
+        const button = event.target.closest<HTMLButtonElement>('button:not(:disabled)');
+        if (!button || !event.currentTarget.contains(button)) return;
+        pressed.current?.button.removeAttribute('data-composer-pressed');
+        button.setAttribute('data-composer-pressed', '');
+        pressed.current = { button, pointerId: event.pointerId };
+      }}
+      onPointerUpCapture={releasePress} onPointerCancelCapture={releasePress} onLostPointerCapture={releasePress}
       onSubmit={onSubmit} onChange={event => {
         const form = event.currentTarget;
         if (!form.querySelector(':invalid')) {
