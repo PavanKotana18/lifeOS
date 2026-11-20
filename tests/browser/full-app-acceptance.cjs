@@ -846,7 +846,7 @@ async function main() {
       await opener.click();
       await drawer.waitFor();
       assert.ok(await drawer.evaluate(element => Math.abs(element.getBoundingClientRect().width - innerWidth) < 2));
-      assert.equal(await page.locator('.app-header-shell h1').count(), 0);
+      assert.ok(await page.locator('.app-header-shell').evaluate(element => element.inert));
       assert.ok(await page.locator('.app-main').evaluate(element => element.inert));
       assert.equal(await page.locator('[data-tab]').count(), 3);
       await drawer.getByRole('button', { name: 'Appearance' }).click();
