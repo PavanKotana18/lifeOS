@@ -119,6 +119,8 @@ async function main() {
     const captureOrigin = Date.now() / 1000;
     await page.evaluate(({ selector, swipe, geometry }) => {
       const masthead = document.getElementById('primary-route-title');
+      const clip = document.querySelector('.ui-tab-viewport');
+      const nav = document.querySelector('.app-bottom-nav');
       const result = { frames: [], longTasks: [], longFrames: [], events: [], shifts: [], input: null, press: null, commitIndex: 0 };
       window.__ALIVE_QA_SAMPLE__ = result;
       let began;
@@ -183,7 +185,8 @@ async function main() {
         if (began !== undefined) {
           const mastheadRect = masthead?.getBoundingClientRect();
           const title = mastheadRect ? { x: mastheadRect.x, y: mastheadRect.y, text: masthead.textContent } : undefined;
-          result.frames.push({ time: time - began, surfaces, title });
+          const coverageGap = mastheadRect && clip && nav ? nav.getBoundingClientRect().top - clip.getBoundingClientRect().bottom : undefined;
+          result.frames.push({ time: time - began, surfaces, title, coverageGap });
         }
         else if (result.press !== null) {
           const style = pressed && getComputedStyle(pressed);
@@ -274,6 +277,7 @@ async function main() {
             if (anchored) {
               assert.equal(frame.title?.x, anchored.x, name + ' keeps the route title horizontally anchored');
               assert.equal(frame.title?.y, anchored.y, name + ' keeps the route title vertically anchored');
+              assert.ok(frame.coverageGap < 48, name + ' keeps the track clipped to the visible content area');
             }
             const sorted = frame.surfaces.filter(surface => surface.left != null && surface.visibility === 'visible').sort((a, b) => a.left - b.left);
             if (name.startsWith('plan-') && name !== 'plan-today') {

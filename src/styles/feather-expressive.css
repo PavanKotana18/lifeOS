@@ -267,7 +267,7 @@
 .feather-expressive .feather-composer-content .alive-disclosure { border: 0; }
 
 /* The viewport clips both panels as a single opaque track. */
-.ui-tab-viewport { display: grid; flex: 1; overflow: clip; isolation: isolate; min-width: 0; }
+.ui-tab-viewport { display: grid; flex: 1; overflow-x: clip; overflow-y: clip; isolation: isolate; min-width: 0; }
 .ui-tab-screen-stack[data-track-dragging] { transform: translate3d(var(--gesture-x, 0px), 0, 0); }
 .ui-tab-screen-stack > .ui-tab-screen[data-gesture-preview][hidden] {
   display: block !important;
@@ -306,6 +306,9 @@
 }
 .app-shell.feather-expressive { display: flex; flex-direction: column; }
 .feather-expressive .app-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   width: 100%;
   max-width: var(--content-measure);
   padding-inline: 0;
