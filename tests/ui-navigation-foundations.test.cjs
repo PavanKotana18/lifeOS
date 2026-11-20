@@ -48,7 +48,7 @@ assert.match(coordinator, /Promise\.all\(animations\.map\(animation => animation
   'the retained surfaces and indicator settle together on animation completion');
 assert.match(coordinator, /transition\.current\?\.id !== flight\.id/, 'obsolete animation callbacks cannot settle new navigation');
 assert.match(coordinator, /const trackFrom = sign \* .*previous\?\.from === to/, 'reversal starts at the already painted outgoing pose');
-assert.match(app, /transitionToTab\(tab, direction, velocity, from =>/, 'tap and swipe use the same transition path');
+assert.match(app, /transitionToTab\(tab, direction, velocity, \(from, scrollBefore\) =>/, 'tap and swipe use the same transition path');
 assert.match(coordinator, /clearDrag\(\);[\s\S]*if \(reduced \|\| !old/, 'reduced motion clears drag state and skips positional travel');
 assert.match(app, /axis === 'horizontal'.*setPointerCapture\(event\.pointerId\)/s,
   'pointer capture starts only after horizontal intent so an ordinary tap keeps its native click');
