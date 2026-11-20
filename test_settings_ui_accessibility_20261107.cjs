@@ -19,9 +19,10 @@ assert.match(app, /role="switch" aria-label="All notifications" aria-checked=\{n
 assert.match(app, /aria-checked=\{notificationsEnabled && notificationPreferences\[key\]\} disabled=\{!notificationsEnabled\}/);
 assert.match(app, /lifeos-input mt-1\.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm/);
 assert.match(preferences, /currencyOptions = useMemo\(\(\) => CURRENCY_CODES\.map/);
-assert.match(preferences, /type="search"/);
+const chooser = fs.readFileSync("src/components/PreferenceChoice.tsx", "utf8");
+assert.match(chooser, /type="search"/);
 assert.match(preferences, /disabled=\{hasFinancialRecords\}/);
-assert.match(preferences, /locked for existing financial records/);
+assert.match(chooser, /locked for existing financial records/);
 assert.match(app, /lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold">Restore JSON/);
 assert.match(app, /lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold">Export transactions CSV/);
 assert.match(app, /developerToolsEnabled && profileSection === 'developer'[\s\S]*?Add sample data/, 'sample data is available only inside the gated Developer tools section');

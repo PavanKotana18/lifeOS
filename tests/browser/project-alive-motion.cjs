@@ -102,7 +102,7 @@ async function main() {
   await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 88, maxWidth: viewport.width, maxHeight: viewport.height, everyNthFrame: 1 });
   const metrics = async () => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(({ name, value }) => [name, value]));
 
-  async function capture(name, target, selector) {
+  async function capture(name, target, selector, swipeDirection) {
     await target.scrollIntoViewIfNeeded();
     await page.waitForTimeout(580);
     const bounds = await target.boundingBox();
@@ -114,7 +114,7 @@ async function main() {
     const before = await metrics();
     frames = [];
     const captureOrigin = Date.now() / 1000;
-    await page.evaluate(selector => {
+    await page.evaluate(({ selector, swipe }) => {
       const result = { frames: [], longTasks: [], longFrames: [], events: [], shifts: [], input: null, press: null, commitIndex: 0 };
       window.__ALIVE_QA_SAMPLE__ = result;
       let began;
@@ -146,15 +146,24 @@ async function main() {
       let pressed;
       window.addEventListener('pointerdown', event => {
         result.press = performance.now();
+        if (swipe) {
+          began = result.input = result.press;
+          result.commitIndex = window.__ALIVE_QA_COMMITS__.length;
+        }
         pressed = event.target instanceof Element ? event.target.closest('button,input,label,summary,[role=button]') : null;
       }, { once: true, capture: true });
-      window.addEventListener('click', () => {
+      if (swipe) {
+        result.touch = [];
+        const move = event => result.touch.push({ x: event.clientX, time: performance.now() - began });
+        window.addEventListener('pointermove', move, { capture: true });
+        window.addEventListener('pointerup', () => { result.release = performance.now() - began; window.removeEventListener('pointermove', move, true); }, { once: true, capture: true });
+      } else window.addEventListener('click', () => {
         began = result.input = performance.now();
         result.commitIndex = window.__ALIVE_QA_COMMITS__.length;
       }, { once: true, capture: true });
       function sample(time) {
         const surfaces = selectors.flatMap(query => Array.from(document.querySelectorAll(query))
-          .filter(node => !node.hidden).map(node => {
+          .filter(node => !node.hidden || node.hasAttribute('data-gesture-preview')).map(node => {
             const style = getComputedStyle(node);
             const position = style.transform === 'none' ? new DOMMatrix() : new DOMMatrix(style.transform);
             return { id: node.id || query, x: position.m41, y: position.m42, translate: style.translate,
@@ -169,15 +178,27 @@ async function main() {
           preClick.push({ time: time - result.press, surfaces, pressTransform: style?.transform ?? 'none' });
         }
         result.pressFrames = preClick;
-        if (began === undefined || time - began < 690) requestAnimationFrame(sample);
+        if (began === undefined || time - began < (swipe ? (result.release ?? Infinity) + 480 : 690)) requestAnimationFrame(sample);
         else { observers.forEach(observer => observer.disconnect()); result.done = true; }
       }
       requestAnimationFrame(sample);
-    }, selector);
-    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-    await page.mouse.down();
-    await page.waitForTimeout(34);
-    await page.mouse.up();
+    }, { selector, swipe: !!swipeDirection });
+    if (swipeDirection) {
+      const right = swipeDirection === 'right';
+      const start = right ? 74 : viewport.width - 74;
+      const send = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x == null ? [] : [{ x, y: 215, id: 1 }] });
+      await send('touchStart', start);
+      for (const step of [5, 11, 28, 56, 88, 116, 155]) {
+        await page.waitForTimeout(18);
+        await send('touchMove', start + (right ? step : -step));
+      }
+      await send('touchEnd');
+    } else {
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(34);
+      await page.mouse.up();
+    }
     await page.waitForFunction(() => window.__ALIVE_QA_SAMPLE__.done);
     const captured = frames;
     frames = null;
@@ -204,6 +225,20 @@ async function main() {
   const screens = '[data-lifeos-screen]|.app-bottom-nav [aria-current]|.alive-nav-indicator';
   await capture('today-money', tab('finance'), screens);
   await capture('money-plan', tab('plan'), screens);
+  if (process.env.LIFEOS_MOTION_COMPARE_SWIPE === '1') {
+    await capture('plan-today', tab('dashboard'), screens);
+    for (const [name, destination, direction] of [
+      ['swipe-today-money', 'finance', 'left'], ['swipe-money-plan', 'plan', 'left'],
+      ['swipe-plan-money', 'finance', 'right'], ['swipe-money-today', 'dashboard', 'right'],
+    ]) {
+      await capture(name, tab(destination), screens, direction);
+      assert.equal(await tab(destination).getAttribute('aria-current'), 'page', name + ' commits the target');
+      assert.equal(await page.locator('[data-gesture-preview],[data-gesture-dragging]').count(), 0, name + ' removes drag surfaces');
+    }
+    await cdp.send('Page.stopScreencast');
+    assert.deepEqual(report.errors, []);
+    return;
+  }
   if (primaryOnly) {
     for (let i = 1; i <= 5; i++) {
       await tab('dashboard').click();

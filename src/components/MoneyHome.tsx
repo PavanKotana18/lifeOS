@@ -1,5 +1,5 @@
 import { FeatherHeader } from './FeatherHeader';
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Landmark, PiggyBank, Receipt, WalletCards } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Landmark, PiggyBank, Receipt, WalletCards } from 'lucide-react';
 import type { Transaction } from '../types';
 import { formatMinorUnits } from '../services/financeCore';
 import MoneyPeriod from './MoneyPeriod';
@@ -56,9 +56,10 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
       <p className="type-display-amount" data-testid="money-net-cashflow">{formatMoney(netCashFlow)}</p>
       <div className="money-flow-split" role="group" aria-label={`Recorded cash flow: income ${formatMoney(income)}; expenses ${formatMoney(expenses)}`}>
         <div><span>Income</span><strong>{formatMoney(income)}</strong></div>
-        <div><span>Spent</span><strong>{formatMoney(expenses)}</strong></div>
+        <div><span>Expenses</span><strong>{formatMoney(expenses)}</strong></div>
       </div>
       {excludedCurrencyCount > 0 && <p className="money-empty-note" role="status">{excludedCurrencyCount} financial item{excludedCurrencyCount === 1 ? '' : 's'} in another currency are left out of these totals. Comparing them requires a dated exchange rate.</p>}
+      {!monthly && onMonthly && <button type="button" onClick={onMonthly} className="money-text-action">View monthly summary</button>}
     </section>
 
     {!monthly && <nav className="money-destinations" aria-label="Money destinations">{moneyDestinations.map(item => {
@@ -66,13 +67,12 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
       return <button type="button" key={item.id} onClick={destinationActions[item.id]} className={`money-destination-card money-destination-${item.id}`}><span className="money-destination-icon" aria-hidden="true"><Icon size={20} strokeWidth={1.8} /></span><strong>{item.label}</strong></button>;
     })}</nav>}
 
-    {!monthly && <button type="button" onClick={onMonthly} className="money-month-link lifeos-panel">This month</button>}
     {monthly && <div className="space-y-4">
     {monthSavings && <section className="money-context"><h3 className="type-section-title">Savings contributions</h3><p className="mt-2 text-lg font-semibold tabular-nums">{monthSavings}</p></section>}
     {expenseChange != null && <section className="money-context"><h3 className="type-section-title">Spending trend</h3><p className="mt-2 text-sm">{expenseChange === 0 ? 'Unchanged from the previous month' : Math.abs(expenseChange).toFixed(1) + '% ' + (expenseChange > 0 ? 'higher' : 'lower') + ' than the previous month'}</p></section>}
     <section className="money-context" aria-label="Budget progress">
-      <div className="money-context-heading"><div><h3 className="type-section-title">Budget progress</h3></div><div className="flex items-center gap-2"><InfoTip label="Budget remaining">Remaining is the plan limit minus posted spending in that category for this month. A negative amount means spending is above the limit.</InfoTip><button type="button" onClick={onBudgets} className="money-text-action">Budgets <ArrowRight size={15} aria-hidden="true" /></button></div></div>
-      {budgetRows.length ? <ul className="money-budget-list">{budgetRows.slice(0, 2).map((row, index) => <li key={`${row.category}-${index}`}><div><strong>{row.category === 'Overall' ? 'Overall plan' : `${row.category} plan`}</strong><span>{formatMoney(row.spent)} recorded of {formatMoney(row.allocated)}</span></div><span className={row.remaining < 0 ? 'money-budget-over' : 'money-budget-remaining'}>{row.remaining < 0 ? `${formatMoney(Math.abs(row.remaining))} over` : `${formatMoney(row.remaining)} left`}</span></li>)}</ul> : <button type="button" className="money-context-empty" onClick={onBudgets}>No budget added for this month <span>Create a plan <ArrowRight size={14} aria-hidden="true" /></span></button>}
+      <div className="money-context-heading"><div><h3 className="type-section-title">Budget progress</h3></div><div className="flex items-center gap-2"><InfoTip label="Budget remaining">Remaining is the plan limit minus recorded spending in that category for this month. A negative amount means spending is above the limit.</InfoTip><button type="button" onClick={onBudgets} className="money-text-action">View budgets</button></div></div>
+      {budgetRows.length ? <ul className="money-budget-list">{budgetRows.slice(0, 2).map((row, index) => <li key={`${row.category}-${index}`}><div><strong>{row.category === 'Overall' ? 'Overall plan' : `${row.category} plan`}</strong><span>{formatMoney(row.spent)} recorded of {formatMoney(row.allocated)}</span></div><span className={row.remaining < 0 ? 'money-budget-over' : 'money-budget-remaining'}>{row.remaining < 0 ? `${formatMoney(Math.abs(row.remaining))} over` : `${formatMoney(row.remaining)} left`}</span></li>)}</ul> : <button type="button" className="money-context-empty" onClick={onBudgets}>No budget added for this month <span>View budgets</span></button>}
     </section>
 
 
@@ -80,7 +80,7 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
 
     <section className="money-activity" aria-labelledby="money-activity-title">
       <div className="money-section-heading"><div><h3 id="money-activity-title" className="type-section-title">Activity</h3></div><button type="button" onClick={onTransactions} className="money-text-action">View activity</button></div>
-      {!transactions.length ? <p className="money-empty-action" role="status">No transactions this month.</p> : <ul className="money-transaction-list">{transactions.slice(0, 4).map(transaction => {
+      {!transactions.length ? <p className="money-empty-action" role="status">No activity this month.</p> : <ul className="money-transaction-list">{transactions.slice(0, 4).map(transaction => {
         const title = transaction.description?.trim() || transaction.category || (transaction.type === 'income' ? 'Income' : 'Expense');
         const amount = transaction.amountMinor !== undefined && transaction.amountMinor !== null
           ? formatMinorUnits(BigInt(transaction.amountMinor), transaction.currencyCode || legacyCurrency, locale)

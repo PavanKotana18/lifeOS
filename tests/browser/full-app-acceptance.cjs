@@ -23,6 +23,7 @@ const report = {
   environment: 'Actual React application, ephemeral browser context, disposable synthetic native crypto plugin, isolated IndexedDB; no Android/physical device',
   evidence, journeys: [], responsive: [], screenshots: [], consoleErrors: [], pageErrors: [],
   accessibility: [], overflow: [], networkBlocked: [], blocked: [],
+  auditedControls: {}, controlActions: [],
 };
 const plannedJourneys = [
     'first launch and safe browsing', 'primary tab navigation and details',
@@ -114,6 +115,20 @@ async function fillDialogField(label, value) {
   await field.waitFor({ state: 'visible' });
   await field.fill(String(value));
   return field;
+}
+
+async function chooseOption(scope, label, value) {
+  const trigger = scope.getByRole('button', { name: label, exact: true });
+  await trigger.click();
+  const choices = page.locator('dialog[data-preference-choice][open]').last();
+  const buttons = choices.locator('button[data-option-value]:enabled');
+  const option = typeof value === 'object' ? buttons.nth(value.index) :
+    choices.locator('button[data-option-value=' + JSON.stringify(value) + ']');
+  const selected = await option.getAttribute('data-option-value');
+  await option.click();
+  await choices.waitFor({ state: 'hidden' });
+  assert.equal(await trigger.evaluate(button => button.closest('[data-choice-field]')?.getAttribute('data-choice-value')), selected);
+  return selected;
 }
 
 async function saveDialog(buttonName) {
@@ -215,6 +230,51 @@ async function main() {
     if (url.startsWith(origin + '/') || url.startsWith('data:') || url.startsWith('blob:')) return route.continue();
     report.networkBlocked.push(url); return route.abort();
   });
+  if (process.env.LIFEOS_ACTION_AUDIT === '1') {
+    await context.exposeBinding('__recordLifeOSControl', (_, action) => {
+      const state = action.scope + ' / ' + currentJourney;
+      const group = report.auditedControls[state] ??= {};
+      for (const control of action.controls ?? []) {
+        const { key, ...details } = control;
+        group[key] = { ...group[key], ...details };
+      }
+      if (action.event) report.controlActions.push({ journey: currentJourney, ...action });
+    });
+    await context.addInitScript(() => {
+      const selector = 'button,select,details,summary,input,textarea,a[href],[role=button],[role=menuitem],[role=combobox],[role=tab],[role=switch],[role=checkbox],[role=slider]';
+      const label = el => el.getAttribute('aria-label') || el.getAttribute('title') ||
+        [...(el.labels ?? [])].map(label => label.innerText).join(' ') ||
+        el.textContent.trim() || el.getAttribute('placeholder') || el.getAttribute('type') || '(unnamed)';
+      const scope = () => {
+        const dialogs = [...document.querySelectorAll('dialog[open],[role=dialog]:not([aria-hidden=true])')];
+        const active = dialogs.findLast(node => node.getClientRects().length) ||
+          document.querySelector('.profile-page-screen,.ui-tab-screen:not([hidden]):not([inert])');
+        return active?.getAttribute('aria-label') || active?.querySelector('h1,h2')?.textContent || active?.id || location.pathname;
+      };
+      const describe = el => {
+        const name = label(el).trim().replace(/\s+/g, ' ').slice(0, 150);
+        const type = el.getAttribute('role') || el.tagName.toLowerCase();
+        const disabled = el.matches(':disabled,[aria-disabled=true]');
+        return { key: type + ' / ' + name, type, name, disabled };
+      };
+      const safe = () => !document.querySelector('[data-sensitive-recovery-code],#recovery-code-confirmation');
+      const visible = el => !el.closest('[inert],[aria-hidden=true],dialog:not([open])') && el.getClientRects().length && getComputedStyle(el).visibility === 'visible';
+      let timer;
+      function inventory() {
+        if (!safe()) return;
+        window.__recordLifeOSControl({ scope: scope(), controls: [...document.querySelectorAll(selector)].filter(visible).map(describe) }).catch(() => {});
+      }
+      new MutationObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(inventory, 110);
+      }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['open', 'hidden', 'inert', 'aria-hidden', 'aria-expanded', 'aria-current', 'disabled'] });
+      for (const event of ['click', 'change', 'submit']) window.addEventListener(event, hit => {
+        const el = hit.target instanceof Element && hit.target.closest(selector + ',form');
+        if (!el || !safe()) return;
+        window.__recordLifeOSControl({ scope: scope(), event, control: describe(el) }).catch(() => {});
+      }, true);
+    });
+  }
   page = await context.newPage(); page.setDefaultTimeout(12_000); page.setDefaultNavigationTimeout(30_000);
   page.on('pageerror', error => report.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') report.consoleErrors.push(message.text()); });
@@ -265,6 +325,56 @@ async function main() {
     });
 
 
+    if (process.env.LIFEOS_EXPERIENCE_GATE === '1') {
+      await journey('reconstruction interaction gate', async () => {
+        await activeTab('plan');
+        await clickButton('Add task');
+        await fillDialogField('Task title', 'Synthetic draft');
+        const disclosure = dialog().getByRole('button', { name: 'Notes and subtasks', exact: true });
+        assert.equal(await disclosure.getAttribute('aria-expanded'), 'false');
+        await disclosure.click();
+        await fillDialogField('Notes (optional)', 'Keep this when collapsing');
+        await disclosure.click();
+        await disclosure.click();
+        assert.equal(await dialog().getByLabel('Notes (optional)').inputValue(), 'Keep this when collapsing');
+        const priority = dialog().getByRole('button', { name: /^Priority/ });
+        await priority.click();
+        const sheet = page.locator('dialog[data-preference-choice][open]');
+        await sheet.getByRole('button', { name: 'High', exact: true }).click();
+        await sheet.waitFor({ state: 'hidden' });
+        await page.waitForFunction(() => document.activeElement?.textContent.includes('High'));
+        await priority.click();
+        await page.keyboard.press('Escape');
+        await sheet.waitFor({ state: 'hidden' });
+        assert.equal(await dialog().getByLabel('Task title').inputValue(), 'Synthetic draft');
+        await capture('task-disclosure-390', false);
+        await dialog().getByRole('button', { name: 'Cancel', exact: true }).click();
+        const discard = page.getByRole('alertdialog');
+        if (await discard.isVisible()) await discard.getByRole('button', { name: /Discard/ }).click();
+        await dialog().waitFor({ state: 'hidden' });
+        await activeTab('finance');
+        await capture('money-overview-390', false);
+        await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Accounts' }).click();
+        await clickButton('Add account');
+        const currency = dialog().getByRole('button', { name: 'Currency', exact: true });
+        await currency.click();
+        const search = sheet.getByRole('searchbox', { name: 'Search currencies' });
+        await search.fill('unmatched synthetic option');
+        await sheet.getByText('No matching options.', { exact: true }).waitFor();
+        await search.fill('JPY');
+        await capture('choice-search-390', false);
+        await sheet.locator('button[data-option-value="JPY"]').click();
+        await sheet.waitFor({ state: 'hidden' });
+        assert.equal(await currency.evaluate(button => button.closest('[data-choice-field]').getAttribute('data-choice-value')), 'JPY');
+        await dialog().getByRole('button', { name: 'Add account', exact: true }).click();
+        await dialog().getByText('Complete the highlighted field.', { exact: true }).waitFor();
+        const name = dialog().getByLabel('Account name');
+        assert.ok(await name.evaluate(element => element === document.activeElement));
+        assert.equal(await page.locator('select').count(), 0);
+      });
+      return;
+    }
+
     if (process.env.LIFEOS_FEATHER_GATE === '1') {
       await journey('Feather rendered comparison', async () => {
         const captureScreen = name => capture(name, false);
@@ -277,7 +387,7 @@ async function main() {
         await page.getByRole('navigation', { name: 'Plan destinations' }).waitFor();
         await captureScreen('plan');
         const layouts = [];
-        for (const [tab, action, label, key] of [['Tasks','Create Task','Task title','task'], ['Habits','Add habit','Habit name','habit'], ['Goals','Add goal','Goal title','goal']]) {
+        for (const [tab, action, label, key] of [['Tasks','Add task','Task title','task'], ['Habits','Add habit','Habit name','habit'], ['Goals','Add goal','Goal title','goal']]) {
           await planDestination(tab);
           await clickButton(action, { exact: false });
           await dialog().getByLabel(label).waitFor();
@@ -310,7 +420,7 @@ async function main() {
         await clickButton('Add goal', { exact: false });
         await fillDialogField('Goal title', 'Finish one course');
         await dialog().getByLabel('Target', { exact: true }).fill('10');
-        await dialog().getByRole('button', { name: 'Save goal', exact: true }).click();
+        await dialog().getByRole('button', { name: 'Add goal', exact: true }).click();
         await clickButton('Protect this device and save');
         await page.getByRole('button', { name: /^Finish one course/ }).click();
         await page.getByRole('heading', { name: 'Finish one course' }).waitFor();
@@ -344,8 +454,8 @@ async function main() {
       await planDestination('Goals');
       await capture('goals-empty-390');
       await activeTab('finance');
-      await clickButton('This month');
-      await page.getByRole('heading', { name: 'This month', exact: true }).waitFor();
+      await clickButton('View monthly summary');
+      await page.getByRole('heading', { name: 'Monthly summary', exact: true }).waitFor();
       await page.getByRole('heading', { name: 'Savings contributions' }).waitFor();
       await capture('monthly-overview-390');
       await clickButton('Money overview');
@@ -357,9 +467,9 @@ async function main() {
       const views = page.getByRole('group', { name: 'Task views' }).getByRole('button');
       assert.match(await views.first().innerText(), /^All/);
       assert.equal(await views.first().getAttribute('aria-pressed'), 'true');
-      await clickButton('Create Task');
+      await clickButton('Add task');
       await fillDialogField('Task title', 'QA acceptance: review weekly plan');
-      const footerAtBottom = await dialog().getByRole('button', { name: 'Create Task', exact: true }).evaluate(button =>
+      const footerAtBottom = await dialog().getByRole('button', { name: 'Add task', exact: true }).evaluate(button =>
         innerHeight - button.getBoundingClientRect().bottom < 36,
       );
       assert.equal(footerAtBottom, true, 'the primary action stays at the bottom of a short composer');
@@ -381,8 +491,8 @@ async function main() {
       }, 'QA acceptance: review weekly plan');
       await clickButton('Filters');
       const filters = page.getByRole('dialog', { name: 'Task filters' });
-      await filters.getByLabel('Status').selectOption('completed');
-      await filters.getByLabel('Priority').selectOption('Medium');
+      await chooseOption(filters, 'Status', 'completed');
+      await chooseOption(filters, 'Priority', 'Medium');
       await capture('plan-filters-390');
       await clickButton('Apply filters');
       await page.getByRole('button', { name: 'Filters (2)' }).waitFor();
@@ -399,15 +509,14 @@ async function main() {
       await fillDialogField('Amount', '125.50');
       await fillDialogField('Merchant or description', 'QA acceptance: expense');
       await capture('add-transaction-composer-390');
-      const category = dialog().getByLabel('Category', { exact: false }).last();
-      await category.selectOption({ index: 1 });
-      await saveDialog('Save transaction');
+      await chooseOption(dialog(), 'Category', { index: 1 });
+      await saveDialog('Add transaction');
       await page.getByText('QA acceptance: expense', { exact: true }).waitFor();
       await page.getByTestId('money-home').getByRole('button', { name: /^Budgets/ }).click();
       await clickButton('Add budget', { exact: false });
       await fillDialogField('Monthly limit', '1000');
       await capture('add-budget-composer-390');
-      await saveDialog('Save budget');
+      await saveDialog('Add budget');
       const budgetState = await page.evaluate(async () => {
         const db = await import('/src/db.ts');
         const rows = await db.StorageService.budgets.getAll();
@@ -435,8 +544,8 @@ async function main() {
       await page.getByRole('heading', { name: 'Insights', exact: true }).waitFor();
       await page.getByRole('heading', { name: 'Expense categories' }).waitFor();
       assert.ok(await page.locator('.recharts-wrapper').count() > 0, 'real finance chart is rendered from the saved expense');
-      await page.getByLabel('Time period').selectOption('3');
-      assert.equal(await page.getByLabel('Time period').inputValue(), '3');
+      await chooseOption(page, 'Time period', '3');
+      assert.equal(await page.getByRole('button', { name: 'Time period', exact: true }).evaluate(button => button.closest('[data-choice-field]').getAttribute('data-choice-value')), '3');
       await capture('money-analytics-posted-390');
       assert.match(await page.locator('.money-period-control input').getAttribute('aria-label'), /November 2026/,
         'period selector retains a full accessible month name');
@@ -473,11 +582,11 @@ async function main() {
       await fillDialogField('Goal title', 'QA acceptance: emergency reserve');
       await fillDialogField('Target amount', '5000');
       await capture('add-savings-composer-390');
-      await saveDialog('Save savings');
+      await saveDialog('Add savings goal');
       await clickButton('Add contribution');
       await fillDialogField('Amount', '100');
       await capture('add-contribution-composer-390');
-      await saveDialog('Save contribution');
+      await saveDialog('Add savings contribution');
       const savingsState = await page.evaluate(async () => {
         const db = await import('/src/db.ts');
         const goals = await db.StorageService.savings.getGoals();
@@ -492,7 +601,7 @@ async function main() {
     await journey('create and check in a habit', async () => {
       await planDestination('Habits'); await clickButton('Add habit', { exact: false });
       await fillDialogField('Habit name', 'QA acceptance: read ten pages');
-      await saveDialog('Save habit');
+      await saveDialog('Add habit');
       const checkIn = page.getByRole('button', { name: 'Mark QA acceptance: read ten pages complete' });
       await checkIn.click();
       const undoCheckIn = page.getByRole('button', { name: 'Mark QA acceptance: read ten pages incomplete' });
@@ -504,11 +613,11 @@ async function main() {
       await clickButton('Back to list');
       await clickButton('Add habit', { exact: false });
       await fillDialogField('Habit name', 'QA acceptance: drink water');
-      await dialog().getByLabel('Progress tracking').selectOption('quantity');
+      await chooseOption(dialog(), 'Progress tracking', 'quantity');
       await fillDialogField('Daily quantity target', '4');
       await fillDialogField('Unit', 'glasses');
       await capture('add-habit-composer-390');
-      await saveDialog('Save habit');
+      await saveDialog('Add habit');
       await page.getByRole('button', { name: /^QA acceptance: drink water/ }).click();
       await page.getByRole('heading', { name: 'QA acceptance: drink water' }).waitFor();
       await page.getByText('0 / 4 glasses', { exact: true }).waitFor();
@@ -529,23 +638,25 @@ async function main() {
       await dialog().getByLabel('Target', { exact: true }).fill('10');
       assert.equal(await dialog().getByLabel('Target date (optional)', { exact: true }).inputValue(), '');
       await capture('add-goal-composer-390');
-      await saveDialog('Save goal');
+      await saveDialog('Add goal');
       await page.getByRole('button', { name: /^QA acceptance: finish one course/ }).click();
       await page.getByRole('heading', { name: 'QA acceptance: finish one course' }).waitFor();
       await page.getByText('Open-ended', { exact: true }).waitFor();
       await clickButton('Edit goal');
+      await dialog().getByRole('button', { name: 'Target date and notes' }).click();
       await fillDialogField('Target date (optional)', '2026-12-31');
-      await saveDialog('Save goal');
+      await saveDialog('Save changes');
       await clickButton('Edit goal');
+      await dialog().getByRole('button', { name: 'Target date and notes' }).click();
       const deadline = dialog().getByLabel('Target date (optional)', { exact: true });
       assert.equal(await deadline.inputValue(), '2026-12-31');
       await deadline.fill('');
-      await saveDialog('Save goal');
+      await saveDialog('Save changes');
       await page.getByText('Open-ended', { exact: true }).waitFor();
       await clickButton('+ Milestone');
       await fillDialogField('Milestone title', 'QA acceptance: finish first module');
       await capture('add-milestone-composer-390');
-      await saveDialog('Save milestone');
+      await saveDialog('Add goal milestone');
       const milestoneToggle = page.locator('section[aria-labelledby="goal-detail-title"] label').filter({ hasText: 'QA acceptance: finish first module' }).locator('input[type="checkbox"]');
       await milestoneToggle.waitFor();
       await milestoneToggle.focus();
@@ -560,7 +671,7 @@ async function main() {
       await clickButton('Update progress');
       await fillDialogField('Current progress', '4');
       await capture('goal-progress-composer-390');
-      await saveDialog('Save progress');
+      await saveDialog('Save changes');
       await page.getByRole('progressbar', { name: 'QA acceptance: finish one course progress' }).waitFor();
       await capture('life-goal-detail-390');
       await clickButton('Pause goal');
@@ -589,7 +700,7 @@ async function main() {
       await filterButton.click();
       await clickButton('Clear filters');
       await clickButton('Apply filters');
-      await clickButton('Create Task');
+      await clickButton('Add task');
       const title = 'QA acceptance: timed task';
       await fillDialogField('Task title', title);
       await dialog().getByRole('button', { name: /^Schedule/ }).click();
@@ -599,7 +710,7 @@ async function main() {
       await dialog().getByRole('button', { name: /^Extra reminder/ }).click();
       await page.getByRole('dialog', { name: 'Extra reminder' }).getByRole('button', { name: '15 minutes before' }).click();
       await capture('task-timed-composer-390');
-      await saveDialog('Create Task');
+      await saveDialog('Add task');
       const stored = () => page.evaluate(async name => {
         const {StorageService} = await import('/src/db.ts');
         return (await StorageService.tasks.getAll()).find(row => row.title === name);
@@ -614,7 +725,7 @@ async function main() {
       await clickButton('Edit task');
       await dialog().getByRole('button', { name: /^Reminder/ }).click();
       await dialog().getByLabel('Alert at due time').uncheck();
-      await saveDialog('Save task');
+      await saveDialog('Save changes');
       assert.equal((await stored()).dueAlertDisabled, true);
       await clickButton('Delete task');
       await page.getByRole('alertdialog').getByRole('button', { name: 'Delete task', exact: true }).click();
@@ -753,7 +864,7 @@ async function main() {
           assert.ok(coverage.transactions >= 55);
           await activeTab('finance');
           await capture('money-sample-390');
-          await clickButton('This month');
+          await clickButton('View monthly summary');
           await capture('monthly-overview-sample-390');
           await clickButton('Money overview');
           await planDestination('Habits');
@@ -858,9 +969,9 @@ async function main() {
       const title = 'QA acceptance: edited from transaction details';
       await fillDialogField('Merchant or description', title);
       await capture('edit-transaction-composer-390');
-      await saveDialog('Save transaction');
+      await saveDialog('Save changes');
       await page.getByRole('button', {name:'View transaction ' + title,exact:true}).click();
-      await detail.getByText('More actions', {exact:true}).click();
+      await detail.getByText('Transaction actions', {exact:true}).click();
       await detail.getByRole('button', {name:'Delete transaction',exact:true}).click();
       await page.getByRole('alertdialog').getByRole('button', {name:'Delete transaction',exact:true}).click();
       await page.waitForFunction(async name => {
@@ -876,28 +987,28 @@ async function main() {
         await fillDialogField('Account name', name);
         await fillDialogField('Starting balance', balance);
         if (balance === '100') await capture('add-account-composer-390');
-        await saveDialog('Save account');
+        await saveDialog('Add account');
         await page.getByRole('heading', { name, exact: true }).waitFor();
       }
       await clickButton('Edit QA cash account');
       await fillDialogField('Account name', 'QA edited cash account');
       await capture('edit-account-composer-390');
-      await saveDialog('Save account');
+      await saveDialog('Save changes');
       await page.getByRole('heading', { name: 'QA edited cash account', exact: true }).waitFor();
       await clickButton('Transfer');
       await fillDialogField('Amount sent', '20.25');
       await capture('transfer-composer-390');
-      await saveDialog('Save transfer');
+      await saveDialog('Record transfer');
       await page.getByRole('heading', { name: 'Transfers', exact: true }).waitFor();
       await capture('money-accounts-populated-390');
       await clickButton('Money overview');
       await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Scheduled', exact: true }).click();
-      await clickButton('Add');
+      await clickButton('Add scheduled item');
       const name = 'QA recurring utility bill';
       await dialog().getByRole('textbox', { name: 'Name', exact: true }).fill(name);
       await fillDialogField('Amount', '30.50');
       await capture('planned-bill-composer-390');
-      await saveDialog('Save plan');
+      await saveDialog('Add scheduled item');
       await page.getByTestId('money-planning').getByText(name, { exact: true }).waitFor();
       const persisted = await page.evaluate(async () => {
         const { lifeOSDatabase } = await import('/src/db.ts');
@@ -909,16 +1020,13 @@ async function main() {
         };
       });
       assert.deepEqual(persisted, { accounts: 2, transfers: 1, commitments: 1 });
-      await clickButton('Add');
+      await clickButton('Add scheduled item');
       const once = 'QA one-time repair';
       await dialog().getByRole('textbox', { name: 'Name', exact: true }).fill(once);
       await fillDialogField('Amount', '12.75');
-      await dialog().getByLabel('Frequency').selectOption('once');
-      const category = dialog().getByLabel('Category (optional)', { exact: true });
-      const categoryId = await category.locator('option').nth(1).getAttribute('value');
-      assert.ok(categoryId);
-      await category.selectOption(categoryId);
-      await saveDialog('Save plan');
+      await chooseOption(dialog(), 'Frequency', 'once');
+      assert.ok(await chooseOption(dialog(), 'Category (optional)', { index: 1 }));
+      await saveDialog('Add scheduled item');
       await clickButton('Record occurrence for ' + once);
       await clickButton('Record occurrence');
       await clickButton('History');
@@ -953,9 +1061,9 @@ async function main() {
     await journey('synthetic Mark done persists the selected task only', async () => {
       await activeTab('plan');
       await planDestination('Tasks');
-      await clickButton('Create Task');
+      await clickButton('Add task');
       await fillDialogField('Title', 'QA notification action task');
-      await saveDialog('Create Task');
+      await saveDialog('Add task');
       const completed = page.getByRole('checkbox', { name: 'Mark QA notification action task incomplete' });
       await page.evaluate(async () => {
         const { StorageService } = await import('/src/db.ts');
@@ -974,7 +1082,7 @@ async function main() {
       if (await page.getByRole('button', { name: 'Money overview' }).isVisible()) await clickButton('Money overview');
       await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Savings', exact: true }).click();
       assert.equal(await page.getByText('Currency converter', { exact: true }).count(), 0);
-      await clickButton('Savings projection');
+      await clickButton('View savings projection');
       const projection = page.getByTestId('savings-projection');
       assert.equal(await page.getByText('Currency converter', { exact: true }).count(), 0);
       await projection.getByLabel('Starting savings').fill('1000');

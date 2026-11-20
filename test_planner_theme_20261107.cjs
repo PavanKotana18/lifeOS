@@ -18,7 +18,7 @@ assert.match(planner, /min-h-11 min-w-11/);
 assert.match(plannerAndDetail, /text-\[var\(--danger\)\]/);
 assert.match(plannerAndDetail, /text-\[var\(--success\)\]/);
 assert.match(taskDetail, /role="dialog" aria-modal=\{present \|\| undefined\} aria-hidden=\{!present \|\| undefined\}[\s\S]*aria-labelledby="task-detail-title"/);
-assert.match(planner, /<details className="planner-filters">[\s\S]*aria-label="Search planner tasks"[\s\S]*aria-label="Task date or status filter"[\s\S]*aria-label="Task priority filter/);
+assert.match(planner, /<details className="planner-filters">[\s\S]*aria-label="Search planner tasks"[\s\S]*label="Task date or status filter"[\s\S]*label="Task priority filter/);
 assert.match(app, /plannerFilter === 'upcoming' \? Boolean\(task\.dueDate\) && task\.dueDate > todayKey[\s\S]{0,120}\+ 7/);
 assert.doesNotMatch(fs.readFileSync('src/components/PlanHub.tsx', 'utf8'), /aria-label="Open calendar"/, 'calendar is absent from the Plan toolbar');
 assert.match(fs.readFileSync('src/components/PlanHub.tsx', 'utf8'), /aria-pressed=\{view === item.id\} onClick=\{\(\) => setView\(item.id\)\}/, 'Plan date tabs filter the visible tasks in place');

@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { Check } from 'lucide-react';
+import { useMemo } from 'react';
+import { PreferenceChoice, type ChoiceOption } from './PreferenceChoice';
+export { PreferenceChoice } from './PreferenceChoice';
 import { CURRENCY_CODES, type UserPreferences } from '../services/userPreferences';
 import { formatCurrencyChoice } from '../services/financeCore';
 
@@ -11,40 +12,10 @@ type Props = {
   onChange: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void;
 };
 
-type Option = readonly [value: string, name: string];
-
-export function PreferenceChoice({ label, value, options, onSelect, searchable = false, disabled = false, icon, disabledHint }: {
-  label: string; value: string; options: readonly Option[]; onSelect: (value: string) => void; searchable?: boolean; disabled?: boolean; icon?: ReactNode; disabledHint?: string;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const [search, setSearch] = useState('');
-  const query = search.trim().toLocaleLowerCase();
-  const choices = searchable ? options.filter(([key, name]) => (key + ' ' + name).toLocaleLowerCase().includes(query)) : options;
-  const selected = options.find(([key]) => key === value)?.[1] || value;
-  return <>
-    <button type="button" className={icon ? "task-option" : "preference-row"} aria-haspopup="dialog" disabled={disabled} onClick={() => { setSearch(''); dialog.current?.showModal(); }}>
-      {icon}{icon ? <span><strong>{label}</strong><small>{disabled ? disabledHint : selected}</small></span> : <><span>{label}</span><span className="text-secondary text-right">{disabled && disabledHint ? disabledHint : selected}</span></>}
-    </button>
-    {disabled && !disabledHint && <p className="pb-2 text-xs text-secondary">Currency is locked for existing financial records.</p>}
-    <dialog ref={dialog} className="preference-sheet lifeos-page" data-preference-choice aria-label={label} onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
-      <section className="space-y-2">
-        <header className="flex items-center justify-between gap-3"><h2 className="type-section-title">{label}</h2><button type="button" className="min-h-11 px-2 text-sm" onClick={() => dialog.current?.close()}>Close</button></header>
-        {searchable && <input aria-label="Search currencies" className="lifeos-input min-h-11 w-full rounded-xl px-3" type="search" autoComplete="off" placeholder="Search by name or code" value={search} onChange={event => setSearch(event.target.value)} />}
-        <div className="preference-options" role="group" aria-label={label}>
-          {choices.map(([key, name]) => <button key={key} type="button" className="preference-row" aria-pressed={key === value} onClick={() => { if (key !== value) onSelect(key); dialog.current?.close(); }}>
-            <span>{name}</span>{key === value && <Check size={16} aria-hidden="true" />}
-          </button>)}
-          {!choices.length && <p role="status" className="py-3 text-sm text-secondary">No matching options.</p>}
-        </div>
-      </section>
-    </dialog>
-  </>;
-}
-
 export default function ProfilePreferences({ preferences, hasFinancialRecords, onChange, dateOnlyAlertTime, onDateOnlyAlertTime }: Props) {
   const locale = preferences.locale === 'system' ? undefined : preferences.locale;
   const currencyOptions = useMemo(() => CURRENCY_CODES.map(code => [code, formatCurrencyChoice(code, locale)] as const), [locale]);
-  const choice = <K extends keyof UserPreferences>(key: K, label: string, options: readonly Option[]) => <PreferenceChoice
+  const choice = <K extends keyof UserPreferences>(key: K, label: string, options: readonly ChoiceOption[]) => <PreferenceChoice
     label={label} value={String(preferences[key])} options={options} onSelect={value => onChange(key, value as UserPreferences[K])} />;
   return <div className="profile-preferences space-y-4" data-testid="profile-preferences">
     <section className="preference-group" aria-label="Currency and locale">

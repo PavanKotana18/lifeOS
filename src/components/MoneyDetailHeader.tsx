@@ -3,7 +3,7 @@ import MoneyPeriod from './MoneyPeriod';
 
 export type MoneyDetail = 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics' | 'projection';
 const titles: Record<MoneyDetail, string> = {
-  monthly: 'This month', transactions: 'Activity', accounts: 'Accounts', budgets: 'Budgets',
+  monthly: 'Monthly summary', transactions: 'Activity', accounts: 'Accounts', budgets: 'Budgets',
   savings: 'Savings', planning: 'Scheduled', analytics: 'Insights', projection: 'Savings projection',
 };
 

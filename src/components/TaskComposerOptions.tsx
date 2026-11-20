@@ -1,4 +1,4 @@
-﻿import { useId, useState, type Dispatch, type SetStateAction } from 'react';
+import { useId, useState, type Dispatch, type SetStateAction } from 'react';
 import { Bell, CalendarDays, Flag, Repeat2 } from 'lucide-react';
 import { AliveDisclosure, AliveReveal } from './AliveDisclosure';
 import { PreferenceChoice } from './ProfilePreferences';
@@ -82,19 +82,24 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
         </label>}
       </div>
     </AliveReveal>
-    <AliveDisclosure label="Add details">
+    <AliveDisclosure label={editing ? "Task notes" : "Notes and subtasks"}>
       <div className="task-option-panel space-y-3">
         <label className="block text-xs text-secondary">Notes (optional)
           <textarea rows={2} maxLength={500} value={draft.description || ''} onChange={event => set('description', event.target.value)} className={field} />
         </label>
-        <label className="block text-xs text-secondary">Category (optional)
-          <input maxLength={50} value={draft.category || ''} onChange={event => set('category', event.target.value)} className={field} />
-        </label>
-        {goals.length > 0 && <PreferenceChoice label="Linked goal" value={draft.goalId || ''}
-          options={[[ '', 'No linked goal' ], ...goals.map(goal => [goal.id, goal.title] as const)]} onSelect={value => choose('goalId', value)} />}
+
         {!editing && <label className="block text-xs text-secondary">Subtasks (one per line)
           <textarea rows={3} value={draft.subtasks || ''} onChange={event => set('subtasks', event.target.value)} className={field} />
         </label>}
+      </div>
+    </AliveDisclosure>
+    <AliveDisclosure label={goals.length ? "Category and related goal" : "Task category"}>
+      <div className="task-option-panel space-y-3">
+        <label className="block text-xs text-secondary">Category (optional)
+          <input maxLength={50} value={draft.category || ''} onChange={event => set('category', event.target.value)} className={field} />
+        </label>
+        {goals.length > 0 && <PreferenceChoice label="Linked goal" searchable={goals.length > 8} value={draft.goalId || ''}
+          options={[[ '', 'No linked goal' ], ...goals.map(goal => [goal.id, goal.title] as const)]} onSelect={value => choose('goalId', value)} />}
       </div>
     </AliveDisclosure>
   </div>;

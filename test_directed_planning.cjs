@@ -27,7 +27,7 @@ const draftState = {
   rateDirty: true,
 };
 const markup = renderToStaticMarkup(React.createElement(MoneyPlanning, { ...props, draftState, onDraftStateChange: () => {}, saving: true }));
-assert.match(markup, /aria-label="Planned commitment"[^>]*aria-busy="true"/);
+assert.match(markup, /aria-labelledby="money-commitment-dialog-title"[^>]*aria-busy="true"/);
 assert.match(markup, /aria-label="Manual exchange rate"[^>]*aria-busy="true"/);
 assert.match(markup, /value="Rent"/);
 assert.match(markup, /value="25000\.00"/);

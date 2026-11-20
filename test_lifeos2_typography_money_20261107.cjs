@@ -87,6 +87,6 @@ const emptyMarkup = renderToStaticMarkup(React.createElement(MoneyHome, {
   onSavings() {}, onAnalytics() {}, onPlanning() {}, onAccounts() {}, accountSummaries: [],
   savingsGoals: [], legacyCurrency: 'INR', onEditTransaction() {},
 }));
-assert.match(emptyMarkup, /No transactions this month/, 'empty Money history uses a brief status');
+assert.match(emptyMarkup, /No activity this month/, 'empty Money history uses a brief status');
 assert.equal((emptyMarkup.match(/money-account-nudge/g) || []).length, 0, 'empty Money does not present an optional account prompt as a required first step');
 console.log('LIFEOS 2 TYPOGRAPHY + MONEY: bundled Inter/OFL, five script fallbacks, zoom support, token scale, currency formatting and Money navigation checks passed.');

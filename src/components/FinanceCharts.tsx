@@ -1,3 +1,4 @@
+import { PreferenceChoice } from './PreferenceChoice';
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
   ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis
@@ -34,15 +35,10 @@ export default function FinanceCharts({
       <section className="lifeos-panel rounded-2xl border p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1"><h4 className="text-sm font-semibold">Monthly trends</h4><InfoTip label="Monthly trends">Only recorded income and spending are included. Gaps mean no transactions that month.</InfoTip></div>
-          <div className="flex items-center gap-2"><label className="shrink-0 text-[11px] text-secondary"><span className="sr-only">Period</span><select aria-label="Time period" value={range}
-            onChange={event => onRangeChange(Number(event.target.value) as 3 | 6 | 12)}
-            className="lifeos-input min-h-11 rounded-lg px-3 py-2 text-xs">
-            <option value={3}>Last 3 months</option>
-            <option value={6}>Last 6 months</option>
-            <option value={12}>Last 12 months</option>
-          </select></label></div>
+          <div className="flex items-center gap-2"><div className="shrink-0 text-[11px] text-secondary"><PreferenceChoice variant="field" label="Time period" value={String(range)}
+                options={[[String(3), "Last 3 months"], [String(6), "Last 6 months"], [String(12), "Last 12 months"]]} onSelect={event => onRangeChange(Number(event) as 3 | 6 | 12)} /></div></div>
         </div>
-        <p className="sr-only">Monthly chart data in posted {analytics.currencyCode}: {analytics.periodRows.map(row => `${row.month}: ${row.hasRecords ? `income ${row.incomeMinor === null ? formatMoney(row.income) : formatMinorUnits(BigInt(row.incomeMinor), analytics.currencyCode, locale)}, expenses ${row.expensesMinor === null ? formatMoney(row.expenses) : formatMinorUnits(BigInt(row.expensesMinor), analytics.currencyCode, locale)}` : 'no saved records'}`).join('; ')}. Planned amounts are excluded.</p>
+        <p className="sr-only">Monthly chart data in {analytics.currencyCode}: {analytics.periodRows.map(row => `${row.month}: ${row.hasRecords ? `income ${row.incomeMinor === null ? formatMoney(row.income) : formatMinorUnits(BigInt(row.incomeMinor), analytics.currencyCode, locale)}, expenses ${row.expensesMinor === null ? formatMoney(row.expenses) : formatMinorUnits(BigInt(row.expensesMinor), analytics.currencyCode, locale)}` : 'no saved records'}`).join('; ')}. Planned amounts are excluded.</p>
         {analytics.periodRows.some(row => row.hasRecords) ? (
           <div className="h-56 w-full">
             <ResponsiveContainer width="100%" height="100%">

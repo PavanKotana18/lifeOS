@@ -1,12 +1,14 @@
 import { playPrimaryTransition } from '../services/primaryTransition';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import { animateRoute, readRoutePose, type RoutePose } from '../services/aliveMotion';
-import { getMotionPreset, resistDrag, type MotionPresetId } from '../services/interfaceMotion';
+import { readRoutePose, type RoutePose } from '../services/aliveMotion';
+import { resistDrag, type MotionPresetId } from '../services/interfaceMotion';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from '../services/navigationCatalog';
 
 type Direction = 'left' | 'right';
 type Bounds = { top: number; left: number; width: number };
+type Drag = { element: HTMLElement; bounds: Bounds; origin: number; position: number; scrollOffset: (tab: MainTab) => number; preview: HTMLElement | null; previewX: number };
 type Flight = {
+  followedFinger: boolean;
   id: number;
   from: MainTab;
   to: MainTab;
@@ -37,8 +39,8 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   const transition = useRef<Flight | null>(null);
   const sequence = useRef(0);
   const stopFlight = useRef<(() => void) | null>(null);
-  const drag = useRef<{ element: HTMLElement; origin: number } | null>(null);
-  const settle = useRef<ReturnType<typeof animateRoute> | null>(null);
+  const drag = useRef<Drag | null>(null);
+  const settle = useRef<(() => void) | null>(null);
   const latest = useRef<FlightStats | null>(null);
   const measure = useRef(false);
   const slowRuns = useRef(0);
@@ -62,12 +64,21 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   }, []);
   const indicator = useRef<HTMLSpanElement>(null);
 
+  const removePreview = (preview: HTMLElement | null) => {
+    preview?.removeAttribute('data-gesture-preview');
+    preview?.style.removeProperty('--gesture-x');
+    preview?.style.removeProperty('--gesture-top');
+    preview?.style.removeProperty('--gesture-left');
+    preview?.style.removeProperty('--gesture-width');
+  };
+
   const clearDrag = useCallback(() => {
     const element = drag.current?.element;
+    removePreview(drag.current?.preview ?? null);
     drag.current = null;
     element?.removeAttribute('data-gesture-dragging');
     element?.style.removeProperty('--gesture-x');
-    settle.current?.cancel();
+    settle.current?.();
     settle.current = null;
     return element;
   }, []);
@@ -89,18 +100,19 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     const next = routeElement(to);
     const previous = transition.current;
     const interrupted = Boolean(previous || drag.current || settle.current);
-    const fromPose = interrupted ? readRoutePose(old) : { x: 0, opacity: 1 };
+    const activeDrag = drag.current;
+    const fromPose = activeDrag ? { x: activeDrag.position, opacity: 1 } : interrupted ? readRoutePose(old) : { x: 0, opacity: 1 };
     const reversePose = previous?.from === to && next && !next.hidden ? readRoutePose(next) : null;
     const geometry = stageBounds.current;
-    const bounds = geometry ? { ...geometry, top: geometry.top - window.scrollY } : old?.getBoundingClientRect();
+    const bounds = activeDrag?.bounds ?? (geometry ? { ...geometry, top: geometry.top - window.scrollY } : old?.getBoundingClientRect());
     const indicatorFrom = previous && indicator.current?.offsetWidth
       ? readRoutePose(indicator.current).x * 100 / indicator.current.offsetWidth : tabIndex(from) * 100;
     const focusIncoming = old?.contains(document.activeElement) ?? false;
     const travelDirection = direction ?? (tabIndex(to) < tabIndex(from) ? 'right' : 'left');
     const sign = travelDirection === 'right' ? -1 : 1;
     const distance = tabIndex(from) === tabIndex(to) ? 38 : Math.min(120, (bounds?.width ?? 390) * .24);
-    const toPose = reversePose ?? { x: sign * distance, opacity: .98 };
-    if (drag.current) toPose.x = sign * Math.max(18, distance - Math.abs(fromPose.x) * .44);
+    const followedFinger = !!next && activeDrag?.preview === next;
+    const toPose = followedFinger ? { x: activeDrag.previewX, opacity: 1 } : reversePose ?? { x: sign * distance, opacity: .98 };
 
     clearDrag();
     cancel();
@@ -112,7 +124,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     }
     const flight: Flight = {
       id: ++sequence.current, from, to, direction: travelDirection, fromPose, toPose, focusIncoming, indicatorFrom, velocity,
-      started, outgoing: { top: bounds.top, left: bounds.left - (geometry ? 0 : fromPose.x), width: bounds.width },
+      started, followedFinger, outgoing: { top: bounds.top, left: bounds.left - (geometry ? 0 : fromPose.x), width: bounds.width },
     };
     transition.current = flight;
     setTabTransition(flight);
@@ -126,16 +138,16 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     if (flight.focusIncoming) focusRoute(incoming);
     if (!incoming || reduced) { cancel(); return; }
     const sign = flight.direction === 'right' ? -1 : 1;
-    const momentumTarget = Math.max(36, Math.min(112, Math.abs(flight.fromPose.x) + Math.abs(flight.velocity) * .019));
+    const momentumTarget = flight.followedFinger && flight.outgoing ? flight.outgoing.width : Math.max(36, Math.min(112, Math.abs(flight.fromPose.x) + Math.abs(flight.velocity) * .019));
     const surfaces: Parameters<typeof playPrimaryTransition>[0] = [
       { element: incoming, from: flight.toPose, to: { x: 0, opacity: 1 } },
     ];
-    if (outgoing) surfaces.push({ element: outgoing, from: flight.fromPose, to: { x: -sign * momentumTarget, opacity: .82 } });
+    if (outgoing) surfaces.push({ element: outgoing, from: flight.fromPose, to: { x: -sign * momentumTarget, opacity: flight.followedFinger ? 1 : .82 } });
     if (indicator.current && tabIndex(flight.from) !== tabIndex(flight.to)) {
       surfaces.push({ element: indicator.current, unit: '%',
         from: { x: flight.indicatorFrom, opacity: 1 }, to: { x: tabIndex(flight.to) * 100, opacity: 1 } });
     }
-    const animations = playPrimaryTransition(surfaces, preset);
+    const animations = playPrimaryTransition(surfaces, preset, flight.followedFinger ? Math.abs(flight.velocity) : 0);
     if (!animations.length) { cancel(); return; }
     const intervals: number[] = [];
     let frameId = 0;
@@ -181,14 +193,16 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     return () => { clearDrag(); };
   }, [reduced, clearDrag, cancel]);
 
-  const beginDrag = () => {
+  const beginDrag = (scrollOffset: (tab: MainTab) => number) => {
     if (reduced) return;
     const element = routeElement(activeTabRef.current);
     if (!element) return;
-    const origin = readRoutePose(element).x;
-    cancel();
+    const geometry = stageBounds.current;
+    const bounds = geometry ? { ...geometry, top: geometry.top - window.scrollY } : element.getBoundingClientRect();
+    const origin = transition.current || settle.current ? readRoutePose(element).x : 0;
+    if (transition.current) cancel();
     clearDrag();
-    drag.current = { element, origin };
+    drag.current = { element, origin, bounds, position: origin, scrollOffset, preview: null, previewX: 0 };
     element.style.setProperty('--gesture-x', `${origin}px`);
     element.setAttribute('data-gesture-dragging', 'true');
   };
@@ -196,27 +210,55 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   const moveDrag = (distance: number) => {
     const current = drag.current;
     if (!current || reduced) return;
-    const viewport = window.innerWidth;
-    const threshold = viewport * .2;
-    const absolute = Math.abs(distance);
-    const excess = Math.sign(distance) * Math.max(0, absolute - threshold);
-    const position = Math.sign(distance) * Math.min(absolute, threshold) + resistDrag(excess, viewport, preset) * .6;
-    current.element.style.setProperty('--gesture-x', `${current.origin + position}px`);
+    const { bounds } = current;
+    const nextTab = distance === 0 ? undefined : order[tabIndex(activeTabRef.current) + (distance < 0 ? 1 : -1)];
+    const preview = nextTab ? routeElement(nextTab) : null;
+    if (preview !== current.preview) {
+      removePreview(current.preview);
+      current.preview = preview;
+      if (preview && nextTab) {
+        const top = bounds.top + window.scrollY - current.scrollOffset(nextTab);
+        preview.style.setProperty('--gesture-top', `${top}px`);
+        preview.style.setProperty('--gesture-left', `${bounds.left}px`);
+        preview.style.setProperty('--gesture-width', `${bounds.width}px`);
+        preview.setAttribute('data-gesture-preview', 'true');
+      }
+    }
+    const position = preview
+      ? Math.max(-bounds.width, Math.min(bounds.width, distance))
+      : resistDrag(distance, bounds.width, preset) * .5;
+    current.position = current.origin + position;
+    current.element.style.setProperty('--gesture-x', `${current.position}px`);
+    if (preview) {
+      current.previewX = current.position + (distance < 0 ? bounds.width : -bounds.width);
+      preview.style.setProperty('--gesture-x', `${current.previewX}px`);
+    }
   };
 
   const endDrag = (animate: boolean, velocity = 0) => {
-    const pose = readRoutePose(drag.current?.element);
-    const element = clearDrag();
-    if (!element || !animate || reduced || Math.abs(pose.x) < .5) return;
-    const limit = getMotionPreset(preset).velocityLimit;
-    const flight = animateRoute(element, pose, { x: 0, opacity: 1 }, preset, Math.max(-limit, Math.min(limit, velocity)));
-    settle.current = flight;
-    const finish = () => {
-      if (settle.current !== flight) return;
-      settle.current = null;
-      flight.cancel();
+    const current = drag.current;
+    if (!current || !animate || reduced || Math.abs(current.position) < .5) { clearDrag(); return; }
+    const { element, preview, position, previewX, bounds } = current;
+    const surfaces: Parameters<typeof playPrimaryTransition>[0] = [
+      { element, from: { x: position, opacity: 1 }, to: { x: 0, opacity: 1 } },
+    ];
+    if (preview) surfaces.push({ element: preview, from: { x: previewX, opacity: 1 },
+      to: { x: (previewX >= position ? 1 : -1) * bounds.width, opacity: 1 } });
+    const animations = playPrimaryTransition(surfaces, preset, Math.abs(velocity));
+    drag.current = null;
+    const cleanup = () => {
+      removePreview(preview);
+      element.removeAttribute('data-gesture-dragging');
+      element.style.removeProperty('--gesture-x');
+      for (const animation of animations) animation.cancel();
     };
-    void flight.then(finish, finish);
+    settle.current = cleanup;
+    const finish = () => {
+      if (settle.current !== cleanup) return;
+      settle.current = null;
+      cleanup();
+    };
+    void Promise.all(animations.map(animation => animation.finished)).then(finish, finish);
   };
 
   const transitionPropsFor = (tab: MainTab) => {

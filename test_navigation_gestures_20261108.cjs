@@ -63,11 +63,11 @@ const dragged = updatePrimaryGesture(started, 7, 120, 308);
 assert.equal(dragged.accepted, true, 'horizontal intent is followed by the active screen');
 assert.equal(dragged.intent, 'horizontal', 'intent is exposed separately from a tap/pending state');
 assert.equal(dragged.session.axis, 'horizontal');
-assert.equal(dragged.session.latestOffsetX, -92, 'the active screen follows near finger speed');
+assert.equal(dragged.session.latestOffsetX, -100, 'the active screen follows the full tracked movement');
 assert.equal(shouldSuppressPrimaryGestureClick(dragged.session), true,
   'a button click is suppressed only after horizontal ownership is established');
 const longDrag = updatePrimaryGesture(started, 7, -1000, 300);
-assert.equal(longDrag.session.latestOffsetX, -168, 'drag resistance is bounded by the current logical viewport width');
+assert.equal(longDrag.session.latestOffsetX, -400, 'drag distance is bounded by the current logical viewport width');
 assert.equal(resolvePrimaryGestureEnd('finance', dragged.session, 7, 120, 308, 1120, true), 'plan');
 assert.equal(resolvePrimaryGestureEnd('finance', dragged.session, 8, 120, 308, 1120, true), null,
   'pointer-up from another touch cannot commit navigation');

@@ -21,7 +21,7 @@ const profiles = Object.fromEntries(Object.entries(timing).map(([preset, { ms, f
 
 type Surface = { element: HTMLElement; from: RoutePose; to: RoutePose; unit?: 'px' | '%' };
 
-export function playPrimaryTransition(surfaces: Surface[], preset: MotionPresetId): Animation[] {
+export function playPrimaryTransition(surfaces: Surface[], preset: MotionPresetId, velocity = 0): Animation[] {
   const { ms, easing } = profiles[preset];
   if (surfaces.some(({ element }) => typeof element.animate !== 'function')) return [];
   const supportedEasing = CSS.supports('animation-timing-function', easing) ? easing : 'cubic-bezier(.22,.7,.22,1)';
@@ -30,7 +30,7 @@ export function playPrimaryTransition(surfaces: Surface[], preset: MotionPresetI
       transform: `translate3d(${pose.x}${unit},0,0)`,
       opacity: pose.opacity,
     }));
-    return element.animate(frames, { duration: ms, easing: supportedEasing, fill: 'both' });
+    return element.animate(frames, { duration: Math.max(210, ms - Math.min(90, velocity * .04)), easing: supportedEasing, fill: 'both' });
   });
   // Set the start after creating all effects. The compositor can advance them together.
   const start = document.timeline.currentTime;

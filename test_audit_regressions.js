@@ -23,7 +23,7 @@ check(
 check(
   app.includes('Budget category (optional)') &&
   app.includes("value={createDraft.categoryId || ''}") &&
-  app.includes("categoryId: e.target.value"),
+  app.includes("categoryId: e"),
   'Budget form exposes and stores the selected category ID'
 );
 
@@ -36,7 +36,7 @@ check(
 
 // F-02: Empty category must retain overall-budget behaviour.
 check(
-  app.includes('<option value="">Overall budget</option>') &&
+  app.includes('["", "Overall budget"]') &&
   app.includes("categoryId: value('categoryId') || undefined"),
   'Empty category selection continues to create an overall budget'
 );

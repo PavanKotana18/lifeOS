@@ -3,6 +3,7 @@ import { useIsPresent } from 'motion/react';
 import type { FormEventHandler, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { FeatherHeader } from './FeatherHeader';
+import { ChoiceCommitContext } from './PreferenceChoice';
 
 type Props = {
   id: string;
@@ -16,10 +17,11 @@ type Props = {
   onSubmit: FormEventHandler<HTMLFormElement>;
   onChange?: FormEventHandler<HTMLFormElement>;
   portal?: boolean;
+  onChoiceChange?: () => void;
   children: ReactNode;
 };
 
-export default function ComposerShell({ id, title, accessibleName, submitLabel, mode, saving, reduced, dismiss, onSubmit, onChange, portal, children }: Props) {
+export default function ComposerShell({ id, title, accessibleName, submitLabel, mode, saving, reduced, dismiss, onSubmit, onChange, onChoiceChange, portal, children }: Props) {
   const present = useIsPresent();
   const page = mode === 'page';
   const titleId = id + '-title';
@@ -49,12 +51,12 @@ export default function ComposerShell({ id, title, accessibleName, submitLabel, 
         if (event.currentTarget.querySelector(':is(input,select,textarea):invalid') !== field) return;
         const error = event.currentTarget.querySelector<HTMLElement>('[data-record-validation]');
         if (error) error.textContent = field.validity.valueMissing ? 'Complete the highlighted field.' : 'Check the highlighted value.';
-        requestAnimationFrame(() => { if (field.isConnected) field.focus(); });
+        if (!field.hasAttribute('data-choice-validation')) requestAnimationFrame(() => { if (field.isConnected) field.focus(); });
       }}>
       <FeatherHeader title={title} id={titleId} back={{ label: 'Close', onClick: dismiss, disabled: saving }} />
       <div className="feather-composer-content">
         <p data-record-validation role="alert" className="record-validation text-sm text-[var(--danger)]" />
-        {children}
+        <ChoiceCommitContext.Provider value={onChoiceChange}>{children}</ChoiceCommitContext.Provider>
       </div>
       <div className="ui-form-actions feather-composer-actions">
         <button type="button" disabled={saving} onClick={dismiss} className="feather-secondary">Cancel</button>

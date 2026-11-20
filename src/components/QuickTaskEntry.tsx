@@ -1,3 +1,4 @@
+import { PreferenceChoice } from './PreferenceChoice';
 import { useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { Task } from '../types';
@@ -54,7 +55,8 @@ export default function QuickTaskEntry({ onAdd, label = 'Quick task' }: Props) {
     <details className="mt-2 rounded-xl border border-[var(--stroke)] px-3"><summary className="flex min-h-11 cursor-pointer items-center text-xs font-semibold text-secondary">Schedule, priority and reminder</summary><div className="grid grid-cols-2 gap-2 pb-3">
       <label className="text-xs text-secondary">Due date<input type="date" value={dueDate} onChange={event => { setDueDate(event.target.value); if (!event.target.value) { setDueTime(''); setReminderAt(''); } }} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm" /></label>
       <label className="text-xs text-secondary">Time<input type="time" disabled={!dueDate} value={dueTime} onChange={event => setDueTime(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm disabled:opacity-50" /></label>
-      <label className="text-xs text-secondary">Priority<select value={priority} onChange={event => setPriority(event.target.value as Task['priority'])} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(item => <option key={item}>{item}</option>)}</select></label>
+      <div className="text-xs text-secondary"><PreferenceChoice variant="field" label="Priority" value={priority}
+                options={[...(['Low', 'Medium', 'High', 'Urgent'].map(item => [String(item), item] as const))]} onSelect={event => setPriority(event as Task['priority'])} /></div>
       <label className="col-span-2 text-xs text-secondary">Reminder<input type="datetime-local" disabled={!dueDate} value={reminderAt} onChange={event => setReminderAt(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm disabled:opacity-50" /><span className="mt-1 block text-[10px]">Notifications are requested only when you set a reminder.</span></label>
     </div></details>
     {error && <p id={errorId} role="alert" className="mt-2 text-sm text-[var(--danger)]">{error}</p>}

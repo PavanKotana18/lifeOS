@@ -19,7 +19,9 @@ assert.ok(!/\b(?:text|bg|border)-(?:slate|indigo|emerald|amber|rose)-\d{2,3}(?:\
 assert.ok(!dialog.includes('hover:lifeos-raised'), 'dialog does not contain invalid generated utility classes');
 const sourceFile = ts.createSourceFile('src/App.tsx', sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const controls = [];
+let choices = 0;
 const visit = node => {
+  if (ts.isJsxSelfClosingElement(node) && node.pos >= start && node.end <= end && node.tagName.getText(sourceFile) === 'PreferenceChoice') choices++;
   if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.pos >= start && node.end <= end && ['input', 'select', 'textarea'].includes(node.tagName.getText(sourceFile))) {
     const attributes = node.attributes.properties;
     const typeAttribute = attributes.find(attribute => ts.isJsxAttribute(attribute) && attribute.name.getText(sourceFile) === 'type');
@@ -32,7 +34,7 @@ const visit = node => {
   ts.forEachChild(node, visit);
 };
 visit(sourceFile);
-assert.ok(controls.length >= 30, 'shared dialog retains its existing editable record fields');
+assert.ok(controls.length + choices >= 40, 'shared dialog retains its existing editable record fields');
 assert.ok(controls.every(className => className.includes('lifeos-input') && className.includes('min-h-11')), 'editable fields use semantic inputs and minimum touch sizing');
 assert.ok(/border border-\[var\(--danger\)\][^\"]*text-\[var\(--danger\)\]/.test(dialog), 'delete action remains visibly dangerous');
 assert.ok(/className="feather-primary"/.test(shell), 'sticky save action uses the semantic accent button and remains reachable');

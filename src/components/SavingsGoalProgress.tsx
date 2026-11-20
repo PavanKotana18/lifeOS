@@ -1,6 +1,6 @@
 import LifeDoodle from './LifeDoodle';
 import { useState } from 'react';
-import { ArrowRight, Check, Pencil, Trash2 } from 'lucide-react';
+import { Check, Pencil, Trash2 } from 'lucide-react';
 import type { SavingsContribution, SavingsGoal } from '../types';
 import { decimalToMinorUnits, formatMinorUnits } from '../services/financeCore';
 import InfoTip from './InfoTip';
@@ -52,7 +52,7 @@ export default function SavingsGoalProgress({ goal, formatMoney, locale, formatD
       <p className="savings-goal-target">Target · {targetLabel}</p>
       <div className="savings-goal-actions">
         <button type="button" onClick={onEditGoal} className="savings-goal-delete" aria-label={`Edit ${goal.title}`}><Pencil size={16} aria-hidden="true" /><span>Edit</span></button>
-        <button type="button" onClick={onContribute} className="savings-goal-contribute">Add contribution <ArrowRight size={15} aria-hidden="true" /></button>
+        <button type="button" onClick={onContribute} className="savings-goal-contribute">Add contribution</button>
         <button type="button" onClick={onDelete} className="savings-goal-delete" aria-label={`Delete ${goal.title}`}><Trash2 size={16} aria-hidden="true" /><span>Delete</span></button>
       </div>
       {contributions.length > 0 && <div className="mt-3 border-t border-[var(--stroke)] pt-2">

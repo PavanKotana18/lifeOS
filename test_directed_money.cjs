@@ -25,7 +25,7 @@ const homeProps = {
   transactions: [{ id: 'synthetic-1', type: 'expense', amount: 12, amountMinor: '1200', currencyCode: 'USD', category: 'Food', description: 'Food', date: '2026-11-05', paymentMethod: 'Cash' }],
   formatMoney, formatDate: date => date, formatTime: date => date.toISOString().slice(11, 16),
   onMonthChange: noop, onAddExpense: noop, onAddIncome: noop, onTransfer: noop,
-  onMoveToSavings: noop, onTransactions: noop, onBudgets: noop, onSavings: noop,
+  onMoveToSavings: noop, onTransactions: noop, onMonthly: noop, onBudgets: noop, onSavings: noop,
   onAnalytics: noop, onPlanning: noop, onAccounts: noop,
   accountSummaries: [
     { id: 'a', name: 'Wallet', type: 'cash', currencyCode: 'USD', balanceMinor: '8000' },
@@ -45,13 +45,13 @@ assert.match(home, /Recorded cash flow: income \$500\.00; expenses \$120\.00/);
 assert.doesNotMatch(home, /Showing 3 of 4 accounts/, "Balances appear on the monthly page");
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="View Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
-assert.match(home, />This month/);
+assert.match(home, />View monthly summary/);
 assert.match(home, />Scheduled</);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],
 }));
-assert.match(emptyHome, /No transactions this month/);
+assert.match(emptyHome, /No activity this month/);
 assert.doesNotMatch(emptyHome, /money-account-nudge/, 'optional accounts do not look required before a first transaction');
 
 const accounts = [
@@ -82,7 +82,7 @@ const controlledBusyForm = renderToStaticMarkup(React.createElement(MoneyAccount
   onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
   accountDraft: controlledDraft, onAccountDraftChange: noop, accountDirty: true, onAccountDirtyChange: noop, accountSaving: true,
 }));
-assert.match(controlledBusyForm, /aria-label="Create account"[^>]*aria-busy="true"/);
+assert.match(controlledBusyForm, /aria-labelledby="money-account-dialog-title"[^>]*aria-busy="true"/);
 assert.match(controlledBusyForm, /value="Rainy day fund"/);
 assert.match(controlledBusyForm, /value="125\.50"/);
 assert.match(controlledBusyForm, /disabled=""[^>]*>Cancel<\/button>/, 'Cancel is disabled while the guarded account save is active');
