@@ -152,6 +152,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
           <Plus size={15} className="mr-1 inline" aria-hidden="true" />Add
         </button>
       </header>
+      <p className="text-xs text-secondary">Nothing is posted until you confirm an occurrence.</p>
       {nextPlan && <section className="scheduled-next" aria-label="Next commitment">
         <p><CalendarClock size={17} aria-hidden="true" />Next commitment</p>
         {renderPlan(nextPlan, true)}

@@ -33,7 +33,7 @@ assert.doesNotMatch(markup, /synthetic-private-task-id|99127|pendingNotification
 const app = fs.readFileSync('./src/App.tsx', 'utf8');
 const taskDetails = fs.readFileSync('./src/components/TaskDetailScreen.tsx', 'utf8');
 assert.match(app, /<TaskDetailScreen task=\{plannerDetailTask\}/, 'task details are wired to the selected task');
-assert.match(taskDetails, /role="dialog" aria-modal="true" aria-labelledby="task-detail-title"/,
+assert.match(taskDetails, /role="dialog" aria-modal=\{present \|\| undefined\} aria-hidden=\{!present \|\| undefined\}[\s\S]*aria-labelledby="task-detail-title"/,
   'task details expose an accessible modal named by the task title');
 assert.match(taskDetails, /<h2 id="task-detail-title"[^>]*>\{task\.title\}<\/h2>/,
   'the selected task title names the detail dialog');
