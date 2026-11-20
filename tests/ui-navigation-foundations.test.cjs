@@ -47,8 +47,8 @@ assert.match(coordinator, /transitionPhase: 'running'/, 'tab movement starts on 
 assert.match(coordinator, /Promise\.all\(animations\.map\(animation => animation\.finished\)\)\.then\(finish, finish\)/,
   'the retained surfaces and indicator settle together on animation completion');
 assert.match(coordinator, /transition\.current\?\.id !== flight\.id/, 'obsolete animation callbacks cannot settle new navigation');
-assert.match(coordinator, /const reversePose = previous\?\.from === to/, 'reversal starts at the already painted outgoing pose');
-assert.match(app, /transitionToTab\(tab, direction, velocity\)/, 'tap and swipe use the same transition path');
+assert.match(coordinator, /const trackFrom = sign \* .*previous\?\.from === to/, 'reversal starts at the already painted outgoing pose');
+assert.match(app, /transitionToTab\(tab, direction, velocity, from =>/, 'tap and swipe use the same transition path');
 assert.match(coordinator, /clearDrag\(\);[\s\S]*if \(reduced \|\| !old/, 'reduced motion clears drag state and skips positional travel');
 assert.match(app, /axis === 'horizontal'.*setPointerCapture\(event\.pointerId\)/s,
   'pointer capture starts only after horizontal intent so an ordinary tap keeps its native click');
@@ -91,7 +91,10 @@ assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
 assert.doesNotMatch(css, /@keyframes lifeos-tab-(enter|exit)/, 'route transforms have one owner');
 assert.match(css, /data-transition-state="outgoing"[^}]*pointer-events: none/);
-assert.match(css, /\.ui-tab-screen\[data-gesture-dragging="true"\][^}]*translate3d\(var\(--gesture-x/);
+const feather = fs.readFileSync(path.join(__dirname, '..', 'src', 'styles', 'feather-expressive.css'), 'utf8');
+assert.match(feather, /\.ui-tab-screen-stack\[data-track-dragging\][^}]*translate3d\(var\(--gesture-x/);
+assert.match(feather, /\.ui-tab-viewport\s*\{[^}]*overflow-x: clip/);
+assert.match(coordinator, /element: stage, from: pose\(flight\.trackFrom\)/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 assert.match(css, /\.app-bottom-nav[^\n]*safe-area-inset-bottom/);
 

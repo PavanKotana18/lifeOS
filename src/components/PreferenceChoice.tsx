@@ -1,4 +1,4 @@
-﻿import { createContext, useContext, useId, useRef, useState, type ReactNode } from 'react';
+﻿import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 
 export type ChoiceOption = readonly [value: string, label: string, disabled?: boolean];
@@ -14,7 +14,7 @@ type Props = {
   required?: boolean;
   icon?: ReactNode;
   disabledHint?: string;
-  variant?: 'row' | 'field';
+  variant?: 'row' | 'field' | 'quick';
 };
 
 export function PreferenceChoice({ label, value, options, onSelect, searchable = options.length > 9,
@@ -34,13 +34,17 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
   const missing = required && (!value || !matched || matched[2]);
   const showError = invalid && missing;
   const close = () => dialog.current?.close();
+  useLayoutEffect(() => {
+    if (open) list.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [open]);
+
   return <div className={variant === 'field' ? 'choice-field' : 'choice-row'} data-choice-field={variant} data-choice-value={value}>
     {variant === 'field' && <span className="choice-field-label">{label}</span>}
     <button ref={trigger} type="button" className={icon ? 'task-option' : variant === 'field' ? 'choice-trigger' : 'preference-row'}
-      aria-label={variant === 'field' ? label : undefined} aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
-      aria-invalid={showError || undefined} aria-describedby={variant === 'field' ? id + '-value' + (showError ? ' ' + id + '-error' : '') : showError ? id + '-error' : undefined} disabled={disabled}
+      aria-label={variant !== 'row' ? label : undefined} aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
+      aria-invalid={showError || undefined} aria-describedby={variant !== 'row' ? id + '-value' + (showError ? ' ' + id + '-error' : '') : showError ? id + '-error' : undefined} disabled={disabled}
       onClick={() => { setSearch(''); setOpen(true); dialog.current?.showModal(); }}>
-      {icon}{icon ? <span><strong>{label}</strong><small>{disabled ? disabledHint : selected}</small></span> : <>
+      {icon}{icon ? <span><strong>{label}</strong><small id={id + '-value'}>{disabled && disabledHint ? disabledHint : selected}</small></span> : <>
         {variant === 'row' && <span>{label}</span>}
         <span id={id + '-value'} className="choice-current">{disabled && disabledHint ? disabledHint : selected}</span>
         {variant === 'field' && <ChevronDown size={16} aria-hidden="true" />}
@@ -61,7 +65,10 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
         {open && searchable && <input aria-label={label === 'Currency' ? 'Search currencies' : 'Search ' + label.toLocaleLowerCase()}
           className="lifeos-input min-h-11 w-full rounded-xl px-3" type="search" autoComplete="off"
           placeholder="Search options" value={search} onChange={event => { event.stopPropagation(); setSearch(event.target.value); }}
-          onKeyDown={event => { if (event.key === 'Enter') event.preventDefault(); }} />}
+          onKeyDown={event => {
+            if (event.key === 'Enter') event.preventDefault();
+            if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(); }
+          }} />}
         <div ref={list} className="preference-options choice-options" role="group" aria-label={label}
           onKeyDown={event => {
             if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;

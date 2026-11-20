@@ -4,6 +4,23 @@
 import { registerPlugin } from '@capacitor/core';
 import { installDevelopmentRecoveryExportAdapter } from '../../src/services/backupExportService';
 
+if (new URLSearchParams(location.search).get('qa-native-back') === 'enabled') {
+  registerPlugin('App', { web: () => ({
+    addListener: async (name: string, receive: (data: unknown) => void) => {
+      const handler = (event: Event) => receive((event as CustomEvent).detail);
+      const visibility = () => receive({ isActive: !document.hidden });
+      window.addEventListener('qa-app-' + name, handler);
+      if (name === 'appStateChange') document.addEventListener('visibilitychange', visibility);
+      return { remove: async () => {
+        window.removeEventListener('qa-app-' + name, handler);
+        document.removeEventListener('visibilitychange', visibility);
+      } };
+    },
+    getState: async () => ({ isActive: true }),
+    getLaunchUrl: async () => ({ url: '' }),
+  }) });
+}
+
 const qaHost = window as Window & { __qaRecoveryKitSaved?: boolean; __qaRecoveryExportMode?: 'saved' | 'cancelled' | 'failed'; __qaRecoveryExportCalls?: number };
 installDevelopmentRecoveryExportAdapter(async options => {
   qaHost.__qaRecoveryExportCalls = (qaHost.__qaRecoveryExportCalls || 0) + 1;

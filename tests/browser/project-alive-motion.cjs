@@ -18,7 +18,7 @@ const primaryOnly = process.env.LIFEOS_MOTION_PRIMARY === '1';
 fs.mkdirSync(evidence, { recursive: false });
 
 const report = {
-  source: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
+  source: process.env.LIFEOS_MOTION_SOURCE || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
   viewport, reduced, sequences: {}, errors: [], interactions: [],
   worktreeStatus: execFileSync('git', ['status', '--short'], { cwd: root, encoding: 'utf8' }).trim(),
 };
@@ -114,7 +114,7 @@ async function main() {
     const before = await metrics();
     frames = [];
     const captureOrigin = Date.now() / 1000;
-    await page.evaluate(({ selector, swipe }) => {
+    await page.evaluate(({ selector, swipe, geometry }) => {
       const result = { frames: [], longTasks: [], longFrames: [], events: [], shifts: [], input: null, press: null, commitIndex: 0 };
       window.__ALIVE_QA_SAMPLE__ = result;
       let began;
@@ -166,7 +166,11 @@ async function main() {
           .filter(node => !node.hidden || node.hasAttribute('data-gesture-preview')).map(node => {
             const style = getComputedStyle(node);
             const position = style.transform === 'none' ? new DOMMatrix() : new DOMMatrix(style.transform);
-            return { id: node.id || query, x: position.m41, y: position.m42, translate: style.translate,
+            const rect = geometry && node.matches('[data-lifeos-screen]') ? node.getBoundingClientRect() : null;
+            const heading = rect ? node.querySelector('h1,h2') : null;
+            const title = heading?.getBoundingClientRect();
+            return { id: node.id || query, left: rect?.left, right: rect?.right, top: rect?.top,
+              heading: title ? { left: title.left, right: title.right, text: heading.textContent } : undefined, x: position.m41, y: position.m42, translate: style.translate,
               opacity: Number(style.opacity), visibility: style.visibility, height: query.includes('disclosure') ? node.getBoundingClientRect().height : undefined,
               stroke: style.strokeDashoffset, position: style.position, inert: node.inert, state: node.dataset.transitionState,
               animations: node.getAnimations().map(animation => ({ name: animation.animationName, state: animation.playState,
@@ -182,7 +186,7 @@ async function main() {
         else { observers.forEach(observer => observer.disconnect()); result.done = true; }
       }
       requestAnimationFrame(sample);
-    }, { selector, swipe: !!swipeDirection });
+    }, { selector, swipe: !!swipeDirection, geometry: process.env.LIFEOS_VIDEO_COMPARE === '1' });
     if (swipeDirection) {
       const right = swipeDirection === 'right';
       const start = right ? 74 : viewport.width - 74;
@@ -222,7 +226,7 @@ async function main() {
     console.log(name, captured.length, 'compositor frames');
   }
 
-  const screens = '[data-lifeos-screen]|.app-bottom-nav [aria-current]|.alive-nav-indicator';
+  const screens = '[data-lifeos-screen]|.app-bottom-nav [aria-current]|.alive-nav-indicator|.ui-tab-screen-stack';
   await capture('today-money', tab('finance'), screens);
   await capture('money-plan', tab('plan'), screens);
   if (process.env.LIFEOS_MOTION_COMPARE_SWIPE === '1') {
@@ -234,6 +238,27 @@ async function main() {
       await capture(name, tab(destination), screens, direction);
       assert.equal(await tab(destination).getAttribute('aria-current'), 'page', name + ' commits the target');
       assert.equal(await page.locator('[data-gesture-preview],[data-gesture-dragging]').count(), 0, name + ' removes drag surfaces');
+    }
+    if (process.env.LIFEOS_VIDEO_COMPARE === '1') {
+      await tab('plan').click();
+      const plan = page.getByRole('navigation', { name: 'Plan destinations' });
+      await capture('plan-tasks-habits', button('Habits', plan), screens);
+      await capture('plan-habits-goals', button('Goals', plan), screens);
+      if (await page.locator('.ui-tab-viewport').count()) {
+        for (const [name, sequence] of Object.entries(report.sequences)) {
+          for (const frame of sequence.frames) {
+            const sorted = frame.surfaces.filter(surface => surface.left != null && surface.visibility === 'visible').sort((a, b) => a.left - b.left);
+            if (name.startsWith('plan-') && name !== 'plan-today') {
+              assert.ok(sorted.length <= 1, name + ' renders one Plan header');
+            }
+            if (sorted.length === 2) {
+              assert.ok(Math.abs(sorted[0].right - sorted[1].left) < 1, name + ' panels share one seam');
+              assert.equal(sorted[0].opacity, 1, name + ' foreground remains opaque');
+              assert.equal(sorted[1].opacity, 1, name + ' neighboring panel remains opaque');
+            }
+          }
+        }
+      }
     }
     await cdp.send('Page.stopScreencast');
     assert.deepEqual(report.errors, []);

@@ -1,3 +1,4 @@
+import { AliveDisclosure } from './AliveDisclosure';
 import { PreferenceChoice } from './PreferenceChoice';
 import { AnimatePresence } from 'motion/react';
 import ComposerShell from './ComposerShell';
@@ -203,15 +204,22 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
       <label className="feather-composer-lead">Name<input required maxLength={80} className={inputClass} value={commitment.title} onChange={e => setCommitment(current => current ? { ...current, title: e.target.value } : current)} /></label>
       <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Type" value={commitment.type || 'expense'}
                 options={[["expense", "Expense"], ["income", "Income"]]} onSelect={event => setCommitment(current => current ? { ...current, type: event as 'income' | 'expense', categoryId: '' } : current)} /></div><div className="grid grid-cols-2 gap-3"><label className="block text-xs text-secondary">Amount<input required type="number" min={minorUnitsToDecimal(1n, commitment.currency)} step="any" inputMode="decimal" className={inputClass} value={commitment.amount} onChange={e => setCommitment(current => current ? { ...current, amount: e.target.value } : current)} /></label>
-      <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Currency" value={commitment.currency} searchable
-                options={[...(codeOptions.map(code => [String(code), formatCurrencyChoice(code)] as const))]} onSelect={e => setCommitment(current => current ? { ...current, currency: e, accountId: '' } : current)} /></div>
       <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Frequency" value={commitment.frequency}
                 options={[["once", "One time"], ["weekly", "Weekly"], ["monthly", "Monthly"], ["yearly", "Yearly"]]} onSelect={e => setCommitment(current => current ? { ...current, frequency: e as PlannedCommitment['frequency'] } : current)} /></div>
       <label className="block text-xs text-secondary">Next due date<input required type="date" className={inputClass} value={commitment.date} onChange={e => setCommitment(current => current ? { ...current, date: e.target.value } : current)} /></label>
+      </div>
+      <AliveDisclosure label="Currency, account and category">
+      <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Currency" value={commitment.currency} searchable
+                options={[...(codeOptions.map(code => [String(code), formatCurrencyChoice(code)] as const))]} onSelect={e => setCommitment(current => current ? { ...current, currency: e, accountId: '' } : current)} /></div>
       <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Category (optional)" value={commitment.categoryId} searchable
                 options={[["", "No category"], ...(categories.filter(row => row.type === (commitment.type || 'expense')).map(row => [String(row.id), row.name] as const))]} onSelect={e => setCommitment(current => current ? { ...current, categoryId: e } : current)} /></div>
       <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="Account (optional)" value={commitment.accountId} searchable
-                options={[["", "Unassigned"], ...(accounts.filter(row => row.isActive && row.currencyCode === commitment.currency).map(row => [String(row.id), row.name] as const))]} onSelect={e => setCommitment(current => current ? { ...current, accountId: e } : current)} /></div></div><label className="block text-xs text-secondary">Note (optional)<input maxLength={120} className={inputClass} value={commitment.notes} onChange={e => setCommitment(current => current ? { ...current, notes: e.target.value } : current)} /></label>{error && <p role="alert" className="lifeos-danger rounded-lg p-2 text-xs">{error}</p>}
+                options={[["", "Unassigned"], ...(accounts.filter(row => row.isActive && row.currencyCode === commitment.currency).map(row => [String(row.id), row.name] as const))]} onSelect={e => setCommitment(current => current ? { ...current, accountId: e } : current)} /></div>
+      </AliveDisclosure>
+      <AliveDisclosure label="Scheduled item notes">
+      <label className="block text-xs text-secondary">Note (optional)<input maxLength={120} className={inputClass} value={commitment.notes} onChange={e => setCommitment(current => current ? { ...current, notes: e.target.value } : current)} /></label>
+      </AliveDisclosure>
+      {error && <p role="alert" className="lifeos-danger rounded-lg p-2 text-xs">{error}</p>}
     </ComposerShell>}</AnimatePresence>
     <AnimatePresence>{rate && <ComposerShell key="money-rate-dialog" id="money-rate-dialog" portal mode="page"
       title={rate.id ? 'Edit manual rate' : 'Add manual rate'} accessibleName="Manual exchange rate" submitLabel={rate.id ? 'Save changes' : 'Add manual rate'} saving={saving} reduced={reduced}

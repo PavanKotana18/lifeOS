@@ -32,7 +32,7 @@ export default function ComposerShell({ id, title, accessibleName, submitLabel, 
     ref={element => element?.toggleAttribute('inert', !present)}
     onMouseDown={event => { if (!saving && event.target === event.currentTarget) dismiss(); }}>
     <m.form id={id} role="dialog" aria-modal="true" aria-label={accessibleName} aria-labelledby={accessibleName ? undefined : titleId} aria-busy={saving}
-      className="feather-composer lifeos-page" data-mode={mode}
+      className="feather-composer lifeos-page" data-mode={mode} data-composer-focus={page || undefined} tabIndex={-1}
       initial={reduced ? false : { transform: outside, opacity: page ? 1 : 0 }}
       animate={{ transform: rest, opacity: 1 }}
       exit={reduced ? undefined : { transform: outside, opacity: page ? 1 : 0, transition: { duration: .24, ease: [.32, 0, .67, 1] } }}

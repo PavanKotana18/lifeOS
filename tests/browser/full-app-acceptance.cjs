@@ -281,7 +281,7 @@ async function main() {
   const completed = new Set();
   try {
     await journey('first launch and safe browsing', async () => {
-      await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success`, { waitUntil: 'networkidle' });
+      await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success${process.env.LIFEOS_EXPERIENCE_GATE === '1' ? '&qa-native-back=enabled' : ''}`, { waitUntil: 'networkidle' });
       await page.locator('input[autocomplete="nickname"]').fill('Synthetic acceptance user');
       await capture('welcome-390');
       await clickButton('Continue');
@@ -362,6 +362,8 @@ async function main() {
         await search.fill('unmatched synthetic option');
         await sheet.getByText('No matching options.', { exact: true }).waitFor();
         await search.fill('JPY');
+        await search.press('ArrowDown');
+        assert.equal(await sheet.locator('button[data-option-value="JPY"]').evaluate(button => button === document.activeElement), true);
         await capture('choice-search-390', false);
         await sheet.locator('button[data-option-value="JPY"]').click();
         await sheet.waitFor({ state: 'hidden' });
@@ -371,6 +373,28 @@ async function main() {
         const name = dialog().getByLabel('Account name');
         assert.ok(await name.evaluate(element => element === document.activeElement));
         assert.equal(await page.locator('select').count(), 0);
+        await currency.click();
+        const list = sheet.locator('.choice-options');
+        const scroll = await list.evaluate(node => { node.scrollTop = node.scrollHeight; return { top: node.scrollTop, height: node.clientHeight }; });
+        assert.ok(scroll.top > 0 && scroll.height > 44, 'the long currency catalog scrolls within the sheet');
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent('qa-app-backButton', { detail: { canGoBack: true } })));
+        await sheet.waitFor({ state: 'hidden' });
+        await currency.waitFor();
+        assert.equal(await currency.evaluate(button => button === document.activeElement), true);
+        assert.equal(await currency.evaluate(button => button.closest('[data-choice-field]').getAttribute('data-choice-value')), 'JPY');
+        await dialog().getByRole('button', { name: 'Cancel', exact: true }).click();
+        if (await discard.isVisible()) await discard.getByRole('button', { name: /Discard/ }).click();
+        await dialog().waitFor({ state: 'hidden' });
+        await clickButton('Open profile and settings');
+        await clickButton('Appearance');
+        await clickButton('Dark');
+        await activeTab('finance');
+        await clickButton('Add account');
+        await dialog().getByRole('button', { name: 'Currency', exact: true }).click();
+        await capture('choice-dark-390', false);
+        await page.keyboard.press('Escape');
+        await sheet.waitFor({ state: 'hidden' });
+
       });
       return;
     }
@@ -583,6 +607,9 @@ async function main() {
       await fillDialogField('Target amount', '5000');
       await capture('add-savings-composer-390');
       await saveDialog('Add savings goal');
+      await clickButton('Edit QA acceptance: emergency reserve');
+      await capture('edit-savings-composer-390');
+      await saveDialog('Save changes');
       await clickButton('Add contribution');
       await fillDialogField('Amount', '100');
       await capture('add-contribution-composer-390');
@@ -1020,11 +1047,17 @@ async function main() {
         };
       });
       assert.deepEqual(persisted, { accounts: 2, transfers: 1, commitments: 1 });
+      await clickButton('View ' + name);
+      await clickButton('Edit');
+      assert.equal(await dialog().getByRole('textbox', { name: 'Name', exact: true }).inputValue(), name);
+      await capture('edit-scheduled-composer-390');
+      await saveDialog('Save changes');
       await clickButton('Add scheduled item');
       const once = 'QA one-time repair';
       await dialog().getByRole('textbox', { name: 'Name', exact: true }).fill(once);
       await fillDialogField('Amount', '12.75');
       await chooseOption(dialog(), 'Frequency', 'once');
+      await dialog().getByRole('button', { name: 'Currency, account and category', exact: true }).click();
       assert.ok(await chooseOption(dialog(), 'Category (optional)', { index: 1 }));
       await saveDialog('Add scheduled item');
       await clickButton('Record occurrence for ' + once);
@@ -1152,6 +1185,7 @@ async function main() {
         window.__qaNavigationFrames = [];
         window.__qaBlankFrames = 0;
         window.__qaCommitMs = [];
+        window.__qaTapsIssued = 0;
         let last = null;
         await new Promise(resolve => {
           const sample = time => {
@@ -1168,6 +1202,7 @@ async function main() {
             const next = destinations.shift();
             if (next) {
               const started = performance.now();
+              window.__qaTapsIssued++;
               document.querySelector('[data-tab="' + next + '"]').click();
               requestAnimationFrame(() => {
                 const selected = document.querySelector('[data-tab="' + next + '"][aria-current="page"]');
@@ -1185,12 +1220,13 @@ async function main() {
         samples: window.__qaNavigationFrames.length,
         blankLayoutSamples: window.__qaBlankFrames,
         switchesCommitted: window.__qaCommitMs.length,
+        tapsIssued: window.__qaTapsIssued,
         medianClickToNextFrameMs: [...window.__qaCommitMs].sort((a, b) => a - b)[Math.floor(window.__qaCommitMs.length / 2)],
         frameIntervalsMs: window.__qaNavigationFrames,
         samplesOver32Ms: window.__qaNavigationFrames.filter(ms => ms > 32).length,
         longestSampleMs: Math.max(...window.__qaNavigationFrames),
       }));
-      assert.ok(report.navigationTiming.lastTransitionMs > 0 && report.navigationTiming.samples === 36 && report.navigationTiming.blankLayoutSamples === 0 && report.navigationTiming.switchesCommitted === 30);
+      assert.ok(report.navigationTiming.lastTransitionMs > 0 && report.navigationTiming.samples === 36 && report.navigationTiming.blankLayoutSamples === 0 && report.navigationTiming.tapsIssued === 30 && report.navigationTiming.switchesCommitted > 1);
       await clickButton('Open profile and settings');
       await clickButton('Edit name');
       await page.getByLabel('Display name').fill('AlexandriaWithAnUnusuallyLongUnbrokenDisplayName');

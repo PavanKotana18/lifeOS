@@ -45,7 +45,8 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     };
     if (!dialog.contains(document.activeElement)) {
-      dialog.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled)')?.focus({ preventScroll: true });
+      const initial = dialog.matches?.('[data-composer-focus]') ? dialog : dialog.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled)');
+      initial?.focus({ preventScroll: true });
     }
     background.forEach(({ element }) => { element.inert = true; element.setAttribute('aria-hidden', 'true'); });
     updateViewport();
