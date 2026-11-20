@@ -1,3 +1,7 @@
+import { AliveDisclosure } from './components/AliveDisclosure';
+import { AnimatePresence, motion } from 'motion/react';
+import { RecordComposerLayer } from './components/RecordComposerLayer';
+import { animateRoute } from './services/aliveMotion';
 import { useInterfaceMotion } from './hooks/useInterfaceMotion';
 import MotionPreferences from './components/MotionPreferences';
 import MoneyDetailHeader from './components/MoneyDetailHeader';
@@ -160,7 +164,7 @@ export default function App() {
     const previousIndex = order.indexOf(primaryDestinationForTab(previous) ?? 'dashboard');
     const nextIndex = order.indexOf(primaryDestinationForTab(tab) ?? 'dashboard');
     setTabTransition({ id, from: previous, to: tab, direction: direction ?? (nextIndex < previousIndex ? 'right' : 'left'),
-      offset: offset * .25, outgoing: bounds?.width ? { top: bounds.top, left: bounds.left, width: bounds.width } : undefined });
+      offset, outgoing: bounds?.width ? { top: bounds.top, left: bounds.left - offset, width: bounds.width } : undefined });
     setActiveTab(tab);
   };
   const navigationHistory = useRef<MainTab[]>([]);
@@ -1099,12 +1103,8 @@ export default function App() {
     const page = moneyPageRef.current;
     if (activeTab !== 'finance' || tabTransition || previous.section === financeSubtab || !page?.animate || interfaceMotion.reducedMotion) return;
     const direction = depth < previous.depth || financeSubtab === 'overview' ? -1 : 1;
-    const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 220);
-    const animation = page.animate([
-      { translate: `${direction * 16}px`, opacity: .92 },
-      { translate: '0px', opacity: 1 },
-    ], { duration, easing: 'cubic-bezier(.2,.8,.2,1)' });
-    return () => animation.cancel();
+    const flight = animateRoute(page, { x: direction * 46, opacity: .68 }, { x: 0, opacity: 1 }, interfaceMotion.preset);
+    return () => flight.cancel();
   }, [activeTab, financeSubtab, interfaceMotion.reducedMotion]);
 
   const finishTabTransition = (id: number) => {
@@ -1117,13 +1117,23 @@ export default function App() {
     setTabTransition(current => current?.id === id ? null : current);
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!tabTransition) return;
-    const { id } = tabTransition;
-    const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 260);
-    const fallback = window.setTimeout(() => finishTabTransition(id), duration + 120);
-    return () => window.clearTimeout(fallback);
-  }, [tabTransition]);
+    const { id, from, to, direction, offset } = tabTransition;
+    const incoming = document.getElementById(`screen-${to}`);
+    const outgoing = document.getElementById(`screen-${from}`);
+    if (!incoming || interfaceMotion.reducedMotion) { finishTabTransition(id); return; }
+    const sign = direction === 'right' ? -1 : 1;
+    const enter = animateRoute(incoming, { x: sign * 52, opacity: .98 }, { x: 0, opacity: 1 }, interfaceMotion.preset);
+    const exit = outgoing && animateRoute(outgoing, { x: offset, opacity: 1 }, { x: sign * -36, opacity: .78 }, interfaceMotion.preset);
+    let current = true;
+    void Promise.all(exit ? [enter, exit] : [enter]).then(() => {
+      if (current) finishTabTransition(id);
+    }, () => {
+      if (current) finishTabTransition(id);
+    });
+    return () => { current = false; enter.cancel(); exit?.cancel(); };
+  }, [tabTransition, interfaceMotion.reducedMotion, interfaceMotion.preset]);
 
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -1155,10 +1165,7 @@ export default function App() {
     return {
       transitionPhase: 'running' as const,
       transitionDirection: tabTransition.direction,
-      enterOffset: tabTransition.offset,
-      onAnimationEnd: (event: React.AnimationEvent<HTMLDivElement>) => {
-        if (event.target === event.currentTarget && event.animationName === 'lifeos-tab-enter') finishTabTransition(tabTransition.id);
-      },
+
     };
   };
 
@@ -3659,15 +3666,21 @@ export default function App() {
           }}>Delete transaction</button></details></div>
         </section>
       </dialog>}
+      <AnimatePresence initial={false}>
       {createKind && (
-        <div className="ui-sheet-backdrop record-composer-backdrop" data-full-composer={!["contribution","milestone","goal-progress"].includes(createKind)} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form id="record-dialog" onInvalid={event => {
+        <RecordComposerLayer key={createKind} full={!['contribution', 'milestone', 'goal-progress'].includes(createKind)} dismiss={requestCloseForm}>
+          <motion.form id="record-dialog"
+            initial={createKind === 'task' && !interfaceMotion.reducedMotion ? { transform: 'translate3d(100%,0,0)' } : false}
+            animate={createKind === 'task' ? { transform: 'translate3d(0%,0,0)' } : undefined}
+            exit={createKind === 'task' && !interfaceMotion.reducedMotion ? { transform: 'translate3d(100%,0,0)', transition: { duration: .27, ease: [.32, 0, .67, 1] } } : undefined}
+            transition={createKind === 'task' && !interfaceMotion.reducedMotion ? { type: 'spring', duration: .34, bounce: 0 } : { duration: 0 }}
+            onInvalid={event => {
             event.preventDefault();
             const target = event.target as HTMLInputElement;
             const error = event.currentTarget.querySelector('[data-record-validation]');
             if (error) error.textContent = target.validity.valueMissing ? 'Complete the highlighted field.' : 'Check the highlighted value.';
             if (!event.currentTarget.contains(document.activeElement) || !event.currentTarget.querySelector(':focus:invalid')) target.focus();
-          }} onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className={`ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer${createKind === 'task' ? ' task-composer' : ''}`} onMouseDown={event => event.stopPropagation()}>
+          }} onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className={`ui-bottom-sheet lifeos-panel record-composer ${createKind === 'task' ? 'task-composer' : 'ui-sheet-motion'}`} onMouseDown={event => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : createKind === 'task' ? 'Create Task' : `Add ${createKind}`}</h2>
               <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
@@ -3758,13 +3771,13 @@ export default function App() {
               <div className="task-schedule-card grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', reminderLead: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
               <PreferenceChoice label="Priority" value={createDraft.priority || "Medium"} options={[["Low","Low"],["Medium","Medium"],["High","High"],["Urgent","Urgent"]]} onSelect={priority => { setCreateFormDirty(true); setCreateDraft({ ...createDraft, priority }); }} />
 <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={!createDraft.date || !(createDraft.time || dateOnlyAlertTime)} checked={createDraft.dueAlert !== 'off'} onChange={event => setCreateDraft({ ...createDraft, dueAlert: event.target.checked ? 'on' : 'off' })} /> Alert at due time</label>
-              <details className="task-composer-section"><summary>Add details</summary>
+              <AliveDisclosure label="Add details">
                 <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 {goals.length > 0 && <label className="mb-3 block text-xs text-secondary">Linked goal<select value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1 block min-h-11 w-full rounded-xl px-3"><option value="">No linked goal</option>{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
                 {!editingTaskId && <label className="mb-3 block text-xs text-secondary">Subtasks (one per line)<textarea rows={3} value={createDraft.subtasks || ''} onChange={e => setCreateDraft({ ...createDraft, subtasks: e.target.value })} className="lifeos-input mt-1 block min-h-11 w-full rounded-xl px-3 py-2" /></label>}
-              </details>
-              <details className="task-composer-section"><summary>Repeat and reminders</summary>
+              </AliveDisclosure>
+              <AliveDisclosure label="Repeat and reminders">
                 <label className="mb-3 block text-sm">Extra reminder
                   <select disabled={!createDraft.date || (!createDraft.time && !dateOnlyAlertTime && !createDraft.reminderAt)} value={['', '5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead || '') ? createDraft.reminderLead || '' : 'custom'} onChange={event => setCreateDraft({ ...createDraft, reminderLead: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3">
                     <option value="">None</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="custom">Custom lead time</option>{createDraft.reminderAt && <option value="legacy">Keep saved reminder</option>}
@@ -3772,7 +3785,7 @@ export default function App() {
                 </label>
                 {createDraft.reminderLead && !['5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead) && <label className="mb-3 block text-sm">Minutes before<input type="number" min="1" max="10080" required value={createDraft.reminderCustom || (createDraft.reminderLead === 'custom' ? '' : createDraft.reminderLead)} onChange={event => setCreateDraft({ ...createDraft, reminderLead: 'custom', reminderCustom: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
                 <label className="mb-3 block text-xs text-secondary">Repeat<select disabled={!createDraft.date} value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
-              </details>
+              </AliveDisclosure>
             </>}
             {['goal', 'savings', 'milestone'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">
               {createKind === 'savings' ? 'Target date' : 'Target date (optional)'}
@@ -3781,13 +3794,17 @@ export default function App() {
             {editingTransactionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this transaction?', message: 'This transaction will be removed from your history. This cannot be undone.', confirmLabel: 'Delete transaction', destructive: true }))) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setCreateFormDirty(false); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
             {editingContributionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this contribution?', message: 'The contribution will be removed and subtracted from the saved goal total.', confirmLabel: 'Delete contribution', destructive: true }))) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setCreateFormDirty(false); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
             <div className="ui-form-actions"><button type="button" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-raised min-h-12 flex-1 rounded-xl text-sm font-semibold">Cancel</button><button type="submit" disabled={recordSaving} className="lifeos-accent-button min-h-12 flex-1 rounded-xl px-3 text-sm font-semibold">{recordSaving ? 'Saving…' : editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : editingBudgetId ? 'Save budget' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : createKind === 'task' ? 'Create Task' : `Save ${createKind}`}</button></div>
-          </form>
-        </div>
+          </motion.form>
+        </RecordComposerLayer>
       )}
+      </AnimatePresence>
 
       {/* Floating Bottom Nav */}
       <nav data-profile-background ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2">
-        <div className="app-nav-items">
+        <div className="app-nav-items alive-nav">
+        <motion.span className="alive-nav-indicator" aria-hidden="true" initial={false}
+          animate={{ x: PRIMARY_NAVIGATION.findIndex(item => item.tab === (primaryDestinationForTab(activeTab) ?? 'dashboard')) * 100 + '%' }}
+          transition={interfaceMotion.reducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 31 }} />
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays })[icon];
           const isSelected = primaryDestinationForTab(activeTab) === tab;

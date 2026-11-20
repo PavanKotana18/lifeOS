@@ -143,7 +143,7 @@ body {
 .ui-tab-screen-stack { display: grid; min-width: 0; align-items: start; }
 .ui-tab-screen-stack > [data-lifeos-screen] { grid-area: 1 / 1; min-width: 0; }
 .ui-tab-screen { position: relative; min-width: 0; background: var(--page); }
-.ui-tab-screen[data-transition-state="outgoing"] { z-index: 0; pointer-events: none; animation: lifeos-tab-exit var(--motion-tab) var(--motion-ease-tab) both; }
+.ui-tab-screen[data-transition-state="outgoing"] { z-index: 0; pointer-events: none; }
 .ui-tab-screen:is([data-transition-state="enter-prepare"], [data-transition-state="entering"]) { z-index: 1; }
 .ui-tab-screen[hidden] { display: none !important; }
 .ui-tab-screen[data-transition-state="inactive"] { pointer-events: none; }
@@ -152,7 +152,7 @@ body {
 .ui-tab-screen[data-transition-direction="right"][data-transition-state="enter-prepare"] { transform: translate3d(calc(-16px + var(--tab-enter-offset, 0px)), 0, 0); }
 .ui-tab-screen[data-transition-direction="left"] { --tab-shift: 14px; --tab-exit-shift: -8px; }
 .ui-tab-screen[data-transition-direction="right"] { --tab-shift: -14px; --tab-exit-shift: 8px; }
-.ui-tab-screen[data-transition-state="entering"] { z-index: 1; animation: lifeos-tab-enter var(--motion-tab) var(--motion-ease-tab) both; }
+.ui-tab-screen[data-transition-state="entering"] { z-index: 1; }
 @keyframes lifeos-tab-enter {
   from { opacity: .94; transform: translate3d(calc(var(--tab-shift, 0px) + var(--tab-enter-offset, 0px)), 0, 0); }
   to { opacity: 1; transform: none; }
@@ -1102,3 +1102,42 @@ html.dark .text-amber-400 { color: var(--warning); }
 .scheduled-plan-row, .scheduled-history-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .6rem; padding: .85rem; }
 .scheduled-plan-row[data-next="true"] { border-inline-start: 3px solid var(--accent); border-radius: .65rem; background: var(--surface-raised); }
 .scheduled-history-row + .scheduled-history-row { border-top: 1px solid var(--stroke); }
+
+.alive-nav { position: relative; isolation: isolate; }
+.alive-nav-indicator { position: absolute; inset-block: 0; inset-inline-start: 0; width: calc(100% / 3); pointer-events: none; z-index: -1; }
+.alive-nav-indicator::before { content: ''; position: absolute; inset: 3px 10% 5px; border-radius: 16px; background: color-mix(in srgb, var(--accent) 19%, var(--surface)); }
+.alive-nav .nav-item[aria-current="page"] { background: transparent; }
+.alive-nav .nav-item[aria-current="page"]::before { display: none; }
+.alive-nav .nav-item:active > svg { scale: .83; }
+.alive-nav .nav-item > svg { transition: scale 180ms cubic-bezier(.2, .8, .2, 1.3); }
+@media (prefers-reduced-motion: reduce) { .alive-nav .nav-item > svg { transition: none; } }
+
+.alive-nav::before { display: none; }
+.alive-disclosure > button {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  min-height: 3rem; text-align: start; font-weight: 650;
+}
+.alive-disclosure > button svg { transition: rotate var(--motion-tab) var(--motion-ease-tab); }
+.alive-disclosure[data-open="true"] > button svg { rotate: 180deg; }
+.alive-disclosure-grid {
+  display: grid; grid-template-rows: 0fr; opacity: 0;
+  transition: grid-template-rows var(--motion-panel) var(--motion-ease-tab), opacity var(--motion-tab) ease-out;
+}
+.alive-disclosure[data-open="true"] .alive-disclosure-grid { grid-template-rows: 1fr; opacity: 1; }
+.alive-disclosure-body { min-height: 0; overflow: clip; }
+.plan-hub-task-check { position: relative; }
+.plan-hub-task-check input {
+  appearance: none; border: 1.5px solid var(--ink-secondary); border-radius: .42rem;
+  width: 1.35rem; height: 1.35rem; background: var(--surface);
+}
+.plan-hub-task-check input:checked { border-color: var(--success); background: color-mix(in srgb, var(--success) 19%, var(--surface)); }
+.alive-task-mark {
+  position: absolute; width: 1.35rem; height: 1.35rem; color: var(--success);
+  pointer-events: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+}
+.alive-task-mark path { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 210ms ease-out; }
+.plan-hub-task-check input:checked + .alive-task-mark path { stroke-dashoffset: 0; animation: alive-check-draw 240ms ease-out; }
+@keyframes alive-check-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+
+.record-composer-backdrop:has(.task-composer) { background: transparent; overflow: clip; }
+.record-composer-backdrop[data-exiting="true"] { pointer-events: none; }

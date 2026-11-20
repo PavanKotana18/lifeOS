@@ -29,7 +29,7 @@ function RetainedScreen({ active, retainInactive = false, transitionPhase = null
     data-lifeos-screen={id}
     data-transition-state={outgoing ? "outgoing" : transitionState}
     data-transition-direction={transitionDirection}
-    className="ui-tab-screen"
+    className="ui-tab-screen alive-route"
     style={outgoing ? { position: "fixed", ...outgoing } : { "--tab-enter-offset": `${enterOffset ?? 0}px` } as React.CSSProperties}
     hidden={!active && !outgoing}
     aria-hidden={!active}
