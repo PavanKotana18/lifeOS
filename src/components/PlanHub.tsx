@@ -1,5 +1,6 @@
+import LifeDoodle from './LifeDoodle';
 ﻿import { useRef, useState } from 'react';
-import { Bell, ChevronRight, CircleCheck, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
+import { Bell, ChevronRight, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
 import type { Task } from '../types';
 import { getTaskStatus, sortTasksBySchedule } from '../services/domainUtils';
 
@@ -97,6 +98,8 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
     </div>
     <section className="plan-task-workspace" aria-labelledby="plan-tasks-title">
       <h3 id="plan-tasks-title" className="sr-only">Tasks in selected view</h3>
+      {tasks.length > 0 && tasks.every(task => task.completed) && !narrowed &&
+        <div className="plan-done lifeos-tint"><LifeDoodle kind="tasks-done" /><div><strong>All tasks complete</strong><p>{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'} checked off</p></div></div>}
       {visible.length ? [
         ['Overdue', visible.filter(task => getTaskStatus(task, now) === 'Overdue')],
         ['Today', visible.filter(task => !task.completed && task.dueDate === today && getTaskStatus(task, now) !== 'Overdue')],
@@ -109,7 +112,7 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
           <label className="plan-hub-task-check"><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(task)} aria-label={`Mark ${task.title} ${task.completed ? 'incomplete' : 'complete'}`} /><svg className="alive-task-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9" pathLength="1" /></svg></label>
           <button type="button" onClick={event => onOpenTask(task, event.currentTarget)} className="plan-hub-task-open"><span className="plan-hub-row-title" data-priority={task.priority} title={`${task.priority} priority`}>{task.title}</span><span className="plan-hub-row-meta">{taskStatus === 'Overdue' ? 'Overdue \u00b7 ' : task.completed ? 'Completed \u00b7 ' : ''}{formatTaskDate(task.dueDate, today)}{task.dueTime ? ` \u00b7 ${task.dueTime}` : task.dueDate ? ' \u00b7 end of day' : ''}<span className="plan-schedule-indicators">{task.recurring && task.recurring !== 'None' && <span><Repeat2 size={12} aria-hidden="true" />Repeats {task.recurring.toLocaleLowerCase()}</span>}{(task.reminderAt || task.reminderLeadMinutes) && <span><Bell size={12} aria-hidden="true" />Reminder set</span>}</span></span><ChevronRight size={17} aria-hidden="true" /></button>
         </li>;
-      })}</ul></section>) : <div className="plan-hub-empty"><CircleCheck size={21} aria-hidden="true" /><div><strong>{!tasks.length ? 'No tasks yet' : narrowed ? 'No tasks match this view' : 'You are all caught up'}</strong><span>{!tasks.length ? 'Start with one thing you want to remember.' : narrowed ? 'Try another view or status, or clear your search.' : 'Your completed tasks are available under All statuses.'}</span>{narrowed && tasks.length > 0 && <button type="button" onClick={() => { setView('all'); setStatus('all'); setFilters(emptyPlanFilters); setQuery(''); }}>Show every task</button>}</div></div>}
+      })}</ul></section>) : <div className="plan-hub-empty"><LifeDoodle kind={tasks.length && tasks.every(task => task.completed) ? "tasks-done" : "empty-tasks"} /><div><strong>{!tasks.length ? 'No tasks yet' : narrowed ? 'No tasks match this view' : 'You are all caught up'}</strong><span>{!tasks.length ? 'Start with one thing you want to remember.' : narrowed ? 'Try another view or status, or clear your search.' : 'Your completed tasks are available under All statuses.'}</span>{narrowed && tasks.length > 0 && <button type="button" onClick={() => { setView('all'); setStatus('all'); setFilters(emptyPlanFilters); setQuery(''); }}>Show every task</button>}</div></div>}
     </section>
   </section>;
 }

@@ -39,19 +39,17 @@ assert.match(app, /<RetainedScreen active=\{activeTab === 'plan'\} retainInactiv
 assert.doesNotMatch(app, /id="screen-life"/, 'Habits and Goals no longer use a separate Life landing screen');
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
   'Money retains local account and planning form drafts while another tab is briefly visited');
-assert.match(app, /prefers-reduced-motion/);
+assert.match(app, /useAliveNavigation\(interfaceMotion\.preset, interfaceMotion\.reducedMotion\)/);
 assert.match(app, /navigateTo\('planner'\)/, 'Today routes into the task destination');
 assert.match(app, /resolveBackAction/);
-assert.match(app, /transitionPhase: 'running'/, 'tab movement starts on the destination commit');
-assert.match(app, /onAnimationEnd: \(event[\s\S]*animationName === 'lifeos-tab-enter'[\s\S]*finishTabTransition/,
-  'only the incoming screen animation settles the tab change');
-assert.match(app, /duration \+ 120/, 'a bounded fallback resolves missing transition events');
-assert.match(app, /activeTransitionId\.current !== id/, 'obsolete transition callbacks cannot settle a newer navigation');
-assert.match(app, /transitionToTab\(tab, direction\)/, 'tap and swipe destinations share one transition path');
-const transitionHandler = app.match(/const transitionToTab = \(tab: MainTab[\s\S]*?\n  \};/);
-assert.ok(transitionHandler, 'tab transition has one owner');
-assert.ok(transitionHandler[0].indexOf("removeAttribute('data-gesture-dragging')") < transitionHandler[0].indexOf('if (reducedMotion)'),
-  'reduced-motion navigation clears the outgoing drag state before settling');
+const coordinator = fs.readFileSync(path.join(__dirname, '..', 'src', 'hooks', 'useAliveNavigation.ts'), 'utf8');
+assert.match(coordinator, /transitionPhase: 'running'/, 'tab movement starts on the destination commit');
+assert.match(coordinator, /Promise\.all\(exit \? \[enter, exit\] : \[enter\]\)\.then\(finish, finish\)/,
+  'the two retained surfaces settle together on animation completion');
+assert.match(coordinator, /transition\.current\?\.id !== flight\.id/, 'obsolete animation callbacks cannot settle new navigation');
+assert.match(coordinator, /const reversePose = previous\?\.from === to/, 'reversal starts at the already painted outgoing pose');
+assert.match(app, /transitionToTab\(tab, direction, velocity\)/, 'tap and swipe use the same transition path');
+assert.match(coordinator, /clearDrag\(\);[\s\S]*if \(reduced \|\| !old/, 'reduced motion clears drag state and skips positional travel');
 assert.match(app, /axis === 'horizontal'.*setPointerCapture\(event\.pointerId\)/s,
   'pointer capture starts only after horizontal intent so an ordinary tap keeps its native click');
 assert.match(app, /updatePrimaryGesture\(start, event\.pointerId/);
@@ -72,7 +70,7 @@ assert.match(app, /textarea,select,\[contenteditable="true"\].*input:not\(\[type
   'text entry, native pickers and sliders do not hand their interaction to tab navigation');
 assert.match(app, /if \(activeTouchPointers\.current\.size > 1\)/, 'multi-touch cancels the current gesture');
 assert.match(app, /if \(start\.viewportWidth !== window\.innerWidth\)/, 'a resized viewport cancels the active gesture');
-assert.match(app, /if \(!isLocked\) return;[\s\S]*cancelPrimaryGesture\('app-locked'\)[\s\S]*setTabTransition\(null\)/, 'locking cancels active gestures and settles transitions before private screens are removed');
+assert.match(app, /if \(!isLocked\) return;[\s\S]*cancelPrimaryGesture\('app-locked'\)[\s\S]*navigationMotion\.cancel\(\)/, 'locking cancels active gestures and settles transitions before private screens are removed');
 assert.match(app, /screenScrollKey\(/);
 assert.match(app, /rememberActiveScroll\(\)/);
 assert.match(app, /pendingNotification\.current/, 'notification task routing remains connected');
@@ -91,10 +89,9 @@ assert.match(css, /--motion-tab: 190ms/);
 assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/);
 assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
-assert.match(css, /data-transition-state="entering"[^}]*animation: lifeos-tab-enter/);
-assert.match(css, /data-transition-state="outgoing"[^}]*pointer-events: none[^}]*animation: lifeos-tab-exit/);
-assert.match(css, /@keyframes lifeos-tab-enter[\s\S]*var\(--tab-enter-offset/);
-assert.match(css, /\.ui-tab-screen\[data-gesture-dragging="true"\][^}]*transition: none !important[^}]*translate3d\(var\(--gesture-x/);
+assert.doesNotMatch(css, /@keyframes lifeos-tab-(enter|exit)/, 'route transforms have one owner');
+assert.match(css, /data-transition-state="outgoing"[^}]*pointer-events: none/);
+assert.match(css, /\.ui-tab-screen\[data-gesture-dragging="true"\][^}]*translate3d\(var\(--gesture-x/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 assert.match(css, /\.app-bottom-nav[^\n]*safe-area-inset-bottom/);
 

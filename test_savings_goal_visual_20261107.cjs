@@ -23,7 +23,7 @@ assert.match(empty, /0% of \$1,000\.00 saved/);
 assert.match(empty, /\$0\.00 saved \u00b7 \$1,000\.00 to go/);
 const quarter = render(250, 1000);
 assert.match(quarter, /aria-valuenow="25"/);
-assert.match(quarter, /stroke-dasharray="61\.26 245\.04"/);
+assert.match(quarter, /stroke-dasharray="1" stroke-dashoffset="0.75"/);
 const reached = render(1250, 1000);
 assert.match(reached, /Target reached \u00b7 \$1,250\.00 saved/);
 assert.match(reached, />125%<\/span>/, 'displayed total can exceed target while visual gauge remains capped');

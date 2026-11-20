@@ -20,6 +20,9 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
     const findDialog = () => { const element = document.getElementById(dialogId); return element?.getClientRects().length ? element : null; };
     const dialog = findDialog();
     if (!dialog) return;
+    const background = dialogId === 'record-dialog' ? Array.from(document.querySelectorAll<HTMLElement>('[data-profile-background], [data-record-background]'), element => ({
+      element, inert: element.inert, hidden: element.getAttribute('aria-hidden'),
+    })) : [];
     const viewport = window.visualViewport;
     const updateViewport = () => {
       document.documentElement.style.setProperty('--sheet-viewport-height', `${viewport?.height ?? window.innerHeight}px`);
@@ -36,7 +39,7 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
       if (!currentDialog?.contains(document.activeElement)) return;
       if (event.key === 'Escape') { event.preventDefault(); dismissRef.current(); }
       if (event.key !== 'Tab') return;
-      const controls = [...currentDialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(item => item.getClientRects().length);
+      const controls = [...currentDialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(item => item.getClientRects().length && !item.closest('[inert]'));
       const first = controls[0], last = controls[controls.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -44,6 +47,7 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
     if (!dialog.contains(document.activeElement)) {
       dialog.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled)')?.focus({ preventScroll: true });
     }
+    background.forEach(({ element }) => { element.inert = true; element.setAttribute('aria-hidden', 'true'); });
     updateViewport();
     const actions = dialog.querySelector<HTMLElement>('.ui-form-actions');
     const actionsObserver = actions && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateViewport) : null;
@@ -59,6 +63,11 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
       document.removeEventListener('keydown', keydown);
       document.documentElement.style.removeProperty('--sheet-viewport-height');
       document.documentElement.style.removeProperty('--sheet-viewport-top');
+      background.forEach(({ element, inert, hidden }) => {
+        element.inert = inert;
+        if (hidden === null) element.removeAttribute('aria-hidden');
+        else element.setAttribute('aria-hidden', hidden);
+      });
       if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, [open, dialogId]);

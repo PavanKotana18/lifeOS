@@ -410,7 +410,7 @@ body {
 .planner-range-nav button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 2px; }
 .planner-date-group-title { display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; gap: .75rem; padding-inline: .25rem; color: var(--ink-secondary); font-size: .76rem; font-weight: 650; letter-spacing: .015em; }
 .planner-date-group-title span { display: grid; min-width: 1.6rem; height: 1.6rem; place-items: center; border-radius: 999px; background: var(--accent-tint); color: var(--accent); font-size: .68rem; font-variant-numeric: tabular-nums; }
-.task-detail-screen { position: fixed; z-index: 75; inset: 0; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; overscroll-behavior: contain; padding: calc(env(safe-area-inset-top) + .75rem) max(var(--page-gutter), env(safe-area-inset-left)) calc(env(safe-area-inset-bottom) + 1rem) max(var(--page-gutter), env(safe-area-inset-right)); background: var(--page); animation: task-detail-enter 360ms cubic-bezier(.2, .82, .24, 1.08) both; }
+.task-detail-screen { position: fixed; z-index: 75; inset: 0; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; overscroll-behavior: contain; padding: calc(env(safe-area-inset-top) + .75rem) max(var(--page-gutter), env(safe-area-inset-left)) calc(env(safe-area-inset-bottom) + 1rem) max(var(--page-gutter), env(safe-area-inset-right)); background: var(--page); }
 .task-detail-screen:focus { outline: none; }
 .task-detail-header { display: grid; gap: .55rem; padding-bottom: .35rem; }
 .task-detail-header > button { justify-self: start; }
@@ -1175,3 +1175,37 @@ html.dark .text-amber-400 { color: var(--warning); }
 .scheduled-detail-metadata > div { border: 1px solid var(--stroke); border-radius: .85rem; padding: .75rem; overflow-wrap: anywhere; }
 .scheduled-detail-metadata dt { font-size: .76rem; color: var(--ink-secondary); }
 .scheduled-detail-metadata dd { margin-top: .25rem; font-weight: 650; }
+
+.alive-doodle { flex: 0 0 auto; color: var(--accent-text, var(--accent)); }
+.alive-doodle-wash { fill: color-mix(in srgb, var(--accent) 15%, var(--surface)); }
+.alive-doodle-ink, .alive-doodle-accent {
+  fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.alive-doodle-accent { opacity: .72; stroke-width: 2.3; }
+.alive-doodle[data-animate="true"] .alive-doodle-ink { animation: doodle-draw 430ms cubic-bezier(.27,.65,.22,1) both; }
+.alive-doodle[data-animate="true"] .alive-doodle-accent { animation: doodle-accent 420ms cubic-bezier(.24,.7,.25,1.18) both; transform-origin: center; }
+@keyframes doodle-draw { from { stroke-dasharray: 1; stroke-dashoffset: 1; } to { stroke-dasharray: 1; stroke-dashoffset: 0; } }
+@keyframes doodle-accent { 0%, 30% { opacity: 0; scale: .72; } to { opacity: .72; scale: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .alive-doodle[data-animate="true"] :is(.alive-doodle-ink, .alive-doodle-accent) { animation: none; }
+}
+:root[data-motion-budget="constrained"] .alive-doodle[data-animate="true"] :is(.alive-doodle-ink, .alive-doodle-accent) { animation: none; }
+.plan-done, .alive-workspace-empty { display: flex; gap: .8rem; align-items: center; padding: .75rem 1rem; border-radius: 1.15rem; border: 1px solid var(--stroke); }
+.plan-done { margin-bottom: .8rem; }
+.plan-done p, .alive-workspace-empty p { font-size: .82rem; color: var(--ink-secondary); }
+.scheduled-empty { display: flex; gap: .8rem; align-items: center; }
+.alive-habit-check { display: inline-flex; align-items: center; gap: .3rem; }
+.alive-habit-check[aria-pressed="true"] { color: var(--success); }
+.alive-habit-check[aria-pressed="true"] svg { animation: alive-bloom 300ms cubic-bezier(.2,.7,.35,1.22) both; }
+.alive-habit-day { transition: background-color var(--motion-feedback) ease-out; }
+.alive-habit-day[data-checked="true"] { animation: alive-bloom 270ms cubic-bezier(.2,.7,.35,1.22) both; }
+@keyframes alive-bloom { from { opacity: .55; scale: .65; } to { opacity: 1; scale: 1; } }
+.savings-goal-fill { transition: stroke-dashoffset var(--motion-panel) var(--motion-ease-tab); }
+
+.profile-page-screen[data-closing="true"] { pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .plan-hub-task-open:active, .scheduled-row-open:active, .goal-card-open:active, .task-option:active { transform: scale(.965); }
+}
+.alive-workspace-empty + * { margin-top: .65rem; }
+
+.task-detail-screen[data-exiting="true"] { pointer-events: none; }

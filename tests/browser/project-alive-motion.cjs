@@ -18,19 +18,20 @@ fs.mkdirSync(evidence, { recursive: false });
 
 const report = {
   source: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  viewport, reduced, sequences: {}, errors: [],
+  viewport, reduced, sequences: {}, errors: [], interactions: [],
+  worktreeStatus: execFileSync('git', ['status', '--short'], { cwd: root, encoding: 'utf8' }).trim(),
 };
 let server, browser;
 
 async function main() {
   const output = process.env.LIFEOS_MOTION_FIXTURE_DIST || path.join(evidence, 'fixture-dist');
   if (!process.env.LIFEOS_MOTION_FIXTURE_DIST) {
-  const { build, loadConfigFromFile } = await import(pathToFileURL(path.join(root, 'node_modules/vite/dist/node/index.js')));
-  const { config } = await loadConfigFromFile({ command: 'build', mode: 'production' }, path.join(root, 'vite.config.ts'), root);
-  const buildOutput = await build({ ...config, root, configFile: false, logLevel: 'warn',
-    build: { ...config.build, outDir: output, target: 'esnext', rollupOptions: { input: path.join(root, 'tests/browser/index.html') } } });
-  report.bundleBytes = Object.fromEntries(buildOutput.output.filter(item => item.type === 'chunk')
-    .map(chunk => [chunk.fileName, Buffer.byteLength(chunk.code)]));
+    const { build, loadConfigFromFile } = await import(pathToFileURL(path.join(root, 'node_modules/vite/dist/node/index.js')));
+    const { config } = await loadConfigFromFile({ command: 'build', mode: 'production' }, path.join(root, 'vite.config.ts'), root);
+    const buildOutput = await build({ ...config, root, configFile: false, logLevel: 'warn',
+      build: { ...config.build, outDir: output, target: 'esnext', rollupOptions: { input: path.join(root, 'tests/browser/index.html') } } });
+    report.bundleBytes = Object.fromEntries(buildOutput.output.filter(item => item.type === 'chunk')
+      .map(chunk => [chunk.fileName, Buffer.byteLength(chunk.code)]));
   }
   const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2' };
   server = createServer((request, response) => {
@@ -131,7 +132,11 @@ async function main() {
         observer.observe({ type });
         return [observer];
       });
-      window.addEventListener('pointerdown', () => { result.press = performance.now(); }, { once: true, capture: true });
+      let pressed;
+      window.addEventListener('pointerdown', event => {
+        result.press = performance.now();
+        pressed = event.target instanceof Element ? event.target.closest('button,input,label,summary,[role=button]') : null;
+      }, { once: true, capture: true });
       window.addEventListener('click', () => {
         began = result.input = performance.now();
         result.commitIndex = window.__ALIVE_QA_COMMITS__.length;
@@ -148,7 +153,10 @@ async function main() {
                 current: animation.currentTime, duration: animation.effect?.getComputedTiming().endTime })) };
           }));
         if (began !== undefined) result.frames.push({ time: time - began, surfaces });
-        else if (result.press !== null) preClick.push({ time: time - result.press, surfaces });
+        else if (result.press !== null) {
+          const style = pressed && getComputedStyle(pressed);
+          preClick.push({ time: time - result.press, surfaces, pressTransform: style?.transform ?? 'none' });
+        }
         result.pressFrames = preClick;
         if (began === undefined || time - began < 690) requestAnimationFrame(sample);
         else { observers.forEach(observer => observer.disconnect()); result.done = true; }
@@ -186,7 +194,7 @@ async function main() {
   await capture('today-money', tab('finance'), screens);
   await capture('money-plan', tab('plan'), screens);
   await capture('create-task', button('Create Task'), '#record-dialog');
-  await capture('expand-task', composer().getByText('Add details', { exact: true }), '.task-composer-section|.task-composer-section > div');
+  await capture('expand-task', composer().getByText('Add details', { exact: true }), '.task-composer-section|.alive-disclosure-grid|.alive-disclosure-body');
   await capture('close-task', button('Close', composer()), '#record-dialog');
   await button('Create Task').click();
   await composer().getByLabel('Task title').fill('Review weekly plan');
@@ -209,14 +217,87 @@ async function main() {
   await planForm.getByLabel('Frequency').selectOption('monthly');
   await button('Save plan', planForm).click();
   await page.getByTestId('money-planning').getByText('Monthly utility', { exact: true }).waitFor();
-  const recurring = button('Edit', page.locator('.scheduled-plan-row').filter({ hasText: 'Monthly utility' }));
-  await capture('scheduled-detail', recurring, '#money-commitment-dialog|.money-page');
-  await capture('scheduled-back', button('Cancel', planForm), '#money-commitment-dialog|.money-page');
+  const alive = await page.locator('.alive-nav').count() > 0;
+  const recurring = alive ? button('View Monthly utility') : button('Edit', page.locator('.scheduled-plan-row').filter({ hasText: 'Monthly utility' }));
+  const scheduledSurface = '#money-commitment-dialog|dialog[data-scheduled-details]|.money-page';
+  await capture('scheduled-detail', recurring, scheduledSurface);
+  await capture('scheduled-back', alive ? button('Back to Scheduled') : button('Cancel', planForm), scheduledSurface);
+  await tab('plan').click();
+  const plan = page.getByRole('navigation', { name: 'Plan destinations' });
+  await capture('first-habit', button('Habits', plan), '#screen-habits|[data-alive-doodle]|.alive-doodle-ink');
+  await button(/Add habit/).click();
+  await composer().getByLabel('Habit name').fill('Read ten pages');
+  await button('Save habit', composer()).click();
+  await capture('habit-check-in', button('Mark Read ten pages complete'), '.alive-habit-check|.alive-habit-day|.alive-habit-check svg');
+  await button('Mark Read ten pages incomplete').waitFor();
+  await capture('first-goal', button('Goals', plan), '#screen-goals|[data-alive-doodle]|.alive-doodle-ink');
+  await button(/Add goal/).click();
+  await composer().getByLabel('Goal title').fill('Finish one course');
+  await composer().getByLabel('Target', { exact: true }).fill('10');
+  await button('Save goal', composer()).click();
+  await button(/^Finish one course/).click();
+  await button('Update progress').click();
+  await composer().getByLabel('Current progress').fill('6');
+  await capture('goal-progress', button('Save progress', composer()), '[role=progressbar]|.lifeos-progress-fill|#record-dialog');
+  await page.getByRole('progressbar', { name: 'Finish one course progress' }).waitFor();
+  assert.equal(await page.getByRole('progressbar', { name: 'Finish one course progress' }).getAttribute('aria-valuenow'), '60');
+  await button('+ Milestone').click();
+  await composer().getByLabel('Milestone title').fill('Finish the first module');
+  await button('Save milestone', composer()).click();
+  await capture('goal-milestone', page.getByRole('checkbox', { name: /Finish the first module/ }), '[data-alive-doodle]|.alive-doodle-ink');
+  await button('Back to list').click();
   if (process.env.LIFEOS_MOTION_REPEAT === '1') {
     for (let i = 1; i <= 3; i++) {
       await tab('dashboard').click();
       await capture('warm-today-money-' + i, tab('finance'), screens);
       await capture('warm-money-plan-' + i, tab('plan'), screens);
+    }
+  }
+  if (alive) {
+    const settled = name => page.waitForFunction(name => document.querySelector('[data-tab="' + name + '"]')?.getAttribute('aria-current') === 'page'
+      && !document.querySelector('.ui-tab-screen[data-transition-state=outgoing]')
+      && document.querySelectorAll('.ui-tab-screen:not([hidden]):not([inert])').length === 1, name);
+    const targets = await page.locator('.app-bottom-nav [data-tab]').evaluateAll(nodes => nodes.map(node => {
+      const rect = node.getBoundingClientRect();
+      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    }));
+    for (let index = 0; index < 30; index++) {
+      const point = targets[index % targets.length];
+      await page.mouse.click(point.x, point.y);
+    }
+    await settled('plan');
+    report.interactions.push('Thirty rapid primary tab clicks settled to one accessible Plan screen');
+
+    await tab('dashboard').click();
+    await settled('dashboard');
+    const touch = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x == null ? [] : [{ x, y: 215, id: 1 }] });
+    await touch('touchStart', 304);
+    await touch('touchMove', 254);
+    if (!reduced) await page.locator('[data-gesture-dragging=true]').waitFor();
+    await touch('touchCancel');
+    await page.locator('[data-gesture-dragging=true]').waitFor({ state: 'detached' });
+    await settled('dashboard');
+    report.interactions.push('Cancelled native touch dispatch released the drag and preserved Today');
+
+    await touch('touchStart', 304);
+    await touch('touchMove', 235);
+    await touch('touchMove', 288);
+    await touch('touchEnd');
+    await settled('dashboard');
+    report.interactions.push('Reversed touch settled back to Today');
+    await touch('touchStart', 304);
+    await touch('touchMove', 236);
+    await touch('touchMove', 140);
+    await touch('touchEnd');
+    await settled('finance');
+    report.interactions.push('Completed touch navigated from Today to Money');
+    for (const sequence of Object.values(report.sequences)) {
+      for (const frame of sequence.frames) {
+        for (const surface of frame.surfaces) {
+          if (surface.state === 'outgoing') assert.equal(surface.inert, true);
+          if (reduced && /^screen-|record-dialog|scheduled|profile/.test(surface.id)) assert.ok(Math.abs(surface.x) < .01);
+        }
+      }
     }
   }
   await cdp.send('Page.stopScreencast');

@@ -1,3 +1,4 @@
+import LifeDoodle from './LifeDoodle';
 import { useState } from 'react';
 import type { Dispatch, FormEvent, SetStateAction } from 'react';
 import { ArrowDownLeft, ArrowUpRight, CalendarClock, ChevronRight, Plus, RefreshCw } from 'lucide-react';
@@ -156,7 +157,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
         {renderPlan(nextPlan, true)}
       </section>}
       {!visiblePlans.length
-        ? <div className="scheduled-empty lifeos-panel"><p>No upcoming commitments.</p></div>
+        ? <div className="scheduled-empty lifeos-panel"><LifeDoodle kind="empty-scheduled" /><p>No upcoming commitments.</p></div>
         : visiblePlans.some(row => row !== nextPlan) && <div className="scheduled-timeline" aria-label="Commitment timeline">
           {visiblePlans.filter(row => row !== nextPlan).map(row => renderPlan(row, false))}
         </div>}

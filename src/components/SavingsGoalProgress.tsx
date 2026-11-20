@@ -1,3 +1,4 @@
+import LifeDoodle from './LifeDoodle';
 import { useState } from 'react';
 import { ArrowRight, Check, Pencil, Trash2 } from 'lucide-react';
 import type { SavingsContribution, SavingsGoal } from '../types';
@@ -16,8 +17,6 @@ type Props = {
   onEditContribution: (contribution: SavingsContribution) => void;
   onDeleteContribution: (contribution: SavingsContribution) => void;
 };
-
-const circumference = 2 * Math.PI * 39;
 
 export default function SavingsGoalProgress({ goal, formatMoney, locale, formatDate, contributions = [], onContribute, onDelete, onEditGoal, onEditContribution, onDeleteContribution }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -43,13 +42,13 @@ export default function SavingsGoalProgress({ goal, formatMoney, locale, formatD
       <svg viewBox="0 0 100 100" aria-hidden="true">
         <circle className="savings-goal-track" cx="50" cy="50" r="39" />
         <circle className="savings-goal-fill" cx="50" cy="50" r="39"
-          strokeDasharray={`${(circumference * visualProgress).toFixed(2)} ${circumference.toFixed(2)}`} transform="rotate(-90 50 50)" />
+          pathLength="1" strokeDasharray="1" strokeDashoffset={1 - visualProgress} transform="rotate(-90 50 50)" />
       </svg>
       <span className="savings-goal-percent tabular-nums">{percentLabel}</span>
     </div>
     <div className="savings-goal-content">
       <div className="savings-goal-heading"><div className="min-w-0"><p className="type-eyebrow">{goal.category || 'PERSONAL GOAL'}</p><h4 id={`savings-title-${goal.id}`} className="type-section-title truncate">{goal.title}</h4></div><div className="flex items-center gap-2"><InfoTip label="Savings progress">Progress compares saved contributions with the target in this goal’s currency. The visual progress indicator is capped at 100%.</InfoTip><span className="savings-goal-target-date">By {formatDate(goal.targetDate)}</span></div></div>
-      <p className="savings-goal-status" aria-live="polite">{status}</p>
+      <div className="flex items-center gap-2"><p className="savings-goal-status" aria-live="polite">{status}</p>{visualProgress === 1 && <LifeDoodle kind="savings-milestone" compact />}</div>
       <p className="savings-goal-target">Target · {targetLabel}</p>
       <div className="savings-goal-actions">
         <button type="button" onClick={onEditGoal} className="savings-goal-delete" aria-label={`Edit ${goal.title}`}><Pencil size={16} aria-hidden="true" /><span>Edit</span></button>

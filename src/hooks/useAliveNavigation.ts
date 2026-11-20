@@ -20,6 +20,8 @@ type Flight = {
 interface FlightStats {
   durationMs: number;
   interrupted: boolean;
+  p95FrameMs?: number;
+  overruns?: number;
 }
 
 const routeElement = (tab: MainTab) => document.getElementById(`screen-${tab}`);
@@ -36,6 +38,8 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   const drag = useRef<{ element: HTMLElement; origin: number } | null>(null);
   const settle = useRef<ReturnType<typeof animateRoute> | null>(null);
   const latest = useRef<FlightStats | null>(null);
+  const measure = useRef(false);
+  const slowRuns = useRef(0);
 
   const clearDrag = useCallback(() => {
     const element = drag.current?.element;
@@ -98,13 +102,31 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     const momentumTarget = Math.max(36, Math.min(112, Math.abs(flight.fromPose.x) + Math.abs(flight.velocity) * .019));
     const enter = animateRoute(incoming, flight.toPose, { x: 0, opacity: 1 }, preset);
     const exit = outgoing && animateRoute(outgoing, flight.fromPose, { x: -sign * momentumTarget, opacity: .78 }, preset);
-    const stop = () => { enter.cancel(); exit?.cancel(); };
+    const intervals: number[] = [];
+    let frameId = 0;
+    let previousFrame = performance.now();
+    const sample = (time: number) => {
+      if (time > previousFrame) intervals.push(time - previousFrame);
+      previousFrame = time;
+      frameId = requestAnimationFrame(sample);
+    };
+    if (measure.current) frameId = requestAnimationFrame(sample);
+    const stop = () => { cancelAnimationFrame(frameId); enter.cancel(); exit?.cancel(); };
     stopFlight.current = stop;
     const finish = () => {
       if (stopFlight.current !== stop || transition.current?.id !== flight.id) return;
       stopFlight.current = null;
       transition.current = null;
-      latest.current = { durationMs: performance.now() - flight.started, interrupted: false };
+      cancelAnimationFrame(frameId);
+      const ordered = intervals.slice().sort((a, b) => a - b);
+      const median = ordered[Math.floor(ordered.length / 2)] ?? 0;
+      const p95FrameMs = ordered[Math.max(0, Math.ceil(ordered.length * .95) - 1)];
+      const overruns = median > 0 ? intervals.filter(interval => interval > Math.max(25, median * 1.6)).length : 0;
+      if (ordered.length >= 5) {
+        slowRuns.current = overruns >= 2 || median > 25 ? Math.min(5, slowRuns.current + 1) : Math.max(0, slowRuns.current - 1);
+        document.documentElement.dataset.motionBudget = slowRuns.current >= 3 ? 'constrained' : 'normal';
+      }
+      latest.current = { durationMs: performance.now() - flight.started, interrupted: false, p95FrameMs, overruns };
       setTabTransition(current => current?.id === flight.id ? null : current);
     };
     void Promise.all(exit ? [enter, exit] : [enter]).then(finish, finish);
@@ -168,7 +190,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   };
 
   return {
-    activeTab, activeTabRef, tabTransition, jumpTo, cancel, beginDrag, moveDrag, endDrag, transitionPropsFor, latest,
+    activeTab, activeTabRef, tabTransition, jumpTo, cancel, beginDrag, moveDrag, endDrag, transitionPropsFor, latest, measure,
   };
 }
 

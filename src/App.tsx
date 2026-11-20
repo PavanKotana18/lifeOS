@@ -1,6 +1,9 @@
+import { AliveDisclosure } from './components/AliveDisclosure';
+import LifeDoodle from './components/LifeDoodle';
 import { useAliveNavigation } from './hooks/useAliveNavigation';
 import TaskComposerOptions from './components/TaskComposerOptions';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, LazyMotion, domAnimation } from 'motion/react';
+import * as m from 'motion/react-m';
 import { RecordComposerLayer } from './components/RecordComposerLayer';
 import { animateRoute } from './services/aliveMotion';
 import { useInterfaceMotion } from './hooks/useInterfaceMotion';
@@ -206,6 +209,7 @@ export default function App() {
     lastActionEvent: null, reminderLifecycle: [], lastError: '',
   });
   const developerToolsEnabled = import.meta.env.DEV || notificationDiagnostics.packageName === 'com.lifeos.personal.debug';
+  navigationMotion.measure.current = developerToolsEnabled;
   const [taskReminderDiagnostics, setTaskReminderDiagnostics] = useState<Record<string, unknown> | null>(null);
   const [biometricVerified, setBiometricVerified] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
@@ -516,6 +520,17 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handlePath);
   }, [appReady, onboardingComplete, isLocked]);
 
+  useEffect(() => {
+    if (!appReady || isLocked || !onboardingComplete) return;
+    const warmPlan = () => { void import('./components/PlanHub').catch(() => undefined); };
+    if (typeof window.requestIdleCallback === 'function') {
+      const request = window.requestIdleCallback(warmPlan);
+      return () => window.cancelIdleCallback(request);
+    }
+    const timer = window.setTimeout(warmPlan, 500);
+    return () => window.clearTimeout(timer);
+  }, [appReady, isLocked, onboardingComplete]);
+
   const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals') => (
     <header className="plan-destination-header">
       <h1 className="type-page-title">Plan</h1>
@@ -593,7 +608,7 @@ export default function App() {
       window.removeEventListener('blur', cancelForBlur);
       document.removeEventListener('visibilitychange', cancelForBackground);
     };
-  }, []);
+  }, [interfaceMotion.preset, interfaceMotion.reducedMotion]);
 
   const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
     // A new contact is a new interaction, even if WebView reuses its pointer ID.
@@ -1022,6 +1037,7 @@ export default function App() {
   };
   const openProfile = () => {
     closeTodayCustomization();
+    navigationMotion.cancel();
     cancelPrimaryGesture('profile-opened');
     setShowExitConfirmation(false);
     if (backState.current.profileOpen) return;
@@ -1070,6 +1086,14 @@ export default function App() {
     swipeClickSuppression.current = null;
     navigationMotion.cancel();
   }, [isLocked, navigationMotion.cancel]);
+
+  useLayoutEffect(() => {
+    if (!lifeDetail || interfaceMotion.reducedMotion) return;
+    const detail = document.querySelector<HTMLElement>(`[aria-labelledby="${lifeDetail.kind}-detail-title"]`);
+    if (!detail) return;
+    const animation = animateRoute(detail, { x: 44, opacity: .86 }, { x: 0, opacity: 1 }, interfaceMotion.preset);
+    return () => animation.cancel();
+  }, [lifeDetail, interfaceMotion.preset, interfaceMotion.reducedMotion]);
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
     setToast({ message, type });
@@ -2739,6 +2763,7 @@ export default function App() {
   }
 
   return (
+    <LazyMotion features={domAnimation} strict>
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       <header data-profile-background className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between px-4 py-3 sm:px-5">
@@ -3173,7 +3198,7 @@ export default function App() {
 
             <div className="space-y-2">
               {habits.length === 0 ? (
-                <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary"><p>No habits yet.</p></div>
+                <div className="alive-workspace-empty lifeos-panel"><LifeDoodle kind="first-habit" /><p>No habits yet.</p></div>
               ) : (
                 habits.filter(h => lifeDetail?.kind !== 'habit').map(h => {
                   const todayStr = todayKey;
@@ -3196,12 +3221,12 @@ export default function App() {
                               logged && !logged.quantityUnit ? formatHabitQuantity(logged.quantity || 0) :
                               formatHabitQuantity(logged?.quantity || 0, h.quantityUnit) + ' / ' + formatHabitQuantity(h.targetPerDay || 0, h.quantityUnit))
                             : stats.completedToday ? 'Checked in today' : 'Ready to check in'}</span>
-                          {stats.currentStreak > 0 && <span className="block text-xs text-secondary">{stats.currentStreak} day streak</span>}
+                          {stats.currentStreak > 0 && <span className="flex items-center gap-1 text-xs text-secondary">{stats.currentStreak} day streak{stats.currentStreak >= 7 && <LifeDoodle key={Math.floor(stats.currentStreak / 7)} kind="habit-streak" compact />}</span>}
                         </button>
                         {h.trackingMode === 'quantity' ? <button type="button" disabled={!scheduledToday} className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-label={`Add one ${h.quantityUnit} to ${h.name}`} onClick={() => void handleHabitQuantity(h, todayStr, 1)}>+1</button>
-                          : <button type="button" disabled={!scheduledToday} className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? 'Done' : 'Check in'}</button>}
+                          : <button type="button" disabled={!scheduledToday} className="alive-habit-check lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? <><Leaf size={16} aria-hidden="true" /> Done</> : 'Check in'}</button>}
                       </div>
-                      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
+                      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" data-checked={done} className="alive-habit-day h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
                     </div>
                   );
                 })
@@ -3219,10 +3244,10 @@ export default function App() {
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
             {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-secondary">{goal.category} &middot; {goal.status}</p><h3 id="goal-detail-title" className="type-page-title safe-wrap">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div>{goal.mode !== "milestone" && <p className="text-sm font-medium">{displayGoalMeasure(goal.currentValue, goal.unit)} of {displayGoalMeasure(goal.targetValue, goal.unit)}</p>}<div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{goal.targetDate ? formatDate(goal.targetDate) : "Open-ended"}</p>{goal.targetDate && <p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p>}</div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button>{goal.mode !== "milestone" && <button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button>}<button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">+ Milestone</button>              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, goal.status === 'Paused' ? 'In Progress' : 'Paused')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Paused' ? 'Resume goal' : 'Pause goal'}</button>}
               <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm" onClick={async () => { try { await StorageService.goals.update(goal.id, { archived: !goal.archived }); const rows = await reloadAllData(); await syncNotificationSchedules(rows.tasks, rows.habits, rows.goals, rows.milestones); } catch { showToast("Could not confirm the archive change. Refresh Goals before retrying.", "danger"); } }}>{goal.archived ? "Restore goal" : "Archive goal"}</button>{goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, 'Completed')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">Complete goal</button>}
-              <button type="button" className="lifeos-danger min-h-11 rounded-xl px-4 text-sm" onClick={() => void deleteGoalFromDetails(goal)}>Delete goal</button></div><div><h4 className="text-sm font-semibold">Milestones</h4>{rows.length === 0 ? <p className="mt-2 text-xs text-secondary">No milestones yet.</p> : <ul className="mt-2 divide-y divide-[var(--stroke)]">{rows.map(row => <li key={row.id}><label className="flex min-h-12 cursor-pointer items-center gap-3 py-2"><input type="checkbox" checked={row.completed} onChange={async () => { await StorageService.goals.toggleMilestone(row.id, !row.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-sm ${row.completed ? 'line-through text-secondary' : ''}`}>{row.title}</span>{row.targetDate && <span className="text-xs text-secondary">{formatDate(row.targetDate)} · {getDaysRemainingText(row.targetDate)}</span>}</span></label></li>)}</ul>}</div>{(tasks.some(task => task.goalId === goal.id) || habits.some(habit => habit.goalId === goal.id)) && <section aria-label="Linked activity" className="space-y-2"><h4 className="type-section-title">Linked activity</h4><ul className="text-sm text-secondary">{tasks.filter(task => task.goalId === goal.id).map(task => <li key={'task:' + task.id}>{task.title}</li>)}{habits.filter(habit => habit.goalId === goal.id).map(habit => <li key={'habit:' + habit.id}>{habit.name}</li>)}</ul></section>}<details className="border-t border-[var(--stroke)]"><summary className="min-h-11 content-center cursor-pointer text-sm font-semibold">History</summary><ul className="space-y-2 text-sm text-secondary"><li>Created {formatDate(goal.createdAt.slice(0, 10))}</li>{[...(goal.progressHistory || [])].reverse().map((entry, index) => <li key={index}>{formatDate(entry.at.slice(0, 10))} ? {displayGoalMeasure(entry.value, entry.unit)}</li>)}{goal.updatedAt && <li>Updated {formatDate(goal.updatedAt.slice(0, 10))}</li>}{rows.filter(row => row.completed && row.completedAt).sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || '')).map(row =><li key={row.id}>{formatDate((row.completedAt || '').slice(0, 10))} &middot; {row.title}</li>)}</ul></details></section>; })()}
+              <button type="button" className="lifeos-danger min-h-11 rounded-xl px-4 text-sm" onClick={() => void deleteGoalFromDetails(goal)}>Delete goal</button></div><div><h4 className="text-sm font-semibold">Milestones</h4>{rows.length === 0 ? <p className="mt-2 text-xs text-secondary">No milestones yet.</p> : <ul className="mt-2 divide-y divide-[var(--stroke)]">{rows.map(row => <li key={row.id}><label className="flex min-h-12 cursor-pointer items-center gap-3 py-2"><input type="checkbox" checked={row.completed} onChange={async () => { await StorageService.goals.toggleMilestone(row.id, !row.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-sm ${row.completed ? 'line-through text-secondary' : ''}`}>{row.title}</span>{row.targetDate && <span className="text-xs text-secondary">{formatDate(row.targetDate)} · {getDaysRemainingText(row.targetDate)}</span>}</span>{row.completed && <LifeDoodle kind="goal-milestone" compact />}</label></li>)}</ul>}</div>{(tasks.some(task => task.goalId === goal.id) || habits.some(habit => habit.goalId === goal.id)) && <section aria-label="Linked activity" className="space-y-2"><h4 className="type-section-title">Linked activity</h4><ul className="text-sm text-secondary">{tasks.filter(task => task.goalId === goal.id).map(task => <li key={'task:' + task.id}>{task.title}</li>)}{habits.filter(habit => habit.goalId === goal.id).map(habit => <li key={'habit:' + habit.id}>{habit.name}</li>)}</ul></section>}<AliveDisclosure label="History"><ul className="space-y-2 text-sm text-secondary"><li>Created {formatDate(goal.createdAt.slice(0, 10))}</li>{[...(goal.progressHistory || [])].reverse().map((entry, index) => <li key={index}>{formatDate(entry.at.slice(0, 10))} ? {displayGoalMeasure(entry.value, entry.unit)}</li>)}{goal.updatedAt && <li>Updated {formatDate(goal.updatedAt.slice(0, 10))}</li>}{rows.filter(row => row.completed && row.completedAt).sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || '')).map(row =><li key={row.id}>{formatDate((row.completedAt || '').slice(0, 10))} &middot; {row.title}</li>)}</ul></AliveDisclosure></section>; })()}
             {lifeDetail?.kind !== 'goal' && (() => {
               const visibleGoals = goals.filter(goal => (goalsSubtab === 'archived' ? goal.archived : !goal.archived && goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter));
-              if (!visibleGoals.length) return <p className="goal-empty-state text-sm text-secondary">{goalsCategoryFilter !== 'all' ? 'No goals in this category.' : goalsSubtab === 'completed' ? 'No completed goals yet.' : goalsSubtab === 'paused' ? 'No paused goals.' : goalsSubtab === 'archived' ? 'No archived goals.' : 'No active goals yet.'}</p>;
+              if (!visibleGoals.length) return <div className="goal-empty-state text-sm text-secondary">{goals.length === 0 && <LifeDoodle kind="first-goal" />}<p>{goalsCategoryFilter !== 'all' ? 'No goals in this category.' : goalsSubtab === 'completed' ? 'No completed goals yet.' : goalsSubtab === 'paused' ? 'No paused goals.' : goalsSubtab === 'archived' ? 'No archived goals.' : 'No active goals yet.'}</p></div>;
               return <div className="goal-list">{visibleGoals.map(g => {
                 const pct = goalProgress(g);
                 return <article key={g.id} className="lifeos-panel goal-journey-card" data-complete={g.status === 'Completed'}>
@@ -3241,16 +3266,6 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <>
-            {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={[!plannerDetailTask.dueAlertDisabled && plannerDetailTask.dueDate && (plannerDetailTask.dueTime || dateOnlyAlertTime) ? 'At due time' : '', plannerDetailTask.reminderLeadMinutes ? plannerDetailTask.reminderLeadMinutes + ' min before' : plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : ''].filter(Boolean).join(' / ') || 'No alert'} onBack={closeTaskDetail} onEdit={() => openEditTask(plannerDetailTask)} onDelete={async () => {
-              if (!await confirmAction({ title: 'Delete this task?', message: 'This will remove the task and its alerts.', confirmLabel: 'Delete task', destructive: true })) return;
-              try {
-                await StorageService.tasks.delete(plannerDetailTask.id);
-                closeTaskDetail();
-                const records = await reloadAllData();
-                await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
-                showToast('Task removed', 'info');
-              } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
-            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
 
             <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
@@ -3335,7 +3350,19 @@ export default function App() {
       </main>
 
         {/* VIEW 6: SETTINGS */}
-      {profileOpen && <ProfileDrawer section={profileSection} scrollPositions={profileScroll.current} onBack={backFromProfile} closing={profileClosing} onExited={finishProfileClose} preset={interfaceMotion.preset} swipeEnabled={userPrefs.swipeNavigationEnabled}>
+      <AnimatePresence initial={false}>
+        {activeTab === 'planner' && plannerDetailTask && <TaskDetailScreen key={plannerDetailTask.id} reducedMotion={interfaceMotion.reducedMotion} task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={[!plannerDetailTask.dueAlertDisabled && plannerDetailTask.dueDate && (plannerDetailTask.dueTime || dateOnlyAlertTime) ? 'At due time' : '', plannerDetailTask.reminderLeadMinutes ? plannerDetailTask.reminderLeadMinutes + ' min before' : plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : ''].filter(Boolean).join(' / ') || 'No alert'} onBack={closeTaskDetail} onEdit={() => openEditTask(plannerDetailTask)} onDelete={async () => {
+              if (!await confirmAction({ title: 'Delete this task?', message: 'This will remove the task and its alerts.', confirmLabel: 'Delete task', destructive: true })) return;
+              try {
+                await StorageService.tasks.delete(plannerDetailTask.id);
+                closeTaskDetail();
+                const records = await reloadAllData();
+                await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
+                showToast('Task removed', 'info');
+              } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
+            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
+      </AnimatePresence>
+      {profileOpen && <ProfileDrawer section={profileSection} scrollPositions={profileScroll.current} onBack={backFromProfile} closing={profileClosing} onExited={finishProfileClose} preset={interfaceMotion.preset} reduced={interfaceMotion.reducedMotion} swipeEnabled={userPrefs.swipeNavigationEnabled}>
           <div className="profile-page space-y-5">
             {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
@@ -3430,6 +3457,14 @@ export default function App() {
             </ProfileSubpage>}
 
             {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
+                <details className="rounded-xl border border-[var(--stroke)] p-3">
+                  <summary className="min-h-11 content-center cursor-pointer text-sm font-semibold">Motion diagnostics</summary>
+                  <p className="text-xs text-secondary">Preset {interfaceMotion.preset} · Reduced motion {interfaceMotion.reducedMotion ? 'on' : 'off'} · Decorative motion {document.documentElement.dataset.motionBudget === 'constrained' ? 'limited' : 'full'}</p>
+                  {navigationMotion.latest.current && <p className="mt-2 text-xs text-secondary">
+                    Last primary transition {Math.round(navigationMotion.latest.current.durationMs)} ms · {navigationMotion.latest.current.interrupted ? 'interrupted' : 'settled'}
+                    {navigationMotion.latest.current.p95FrameMs != null && ` · Frame p95 ${navigationMotion.latest.current.p95FrameMs.toFixed(1)} ms · ${navigationMotion.latest.current.overruns} overruns`}
+                  </p>}
+                </details>
               <section className="lifeos-panel rounded-xl border p-4 space-y-3"><h2 className="text-sm font-semibold">Notification diagnostics</h2>
                 <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary"><p>Capability: {notificationDiagnostics.capability} · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Exact alarms: {notificationDiagnostics.exactAlarm} · Channel: {notificationDiagnostics.channel}</p><p>Pending records: {notificationDiagnostics.pendingCount} · Visible: {notificationDiagnostics.visibleNotificationCount} · IDs {notificationDiagnostics.visibleNotificationIds.join(', ') || 'none'}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation: {notificationDiagnostics.lastCancellationReason || 'none'} · Last action: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: {notificationDiagnostics.lastError || 'none'}</p></div>
                 {developerToolsEnabled && notificationDiagnostics.reminderLifecycle.length > 0 && <details className="rounded-xl border border-[var(--stroke)] p-3"><summary className="min-h-11 cursor-pointer text-xs font-semibold">Reminder timeline · no task titles</summary><ol className="mt-2 space-y-2">{notificationDiagnostics.reminderLifecycle.map(item => <li key={item.notificationId} className="border-t border-[var(--stroke)] pt-2 text-[10px] leading-5 text-secondary"><strong>Reminder {item.notificationId}</strong> · {item.deliveryState}<br />Scheduled: {item.reminderAt}<br />Accepted: {item.nativeAcceptedAt || 'not observed'} · Pending: {item.pendingObservedAt || 'not observed'}<br />Android posted: {item.androidPostedAt || 'not observed'} · Receiver event: {item.receiverEventAt || 'not observed'} · Tapped: {item.tappedAt || 'not observed'}</li>)}</ol></details>}
@@ -3571,7 +3606,7 @@ export default function App() {
       <AnimatePresence initial={false}>
       {createKind && (
         <RecordComposerLayer key={createKind} full={!['contribution', 'milestone', 'goal-progress'].includes(createKind)} dismiss={requestCloseForm}>
-          <motion.form id="record-dialog"
+          <m.form id="record-dialog"
             initial={createKind === 'task' && !interfaceMotion.reducedMotion ? { transform: 'translate3d(100%,0,0)' } : false}
             animate={createKind === 'task' ? { transform: 'translate3d(0%,0,0)' } : undefined}
             exit={createKind === 'task' && !interfaceMotion.reducedMotion ? { transform: 'translate3d(100%,0,0)', transition: { duration: .27, ease: [.32, 0, .67, 1] } } : undefined}
@@ -3678,7 +3713,7 @@ export default function App() {
             {editingTransactionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this transaction?', message: 'This transaction will be removed from your history. This cannot be undone.', confirmLabel: 'Delete transaction', destructive: true }))) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setCreateFormDirty(false); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
             {editingContributionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this contribution?', message: 'The contribution will be removed and subtracted from the saved goal total.', confirmLabel: 'Delete contribution', destructive: true }))) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setCreateFormDirty(false); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
             <div className="ui-form-actions"><button type="button" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-raised min-h-12 flex-1 rounded-xl text-sm font-semibold">Cancel</button><button type="submit" disabled={recordSaving} className="lifeos-accent-button min-h-12 flex-1 rounded-xl px-3 text-sm font-semibold">{recordSaving ? 'Saving…' : editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : editingBudgetId ? 'Save budget' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : createKind === 'task' ? 'Create Task' : `Save ${createKind}`}</button></div>
-          </motion.form>
+          </m.form>
         </RecordComposerLayer>
       )}
       </AnimatePresence>
@@ -3686,7 +3721,7 @@ export default function App() {
       {/* Floating Bottom Nav */}
       <nav data-profile-background ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2">
         <div className="app-nav-items alive-nav">
-        <motion.span className="alive-nav-indicator" aria-hidden="true" initial={false}
+        <m.span className="alive-nav-indicator" aria-hidden="true" initial={false}
           animate={{ x: PRIMARY_NAVIGATION.findIndex(item => item.tab === (primaryDestinationForTab(activeTab) ?? 'dashboard')) * 100 + '%' }}
           transition={interfaceMotion.reducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 31 }} />
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
@@ -3727,5 +3762,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </LazyMotion>
   );
 }

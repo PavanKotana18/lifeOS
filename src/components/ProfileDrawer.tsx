@@ -1,17 +1,17 @@
-import { animateRoute } from '../services/aliveMotion';
-﻿import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { animateRoute, readRoutePose } from '../services/aliveMotion';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { ChevronLeft } from 'lucide-react';
-import { readTranslateX } from '../services/springMotion';
 import { profileParent, type ProfileSection } from './ProfileSettings';
 import type { MotionPresetId } from '../services/interfaceMotion';
 
-export default function ProfileDrawer({ section, scrollPositions, onBack, closing, onExited, preset, swipeEnabled, children }: {
+export default function ProfileDrawer({ section, scrollPositions, onBack, closing, onExited, preset, reduced, swipeEnabled, children }: {
   section: ProfileSection;
   scrollPositions: Record<string, number>;
   onBack: () => void;
   closing: boolean;
   onExited: () => void;
   preset: MotionPresetId;
+  reduced: boolean;
   swipeEnabled: boolean;
   children: ReactNode;
 }) {
@@ -54,11 +54,11 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
     heading?.setAttribute('tabindex', '-1');
     heading?.focus({ preventScroll: true });
     element.addEventListener('scroll', saveScroll, { passive: true });
-    const flight = from !== section && content && !matchMedia('(prefers-reduced-motion: reduce)').matches
+    const flight = from !== section && content && !reduced
       ? animateRoute(content, { x: profileParent(from) === section ? -42 : 42, opacity: .65 }, { x: 0, opacity: 1 }, preset)
       : null;
     return () => { flight?.cancel(); element.removeEventListener('scroll', saveScroll); };
-  }, [section, scrollPositions, preset]);
+  }, [section, scrollPositions, preset, reduced]);
 
   useLayoutEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -82,10 +82,10 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
     if (!element) return;
     const prior = animation.current;
     const width = element.clientWidth;
-    const current = prior ? readTranslateX(getComputedStyle(element).transform) : hasEntered.current ? 0 : width;
+    const current = prior ? readRoutePose(element).x : hasEntered.current ? 0 : width;
     prior?.cancel();
     animation.current = null;
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches || typeof element.animate !== 'function') {
+    if (reduced || typeof element.animate !== 'function') {
       hasEntered.current = true;
       if (closing) exitCallback.current();
       return;
@@ -93,21 +93,21 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
     const end = closing ? width : 0;
     const flight = animateRoute(element, { x: current, opacity: 1 }, { x: end, opacity: 1 }, preset);
     animation.current = flight;
-    void flight.then(() => {
+    const finish = () => {
       if (animation.current !== flight) return;
       animation.current = null;
       if (closing) exitCallback.current();
       else { hasEntered.current = true; flight.cancel(); }
-    });
-    return () => {
-      if (animation.current === flight) {
-        animation.current = null;
-        flight.cancel();
-      }
     };
-  }, [closing, preset]);
+    void flight.then(finish, finish);
+  }, [closing, preset, reduced]);
 
-  return <main ref={panel} id="screen-settings" tabIndex={-1} className="profile-page-screen lifeos-panel" aria-label="Profile and settings"
+  useLayoutEffect(() => () => {
+    animation.current?.cancel();
+    animation.current = null;
+  }, []);
+
+  return <main ref={panel} id="screen-settings" tabIndex={-1} className="profile-page-screen lifeos-panel" data-closing={closing} aria-label="Profile and settings"
       onPointerDown={event => {
         const target = event.target;
         pointer.current = null;

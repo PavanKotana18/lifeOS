@@ -531,10 +531,12 @@ async function main() {
       await clickButton('Create Task');
       const title = 'QA acceptance: timed task';
       await fillDialogField('Task title', title);
+      await dialog().getByRole('button', { name: /^Schedule/ }).click();
       await fillDialogField('Due date', '2099-04-22');
       await fillDialogField('Time (optional)', '19:36');
-      await dialog().getByText('Repeat and reminders', { exact: true }).click();
-      await dialog().getByLabel('Extra reminder').selectOption('15');
+      await dialog().getByRole('button', { name: /^Reminder/ }).click();
+      await dialog().getByRole('button', { name: /^Extra reminder/ }).click();
+      await page.getByRole('dialog', { name: 'Extra reminder' }).getByRole('button', { name: '15 minutes before' }).click();
       await capture('task-timed-composer-390');
       await saveDialog('Create Task');
       const stored = () => page.evaluate(async name => {

@@ -1,3 +1,4 @@
+import LifeDoodle from './LifeDoodle';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { LifeOSBrand } from './LifeOSBrand';
 import RecoveryProgress from './RecoveryProgress';
@@ -62,6 +63,7 @@ export default function Onboarding(props: Props) {
         {step === 0 && <>
           <h1>What should we call you?</h1>
           <form onSubmit={submitName}>
+            <LifeDoodle kind="welcome" />
             <label>Your name<input autoCapitalize="words" value={name} maxLength={48} autoComplete="nickname" onChange={event => setName(event.target.value)} className="lifeos-input" /></label>
             <button type="submit" disabled={busy || !name.trim()} className="lifeos-accent-button">Continue</button>
           </form>
