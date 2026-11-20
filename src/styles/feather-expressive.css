@@ -1,0 +1,224 @@
+/* LifeOS Feather — Expressive Edition. Existing theme tokens provide every color. */
+.feather-expressive {
+  --page-gutter: clamp(var(--space-4), 5.2vw, var(--space-8));
+  --type-page-title: clamp(1.75rem, 1.42rem + 1.45vw, 2.25rem);
+  --feather-section-gap: var(--space-6);
+  --feather-control-height: 2.875rem;
+  --feather-icon-size: 1.375rem;
+  --feather-form-width: 42rem;
+  --feather-surface: var(--surface);
+  --feather-grouped: color-mix(in srgb, var(--surface-raised) 72%, var(--page));
+  --feather-highlight: color-mix(in srgb, var(--accent-tint) 82%, var(--surface));
+}
+
+.feather-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.feather-header-main { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.feather-header-main > :is(h1,h2,h3) { overflow-wrap: anywhere; line-height: 1.15; letter-spacing: -.045em; font-weight: 640; }
+.feather-header-action { flex: none; max-width: 100%; }
+.feather-icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--feather-control-height);
+  block-size: var(--feather-control-height);
+  border-radius: 50%;
+  background: var(--feather-grouped);
+  color: var(--ink);
+}
+.feather-primary, .feather-secondary {
+  min-block-size: var(--feather-control-height);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-control);
+  font-size: .875rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.feather-primary { background: var(--accent); color: var(--accent-foreground); }
+.feather-secondary { background: var(--feather-grouped); color: var(--ink); }
+:where(.feather-primary, .feather-secondary, .feather-icon-button):disabled { opacity: .52; }
+:where(.feather-primary, .feather-secondary, .feather-icon-button):focus-visible { outline: 2px solid var(--focus-color); outline-offset: 3px; }
+.feather-icon-button svg { inline-size: var(--feather-icon-size); block-size: var(--feather-icon-size); }
+:is(.feather-primary, .feather-secondary, .feather-icon-button):active:not(:disabled) {
+  box-shadow: inset 0 0 0 10rem color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.feather-composer-layer { overflow: clip; }
+.feather-composer-layer[data-mode="page"] {
+  background: transparent;
+  align-items: stretch;
+  padding: 0;
+}
+.feather-composer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  inline-size: min(100%, var(--feather-form-width));
+  min-inline-size: 0;
+  overflow: clip;
+}
+.feather-composer[data-mode="sheet"] {
+  max-block-size: min(85dvh, var(--sheet-viewport-height, 100dvh));
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+.feather-composer > .feather-header {
+  padding: max(var(--space-4), env(safe-area-inset-top)) var(--page-gutter) var(--space-4);
+  min-block-size: 4.875rem;
+}
+.feather-composer-content {
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: var(--space-2) var(--page-gutter) var(--space-4);
+  overscroll-behavior: contain;
+  scroll-padding: var(--space-4);
+  scrollbar-width: thin;
+}
+.feather-composer-content :is(input,textarea,select) { min-inline-size: 0; max-inline-size: 100%; }
+.feather-composer-content > :not([data-record-validation]) + :not([data-record-validation]) { margin-block-start: var(--space-3); }
+.feather-composer-content :is(input:not([type="checkbox"]):not([type="radio"]),textarea,select).lifeos-input {
+  min-block-size: var(--feather-control-height);
+  border-color: transparent;
+  border-radius: var(--radius-control);
+  background: var(--feather-grouped);
+  font-size: 1rem;
+}
+.feather-composer-content :is(input,textarea,select).lifeos-input:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}
+.feather-composer-lead {
+  display: block;
+  margin-block: 0 var(--space-6);
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--feather-highlight);
+  color: var(--ink-secondary);
+  font-size: .83rem;
+  font-weight: 630;
+}
+.feather-composer .feather-composer-content .feather-composer-lead input.lifeos-input {
+  font-size: clamp(1.05rem, .92rem + .9vw, 1.38rem);
+  min-block-size: 3.3rem;
+  font-weight: 630;
+  background: var(--surface);
+}
+.feather-composer > .feather-composer-actions {
+  position: static;
+  margin: 0;
+  padding: var(--space-3) var(--page-gutter) max(var(--space-4), env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  border: 0;
+  background: var(--page);
+  box-shadow: 0 -6px 24px color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.feather-composer .task-option { border: 0; background: var(--feather-grouped); }
+.feather-composer .task-option[aria-expanded="true"] { background: var(--feather-highlight); }
+.feather-composer .task-option-panel { border: 0; background: var(--feather-surface); }
+.feather-composer .task-composer-options .alive-disclosure { border: 0; }
+
+.feather-expressive .app-header-shell {
+  background: var(--page);
+  border: 0;
+  box-shadow: none;
+  padding-inline: var(--page-gutter);
+}
+.feather-expressive .app-main { padding-block-start: var(--space-3); }
+.feather-expressive .today-heading { gap: var(--space-2); }
+.feather-expressive .today-heading h2 { font-size: var(--type-page-title); color: var(--ink); font-weight: 640; letter-spacing: -.045em; }
+.feather-expressive .today-focus { border: 0; background: var(--feather-highlight); box-shadow: none; }
+.feather-expressive .today-sections { gap: var(--feather-section-gap); }
+.feather-expressive :is(.today-agenda, .today-habit-summary, .today-money-summary) {
+  padding-inline: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.feather-expressive :is(.today-agenda, .today-habit-summary) :is(h2,h3) { font-size: var(--type-section-title); }
+.feather-expressive .money-home { gap: var(--feather-section-gap); }
+.feather-expressive .money-add-transaction {
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-radius: var(--radius-control);
+  min-height: var(--feather-control-height);
+  padding: var(--space-2) var(--space-4);
+}
+.feather-expressive .money-add-transaction > span:first-child { background: transparent; color: inherit; font-size: 1.35rem; inline-size: auto; block-size: auto; }
+.feather-expressive .money-cashflow { border: 0; background: var(--feather-highlight); box-shadow: none; }
+.feather-expressive .money-destinations { row-gap: var(--space-2); column-gap: var(--space-3); }
+.feather-expressive .money-destination-card {
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--feather-grouped);
+  min-height: 3.55rem;
+}
+.feather-expressive .money-destination-icon { background: transparent; }
+.feather-expressive :is(.money-context, .money-activity, .money-month-link) { border: 0; box-shadow: none; }
+.feather-expressive .money-month-link { background: var(--feather-grouped); }
+.feather-expressive .money-detail-heading { border: 0; padding-bottom: 0; }
+.feather-expressive :is(.money-detail-filters, .money-period-control) { border-color: transparent; background: var(--feather-grouped); }
+
+.feather-expressive :is(.plan-destinations, .plan-view-switch, .scheduled-tabs, .feather-goal-filters) {
+  padding: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--feather-grouped);
+}
+.feather-expressive :is(.plan-destinations, .plan-view-switch, .scheduled-tabs, .feather-goal-filters) button {
+  border-color: transparent;
+  border-radius: calc(var(--radius-control) - .15rem);
+  min-height: var(--feather-control-height);
+}
+.feather-expressive :is(.plan-destinations, .plan-view-switch, .scheduled-tabs, .feather-goal-filters) :is([aria-current="page"],[aria-pressed="true"]) {
+  background: var(--surface);
+  color: var(--accent-text, var(--accent));
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.feather-expressive .plan-task-workspace { padding-inline: 0; background: transparent; border: 0; box-shadow: none; }
+.feather-expressive :is(.plan-hub-list, .plan-hub-task, .plan-hub-empty, .plan-done) { border: 0; }
+.feather-expressive .plan-hub-task-open { display: flex; flex-direction: column; justify-content: center; align-items: start; }
+.feather-expressive .plan-hub-task { padding-inline: var(--space-1); border-radius: var(--radius-control); }
+.feather-expressive :is(.life-section-heading, .plan-workspace-heading) :is(h2, h3) { font-size: var(--type-section-title); }
+
+.feather-scheduled-layout { display: grid; gap: var(--space-6); }
+.feather-scheduled-summary > section { border: 0; }
+.feather-expressive .scheduled-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 35rem) { .feather-expressive .scheduled-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.feather-expressive .scheduled-tabs button { background: transparent; }
+.feather-expressive :is(.scheduled-next, .scheduled-empty, .scheduled-plan-row) { border: 0; }
+.feather-expressive .scheduled-next { background: var(--feather-highlight); }
+.feather-expressive .scheduled-next .scheduled-plan-row { background: transparent; padding-inline: 0; }
+.feather-expressive .scheduled-row-open { grid-template-columns: auto minmax(0, 1fr) auto; }
+.feather-expressive .scheduled-row-actions { border: 0; }
+.feather-expressive .scheduled-timeline .scheduled-plan-row { background: var(--feather-grouped); }
+
+.feather-expressive :is(.profile-identity-card, .profile-link-group) { box-shadow: none; border: 0; }
+.feather-expressive .profile-identity-card { background: var(--feather-highlight); }
+.feather-expressive .profile-link-group { background: transparent; padding-inline: 0; }
+.feather-expressive .profile-navigation-row { padding-inline: 0; }
+.feather-expressive .profile-subpage .preference-group { border-color: transparent; }
+.feather-expressive .profile-navigation-row:hover { border-color: transparent; }
+.feather-expressive :is(.task-detail-meta > div, .feather-detail-surface) { border: 0; background: var(--feather-grouped); }
+.feather-expressive :is(.goal-journey-card, .alive-workspace-empty) { border: 0; }
+.feather-expressive .profile-page-screen {
+  padding: max(var(--space-4), env(safe-area-inset-top))
+    max(var(--page-gutter), env(safe-area-inset-right))
+    calc(var(--space-8) + env(safe-area-inset-bottom))
+    max(var(--page-gutter), env(safe-area-inset-left));
+}
+
+.ui-tab-screen-stack { position: relative; }
+.ui-tab-screen[data-prepared][hidden] {
+  display: block !important;
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  overflow: clip;
+  contain: layout paint;
+}

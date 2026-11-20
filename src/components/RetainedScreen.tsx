@@ -35,6 +35,7 @@ function RetainedScreen({ active, retainInactive = false, prepare = false, trans
     data-transition-direction={transitionDirection}
     className="ui-tab-screen alive-route"
     style={outgoing ? { position: "fixed", ...outgoing } : undefined}
+    data-prepared={prepare && retainInactive || undefined}
     hidden={!active && !outgoing}
     aria-hidden={!active}
     ref={element => element?.toggleAttribute('inert', !active)}

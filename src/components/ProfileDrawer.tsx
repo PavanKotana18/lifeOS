@@ -1,6 +1,5 @@
 import { animateRoute, readRoutePose } from '../services/aliveMotion';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
-import { ChevronLeft } from 'lucide-react';
 import { profileParent, type ProfileSection } from './ProfileSettings';
 import type { MotionPresetId } from '../services/interfaceMotion';
 
@@ -123,7 +122,6 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
         const travel = event.clientX - start.x;
         if (start.x > 28 && travel >= 64 && travel > Math.abs(start.y - event.clientY) * 1.5) onBack();
       }}>
-      <header className="profile-page-toolbar"><button type="button" aria-label="Back from profile" className="profile-page-back lifeos-raised" onClick={onBack}><ChevronLeft size={22} aria-hidden="true" /></button></header>
       {children}
     </main>;
 }

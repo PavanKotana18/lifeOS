@@ -12,6 +12,7 @@ import './styles/money-details.css';
 import './styles/money-transformation.css';
 import './styles/four-tab-transformation.css';
 import './styles/interface-motion.css';
+import './styles/feather-expressive.css';
 import './styles/planning-life-transformation.css';
 
 import { LifeOSLaunchReveal } from './components/LifeOSBrand';

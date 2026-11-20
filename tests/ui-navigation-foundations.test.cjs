@@ -34,7 +34,7 @@ assert.equal(navigation.retainedScreenTransitionState(false, 'prepare'), 'inacti
 assert.equal(navigation.retainedScreenTransitionState(false, 'running'), 'inactive');
 
 const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
-assert.match(app, /<RetainedScreen active=\{activeTab === 'dashboard'\}(?! retainInactive)/, 'Today can unmount because App owns its state');
+assert.match(app, /<RetainedScreen active=\{activeTab === 'dashboard'\} retainInactive/, 'Today stays mounted for return travel');
 assert.match(app, /<RetainedScreen active=\{activeTab === 'plan'\} retainInactive/, 'Tasks retains its local filters across Plan sections and detail routes');
 assert.doesNotMatch(app, /id="screen-life"/, 'Habits and Goals no longer use a separate Life landing screen');
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
@@ -44,8 +44,8 @@ assert.match(app, /navigateTo\('planner'\)/, 'Today routes into the task destina
 assert.match(app, /resolveBackAction/);
 const coordinator = fs.readFileSync(path.join(__dirname, '..', 'src', 'hooks', 'useAliveNavigation.ts'), 'utf8');
 assert.match(coordinator, /transitionPhase: 'running'/, 'tab movement starts on the destination commit');
-assert.match(coordinator, /Promise\.all\(exit \? \[enter, exit\] : \[enter\]\)\.then\(finish, finish\)/,
-  'the two retained surfaces settle together on animation completion');
+assert.match(coordinator, /Promise\.all\(animations\.map\(animation => animation\.finished\)\)\.then\(finish, finish\)/,
+  'the retained surfaces and indicator settle together on animation completion');
 assert.match(coordinator, /transition\.current\?\.id !== flight\.id/, 'obsolete animation callbacks cannot settle new navigation');
 assert.match(coordinator, /const reversePose = previous\?\.from === to/, 'reversal starts at the already painted outgoing pose');
 assert.match(app, /transitionToTab\(tab, direction, velocity\)/, 'tap and swipe use the same transition path');

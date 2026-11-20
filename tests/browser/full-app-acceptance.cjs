@@ -11,7 +11,7 @@ const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { chromium } = require('playwright-core');
 
-const root = path.resolve(__dirname, '../..');
+const root = process.env.LIFEOS_APP_ROOT ? path.resolve(process.env.LIFEOS_APP_ROOT) : path.resolve(__dirname, '../..');
 const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
 const runId = new Date().toISOString().replace(/[:.]/g, '-');
 const evidence = process.env.LIFEOS_BROWSER_EVIDENCE_DIR || path.join(localAppData, 'LifeOS', 'checkpoints', `full-app-acceptance-${runId}`);
@@ -94,9 +94,11 @@ async function planDestination(name) {
 }
 
 async function activeTab(name) {
-  const profileClose = page.getByRole('button', { name: 'Back from profile', exact: true });
-  while (await profileClose.isVisible()) {
-    await profileClose.click();
+  const profile = page.getByRole('main', { name: 'Profile and settings' });
+  const profileClose = profile.getByRole('button', { name: 'Back from profile', exact: true });
+  while (await profile.isVisible()) {
+    if (await profileClose.isVisible()) await profileClose.click();
+    else await page.keyboard.press('Escape');
     await page.waitForTimeout(50);
   }
   const tab = page.locator(`[data-tab="${name}"]`);
@@ -121,13 +123,13 @@ async function saveDialog(buttonName) {
   });
 }
 
-async function capture(name) {
+async function capture(name, fullPage = true) {
   // Recovery codes and recovery confirmation fields are categorically excluded.
   if (await page.locator('[data-sensitive-recovery-code],#recovery-code-confirmation').count()) {
     throw new Error(`Refusing screenshot while recovery material is rendered (${name})`);
   }
   const file = path.join(evidence, `${name}.png`);
-  await page.screenshot({ path: file, fullPage: true, animations: 'disabled', timeout: 15_000 });
+  await page.screenshot({ path: file, fullPage, animations: 'disabled', timeout: 15_000 });
   report.screenshots.push(path.basename(file));
 }
 
@@ -261,6 +263,65 @@ async function main() {
       await page.getByText('Notifications enabled', { exact: true }).waitFor({ state: 'hidden' });
       completed.add('first launch and safe browsing');
     });
+
+
+    if (process.env.LIFEOS_FEATHER_GATE === '1') {
+      await journey('Feather rendered comparison', async () => {
+        const captureScreen = name => capture(name, false);
+        await captureScreen('today');
+        await activeTab('finance');
+        await captureScreen('money');
+        await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Scheduled', exact: true }).click();
+        await captureScreen('scheduled');
+        await activeTab('plan');
+        await page.getByRole('navigation', { name: 'Plan destinations' }).waitFor();
+        await captureScreen('plan');
+        const layouts = [];
+        for (const [tab, action, label, key] of [['Tasks','Create Task','Task title','task'], ['Habits','Add habit','Habit name','habit'], ['Goals','Add goal','Goal title','goal']]) {
+          await planDestination(tab);
+          await clickButton(action, { exact: false });
+          await dialog().getByLabel(label).waitFor();
+          const geometry = () => dialog().evaluate(form => {
+            const box = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+            return { form: box(form), header: box(form.querySelector('header') || form.firstElementChild),
+              field: box(form.querySelector('input')), footer: box(form.querySelector('.ui-form-actions')) };
+          });
+          layouts.push({ key, ...await geometry() });
+          await captureScreen('composer-' + key);
+          if (await dialog().locator('.feather-composer-content').count()) {
+            await page.setViewportSize({ width: 390, height: 490 });
+            await page.waitForFunction(() => {
+              const actions = document.querySelector('#record-dialog .feather-composer-actions');
+              return actions?.getBoundingClientRect().bottom <= window.innerHeight + 2;
+            });
+            const small = await geometry();
+            assert.ok(small.footer.height && small.footer.y + small.footer.height <= 492, 'Footer stays above a shortened viewport');
+            await page.setViewportSize({ width: 390, height: 844 });
+            await page.waitForFunction(() => document.querySelector('#record-dialog')?.getBoundingClientRect().height >= 842);
+          }
+          await dialog().getByRole('button', { name: 'Close', exact: true }).click();
+          await dialog().waitFor({ state: 'hidden' });
+        }
+        report.composers = layouts;
+        if (layouts.every(layout => layout.form.height > 0) && await page.locator('.feather-expressive').count()) {
+          for (const record of layouts.slice(1)) assert.deepEqual(Object.fromEntries(['form','header','field','footer'].map(key => [key,record[key]])),
+            Object.fromEntries(['form','header','field','footer'].map(key => [key,layouts[0][key]])), 'All three composers share geometry');
+        }
+        await clickButton('Add goal', { exact: false });
+        await fillDialogField('Goal title', 'Finish one course');
+        await dialog().getByLabel('Target', { exact: true }).fill('10');
+        await dialog().getByRole('button', { name: 'Save goal', exact: true }).click();
+        await clickButton('Protect this device and save');
+        await page.getByRole('button', { name: /^Finish one course/ }).click();
+        await page.getByRole('heading', { name: 'Finish one course' }).waitFor();
+        await page.locator('.ui-toast').waitFor({ state: 'hidden' });
+        await captureScreen('detail');
+        await clickButton('Open profile and settings');
+        await page.getByRole('heading', { name: 'Profile', exact: true }).waitFor();
+        await captureScreen('profile');
+      });
+      return;
+    }
 
     await journey('primary tab navigation and details', async () => {
       for (const [tab, label] of [['dashboard', 'today'], ['finance', 'money'], ['plan', 'plan']]) {

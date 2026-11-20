@@ -8,9 +8,11 @@ const css = fs.readFileSync('src/index.css', 'utf8');
 const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
 
 for (const [name, source] of [['record', app], ['account', moneyAccounts], ['planning', moneyPlanning]]) {
-  assert.match(source, /ui-sheet-backdrop/, `${name} forms share the common backdrop`);
-  assert.match(source, /ui-bottom-sheet/, `${name} forms share the common sheet sizing and safe-area behavior`);
+  assert.match(source, /<ComposerShell/, `${name} forms share the composer layout`);
 }
+const composer = fs.readFileSync('src/components/ComposerShell.tsx', 'utf8');
+assert.match(composer, /ui-sheet-backdrop/);
+assert.match(composer, /feather-composer-actions/);
 assert.match(css, /\.ui-bottom-sheet[^\n]*max-height: min\(90dvh, calc\(100dvh/);
 assert.match(css, /overscroll-behavior: contain/);
 assert.match(css, /padding-bottom: calc\(1\.25rem \+ env\(safe-area-inset-bottom\)\)/);

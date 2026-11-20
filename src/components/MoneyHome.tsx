@@ -1,4 +1,5 @@
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, ChevronRight, Landmark, PiggyBank, Receipt, WalletCards } from 'lucide-react';
+import { FeatherHeader } from './FeatherHeader';
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Landmark, PiggyBank, Receipt, WalletCards } from 'lucide-react';
 import type { Transaction } from '../types';
 import { formatMinorUnits } from '../services/financeCore';
 import MoneyPeriod from './MoneyPeriod';
@@ -46,10 +47,7 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
   const destinationActions = { transactions: onTransactions, accounts: onAccounts, budgets: onBudgets, savings: onSavings, analytics: onAnalytics, planning: onPlanning };
 
   return <div className="money-home" data-testid="money-home">
-    {!monthly && <header className="money-home-heading">
-      <h2 className="type-page-title">Money</h2>
-      <MoneyPeriod label="Money" month={month} onChange={onMonthChange} />
-    </header>}
+    {!monthly && <FeatherHeader title="Money" heading="h1" action={<MoneyPeriod label="Money" month={month} onChange={onMonthChange} />} />}
 
     {!monthly && <button type="button" onClick={onAddTransaction} className="money-add-transaction" data-testid="money-add-transaction"><span aria-hidden="true">+</span><span><strong>Add transaction</strong></span></button>}
 
@@ -68,7 +66,7 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
       return <button type="button" key={item.id} onClick={destinationActions[item.id]} className={`money-destination-card money-destination-${item.id}`}><span className="money-destination-icon" aria-hidden="true"><Icon size={20} strokeWidth={1.8} /></span><strong>{item.label}</strong></button>;
     })}</nav>}
 
-    {!monthly && <button type="button" onClick={onMonthly} className="money-month-link lifeos-panel">This month <ChevronRight size={16} aria-hidden="true" /></button>}
+    {!monthly && <button type="button" onClick={onMonthly} className="money-month-link lifeos-panel">This month</button>}
     {monthly && <div className="space-y-4">
     {monthSavings && <section className="money-context"><h3 className="type-section-title">Savings contributions</h3><p className="mt-2 text-lg font-semibold tabular-nums">{monthSavings}</p></section>}
     {expenseChange != null && <section className="money-context"><h3 className="type-section-title">Spending trend</h3><p className="mt-2 text-sm">{expenseChange === 0 ? 'Unchanged from the previous month' : Math.abs(expenseChange).toFixed(1) + '% ' + (expenseChange > 0 ? 'higher' : 'lower') + ' than the previous month'}</p></section>}

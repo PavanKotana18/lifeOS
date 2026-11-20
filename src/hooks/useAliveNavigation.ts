@@ -1,3 +1,4 @@
+import { playPrimaryTransition } from '../services/primaryTransition';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { animateRoute, readRoutePose, type RoutePose } from '../services/aliveMotion';
 import { getMotionPreset, resistDrag, type MotionPresetId } from '../services/interfaceMotion';
@@ -14,6 +15,7 @@ type Flight = {
   fromPose: RoutePose;
   toPose: RoutePose;
   focusIncoming: boolean;
+  indicatorFrom: number;
   velocity: number;
   started: number;
 };
@@ -40,6 +42,25 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   const latest = useRef<FlightStats | null>(null);
   const measure = useRef(false);
   const slowRuns = useRef(0);
+  const stageBounds = useRef<Bounds | null>(null);
+  const stageObserver = useRef<ResizeObserver | null>(null);
+  const attachStage = useCallback((stage: HTMLDivElement | null) => {
+    stageObserver.current?.disconnect();
+    stageBounds.current = null;
+    if (!stage) return;
+    const update = () => {
+      const bounds = stage.getBoundingClientRect();
+      stageBounds.current = { top: bounds.top + window.scrollY, left: bounds.left, width: bounds.width };
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(update);
+    const shell = stage.closest('.app-shell');
+    observer.observe(stage);
+    if (shell) observer.observe(shell);
+    stageObserver.current = observer;
+  }, []);
+  const indicator = useRef<HTMLSpanElement>(null);
 
   const clearDrag = useCallback(() => {
     const element = drag.current?.element;
@@ -63,17 +84,23 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   const jumpTo = (to: MainTab, direction?: Direction, velocity = 0) => {
     const from = activeTabRef.current;
     if (from === to) return;
+    const started = performance.now();
     const old = routeElement(from);
     const next = routeElement(to);
     const previous = transition.current;
-    const fromPose = readRoutePose(old);
+    const interrupted = Boolean(previous || drag.current || settle.current);
+    const fromPose = interrupted ? readRoutePose(old) : { x: 0, opacity: 1 };
     const reversePose = previous?.from === to && next && !next.hidden ? readRoutePose(next) : null;
-    const bounds = old?.getBoundingClientRect();
+    const geometry = stageBounds.current;
+    const bounds = geometry ? { ...geometry, top: geometry.top - window.scrollY } : old?.getBoundingClientRect();
+    const indicatorFrom = previous && indicator.current?.offsetWidth
+      ? readRoutePose(indicator.current).x * 100 / indicator.current.offsetWidth : tabIndex(from) * 100;
     const focusIncoming = old?.contains(document.activeElement) ?? false;
     const travelDirection = direction ?? (tabIndex(to) < tabIndex(from) ? 'right' : 'left');
     const sign = travelDirection === 'right' ? -1 : 1;
-    const toPose = reversePose ?? { x: sign * 52, opacity: .98 };
-    if (drag.current) toPose.x = sign * Math.max(18, 52 - Math.abs(fromPose.x) * .24);
+    const distance = tabIndex(from) === tabIndex(to) ? 38 : Math.min(120, (bounds?.width ?? 390) * .24);
+    const toPose = reversePose ?? { x: sign * distance, opacity: .98 };
+    if (drag.current) toPose.x = sign * Math.max(18, distance - Math.abs(fromPose.x) * .44);
 
     clearDrag();
     cancel();
@@ -84,8 +111,8 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
       return;
     }
     const flight: Flight = {
-      id: ++sequence.current, from, to, direction: travelDirection, fromPose, toPose, focusIncoming, velocity,
-      started: performance.now(), outgoing: { top: bounds.top, left: bounds.left - fromPose.x, width: bounds.width },
+      id: ++sequence.current, from, to, direction: travelDirection, fromPose, toPose, focusIncoming, indicatorFrom, velocity,
+      started, outgoing: { top: bounds.top, left: bounds.left - (geometry ? 0 : fromPose.x), width: bounds.width },
     };
     transition.current = flight;
     setTabTransition(flight);
@@ -100,8 +127,16 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     if (!incoming || reduced) { cancel(); return; }
     const sign = flight.direction === 'right' ? -1 : 1;
     const momentumTarget = Math.max(36, Math.min(112, Math.abs(flight.fromPose.x) + Math.abs(flight.velocity) * .019));
-    const enter = animateRoute(incoming, flight.toPose, { x: 0, opacity: 1 }, preset);
-    const exit = outgoing && animateRoute(outgoing, flight.fromPose, { x: -sign * momentumTarget, opacity: .78 }, preset);
+    const surfaces: Parameters<typeof playPrimaryTransition>[0] = [
+      { element: incoming, from: flight.toPose, to: { x: 0, opacity: 1 } },
+    ];
+    if (outgoing) surfaces.push({ element: outgoing, from: flight.fromPose, to: { x: -sign * momentumTarget, opacity: .82 } });
+    if (indicator.current && tabIndex(flight.from) !== tabIndex(flight.to)) {
+      surfaces.push({ element: indicator.current, unit: '%',
+        from: { x: flight.indicatorFrom, opacity: 1 }, to: { x: tabIndex(flight.to) * 100, opacity: 1 } });
+    }
+    const animations = playPrimaryTransition(surfaces, preset);
+    if (!animations.length) { cancel(); return; }
     const intervals: number[] = [];
     let frameId = 0;
     let previousFrame = performance.now();
@@ -111,7 +146,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
       frameId = requestAnimationFrame(sample);
     };
     if (measure.current) frameId = requestAnimationFrame(sample);
-    const stop = () => { cancelAnimationFrame(frameId); enter.cancel(); exit?.cancel(); };
+    const stop = () => { cancelAnimationFrame(frameId); for (const animation of animations) animation.cancel(); };
     stopFlight.current = stop;
     const finish = () => {
       if (stopFlight.current !== stop || transition.current?.id !== flight.id) return;
@@ -134,7 +169,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
       latest.current = { durationMs: ended - flight.started, interrupted: false, p95FrameMs, overruns };
       setTabTransition(current => current?.id === flight.id ? null : current);
     };
-    void Promise.all(exit ? [enter, exit] : [enter]).then(finish, finish);
+    void Promise.all(animations.map(animation => animation.finished)).then(finish, finish);
     return () => {
       if (stopFlight.current === stop) stopFlight.current = null;
       stop();
@@ -195,7 +230,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   };
 
   return {
-    activeTab, activeTabRef, tabTransition, jumpTo, cancel, beginDrag, moveDrag, endDrag, transitionPropsFor, latest, measure,
+    activeTab, activeTabRef, tabTransition, attachStage, indicator, jumpTo, cancel, beginDrag, moveDrag, endDrag, transitionPropsFor, latest, measure,
   };
 }
 

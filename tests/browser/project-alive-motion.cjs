@@ -14,6 +14,7 @@ const port = Number(process.env.LIFEOS_MOTION_PORT || 4183);
 const origin = 'http://127.0.0.1:' + port;
 const reduced = process.env.LIFEOS_MOTION_REDUCED === '1';
 const viewport = { width: 390, height: 844 };
+const primaryOnly = process.env.LIFEOS_MOTION_PRIMARY === '1';
 fs.mkdirSync(evidence, { recursive: false });
 
 const report = {
@@ -114,22 +115,32 @@ async function main() {
     frames = [];
     const captureOrigin = Date.now() / 1000;
     await page.evaluate(selector => {
-      const result = { frames: [], longTasks: [], shifts: [], input: null, press: null, commitIndex: 0 };
+      const result = { frames: [], longTasks: [], longFrames: [], events: [], shifts: [], input: null, press: null, commitIndex: 0 };
       window.__ALIVE_QA_SAMPLE__ = result;
       let began;
       const preClick = [];
       const selectors = selector.split('|');
       const observers = [
         ['longtask', 'longTasks'],
+        ['long-animation-frame', 'longFrames'],
+        ['event', 'events'],
         ['layout-shift', 'shifts'],
       ].flatMap(([type, key]) => {
         if (!PerformanceObserver.supportedEntryTypes.includes(type)) return [];
         const observer = new PerformanceObserver(list => {
           for (const entry of list.getEntries()) result[key].push({
             time: entry.startTime, duration: entry.duration, value: entry.value, recentInput: entry.hadRecentInput,
+            name: entry.name, renderStart: entry.renderStart, styleAndLayoutStart: entry.styleAndLayoutStart,
+            inputDelay: entry.processingStart == null ? undefined : entry.processingStart - entry.startTime,
+            processing: entry.processingEnd == null ? undefined : entry.processingEnd - entry.processingStart,
+            blocking: entry.blockingDuration,
+            scripts: entry.scripts?.map(script => ({ duration: script.duration, invoker: script.invoker,
+              forcedLayout: script.forcedStyleAndLayoutDuration, source: script.sourceURL?.split('/').at(-1),
+              offset: script.sourceCharPosition, name: script.sourceFunctionName })),
+
           });
         });
-        observer.observe({ type });
+        observer.observe({ type, ...(type === 'event' ? { durationThreshold: 16 } : {}) });
         return [observer];
       });
       let pressed;
@@ -147,7 +158,7 @@ async function main() {
             const style = getComputedStyle(node);
             const position = style.transform === 'none' ? new DOMMatrix() : new DOMMatrix(style.transform);
             return { id: node.id || query, x: position.m41, y: position.m42, translate: style.translate,
-              opacity: Number(style.opacity), visibility: style.visibility, height: node.getBoundingClientRect().height,
+              opacity: Number(style.opacity), visibility: style.visibility, height: query.includes('disclosure') ? node.getBoundingClientRect().height : undefined,
               stroke: style.strokeDashoffset, position: style.position, inert: node.inert, state: node.dataset.transitionState,
               animations: node.getAnimations().map(animation => ({ name: animation.animationName, state: animation.playState,
                 current: animation.currentTime, duration: animation.effect?.getComputedTiming().endTime })) };
@@ -193,6 +204,16 @@ async function main() {
   const screens = '[data-lifeos-screen]|.app-bottom-nav [aria-current]|.alive-nav-indicator';
   await capture('today-money', tab('finance'), screens);
   await capture('money-plan', tab('plan'), screens);
+  if (primaryOnly) {
+    for (let i = 1; i <= 5; i++) {
+      await tab('dashboard').click();
+      await capture('warm-today-money-' + i, tab('finance'), screens);
+      await capture('warm-money-plan-' + i, tab('plan'), screens);
+    }
+    await cdp.send('Page.stopScreencast');
+    assert.deepEqual(report.errors, []);
+    return;
+  }
   await capture('create-task', button('Create Task'), '#record-dialog');
   await capture('expand-task', composer().getByText('Add details', { exact: true }), '.task-composer-section|.alive-disclosure-grid|.alive-disclosure-body');
   await capture('close-task', button('Close', composer()), '#record-dialog');
@@ -205,7 +226,8 @@ async function main() {
   await tab('dashboard').click();
   await capture('open-profile', button('Open profile and settings'), '.profile-page-screen|.profile-settings');
   await capture('appearance', button('Appearance'), '.profile-page-screen|.profile-settings');
-  await capture('profile-back', button('Back from profile'), '.profile-page-screen|.profile-settings');
+  const profileBack = await page.locator('.feather-expressive').count() ? 'Profile' : 'Back from profile';
+  await capture('profile-back', button(profileBack), '.profile-page-screen|.profile-settings');
   await capture('profile-close', button('Back from profile'), '.profile-page-screen|.profile-settings');
   await tab('finance').click();
   const money = page.getByRole('navigation', { name: 'Money destinations' });

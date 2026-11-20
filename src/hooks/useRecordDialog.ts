@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-/** Keeps the record sheet inside the available viewport and returns focus to its opener. */
+/** Keeps composers inside the available viewport and returns focus to their opener. */
 export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: string) {
   const dismissRef = useRef(dismiss);
   const openerRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
@@ -20,9 +20,9 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
     const findDialog = () => { const element = document.getElementById(dialogId); return element?.getClientRects().length ? element : null; };
     const dialog = findDialog();
     if (!dialog) return;
-    const background = dialogId === 'record-dialog' ? Array.from(document.querySelectorAll<HTMLElement>('[data-profile-background], [data-record-background]'), element => ({
-      element, inert: element.inert, hidden: element.getAttribute('aria-hidden'),
-    })) : [];
+    const background = Array.from(document.querySelectorAll<HTMLElement>('[data-profile-background], [data-record-background]'))
+      .filter(element => !element.contains(dialog))
+      .map(element => ({ element, inert: element.inert, hidden: element.getAttribute('aria-hidden') }));
     const viewport = window.visualViewport;
     const updateViewport = () => {
       document.documentElement.style.setProperty('--sheet-viewport-height', `${viewport?.height ?? window.innerHeight}px`);

@@ -16,8 +16,9 @@ const Header=require('./src/components/MoneyDetailHeader.tsx').default;
 for(const section of ['transactions','accounts','budgets','savings','planning','analytics']){
  let month='2026-11',back=0; const props={section,month,onMonthChange:value=>month=value,onBack:()=>back++};
  const html=renderToStaticMarkup(React.createElement(Header,props)); assert.match(html,/Money overview/);assert.match(html,/<h2/);
- const tree=Header(props);const walk=(n,f)=>{if(!n)return;if(Array.isArray(n))return n.forEach(x=>walk(x,f));if(typeof n==='object'){f(n);walk(n.props?.children,f);}};
+ const tree=Header(props);const walk=(n,f)=>{if(!n)return;if(Array.isArray(n))return n.forEach(x=>walk(x,f));if(typeof n==='object'){f(n);walk(typeof n.type==='function' ? n.type(n.props) : n.props?.children,f);}};
  walk(tree,node=>{if(node.type==='input'){node.props.onChange({target:{value:''}});assert.equal(month,'2026-11');node.props.onChange({target:{value:'2027-02'}});assert.equal(month,'2027-02');}if(node.type==='button')node.props.onClick();});assert.equal(back,1);
+ assert.equal(month, ['accounts', 'savings'].includes(section) ? '2026-11' : '2027-02');
  if(section==='planning')assert.match(html,/Scheduled/);if(section==='analytics')assert.match(html,/Insights/);
 }
 const app=fs.readFileSync('src/App.tsx','utf8');assert.match(app,/aria-label="Search transactions"/);assert.match(app,/data-activity-filters aria-label="Activity filters"/);assert.match(app,/setFinanceCategoryFilter\('all'\)/);assert.match(app,/formatMinorUnits\(BigInt\(t.amountMinor\)/);

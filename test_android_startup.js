@@ -69,6 +69,7 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
     './styles/money-transformation.css': {},
     './styles/four-tab-transformation.css': {},
     './styles/interface-motion.css': {},
+    './styles/feather-expressive.css': {},
     './styles/planning-life-transformation.css': {},
   };
   vm.runInNewContext(mainCode, {

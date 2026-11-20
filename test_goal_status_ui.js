@@ -16,7 +16,7 @@ assert.match(app, /openCreateForm\('milestone', goal\.id\)/);
 assert.match(app, /aria-pressed=\{goalsSubtab === tab\}/);
 assert.match(app, /role="progressbar" aria-label=\{g\.title \+ ' progress'\}/);
 assert.match(app, /className="lifeos-progress-fill h-full rounded-full"/);
-assert.match(app, /lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">\+ Add goal/);
+assert.match(app, /feather-primary">\+ Add goal/);
 assert.match(app, /className="flex min-h-12 cursor-pointer items-center gap-3 py-2"/);
 assert.match(app, /aria-pressed=\{goalsSubtab === tab\}/);
 

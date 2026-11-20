@@ -35,7 +35,7 @@ const taskDetails = fs.readFileSync('./src/components/TaskDetailScreen.tsx', 'ut
 assert.match(app, /<TaskDetailScreen task=\{plannerDetailTask\}/, 'task details are wired to the selected task');
 assert.match(taskDetails, /role="dialog" aria-modal=\{present \|\| undefined\} aria-hidden=\{!present \|\| undefined\}[\s\S]*aria-labelledby="task-detail-title"/,
   'task details expose an accessible modal named by the task title');
-assert.match(taskDetails, /<h2 id="task-detail-title"[^>]*>\{task\.title\}<\/h2>/,
+assert.match(taskDetails, /<FeatherHeader title=\{task\.title\} id="task-detail-title"/,
   'the selected task title names the detail dialog');
 for (const field of ['Due', 'Status', 'Priority', 'Reminder', 'Edit task', 'Complete task']) {
   assert.ok(taskDetails.includes(field), `task details contain the human-facing ${field} field/action`);

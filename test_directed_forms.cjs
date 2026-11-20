@@ -10,12 +10,16 @@ let actionHeight=96,actionResized,actionObserved,actionDisconnected=false;
 global.ResizeObserver=class {constructor(callback){actionResized=callback;}observe(element){actionObserved=element;}disconnect(){actionDisconnected=true;}};
 const actions={getBoundingClientRect:()=>({height:actionHeight})};
 const dialog={style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)},contains:e=>e===first||e===last,querySelectorAll:()=>[closedDisclosureControl,first,last],getClientRects:()=>[{}],querySelector:selector=>selector==='.ui-form-actions'?actions:first};
-global.document={activeElement:opener,getElementById:id=>id==='active-form'?dialog:null,querySelector:()=>dialog,querySelectorAll:()=>[{getClientRects:()=>[]},dialog],documentElement:{style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)}},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)};
+const attributes=new Map();
+const background={inert:false,contains:()=>false,getAttribute:key=>attributes.get(key)??null,setAttribute:(key,value)=>attributes.set(key,value),removeAttribute:key=>attributes.delete(key)};
+global.document={activeElement:opener,getElementById:id=>id==='active-form'?dialog:null,querySelector:()=>dialog,querySelectorAll:()=>[background],documentElement:{style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)}},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)};
 global.window={innerHeight:800,visualViewport:{height:450,offsetTop:30,addEventListener:(k,v)=>viewportEvents.set(k,v),removeEventListener:k=>viewportEvents.delete(k)}};
 const file=process.cwd()+'/src/hooks/useRecordDialog.ts',m=new Module(file,module);
 m.require=name=>name==='react'?{useEffect:fn=>effect=fn,useRef:v=>({current:v})}:require(name);
 m._compile(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText,file);
 let dismissed=0; m.exports.useRecordDialog(true,()=>dismissed++,'active-form'); const cleanup=effect();
+assert.equal(background.inert,true);
+assert.equal(attributes.get('aria-hidden'),'true');
 assert.equal(props.get('--sheet-viewport-height'),'450px');assert.equal(props.get('--sheet-viewport-top'),'30px');assert.equal(props.get('--sheet-actions-height'),'96px');assert.equal(actionObserved,actions);actionHeight=160;actionResized();assert.equal(props.get('--sheet-actions-height'),'160px');
 let prevented=false;document.activeElement=last;events.get('keydown')({key:'Tab',shiftKey:false,preventDefault:()=>prevented=true}); assert.equal(document.activeElement,first);assert.ok(prevented);
 document.activeElement=first;events.get('keydown')({key:'Tab',shiftKey:true,preventDefault:()=>{}});assert.equal(document.activeElement,last);
@@ -24,6 +28,8 @@ document.activeElement=nested;events.get('keydown')({key:'Escape',preventDefault
 document.activeElement=first;window.visualViewport.height=320;viewportEvents.get('resize')();assert.equal(props.get('--sheet-viewport-height'),'320px');assert.ok(first.scrolled);
 const remountedFirst=new Element(),remountedLast=new Element();document.getElementById=id=>id==='active-form'?{style:dialog.style,querySelector:()=>actions,contains:e=>e===remountedFirst||e===remountedLast,querySelectorAll:()=>[remountedFirst,remountedLast],getClientRects:()=>[{}]}:null;document.activeElement=remountedLast;events.get('keydown')({key:'Tab',shiftKey:false,preventDefault:()=>{}});assert.equal(document.activeElement,remountedFirst,'focus trap follows a form remounted after contextual security');
 cleanup();assert.ok(actionDisconnected);assert.equal(document.activeElement,opener);assert.equal(events.size,0);assert.equal(viewportEvents.size,0);assert.equal(props.size,0);
+assert.equal(background.inert,false);
+assert.equal(attributes.has('aria-hidden'),false);
 console.log('DIRECTED FORMS: 18 viewport, focus loop, nested-dialog ownership and cleanup assertions passed.');
 // The measured navigation inset follows actual container reflow, not a phone model.
 let resized, observed, disconnected=false, height=88;

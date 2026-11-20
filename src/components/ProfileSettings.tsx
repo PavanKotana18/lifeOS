@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Bell, ChevronLeft, Palette, SlidersHorizontal, Shield, UserRound, Database, Info } from 'lucide-react';
+import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info } from 'lucide-react';
+import { FeatherHeader } from './FeatherHeader';
 import type { LucideIcon } from 'lucide-react';
 
 export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses';
@@ -66,7 +67,7 @@ export function ProfileNavigationRow({ title, icon: Icon, onClick, value }: { ti
   </button>;
 }
 
-export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPhotoChange, onNameChange, onOpen, developerAllowed = false, securityStatus }: {
+export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPhotoChange, onNameChange, onOpen, onBack, developerAllowed = false, securityStatus }: {
   name: string;
   initial: string;
   photo?: string | null;
@@ -75,11 +76,12 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
   onPhotoChange?: (remove?: boolean) => Promise<void>;
   onNameChange: (name: string) => Promise<void>;
   onOpen: (section: typeof profileLinks[number]['section'] | 'developer') => void;
+  onBack: () => void;
   developerAllowed?: boolean;
   securityStatus?: string;
 }) {
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
-    <header><h1 className="type-page-title">Profile</h1></header>
+    <FeatherHeader title="Profile" heading="h1" back={{ label: 'Back from profile', onClick: onBack }} />
     <ProfileIdentityCard name={name} initial={initial} photo={photo} photoBusy={photoBusy} photoError={photoError} onPhotoChange={onPhotoChange} onChange={onNameChange} />
     <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
       {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>
@@ -94,7 +96,7 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
 
 export function ProfileSubpage({ title, onBack, backLabel = 'Profile', children }: { title: string; description?: string; backLabel?: string; onBack: () => void; children: ReactNode }) {
   return <section className="profile-settings profile-subpage mx-auto w-full max-w-xl space-y-4" data-testid="profile-settings-subpage">
-    <header className="flex items-center gap-2"><button type="button" aria-label={backLabel} onClick={onBack} className="flex min-h-11 items-center gap-2 rounded-xl px-1 text-sm font-semibold lifeos-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)]"><ChevronLeft size={19} aria-hidden="true" /></button><h1 className="type-page-title">{title}</h1></header>
+    <FeatherHeader title={title} heading="h1" back={{ label: backLabel, onClick: onBack }} />
     {children}
   </section>;
 }

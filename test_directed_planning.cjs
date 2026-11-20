@@ -27,14 +27,14 @@ const draftState = {
   rateDirty: true,
 };
 const markup = renderToStaticMarkup(React.createElement(MoneyPlanning, { ...props, draftState, onDraftStateChange: () => {}, saving: true }));
-assert.match(markup, /aria-busy="true"[^>]*aria-label="Planned commitment"/);
-assert.match(markup, /aria-busy="true"[^>]*aria-label="Manual exchange rate"/);
+assert.match(markup, /aria-label="Planned commitment"[^>]*aria-busy="true"/);
+assert.match(markup, /aria-label="Manual exchange rate"[^>]*aria-busy="true"/);
 assert.match(markup, /value="Rent"/);
 assert.match(markup, /value="25000\.00"/);
 assert.match(markup, /value="Keep this draft"/);
 assert.match(markup, /value="83\.25"/);
 assert.match(markup, /value="Bank statement"/);
-assert.equal((markup.match(/disabled=""/g) || []).length, 4, 'both Save and Cancel actions are disabled while either guarded write is pending');
+assert.equal((markup.match(/disabled=""/g) || []).length, 6, 'Close, Cancel and Save are disabled in both composers during a guarded write');
 assert.match(markup, />Saving…</);
 
 assert.match(source, /export type MoneyPlanningDraftState = \{ commitment: CommitmentDraft \| null; rate: RateDraft \| null; commitmentDirty: boolean; rateDirty: boolean \}/);
@@ -45,14 +45,15 @@ assert.match(source, /setCommitment\(current => current \? \{ \.\.\.current, tit
 assert.match(source, /setRate\(current => current \? \{ \.\.\.current, value: e\.target\.value \} : current\)/);
 assert.match(source, /if \(saving \|\| !commitment\) return/);
 assert.match(source, /if \(saving \|\| !rate\) return/);
-assert.match(source, /if \(!saving && event\.target === event\.currentTarget\)/, 'backdrop dismissal is ignored while saving');
+const composer = fs.readFileSync('./src/components/ComposerShell.tsx', 'utf8');
+assert.match(composer, /if \(!saving && event\.target === event\.currentTarget\)/, 'backdrop dismissal is ignored while saving');
 assert.match(source, /decimalToMinorUnits\(commitment\.amount, commitment\.currency\)/, 'the existing minor-unit conversion remains in use');
 assert.match(source, /baseCurrencyCode: rate\.base, quoteCurrencyCode: rate\.quote, rate: rate\.value\.trim\(\), effectiveDate: rate\.date/);
 console.log('DIRECTED MONEY PLANNING: externally controlled drafts, saving guards, retained payload semantics, and rendered dirty drafts passed.');
 
 const appSource = fs.readFileSync('src/App.tsx', 'utf8');
-assert.ok(appSource.indexOf('<PlannedCashFlow commitments=') < appSource.indexOf('<MoneyPlanning draftState='),
-  'the planning destination shows its planned cash-flow summary before scheduled bill and rate controls');
+assert.ok(appSource.indexOf('<MoneyPlanning ') >= 0 && appSource.indexOf('<MoneyPlanning ') < appSource.indexOf('<PlannedCashFlow commitments='),
+  'the timeline and scheduled controls precede the cash-flow summary in reading order');
 assert.match(appSource, /financeSubtab === 'projection' && <Suspense/, 'Projection loads only on its own Money destination');
 
 for(const [currency,min] of [['JPY','1'],['USD','0.01'],['KWD','0.001']]) {

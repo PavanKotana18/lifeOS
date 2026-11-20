@@ -69,7 +69,7 @@ for (const [activeTab, isLocked, expected] of [['dashboard', false, 0], ['financ
 // focus/Escape contract evidence, not a mounted browser or native UI claim.
 const listeners = new Map(), cleanups = [], styles = new Map();
 const documentValue = { activeElement: null, documentElement: { style: { setProperty: (key, value) => styles.set(key, value), removeProperty: key => styles.delete(key) } },
-  addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name), getElementById: id => id === 'today-customization' ? sheet : null };
+  addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name), getElementById: id => id === 'today-customization' ? sheet : null, querySelectorAll: () => [] };
 class Element {
   constructor(name) { this.name = name; this.isConnected = true; this.style = documentValue.documentElement.style; }
   focus() { documentValue.activeElement = this; }
