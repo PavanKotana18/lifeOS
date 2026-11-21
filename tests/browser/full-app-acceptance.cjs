@@ -101,7 +101,7 @@ async function planDestination(name) {
 }
 
 async function activeTab(name) {
-  const profile = page.getByRole('main', { name: 'Profile and settings' });
+  const profile = page.getByRole('region', { name: 'Profile and settings' });
   const profileClose = profile.getByRole('button', { name: 'Back from profile', exact: true });
   while (await profile.isVisible()) {
     if (await profileClose.isVisible()) await profileClose.click();
@@ -282,7 +282,7 @@ async function main() {
       const scope = () => {
         const dialogs = [...document.querySelectorAll('dialog[open],[role=dialog]:not([aria-hidden=true])')];
         const active = dialogs.findLast(node => node.getClientRects().length) ||
-          document.querySelector('.profile-page-screen,.ui-tab-screen:not([hidden]):not([inert])');
+          document.querySelector('.profile-track-page,.ui-tab-screen:not([hidden]):not([inert])');
         return active?.getAttribute('aria-label') || active?.querySelector('h1,h2')?.textContent || active?.id || location.pathname;
       };
       const describe = el => {
@@ -409,6 +409,32 @@ async function main() {
         await money.getByRole('button', { name: 'Schedule' }).click();
         await page.getByRole('heading', { name: 'Schedule', exact: true }).waitFor();
         await capture('schedule-four-tabs', false);
+        if (process.env.LIFEOS_PROFILE_AUDIT === '1') {
+          await nav.getByRole('button', { name: 'Profile', exact: true }).click();
+          const surfaces = [
+            ['Profile', []], ['Appearance', ['Appearance']], ['Themes', ['Appearance', 'Themes']],
+            ['Accent color', ['Appearance', 'Accent color']], ['Preferences', ['Preferences']],
+            ['Motion', ['Appearance', 'Motion']], ['Notifications', ['Notifications']],
+            ['Privacy & security', ['Privacy & Security']], ['App lock', ['Privacy & Security', 'App lock']],
+            ['Recovery', ['Privacy & Security', 'Recovery']], ['Backup & Restore', ['Backup & Restore']],
+            ['About LifeOS', ['About']], ['Open-source licenses', ['About', 'Open-source licenses']],
+            ['Developer tools', ['Developer tools']],
+          ];
+          report.profileGeometry = [];
+          for (const [title, path] of surfaces) {
+            await nav.getByRole('button', { name: 'Profile', exact: true }).click();
+            for (const item of path) await clickButton(item, { exact: true });
+            await page.getByRole('heading', { name: title, exact: true, level: 1 }).waitFor();
+            const geometry = await page.evaluate(() => {
+              const header = document.querySelector('.primary-masthead').getBoundingClientRect();
+              const content = document.querySelector('#screen-settings .profile-settings').getBoundingClientRect();
+              return { headerHeight: header.height, contentTop: content.top, overflow: document.documentElement.scrollWidth - innerWidth };
+            });
+            assert.ok(geometry.contentTop - geometry.headerHeight < 36 && geometry.overflow < 2, title + ' layout');
+            report.profileGeometry.push({ title, ...geometry });
+            await capture('profile-audit-' + title.toLowerCase().replace(/[^a-z]+/g, '-'), false);
+          }
+        }
       });
       return;
     }
@@ -612,6 +638,19 @@ async function main() {
       await completedToggle.waitFor();
       assert.equal(await completedToggle.isChecked(), true, 'completed task is shown checked in the completed filter');
       await capture('plan-task-complete-390');
+      if (process.env.LIFEOS_PROFILE_AND_PRESS_REVIEW === '1') {
+        const target = page.locator('.plan-hub-task-open:visible').first();
+        const box = await target.boundingBox();
+        await capture('plan-press-rest-390', false);
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        const pressed = await target.evaluate(element => ({ transform: getComputedStyle(element).transform, shadow: getComputedStyle(element).boxShadow }));
+        assert.equal(pressed.transform, 'none');
+        assert.notEqual(pressed.shadow, 'none');
+        await capture('plan-press-active-390', false);
+        await page.mouse.move(2, 2);
+        await page.mouse.up();
+      }
       completed.add('create and complete a task');
     });
 
@@ -921,19 +960,19 @@ async function main() {
       await activeTab('finance');
       await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
       const opener = page.getByRole('button', { name: 'Profile' });
-      const drawer = page.getByRole('main', { name: 'Profile and settings' });
+      const drawer = page.getByRole('region', { name: 'Profile and settings' });
       await opener.click();
       await drawer.waitFor();
-      assert.ok(await drawer.evaluate(element => Math.abs(element.getBoundingClientRect().width - innerWidth) < 2));
-      assert.ok(await page.locator('header[data-profile-background]').evaluate(element => element.inert));
-      assert.ok(await page.locator('.app-main').evaluate(element => element.inert));
+      assert.ok(await drawer.evaluate(element => element.getBoundingClientRect().width <= innerWidth));
+      assert.equal(await page.locator('#screen-finance').evaluate(element => element.inert), true);
+      assert.equal(await page.locator('.app-main').evaluate(element => element.inert), false);
       assert.equal(await page.locator('[data-tab]').count(), 4);
       await drawer.getByRole('button', { name: 'Appearance' }).click();
       await drawer.getByRole('button', { name: 'Themes' }).click();
       await page.keyboard.press('Escape');
-      await drawer.getByRole('heading', { name: 'Appearance' }).waitFor();
+      await page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor();
       await page.keyboard.press('Escape');
-      await drawer.getByRole('heading', { name: 'Profile' }).waitFor();
+      await page.getByRole('heading', { name: 'Profile', exact: true }).waitFor();
       const upload = async (label, color, mimeType = 'image/png') => {
         const data = await page.evaluate(fill => {
           const canvas = document.createElement('canvas'); canvas.width = canvas.height = 12;
@@ -951,7 +990,7 @@ async function main() {
       await image.waitFor();
       const first = await image.getAttribute('src');
       await upload('Replace photo', 'gold');
-      await page.waitForFunction(previous => document.querySelector('.profile-page-screen .profile-avatar-image')?.getAttribute('src') !== previous, first);
+      await page.waitForFunction(previous => document.querySelector('.profile-track-page .profile-avatar-image')?.getAttribute('src') !== previous, first);
       const replacement = await image.getAttribute('src');
       assert.notEqual(first, replacement);
       const persisted = await page.evaluate(async () => {
@@ -968,8 +1007,8 @@ async function main() {
       assert.equal(persisted.rowIsEncrypted, true);
       assert.equal(persisted.ciphertextHasPhoto, false);
       await page.keyboard.press('Escape');
-      await drawer.waitFor({ state: 'detached' });
-      assert.ok(await opener.evaluate(element => element === document.activeElement));
+      await drawer.waitFor({ state: 'hidden' });
+      assert.ok(await opener.isVisible());
       await page.getByRole('button', { name: /View transaction QA acceptance:/ }).first().waitFor();
       await page.reload();
       await opener.click();
@@ -977,8 +1016,8 @@ async function main() {
       await drawer.getByRole('button', { name: 'Remove photo' }).click();
       await image.waitFor({ state: 'detached' });
       assert.equal(await page.evaluate(async () => (await import('/src/db.ts')).StorageService.settings.get('profilePhoto', null)), null);
-      await drawer.getByRole('button', { name: 'Back from profile' }).click();
-      await drawer.waitFor({ state: 'detached' });
+      await page.keyboard.press('Escape');
+      await drawer.waitFor({ state: 'hidden' });
     });
 
     await journey('compact settings and six-month sample data', async () => {
@@ -987,7 +1026,7 @@ async function main() {
       await capture('profile-390');
       for (const name of ['Appearance', 'Preferences', 'Notifications', 'Privacy & Security', 'Backup & Restore', 'About', 'Developer tools']) {
         await clickButton(new RegExp('^' + name));
-        await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true, level: 2 }).waitFor();
+        await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true, level: 1 }).waitFor();
         await inspectVisiblePage(name);
         await capture(name.toLowerCase().replaceAll(' ', '-') + '-390');
         if (name === 'Developer tools') {
@@ -1274,9 +1313,9 @@ async function main() {
         await clickButton(new RegExp('^' + parent));
         for (const name of children) {
           await clickButton(new RegExp('^' + name));
-          await page.getByRole('heading', { name, level: 2, exact: true }).waitFor();
+          await page.getByRole('heading', { name, level: 1, exact: true }).waitFor();
           await capture('profile-' + name.toLowerCase().replaceAll(' ', '-') + '-390');
-          await clickButton(back);
+          await clickButton("Back to " + back);
         }
         await clickButton('Profile');
       }
@@ -1362,6 +1401,46 @@ async function main() {
       await capture('profile-large-text-320');
       await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
       await page.emulateMedia({ reducedMotion: 'reduce' });
+    });
+
+    if (process.env.LIFEOS_SMART_IMPORT_REVIEW === '1') await journey('Smart Import review and encrypted duplicate protection', async () => {
+      await activeTab('finance');
+      await page.locator('[data-tab="finance"]').click();
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
+      const alert = 'Bank account xxxx4521 debited INR 17.25 at Fixture Cafe on 21/11/2026 Ref 55200118';
+      const review = async input => {
+        await clickButton('Import alert');
+        const sheet = page.getByRole('dialog', { name: 'Smart Import' });
+        await sheet.getByLabel('Bank alert').fill(input);
+        await sheet.getByRole('button', { name: 'Detect transaction' }).click();
+        return sheet;
+      };
+      const rejected = await review('Your OTP is 991172 from Bank account xxxx4521');
+      await rejected.getByText('No supported transaction was found.').waitFor();
+      await rejected.getByRole('button', { name: 'Close' }).click();
+      const sheet = await review(alert);
+      await sheet.getByRole('button', { name: 'Review transaction' }).waitFor();
+      await capture('smart-import-suggestion-390', false);
+      await sheet.getByRole('button', { name: 'Review transaction' }).click();
+      assert.equal(await dialog().getByLabel('Transaction date', { exact: true }).inputValue(), '2026-11-21');
+      await chooseOption(dialog(), 'Category', { index: 1 });
+      await saveDialog('Add transaction');
+      const testRows = () => page.evaluate(async () => {
+        const { lifeOSDatabase, StorageService } = await import('/src/db.ts');
+        const rows = (await StorageService.transactions.getAll()).filter(row => row.description === 'Fixture Cafe');
+        const raw = await lifeOSDatabase.transactions.get(rows[0]?.id || 'missing');
+        return { count: rows.length, amount: rows[0]?.amountMinor, hasTime: !!rows[0]?.occurredAt, encrypted: raw?.__lifeosEncrypted === 1 && !raw.importFingerprint };
+      });
+      assert.deepEqual(await testRows(), { count: 1, amount: '1725', hasTime: false, encrypted: true });
+      const repeat = await review(alert);
+      await repeat.getByRole('button', { name: 'Review transaction' }).click();
+      await chooseOption(dialog(), 'Category', { index: 1 });
+      await dialog().getByRole('button', { name: 'Add transaction', exact: true }).click();
+      await page.locator('.lifeos-snackbar').getByText(/matching transaction is already recorded/).waitFor();
+      assert.equal((await testRows()).count, 1);
+      await capture('smart-import-duplicate-390', false);
+      await dialog().getByRole('button', { name: 'Cancel' }).click();
+      await page.getByRole('alertdialog').getByRole('button', { name: /Discard/ }).click();
     });
 
     await journey('protected recovery save cancellation and confirmation', async () => {

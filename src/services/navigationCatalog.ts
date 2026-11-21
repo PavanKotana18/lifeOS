@@ -2,6 +2,7 @@ export const PRIMARY_NAVIGATION = Object.freeze([
   { tab: 'dashboard', label: 'Today', icon: 'home' },
   { tab: 'finance', label: 'Money', icon: 'wallet' },
   { tab: 'plan', label: 'Plan', icon: 'calendar' },
+  { tab: 'settings', label: 'Profile', icon: 'profile' },
 ] as const);
 
 export const MODULE_CATALOG = Object.freeze([
@@ -16,7 +17,7 @@ export type ModuleTab = typeof MODULE_CATALOG[number]['tab'];
 export type MainTab = PrimaryTab | ModuleTab | 'insights' | 'life';
 
 export function primaryDestinationForTab(tab: MainTab): PrimaryTab | null {
-  if (tab === 'dashboard' || tab === 'finance' || tab === 'plan') return tab;
+  if (tab === 'dashboard' || tab === 'finance' || tab === 'plan' || tab === 'settings') return tab;
   if (tab === 'planner' || tab === 'life') return 'plan';
   if (tab === 'habits' || tab === 'goals' || tab === 'insights') return 'plan';
   return null;

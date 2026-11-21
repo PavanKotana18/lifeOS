@@ -11,7 +11,9 @@ const {
 const sample = (overrides = {}) => ({ deltaX: 100, deltaY: 0, durationMs: 240, startedAtSystemEdge: false, startedInHorizontalControl: false, startedInHardExcludedControl: false, enabled: true, ...overrides });
 assert.equal(resolvePrimarySwipe('dashboard', sample({ deltaX: -120 })), 'finance');
 assert.equal(resolvePrimarySwipe('finance', sample({ deltaX: 120 })), 'dashboard');
-assert.equal(resolvePrimarySwipe('plan', sample({ deltaX: -120 })), null);
+assert.equal(resolvePrimarySwipe('plan', sample({ deltaX: -120 })), 'settings');
+assert.equal(resolvePrimarySwipe('settings', sample({ deltaX: 120 })), 'plan');
+assert.equal(resolvePrimarySwipe('settings', sample({ deltaX: -120 })), null);
 assert.equal(resolvePrimarySwipe('habits', sample({ deltaX: 120 })), 'finance', 'Plan children swipe with their primary destination');
 assert.equal(resolvePrimarySwipe('dashboard', sample({ deltaX: 120 })), null, 'first destination does not wrap');
 assert.equal(resolvePrimarySwipe('planner', sample({ deltaX: 120 })), 'finance', 'child routes resolve through their primary destination');

@@ -226,6 +226,7 @@ export function createEncryptedStorageFacade(
 
       add: async (input: Omit<Transaction, 'id' | 'createdAt'>) => {
         if (input.commitmentId || input.commitmentOccurrenceDate) throw new Error('Scheduled occurrence identity is managed by its plan.');
+        if (input.importFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(input.importFingerprint)) throw new Error('Invalid import identity.');
         const record: Transaction = {
           ...input,
           id: helpers.createRecordId('tx'),
@@ -248,6 +249,13 @@ export function createEncryptedStorageFacade(
             if (!account || !account.isActive) throw new Error('Choose an active financial account.');
             if (!record.currencyCode || record.currencyCode !== account.currencyCode) throw new Error('An assigned transaction must use the account currency.');
           }
+          if (record.importFingerprint && (await ctx.getAll<Transaction>('transactions')).some(row =>
+            row.importFingerprint === record.importFingerprint || (
+              row.date === record.date && row.type === record.type && row.currencyCode === record.currencyCode &&
+              row.amountMinor === record.amountMinor && row.accountId === record.accountId &&
+              (!row.occurredAt || !record.occurredAt || row.occurredAt === record.occurredAt) &&
+              (row.description || '').trim().toLowerCase() === record.description.trim().toLowerCase()
+            ))) throw new Error('A matching transaction is already recorded. Review Transactions before saving.');
           ctx.add('transactions', record);
           return record;
         });
@@ -257,7 +265,7 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           const existing = await ctx.get<Transaction>('transactions', id);
           if (!existing) throw new Error('Transaction not found.');
-          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt, commitmentId: existing.commitmentId, commitmentOccurrenceDate: existing.commitmentOccurrenceDate };
+          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt, commitmentId: existing.commitmentId, commitmentOccurrenceDate: existing.commitmentOccurrenceDate, importFingerprint: existing.importFingerprint };
           helpers.validateTransactionRecord(merged, true);
           const [categories, accounts] = await Promise.all([
             ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')

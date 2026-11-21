@@ -44,7 +44,7 @@ assert.ok(formatCurrency(1234567.89, 'INR', 'en-IN').includes('12,34,567.89'), '
 assert.ok(!formatCurrency(1234567.89, 'JPY', 'en-US').includes('.'), 'zero-minor-unit currency omits decimals');
 assert.match(moneyHome, /Net cash flow/);
 assert.match(moneyHome, /formatMoney\(netCashFlow\)/);
-assert.match(app, /data-tab="profile" aria-label="Profile"/);
+assert.match(app, /id=\{tab === "settings" \? "profile-opener"/);
 assert.match(app, /primaryDestinationForTab\(activeTab\)/);
 assert.doesNotMatch(app, /overflow-x-auto[^\n]*financeSubtab|PRIMARY_NAVIGATION[\s\S]{0,500}explore/);
 const markup = renderToStaticMarkup(React.createElement(MoneyHome, {

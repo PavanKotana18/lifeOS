@@ -5,6 +5,12 @@ import type { LucideIcon } from 'lucide-react';
 
 export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses';
 
+export const PROFILE_TITLES: Record<ProfileSection, string> = {
+  home: 'Profile', appearance: 'Appearance', preferences: 'Preferences', notifications: 'Notifications',
+  privacy: 'Privacy & security', data: 'Backup & Restore', about: 'About LifeOS', developer: 'Developer tools',
+  themes: 'Themes', accent: 'Accent color', motion: 'Motion', 'app-lock': 'App lock', recovery: 'Recovery', licenses: 'Open-source licenses',
+};
+
 export function profileParent(section: ProfileSection): ProfileSection {
   if (section === 'themes' || section === 'accent' || section === 'motion') return 'appearance';
   if (section === 'app-lock' || section === 'recovery') return 'privacy';
@@ -95,9 +101,9 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
   </div>;
 }
 
-export function ProfileSubpage({ title, onBack, backLabel = 'Back to Profile', children }: { title: string; description?: string; backLabel?: string; onBack: () => void; children: ReactNode }) {
+export function ProfileSubpage({ title, onBack, backLabel = 'Back to Profile', embedded = false, children }: { title: string; description?: string; backLabel?: string; embedded?: boolean; onBack: () => void; children: ReactNode }) {
   return <section className="profile-settings profile-subpage mx-auto w-full max-w-xl space-y-4" data-testid="profile-settings-subpage">
-    <FeatherHeader title={title} heading="h2" back={{ label: backLabel, onClick: onBack }} />
+    {!embedded && <FeatherHeader title={title} heading="h2" back={{ label: backLabel, onClick: onBack }} />}
     {children}
   </section>;
 }

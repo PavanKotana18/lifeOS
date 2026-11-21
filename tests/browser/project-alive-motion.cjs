@@ -15,6 +15,7 @@ const origin = 'http://127.0.0.1:' + port;
 const reduced = process.env.LIFEOS_MOTION_REDUCED === '1';
 const viewport = { width: 390, height: 844 };
 const colorScheme = process.env.LIFEOS_MOTION_SCHEME === 'dark' ? 'dark' : 'light';
+const fourDestinations = process.env.LIFEOS_FOUR_DESTINATIONS === '1';
 const primaryOnly = process.env.LIFEOS_MOTION_PRIMARY === '1';
 fs.mkdirSync(evidence, { recursive: false });
 
@@ -249,6 +250,7 @@ async function main() {
     await capture('plan-today', tab('dashboard'), screens);
     for (const [name, destination, direction] of [
       ['swipe-today-money', 'finance', 'left'], ['swipe-money-plan', 'plan', 'left'],
+      ...(fourDestinations ? [['swipe-plan-profile', 'settings', 'left'], ['swipe-profile-plan', 'plan', 'right']] : []),
       ['swipe-plan-money', 'finance', 'right'], ['swipe-money-today', 'dashboard', 'right'],
     ]) {
       await capture(name, tab(destination), screens, direction, name === 'swipe-plan-money' ? 395 : 250);
@@ -295,7 +297,7 @@ async function main() {
               if (anchored && name.startsWith('swipe-')) {
                 const indicator = frame.surfaces.find(surface => surface.id === '.alive-nav-indicator');
                 const slotWidth = viewport.width / 4;
-                const first = ['screen-dashboard', 'screen-finance', 'screen-plan'].indexOf(sorted[0].id);
+                const first = ['screen-dashboard', 'screen-finance', 'screen-plan', 'screen-settings'].indexOf(sorted[0].id);
                 if (first >= 0 && indicator) {
                   const left = Math.max(0, Math.min(1, -sorted[0].left / viewport.width));
                   const expectedSlot = first + left;
@@ -332,11 +334,11 @@ async function main() {
   await button(/Review weekly plan/).waitFor();
   await capture('complete-task', page.getByRole('checkbox', { name: 'Mark Review weekly plan complete' }), '.plan-hub-task-check input|.alive-task-mark path|[data-alive-doodle]');
   await tab('dashboard').click();
-  await capture('open-profile', button('Profile'), '.profile-page-screen|.profile-settings');
-  await capture('appearance', button('Appearance'), '.profile-page-screen|.profile-settings');
+  await capture('open-profile', button('Profile'), '.profile-track-page|.profile-settings');
+  await capture('appearance', button('Appearance'), '.profile-track-page|.profile-settings');
   const profileBack = await page.locator('.feather-expressive').count() ? 'Back to Profile' : 'Back from profile';
-  await capture('profile-back', button(profileBack), '.profile-page-screen|.profile-settings');
-  await capture('profile-close', button('Back from profile'), '.profile-page-screen|.profile-settings');
+  await capture('profile-back', button(profileBack), '.profile-track-page|.profile-settings');
+  await capture('profile-close', tab('plan'), '.profile-track-page|.profile-settings');
   await tab('finance').click();
   const money = page.getByRole('navigation', { name: 'Money destinations' });
   await capture('money-scheduled', button('Schedule', money), '.money-page|[data-testid=money-planning]');

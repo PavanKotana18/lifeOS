@@ -7,6 +7,7 @@ import ComposerShell from './components/ComposerShell';
 import { APP_NAME } from './config/appBrand';
 import Snackbar, { type SnackbarNotice } from './components/Snackbar';
 import AppHeader from './components/AppHeader';
+import SmartImportDialog from './components/SmartImportDialog';
 import TransactionSummary from './components/TransactionSummary';
 import MoneyPeriod from './components/MoneyPeriod';
 import { animateRoute } from './services/aliveMotion';
@@ -56,12 +57,11 @@ import MoneyAccounts, { type AccountDraft, type TransferDraft } from './componen
 import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
-import ProfileDrawer from './components/ProfileDrawer';
 import LicenseText from './components/LicenseText';
 import { pickProfilePhoto, prepareProfilePhoto, PROFILE_PHOTO_SETTING, readProfilePhoto } from './services/profilePhoto';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
-import { ProfileAvatar, ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, type ProfileSection } from './components/ProfileSettings';
+import { ProfileAvatar, ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, PROFILE_TITLES, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences, { PreferenceChoice } from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
@@ -138,6 +138,8 @@ export default function App() {
   const navigationMotion = useAliveNavigation(interfaceMotion.preset, interfaceMotion.reducedMotion);
   const { activeTab, activeTabRef, tabTransition, transitionPropsFor } = navigationMotion;
   const [primaryPrepared, setPrimaryPrepared] = useState(false);
+  const profileRequest = useRef(0);
+  const [smartImportOpen, setSmartImportOpen] = useState(false);
   const releaseGestureCapture = (pointerId?: number) => {
     if (pointerId == null) return;
     const surface = gestureSurfaceElement.current;
@@ -150,7 +152,22 @@ export default function App() {
     swipePointer.current = null;
     swipeOriginAction.current = null;
     releaseGestureCapture(pointerId);
-    navigationMotion.jumpTo(tab, direction, velocity, routeScrollOffset(tab), onCommit);
+    const request = ++profileRequest.current;
+    const source = activeTabRef.current;
+    const enter = () => {
+      if (tab === "settings" && source !== "settings") setProfileSection("home");
+      navigationMotion.jumpTo(tab, direction, velocity, routeScrollOffset(tab), onCommit);
+    };
+    if (tab !== "settings" || Capacitor.getPlatform() !== "android" || source === "settings") { enter(); return; }
+    // The Android preview uses generic settings labels until the secure window is acknowledged.
+    void setSensitiveScreenshotState(true).then(() => {
+      if (profileRequest.current !== request || activeTabRef.current !== source || backState.current.isLocked) return;
+      flushSync(enter);
+    }).catch(() => {
+      if (profileRequest.current !== request || activeTabRef.current !== source) return;
+      navigationMotion.endDrag(true);
+      showToast("Could not protect Profile. Try again.", "danger");
+    });
   };
   const navigationHistory = useRef<MainTab[]>([]);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
@@ -167,10 +184,8 @@ export default function App() {
   const pendingNotification = useRef<ReminderAction | null>(null);
   const reminderProcessing = useRef(false);
   const handledNotificationIds = useRef(new Set<number>());
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [profileClosing, setProfileClosing] = useState(false);
+  const profileOpen = activeTab === "settings";
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
-  const profileScroll = useRef<Record<string, number>>({});
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [pendingProfilePhoto, setPendingProfilePhoto] = useState<File | null>(null);
   const [profilePhotoBusy, setProfilePhotoBusy] = useState(false);
@@ -394,7 +409,7 @@ export default function App() {
     }
   };
 
-  const sensitiveScreenshot = activityResumeGuard || profileOpen || isSensitiveScreenshotState({
+  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || profileOpen || tabTransition?.from === "settings" || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -512,8 +527,6 @@ export default function App() {
   backState.current = { createKind, modalContent, plannerDetailTaskId, profileOpen, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail };
 
   const navigateTo = (destination: MainTab, direction?: 'left' | 'right', velocity = 0) => {
-    if (destination === 'settings') { openProfile(); return; }
-    if (backState.current.profileOpen && !profileClosing) closeProfile();
     const tab = destination === 'life' ? 'plan' : destination;
     const previous = activeTabRef.current;
     if (previous === tab) return;
@@ -631,6 +644,7 @@ export default function App() {
   }, [interfaceMotion.preset, interfaceMotion.reducedMotion]);
 
   const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    profileRequest.current += 1;
     // A new contact is a new interaction, even if WebView reuses its pointer ID.
     swipeClickSuppression.current = null;
     activeTouchPointers.current.add(event.pointerId);
@@ -676,7 +690,7 @@ export default function App() {
     const context = {
       enabled: userPrefs.swipeNavigationEnabled,
       pointerType: event.pointerType,
-      settingsScreen: profileOpen,
+      settingsScreen: profileOpen && profileSection !== "home",
       modalOpen: Boolean(createKind || modalContent || (activeTab === 'finance' && (financeSubtab === 'accounts' ? (accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && (planningDrafts.commitment || planningDrafts.rate)))),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
@@ -840,21 +854,21 @@ export default function App() {
   };
 
   const navigateBack = () => {
+    profileRequest.current += 1;
     const state = backState.current;
     if (typeof document !== 'undefined') {
       const scheduledDetail = document.querySelector<HTMLElement>('dialog[data-scheduled-details][open] [data-motion-back]');
       if (scheduledDetail) { scheduledDetail.click(); return; }
       const choices = document.querySelectorAll<HTMLDialogElement>('dialog[data-preference-choice][open]');
       if (choices.length) { choices[choices.length - 1].close(); return; }
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-money-period][open]');
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-money-period][open],dialog[data-smart-import][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
     }
     if (confirmationResolver.current) { settleConfirmation(false); return; }
-    if (state.profileOpen && backupPassphraseResolver.current) { backupPassphraseResolver.current(null); return; }
+    if (backupPassphraseResolver.current) { backupPassphraseResolver.current(null); return; }
     if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(state.profileOpen).catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
-    if (state.profileOpen && !state.isLocked && !backupPrompt && !recoveryOpen && secureSetup === null) { backFromProfile(); return; }
     if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
       void requestCloseFinanceDraft(); return;
     }
@@ -877,6 +891,7 @@ export default function App() {
       }
       if (state.activeTab === 'habits') { rememberActiveScroll(); setHabitsSubtab('checklist'); }
       if (state.activeTab === 'goals') { rememberActiveScroll(); setGoalsSubtab('active'); }
+      if (state.activeTab === 'settings') navigateProfileSection(profileParent(state.profileSection));
       return;
     }
     const history = popTabHistory(navigationHistory.current, 'dashboard');
@@ -1056,44 +1071,34 @@ export default function App() {
   });
 
   const routeScrollKey = (tab: MainTab) => screenScrollKey({
-    tab, financeSubtab, habitsSubtab, goalsSubtab,
+    tab, financeSubtab, habitsSubtab, goalsSubtab, profileSection: tab === activeTab ? profileSection : "home",
     detailKey: lifeDetail?.kind === (tab === 'habits' ? 'habit' : 'goal') ? lifeDetail.id : undefined,
   });
   const routeScrollOffset = (tab: MainTab) => scrollPositions.current[routeScrollKey(tab)] || 0;
   const rememberActiveScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
   const showLifeDetail = (detail: typeof lifeDetail) => { rememberActiveScroll(); setLifeDetail(detail); };
   const navigateProfileSection = (section: ProfileSection) => {
+    if (section === profileSection) return;
+    rememberActiveScroll();
     if (profileSection === 'themes' && section !== 'themes' && themePreviewId) cancelVisualThemePreview();
     setProfileSection(section);
   };
-  const profileReturn = useRef<MainTab | null>(null);
-  const openProfile = () => {
-    closeTodayCustomization();
-    navigationMotion.cancel();
-    cancelPrimaryGesture('profile-opened');
-    setShowExitConfirmation(false);
-    if (backState.current.profileOpen) return;
-    profileReturn.current = null;
-    setProfileClosing(false);
-    setProfileSection('home');
-    setProfileOpen(true);
-  };
-  const closeProfile = () => {
-    setProfileClosing(true);
-  };
-  const finishProfileClose = () => {
-    navigateProfileSection('home');
-    setProfileOpen(false);
-    setProfileClosing(false);
-    const destination = profileReturn.current;
-    profileReturn.current = null;
-    if (destination) navigateTo(destination);
-  };
-  const backFromProfile = () => {
-    if (profileClosing) return;
-    if (profileSection === 'home') closeProfile();
-    else navigateProfileSection(profileParent(profileSection));
-  };
+  const backFromProfile = () => navigateBack();
+  const profileBackHandler = useRef(backFromProfile);
+  profileBackHandler.current = backFromProfile;
+  useEffect(() => {
+    if (!profileOpen) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"]')) return;
+      event.preventDefault();
+      profileBackHandler.current();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [profileOpen]);
+  useLayoutEffect(() => {
+    if (profileOpen) document.getElementById("primary-route-title")?.focus({ preventScroll: true });
+  }, [profileOpen, profileSection]);
 
   useLayoutEffect(() => {
     window.scrollTo({ top: scrollPositions.current[activeScreenKey] || 0, left: 0, behavior: 'instant' });
@@ -1173,9 +1178,13 @@ export default function App() {
     if (activeTab !== 'dashboard' || isLocked) setTodayCustomizationOpen(false);
   }, [activeTab, isLocked]);
 
+  useEffect(() => {
+    if (isLocked || activeTab !== "finance") setSmartImportOpen(false);
+  }, [isLocked, activeTab]);
+
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
     order: todayLayout.order.indexOf(id) + 2,
-    display: todayLayout.hidden.includes(id) || (id === 'habits' && !habits.length) || (id === 'goals' && !goals.some(goal => goal.status === 'In Progress' && !goal.archived)) || (id === 'upcoming' && !tasks.some(task => !task.completed && task.dueDate && task.dueDate > formatLocalDate(clockNow))) || (id === 'agenda' && !tasks.some(task => task.dueDate === formatLocalDate(clockNow) || getTaskStatus(task, clockNow) === 'Overdue')) || (id === 'money' && !transactions.length) ? 'none' : undefined,
+    display: todayLayout.hidden.includes(id) || (id === 'goals' && !goals.some(goal => goal.status === 'In Progress' && !goal.archived)) || (id === 'upcoming' && !tasks.some(task => !task.completed && task.dueDate && task.dueDate > formatLocalDate(clockNow))) || (id === 'agenda' && !tasks.some(task => task.dueDate === formatLocalDate(clockNow) || getTaskStatus(task, clockNow) === 'Overdue')) || (id === 'money' && !transactions.length) ? 'none' : undefined,
   });
 
   const requestCloseForm = () => {
@@ -2343,12 +2352,12 @@ export default function App() {
       }
       if (createKind === 'transaction') {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
-        const preserveUnknownTime = Boolean(existingTransaction && !existingTransaction.occurredAt && !value('dateTime'));
-        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
+        const preserveUnknownTime = !value('dateTime') && Boolean(createDraft.importFingerprint || (existingTransaction && !existingTransaction.occurredAt));
+        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: createDraft.importFingerprint ? value('date') : existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
         const accountId = values.accountId;
         if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
-        else await StorageService.transactions.add(values);
+        else await StorageService.transactions.add({ ...values, ...(createDraft.importFingerprint ? { importFingerprint: createDraft.importFingerprint } : {}) });
       } else if (createKind === 'habit') {
         const targetPerDay = value('targetPerDay') ? Number(value('targetPerDay')) : undefined;
         if (targetPerDay !== undefined && (!Number.isFinite(targetPerDay) || targetPerDay <= 0)) throw new Error('Habit target must be greater than zero.');
@@ -2802,13 +2811,14 @@ export default function App() {
   }
 
   const primarySection = primaryDestinationForTab(activeTab);
-  const sectionTitle = PRIMARY_NAVIGATION.find(item => item.tab === primarySection)?.label;
+  const sectionTitle = profileOpen ? PROFILE_TITLES[profileSection] : PRIMARY_NAVIGATION.find(item => item.tab === primarySection)?.label;
 
   return (
     <LazyMotion features={domAnimation} strict>
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell feather-expressive" data-reduced={interfaceMotion.reducedMotion} onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       <AppHeader title={primarySection === 'dashboard' ? APP_NAME : sectionTitle || APP_NAME} brand={primarySection === 'dashboard'}
+        back={profileOpen && profileSection !== "home" ? backFromProfile : undefined} backLabel={profileSection === 'home' ? 'Back from profile' : 'Back to ' + PROFILE_TITLES[profileParent(profileSection)]}
         action={activeTab === 'finance' && financeSubtab === 'overview' && <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />} />
 
       {!isOnline && (
@@ -2841,10 +2851,9 @@ export default function App() {
             <section className="today-focus lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">YOUR DAY</p>
                   <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s priorities</h3>
                   {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><span className="font-medium">Tasks due today</span> · <strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> complete</p>
-                    : <p className="mt-1 text-sm text-secondary">Choose one thing to make time for today.</p>}
+                    : <p className="mt-1 text-sm text-secondary">What matters most today?</p>}
                 </div>
                 <div className="today-quick-actions" aria-label="Quick add">
                   <button type="button" onClick={() => openCreateForm('task')} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">+ Task</button>
@@ -2858,7 +2867,7 @@ export default function App() {
             <section className="today-section-goals lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('goals')}>
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-[10px] font-bold uppercase tracking-wider lifeos-accent-text">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress' && !goal.archived).length} active goals</h3></div>
-                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all →</button>
+                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all</button>
               </div>
               {goals.filter(goal => goal.status === 'In Progress' && !goal.archived).length === 0 ? (
                 <div className="today-inline-empty"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
@@ -2875,7 +2884,7 @@ export default function App() {
             {/* Financial Overview Card */}
             <div className="today-money-summary today-section-money lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold">Money this month</h3>
+                <h3 className="type-section-title">Money this month</h3>
                 <button onClick={() => { navigateTo('finance'); navigateFinanceSubtab('monthly'); }} className="min-h-11 text-xs lifeos-accent-text font-semibold">See breakdown</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
@@ -2894,45 +2903,31 @@ export default function App() {
               </div>
             </div>
 
-            {/* Today's Habits Summary */}
-            <div className="today-habit-summary lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('habits')}>
-              <div className="flex justify-between items-center mb-3">
-                <div><p className="type-eyebrow">DAILY ROUTINES</p><h3 className="text-sm font-semibold">Habits today</h3><p className="type-caption text-secondary">{todayOverview.routinesDue ? `${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} checked` : 'Check in at your own pace.'}</p></div>
-                <div className="today-habit-actions"><button type="button" onClick={() => openCreateForm('habit')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Add habit</button><button type="button" onClick={() => navigateTo('habits')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">All habits</button></div>
-              </div>
-              {habits.length === 0 ? (
-                <div className="today-inline-empty"><p>No habits to check in yet. Add one when you’re ready.</p></div>
-              ) : (
-                <div className="space-y-2">
-                  {habits.slice(0, 2).map(h => {
-                    const todayStr = todayKey;
-                    const stats = getHabitStreaks(h.id, todayStr);
-                    return (
-                      <div key={h.id} className="p-3 rounded-xl lifeos-raised flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}
-                            type="button"
-                            aria-pressed={stats.completedToday}
-                            aria-label={`${stats.completedToday ? 'Mark' : 'Complete'} ${h.name} ${stats.completedToday ? 'incomplete' : 'for today'}`}
-                            className="lifeos-panel flex min-h-11 min-w-11 items-center justify-center rounded-full border-2 text-xs transition"
-                            style={{ borderColor: stats.completedToday ? 'var(--success)' : 'var(--stroke)', backgroundColor: stats.completedToday ? 'var(--success)' : 'var(--surface)', color: 'var(--page)' }}
-                          >
-                            {stats.completedToday ? '✓' : ''}
-                          </button>
-                          <div>
-                            <p className={`text-sm font-medium ${stats.completedToday ? 'line-through text-muted' : ''}`}>{h.name}</p>
-                            <p className="text-[10px] text-[var(--warning)] font-semibold">🔥 {stats.currentStreak} day streak</p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Future dated tasks are separate from today's agenda. */}
+            <section className="today-habit-summary" style={todaySectionStyle("habits")} aria-labelledby="today-routines-title">
+              <header className="today-section-heading">
+                <h3 id="today-routines-title" className="type-section-title">Daily routines</h3>
+                <button type="button" className="money-text-action" onClick={() => habits.length ? navigateTo("habits") : openCreateForm("habit")}>{habits.length ? "View habits" : "Add habit"}</button>
+              </header>
+              {habits.length === 0 ? <p className="today-routines-empty">Your habits will appear here.</p> :
+                <ul className="today-routine-list">{habits.filter(habit => isHabitEligible(habit, todayKey)).slice(0, 3).map(habit => {
+                  const completed = getHabitStreaks(habit.id, todayKey).completedToday;
+                  const quantity = habit.trackingMode === "quantity";
+                  const log = quantity ? habitLogs.find(row => row.habitId === habit.id && row.date === todayKey && row.quantity !== undefined) : undefined;
+                  const status = quantity ? (log && log.quantityUnit !== habit.quantityUnit
+                    ? formatHabitQuantity(log.quantity || 0, log.quantityUnit)
+                    : formatHabitQuantity(log?.quantity || 0) + " / " + formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit))
+                    : completed ? "Checked in" : "Ready to check in";
+                  return <li key={habit.id} className="today-routine-row">
+                    <div><strong>{habit.name}</strong><small>{status}</small></div>
+                    {quantity ? <button type="button" className="feather-secondary" aria-label={"Add one " + habit.quantityUnit + " to " + habit.name}
+                      onClick={() => void handleHabitQuantity(habit, todayKey, 1)}>+1</button>
+                      : <button type="button" className="feather-secondary alive-habit-check" aria-pressed={completed}
+                        aria-label={completed ? "Undo check-in for " + habit.name : "Check in for " + habit.name}
+                        onClick={() => void handleHabitCompletion(habit.id, habit.name, todayKey, completed)}>{completed ? "Done" : "Check in"}</button>}
+                  </li>;
+                })}</ul>}
+              {habits.length > 0 && !habits.some(habit => isHabitEligible(habit, todayKey)) && <p className="today-routines-empty">No routines scheduled for today.</p>}
+            </section>
             <section className="today-upcoming-section lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
               {dashboardUpcomingTasks.length === 0 ? <p className="today-inline-empty">No upcoming tasks. Add a date to a task to plan ahead.</p> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
@@ -3053,7 +3048,13 @@ export default function App() {
             {financeSubtab === 'transactions' && (
               <div className="transaction-workspace">
                 <TransactionSummary transactions={transactions} month={financeMonth} legacyCurrency={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} />
-                <button type="button" onClick={() => openCreateForm('transaction')} className="feather-primary transaction-add">Add transaction</button>
+                <div className="transaction-actions">
+  <button type="button" onClick={() => openCreateForm("transaction")} className="feather-primary transaction-add">Add transaction</button>
+  <button type="button" className="feather-secondary" onClick={async () => {
+    try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
+    catch { showToast("Could not open Smart Import securely.", "danger"); }
+  }}>Import alert</button>
+</div>
                 <div className="transaction-toolbar">
                   <input
                     type="search"
@@ -3090,11 +3091,11 @@ export default function App() {
                 options={[["date-desc", "Newest first"], ["date-asc", "Oldest first"], ["amount-desc", "Largest within each day"]]} onSelect={e => setFinanceSort(e)} /></div>
 
                 <button type="submit" className="lifeos-accent-button min-h-11 rounded-xl px-4">Show transactions</button></form></dialog>
-                <div className="money-detail-results"><span role="status">{transactionResultCount} {transactionResultCount === 1 ? "result" : "results"}</span>{hasTransactionFilters && <button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button>}</div>
+                <div className="money-detail-results" hidden={!hasTransactionFilters}><span role="status">{transactionResultCount} {transactionResultCount === 1 ? "result" : "results"}</span>{hasTransactionFilters && <button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button>}</div>
                 {/* Transactions List */}
                 <div className="transaction-timeline">
                   {!filteredTransactions.length && !filteredTransfers.length ? (
-                    <p className="money-empty-action">{transactions.length || accountTransfers.length ? 'No transactions match your search and filters.' : 'Your recorded transactions will appear here.'}</p>
+                    <p className="money-empty-action">{transactions.length || accountTransfers.length ? 'No matching transactions.' : 'No transactions this month.'}</p>
                   ) : (
                     [...new Set([...filteredTransactions.map(row => row.date), ...filteredTransfers.map(row => row.date)])].sort((a, b) => financeSort === 'date-asc' ? a.localeCompare(b) : b.localeCompare(a)).map(date => (
                       <section key={date} className="transaction-day" aria-label={formatDate(date)}><h3 className="transaction-day-heading">{formatDate(date)}</h3>
@@ -3393,39 +3394,25 @@ export default function App() {
           </>
         )} />
 
-        </div></div>
-      </main>
-
-        {/* VIEW 6: SETTINGS */}
-      <AnimatePresence initial={false}>
-        {activeTab === 'planner' && plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} key={plannerDetailTask.id} reducedMotion={interfaceMotion.reducedMotion} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={[!plannerDetailTask.dueAlertDisabled && plannerDetailTask.dueDate && (plannerDetailTask.dueTime || dateOnlyAlertTime) ? 'At due time' : '', plannerDetailTask.reminderLeadMinutes ? plannerDetailTask.reminderLeadMinutes + ' min before' : plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : ''].filter(Boolean).join(' / ') || 'No alert'} onBack={closeTaskDetail} onEdit={() => openEditTask(plannerDetailTask)} onDelete={async () => {
-              if (!await confirmAction({ title: 'Delete this task?', message: 'This will remove the task and its alerts.', confirmLabel: 'Delete task', destructive: true })) return;
-              try {
-                await StorageService.tasks.delete(plannerDetailTask.id);
-                closeTaskDetail();
-                const records = await reloadAllData();
-                await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
-                showToast('Task removed', 'info');
-              } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
-            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
-      </AnimatePresence>
-      {profileOpen && <ProfileDrawer section={profileSection} scrollPositions={profileScroll.current} onBack={backFromProfile} closing={profileClosing} onExited={finishProfileClose} preset={interfaceMotion.preset} reduced={interfaceMotion.reducedMotion} swipeEnabled={userPrefs.swipeNavigationEnabled}>
-          <div className="profile-page space-y-5">
+        <RetainedScreen active={profileOpen} retainInactive prepare={primaryPrepared} id="screen-settings" {...transitionPropsFor("settings")} render={() => (
+          <div className="profile-track-page" role="region" aria-label="Profile and settings" data-android-profile={Capacitor.getPlatform() === "android" || undefined}>
+            <div className="profile-track-preview" aria-hidden="true"><p>Appearance</p><p>Preferences</p><p>Notifications</p><p>Privacy &amp; security</p></div>
+          <div className="profile-page" data-profile-section={profileSection}>
             {profileSection === 'home' && <ProfileHome sharedHeader onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
-            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'privacy' && <ProfileSubpage embedded title="Privacy & security" onBack={() => navigateProfileSection('home')}>
               <div className="flex items-center gap-2">Device protection <InfoTip label="Device protection" /></div>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
                 <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} /></div>
             </ProfileSubpage>}
-            {profileSection === 'app-lock' && <ProfileSubpage title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+            {profileSection === 'app-lock' && <ProfileSubpage embedded title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
               <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. LifeOS does not store your fingerprint.</InfoTip></div>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
 
               </div>
             </ProfileSubpage>}
-            {profileSection === 'recovery' && <ProfileSubpage title="Recovery" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+            {profileSection === 'recovery' && <ProfileSubpage embedded title="Recovery" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
               <div className="preference-group py-3">
               {onboardingJourney.recoveryName && <p className="text-xs text-secondary">Recovery name: <strong>{onboardingJourney.recoveryName}</strong>. This label cannot restore data without your separate recovery kit.</p>}
               {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
@@ -3434,7 +3421,7 @@ export default function App() {
               </div>
             </ProfileSubpage>}
 
-            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'appearance' && <ProfileSubpage embedded title="Appearance" onBack={() => navigateProfileSection('home')}>
               <section className="lifeos-panel rounded-2xl border p-4 space-y-3" aria-label="Display mode"><h2 className="text-sm font-semibold">Display mode</h2>
               <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
 
@@ -3443,7 +3430,7 @@ export default function App() {
                 <ProfileSettingRow title="Accent color" value={customAccent ? 'Custom' : 'Theme default'} onClick={() => navigateProfileSection('accent')} />
                 <ProfileSettingRow title="Motion" onClick={() => navigateProfileSection('motion')} /></div>
             </ProfileSubpage>}
-            {profileSection === 'themes' && <ProfileSubpage title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'themes' && <ProfileSubpage embedded title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <section className="lifeos-panel rounded-2xl border p-4 space-y-3" aria-label="Theme previews">
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {(Object.entries(THEME_CATALOG) as Array<[ThemeId, typeof THEME_CATALOG[ThemeId]]>).map(([id, option]) => {
@@ -3463,14 +3450,14 @@ export default function App() {
 
               </section>
             </ProfileSubpage>}
-            {profileSection === 'motion' && <ProfileSubpage title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'motion' && <ProfileSubpage embedded title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <MotionPreferences value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
             </ProfileSubpage>}
-            {profileSection === 'accent' && <ProfileSubpage title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'accent' && <ProfileSubpage embedded title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
             </ProfileSubpage>}
 
-            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'preferences' && <ProfileSubpage embedded title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}>
               <div className="flex items-center gap-2">Profile preferences <InfoTip label="Profile preferences" /></div><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
               try {
                 await StorageService.settings.set('dateOnlyAlertTime', time);
@@ -3479,7 +3466,7 @@ export default function App() {
               } catch { showToast('Could not save alert time.', 'danger'); }
             }} preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
 
-            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'notifications' && <ProfileSubpage embedded title="Notifications" onBack={() => navigateProfileSection('home')}>
               <section className="preference-group">
                 <button type="button" className="preference-row" role="switch" aria-label="All notifications" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)}><span>All notifications</span><span className="preference-toggle" aria-hidden="true" /></button>
                 {(notificationDiagnostics.permission === 'denied' || notificationDiagnostics.appNotifications === 'disabled' || notificationDiagnostics.channel.startsWith('blocked')) ?
@@ -3505,7 +3492,7 @@ export default function App() {
               </section>
             </ProfileSubpage>}
 
-            {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
+            {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage embedded title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
                 <details className="rounded-xl border border-[var(--stroke)] p-3">
                   <summary className="min-h-11 content-center cursor-pointer text-sm font-semibold">Motion diagnostics</summary>
                   <p className="text-xs text-secondary">Preset {interfaceMotion.preset} · Reduced motion {interfaceMotion.reducedMotion ? 'on' : 'off'} · Decorative motion {document.documentElement.dataset.motionBudget === 'constrained' ? 'limited' : 'full'}</p>
@@ -3537,7 +3524,7 @@ export default function App() {
               </section>
             </ProfileSubpage>}
 
-            {profileSection === 'data' && <ProfileSubpage title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'data' && <ProfileSubpage embedded title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
               <div className="flex items-center gap-2">Encrypted backups <InfoTip label="Encrypted backups" /></div>
             {/* Backup & Restore */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
@@ -3628,17 +3615,44 @@ export default function App() {
               </button>
             </div>
             </ProfileSubpage>}
-            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'about' && <ProfileSubpage embedded title="About LifeOS" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><div className="preference-row"><span>Version</span><span className="text-secondary">{packageInfo.version}</span></div>
                 <ProfileSettingRow title="Open-source licenses" onClick={() => navigateProfileSection('licenses')} /></div>
             </ProfileSubpage>}
-            {profileSection === 'licenses' && <ProfileSubpage title="Open-source licenses" backLabel="About LifeOS" onBack={() => navigateProfileSection('about')}>
+            {profileSection === 'licenses' && <ProfileSubpage embedded title="Open-source licenses" backLabel="About LifeOS" onBack={() => navigateProfileSection('about')}>
               <LicenseText />
               <LicenseText title="Motion" source="./licenses/motion.txt" />
             </ProfileSubpage>}
           </div>
-      </ProfileDrawer>}
+          </div>
+        )} />
+        </div></div>
+      </main>
 
+        {/* VIEW 6: SETTINGS */}
+      <AnimatePresence initial={false}>
+        {activeTab === 'planner' && plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} key={plannerDetailTask.id} reducedMotion={interfaceMotion.reducedMotion} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={[!plannerDetailTask.dueAlertDisabled && plannerDetailTask.dueDate && (plannerDetailTask.dueTime || dateOnlyAlertTime) ? 'At due time' : '', plannerDetailTask.reminderLeadMinutes ? plannerDetailTask.reminderLeadMinutes + ' min before' : plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : ''].filter(Boolean).join(' / ') || 'No alert'} onBack={closeTaskDetail} onEdit={() => openEditTask(plannerDetailTask)} onDelete={async () => {
+              if (!await confirmAction({ title: 'Delete this task?', message: 'This will remove the task and its alerts.', confirmLabel: 'Delete task', destructive: true })) return;
+              try {
+                await StorageService.tasks.delete(plannerDetailTask.id);
+                closeTaskDetail();
+                const records = await reloadAllData();
+                await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
+                showToast('Task removed', 'info');
+              } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
+            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
+      </AnimatePresence>
+
+
+      {smartImportOpen && <SmartImportDialog onDismiss={() => setSmartImportOpen(false)}
+        onReview={(suggestion, fingerprint) => {
+          setSmartImportOpen(false);
+          openCreateForm("transaction");
+          setCreateFormDirty(true);
+          setCreateDraft(draft => ({ ...draft, importFingerprint: fingerprint, title: suggestion.description || "",
+            type: suggestion.kind, amount: suggestion.amount, currencyCode: suggestion.currency, category: "",
+            date: suggestion.date || "", dateTime: suggestion.date && suggestion.time ? suggestion.date + "T" + suggestion.time : "" }));
+        }} onTransfer={() => { setSmartImportOpen(false); navigateFinanceSubtab("accounts"); setOpenMoneyTransferOnAccounts(true); }} />}
       {transferDetail && <dialog ref={transferDetailDialog} data-transfer-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transfer-detail-title"
         onClose={() => setTransferDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
         <section>
@@ -3696,6 +3710,7 @@ export default function App() {
               </div>
               <label className="block text-xs text-secondary">Merchant or description<input maxLength={120} value={createDraft.title || ''} onChange={event => setCreateDraft({ ...createDraft, title: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
               {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
+              {createDraft.importFingerprint && <label className="block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => setCreateDraft({ ...createDraft, date: event.target.value, dateTime: "" })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
               <AliveDisclosure label="Currency, account, date and notes">
               {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
                 if (createOperation.current || (createFormDirty && !await confirmAction({ title: 'Discard this transaction draft?', message: 'Transfers use a separate form.', confirmLabel: 'Open transfer', cancelLabel: 'Keep editing' }))) return;
@@ -3703,13 +3718,13 @@ export default function App() {
                 navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
               }}>Transfer between accounts</button>}
                 <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Currency" value={createDraft.currencyCode || userPrefs.currency} searchable
-                options={[...(CURRENCY_CODES.map(code => [String(code), formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)] as const))]} onSelect={e => setCreateDraft({ ...createDraft, currencyCode: e, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e) ? createDraft.accountId : '' })} /><span className="mt-1 block">This labels the transaction. Changing the reporting currency does not convert saved records.</span></div>
+                options={[...(CURRENCY_CODES.map(code => [String(code), formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)] as const))]} onSelect={e => setCreateDraft({ ...createDraft, currencyCode: e, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e) ? createDraft.accountId : '' })} /></div>
                 <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Account (optional)" value={createDraft.accountId || ''} searchable
                 options={[["", "Unassigned"], ...(financialAccounts.filter(account => account.isActive).map(account => [String(account.id), String(account.name) + String("· ") + String(account.currencyCode)] as const))]} onSelect={e => { const account = financialAccounts.find(row => row.id === e); setCreateDraft({ ...createDraft, accountId: e, ...(account ? { currencyCode: account.currencyCode } : {}) }); }} /></div>
                 <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Notes<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
-                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly && !createDraft.importFingerprint} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               </AliveDisclosure>
             </>}
             {createKind === 'habit' && <>
@@ -3802,26 +3817,23 @@ export default function App() {
       </AnimatePresence>
 
       {/* Floating Bottom Nav */}
-      <nav data-record-background data-profile-active={profileOpen} data-reduced={interfaceMotion.reducedMotion} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2">
+      <nav data-record-background data-reduced={interfaceMotion.reducedMotion} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2">
         <div className="app-nav-items alive-nav">
         <span ref={navigationMotion.indicator} className="alive-nav-indicator" aria-hidden="true"
-          style={{ transform: `var(--track-indicator, translate3d(${(profileOpen && !profileClosing ? PRIMARY_NAVIGATION.length : PRIMARY_NAVIGATION.findIndex(item => item.tab === (primaryDestinationForTab(activeTab) ?? 'dashboard'))) * 100}%,0,0))` }} />
+          style={{ transform: `var(--track-indicator, translate3d(${PRIMARY_NAVIGATION.findIndex(item => item.tab === (primaryDestinationForTab(activeTab) ?? 'dashboard')) * 100}%,0,0))` }} />
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
-          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays })[icon];
-          const isSelected = !profileOpen && primaryDestinationForTab(activeTab) === tab;
+          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, profile: null })[icon];
+          const isSelected = primaryDestinationForTab(activeTab) === tab;
           return (
           <button
             key={tab}
             data-tab={tab}
+            id={tab === "settings" ? "profile-opener" : undefined}
             onClick={() => {
-              if (profileOpen) {
-                profileReturn.current = primaryDestinationForTab(activeTab) === tab ? null : tab;
-                closeProfile();
-                return;
-              }
               if (isSelected) {
                 navigationMotion.cancelPending();
                 if (activeTab !== tab) { navigateTo(tab); return; }
+                if (tab === 'settings') navigateProfileSection('home');
                 if (tab === 'finance' && financeSubtab !== 'overview') { rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }
                 return;
               }
@@ -3831,16 +3843,11 @@ export default function App() {
             aria-current={isSelected ? 'page' : undefined}
             className="nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium"
           >
-            <Icon size={18} strokeWidth={1.9} aria-hidden="true" />
+            {Icon ? <Icon size={18} strokeWidth={1.9} aria-hidden="true" /> : <span className="nav-profile-avatar" aria-hidden="true"><ProfileAvatar photo={profilePhoto} /></span>}
             <span>{label}</span>
           </button>
           );
         })}
-          <button type="button" id="profile-opener" data-tab="profile" aria-label="Profile" aria-controls={profileOpen ? "screen-settings" : undefined} aria-current={profileOpen ? "page" : undefined}
-            className="nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium"
-            onClick={() => { if (!profileOpen) openProfile(); else if (!profileClosing) navigateProfileSection("home"); }}>
-            <span className="nav-profile-avatar" aria-hidden="true"><ProfileAvatar photo={profilePhoto} /></span><span>Profile</span>
-          </button>
         </div>
       </nav>
 
