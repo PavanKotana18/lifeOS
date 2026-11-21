@@ -1,6 +1,8 @@
 /* LifeOS Feather — Expressive Edition. Existing theme tokens provide every color. */
 .feather-expressive {
   --page-gutter: clamp(var(--space-4), 5.2vw, var(--space-8));
+  --page-inset-left: max(var(--page-gutter), env(safe-area-inset-left, 0px));
+  --page-inset-right: max(var(--page-gutter), env(safe-area-inset-right, 0px));
   --type-page-title: clamp(1.75rem, 1.42rem + 1.45vw, 2.25rem);
   --feather-section-gap: var(--space-6);
   --feather-control-height: 2.875rem;
@@ -126,7 +128,8 @@
   background: var(--page);
   border: 0;
   box-shadow: none;
-  padding-inline: var(--page-gutter);
+  padding-left: var(--page-inset-left);
+  padding-right: var(--page-inset-right);
 }
 .feather-expressive .app-main { padding-block-start: var(--space-3); }
 .feather-expressive .today-heading { gap: var(--space-2); }
@@ -312,8 +315,8 @@ h1#primary-route-title:focus, h1#profile-route-title:focus { outline: none; }
 .feather-expressive .ui-tab-screen-stack { align-items: stretch; grid-template-columns: minmax(0, 1fr); }
 .feather-expressive .ui-tab-screen-stack > .ui-tab-screen {
   box-sizing: border-box;
-  padding-left: max(var(--page-gutter), env(safe-area-inset-left));
-  padding-right: max(var(--page-gutter), env(safe-area-inset-right));
+  padding-left: var(--page-inset-left);
+  padding-right: var(--page-inset-right);
   overflow-x: clip;
 }
 .feather-expressive .app-bottom-nav .nav-item { color: var(--ink); }

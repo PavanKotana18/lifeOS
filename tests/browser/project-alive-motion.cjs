@@ -145,11 +145,13 @@ async function auditProfile(page, cdp, tab, button) {
     const visible = [...track.querySelectorAll('[data-lifeos-screen]')]
       .filter(node => !node.hidden || node.hasAttribute('data-gesture-preview'))
       .map(node => ({ id: node.id, ...node.getBoundingClientRect().toJSON() }));
+    const headerStyle = getComputedStyle(document.querySelector('.primary-masthead'));
     return { viewport, visible, current, indicator, scrollX, documentWidth: document.documentElement.scrollWidth,
       windowWidth: innerWidth, transform: getComputedStyle(track).transform, dragging: track.hasAttribute('data-track-dragging'),
       panel: panel.getBoundingClientRect().toJSON(), panelPadding: [getComputedStyle(panel).paddingLeft, getComputedStyle(panel).paddingRight],
       content: rect('#screen-settings .profile-track-page'), controls: rect('#screen-settings .profile-settings'),
-      masthead: rect('.primary-masthead'), openHeading: rect('#primary-route-title') };
+      masthead: rect('.primary-masthead'), mastheadPadding: [headerStyle.paddingLeft, headerStyle.paddingRight],
+      openHeading: rect('#primary-route-title') };
   });
   const settled = () => page.waitForFunction(() => {
     const track = document.querySelector('.ui-tab-screen-stack');
@@ -246,6 +248,13 @@ async function auditProfile(page, cdp, tab, button) {
     report.profileWidths.push({ width, home, nested });
   }
   await page.setViewportSize(viewport);
+  await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 42, right: 34 } });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#screen-settings')).paddingLeft === '42px');
+  report.asymmetricInsets = await geometry();
+  checkBounds(report.asymmetricInsets);
+  assert.deepEqual(report.asymmetricInsets.panelPadding, ['42px', '34px']);
+  assert.deepEqual(report.asymmetricInsets.mastheadPadding, ['42px', '34px']);
+  await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 0, right: 0 } });
   for (const route of ['plan', 'finance', 'dashboard', 'finance', 'plan', 'settings']) {
     const from = await page.locator('[data-tab][aria-current="page"]').getAttribute('data-tab');
     const order = ['dashboard', 'finance', 'plan', 'settings'];
