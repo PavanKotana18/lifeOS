@@ -20,7 +20,10 @@ assert.match(css, /@media \(min-width: 640px\)[\s\S]*\.ui-bottom-sheet \{ max-he
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 assert.match(css, /\.ui-interactive-row:active/);
 assert.match(css, /button \{\s*min-height: 44px;/);
-assert.match(app, /role="status" aria-live="polite" className=\{`ui-toast/);
+const snackbar = fs.readFileSync('src/components/Snackbar.tsx', 'utf8');
+assert.match(app, /<Snackbar/);
+assert.ok(snackbar.includes("? 'alert' : 'status'"));
+assert.match(snackbar, /className="ui-toast lifeos-snackbar"/);
 assert.match(app, /lifeos-nav app-bottom-nav fixed bottom-0/);
 assert.match(css, /\.app-bottom-nav[^\n]*padding-bottom: calc\(env\(safe-area-inset-bottom\) \+ \.5rem\)/,
   'the fixed navigation receives safe-area spacing from the shared shell style');
