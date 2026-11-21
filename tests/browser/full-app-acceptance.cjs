@@ -1142,6 +1142,18 @@ async function main() {
       await page.getByRole('heading', { name: 'Transfers', exact: true }).waitFor();
       await capture('money-accounts-populated-390');
       await clickButton('Money overview');
+      const moneyDestinations = page.getByRole('navigation', { name: 'Money destinations' });
+      await moneyDestinations.getByRole('button', { name: 'Transactions', exact: true }).click();
+      const totals = page.getByRole('region', { name: 'Money movement this month' });
+      assert.match(await totals.locator('dd').first().innerText(), /^\D*0[.,]00$/, 'a recorded transfer stays out of money in');
+      await page.getByRole('button', { name: /^Transfer QA edited cash account to QA reserve account/ }).click();
+      const transfer = page.locator('dialog[data-transfer-details][open]');
+      assert.equal(await transfer.locator('dd').count(), 2);
+      assert.ok((await transfer.locator('dd').allTextContents()).every(amount => amount.includes('20.25')));
+      await capture('transfer-timeline-detail-390', false);
+      await page.keyboard.press('Escape');
+      await transfer.waitFor({ state: 'hidden' });
+      await clickButton('Money overview');
       await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Schedule', exact: true }).click();
       await clickButton('Add scheduled item');
       const name = 'QA recurring utility bill';
