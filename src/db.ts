@@ -8,6 +8,7 @@ import {
 } from './services/encryptedStorageIntegration';
 import { CryptoService } from './services/cryptoService.ts';
 import { convertMinorUnits, decimalToMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
+import type { ImportDuplicateOptions } from './services/smartImport';
 import { validateAccountTransfer, validateFinancialAccount, validateManualExchangeRate, validatePlannedCommitment, validatePlannedCommitmentReferences } from './services/financialAccounting';
 import {
   Transaction,
@@ -342,7 +343,7 @@ export interface IDataStorage {
   transactions: {
     getAll(): Promise<Transaction[]>;
     getById(id: string): Promise<Transaction | undefined>;
-    add(tx: Omit<Transaction, 'id' | 'createdAt'>): Promise<Transaction>;
+    add(tx: Omit<Transaction, 'id' | 'createdAt'>, options?: ImportDuplicateOptions): Promise<Transaction>;
     update(id: string, updates: Partial<Transaction>): Promise<void>;
     delete(id: string): Promise<void>;
     filter(params: { month?: string; year?: string; category?: string; type?: string; query?: string }): Promise<Transaction[]>;

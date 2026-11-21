@@ -7,6 +7,7 @@ const { execFileSync } = require('node:child_process');
 const { createServer } = require('node:http');
 const { pathToFileURL } = require('node:url');
 const { chromium } = require('playwright-core');
+const { installSmartMoneyFixture } = require('./smart-money-2-fixture.cjs');
 
 const root = path.resolve(process.argv[2] || path.join(__dirname, '../..'));
 const evidence = path.resolve(process.argv[3]);
@@ -17,6 +18,9 @@ const viewport = { width: 390, height: 844 };
 const colorScheme = process.env.LIFEOS_MOTION_SCHEME === 'dark' ? 'dark' : 'light';
 const fourDestinations = process.env.LIFEOS_FOUR_DESTINATIONS === '1';
 const primaryOnly = process.env.LIFEOS_MOTION_PRIMARY === '1';
+const profileCorrection = process.env.LIFEOS_PROFILE_CORRECTION === '1';
+const shareReview = process.env.LIFEOS_SHARE_REVIEW === '1';
+const coldAlert = 'Bank account xxxx4521 debited INR 17.25 at Sydney Cafe on 21/11/2026 Ref 552001818273';
 fs.mkdirSync(evidence, { recursive: false });
 
 const report = {
@@ -26,8 +30,238 @@ const report = {
 };
 let server, browser;
 
+async function auditShares(page, button) {
+  const sheet = page.getByRole('dialog', { name: 'Smart Import' });
+  const appSignal = isActive => page.evaluate(isActive => {
+    window.dispatchEvent(new CustomEvent('qa-app-appStateChange', { detail: { isActive } }));
+  }, isActive);
+  const share = (id, text) => page.evaluate(({ id, text }) => window.__qaSmartMoney.share(id, text), { id, text });
+  const state = () => page.evaluate(() => window.__qaSmartMoney.state);
+  const crop = name => page.screenshot({ path: path.join(evidence, name + '.png') });
+  const ledger = () => page.evaluate(async () => {
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('LifeOS_Database');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const rows = await new Promise((resolve, reject) => {
+      const request = database.transaction('transactions').objectStore('transactions').getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+    return { count: rows.length, encrypted: rows.every(row => row.__lifeosEncrypted === 1 &&
+      !('importFingerprint' in row || 'description' in row || 'amount' in row)) };
+  });
+  const composer = page.locator('#record-dialog');
+  const confirmCategory = async () => {
+    await button(/^Category/, composer).click();
+    await page.getByRole('dialog', { name: 'Category' }).getByRole('option').nth(1).click();
+  };
+  const detect = () => button('Detect transaction', sheet).click();
+  const review = () => button('Review transaction', sheet).click();
+  const close = () => button('Close', sheet).click();
+
+  await button('Review shared alert').waitFor();
+  assert.equal((await state()).peeks, 0);
+  assert.equal(await sheet.count(), 0);
+  await button('Review shared alert').click();
+  await button('Protect this device and save').click();
+  await sheet.waitFor();
+  assert.equal(await sheet.getByLabel('Bank alert').inputValue(), coldAlert);
+  assert.equal(await sheet.evaluate(node => node.open), true);
+  assert.equal((await state()).secure, true);
+  assert.equal((await ledger()).count, 0);
+  await share('repeated-intent', coldAlert);
+  await detect();
+  await review();
+  await composer.getByLabel('Merchant or description', { exact: true }).fill('Edited shared fixture');
+  await confirmCategory();
+  assert.equal((await ledger()).count, 0);
+  assert.equal((await state()).secure, true);
+  await crop('shared-transaction-review');
+  await button('Add transaction', composer).click();
+  await composer.waitFor({ state: 'hidden' });
+  assert.deepEqual(await ledger(), { count: 1, encrypted: true });
+  assert.equal((await state()).acknowledgements, 1);
+  report.interactions.push('Cold launch held an alert until protected storage setup. Editing and explicit confirmation created one encrypted row.');
+
+  await appSignal(false);
+  await page.getByRole('heading', { name: /(?:locked|unlock)/i }).waitFor();
+  const peeks = (await state()).peeks;
+  const alternate = coldAlert.replace('xxxx4521', '').replace('Sydney Cafe', 'SYDNEY CAFE');
+  await share('while-locked', alternate);
+  assert.equal((await state()).peeks, peeks);
+  assert.equal(await sheet.count(), 0);
+  await appSignal(true);
+  await sheet.waitFor();
+  assert.equal(await sheet.getByLabel('Bank alert').inputValue(), alternate);
+  await detect();
+  await review();
+  await confirmCategory();
+  await button('Add transaction', composer).click();
+  await page.locator('.lifeos-snackbar').getByText(/matching transaction is already recorded/).waitFor();
+  assert.equal((await ledger()).count, 1);
+  await button('Cancel', composer).click();
+  await button(/Discard/, page.getByRole('alertdialog')).click();
+  await composer.waitFor({ state: 'hidden' });
+  report.interactions.push('Locked delivery withheld the alert until resume. A changed account hint with the same bank reference was blocked.');
+
+  await share('cancel-warm', coldAlert.replace('552001818273', '552001818277'));
+  await sheet.waitFor();
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('qa-app-backButton')));
+  await sheet.waitFor({ state: 'hidden' });
+  assert.equal((await ledger()).count, 1);
+  await share('otp-warm', 'Bank account OTP 123456. Never share this code.');
+  await sheet.waitFor();
+  await detect();
+  await sheet.getByRole('status').getByText('No supported transaction was found.').waitFor();
+  await close();
+  assert.equal((await ledger()).count, 1);
+  report.interactions.push('Foreground cancellation and OTP rejection left the encrypted ledger unchanged.');
+
+  await page.reload();
+  await sheet.waitFor();
+  await detect();
+  await review();
+  await confirmCategory();
+  await button('Add transaction', composer).click();
+  await page.locator('.lifeos-snackbar').getByText(/matching transaction is already recorded/).waitFor();
+  assert.deepEqual(await ledger(), { count: 1, encrypted: true });
+  report.interactions.push('A fresh page with the same cold-share payload could not add a second encrypted row.');
+}
+
+async function auditProfile(page, cdp, tab, button) {
+  const expectedFixed = process.env.LIFEOS_PROFILE_BASELINE !== '1';
+  const heading = page.locator('#primary-route-title');
+  const screenshot = name => page.screenshot({ path: path.join(evidence, name + '.png') });
+  const geometry = () => page.evaluate(() => {
+    const panel = document.querySelector('#screen-settings');
+    const track = document.querySelector('.ui-tab-screen-stack');
+    const viewport = document.querySelector('.ui-tab-viewport').getBoundingClientRect().toJSON();
+    const rect = selector => document.querySelector(selector)?.getBoundingClientRect().toJSON();
+    const current = document.querySelector('[data-tab][aria-current="page"]')?.getAttribute('data-tab');
+    const indicator = document.querySelector('.alive-nav-indicator')?.getBoundingClientRect().toJSON();
+    const visible = [...track.querySelectorAll('[data-lifeos-screen]')]
+      .filter(node => !node.hidden || node.hasAttribute('data-gesture-preview'))
+      .map(node => ({ id: node.id, ...node.getBoundingClientRect().toJSON() }));
+    return { viewport, visible, current, indicator, scrollX, documentWidth: document.documentElement.scrollWidth,
+      windowWidth: innerWidth, transform: getComputedStyle(track).transform, dragging: track.hasAttribute('data-track-dragging'),
+      panel: panel.getBoundingClientRect().toJSON(), panelPadding: [getComputedStyle(panel).paddingLeft, getComputedStyle(panel).paddingRight],
+      content: rect('#screen-settings .profile-track-page'), controls: rect('#screen-settings .profile-settings'),
+      masthead: rect('.primary-masthead'), openHeading: rect('#primary-route-title') };
+  });
+  const settled = () => page.waitForFunction(() => {
+    const track = document.querySelector('.ui-tab-screen-stack');
+    return getComputedStyle(track).transform === 'none' && !track.hasAttribute('data-track-dragging') &&
+      !track.querySelector('[data-transition-state="outgoing"]');
+  });
+  const touch = (type, x, y = 392) => cdp.send('Input.dispatchTouchEvent', {
+    type, touchPoints: x == null ? [] : [{ x, y, id: 1 }],
+  });
+  const swipe = async direction => {
+    const width = page.viewportSize().width;
+    const points = (direction === 'left' ? [.84, .67, .24] : [.15, .32, .75]).map(fraction => Math.round(width * fraction));
+    await touch('touchStart', points[0]);
+    await touch('touchMove', points[1]);
+    await touch('touchMove', points[2]);
+  };
+  const back = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('qa-app-backButton')));
+  const checkBounds = measured => {
+    assert.ok(Math.abs(measured.panel.left - measured.viewport.left) < 1 && Math.abs(measured.panel.right - measured.viewport.right) < 1);
+    assert.ok(measured.content.left >= measured.panel.left && measured.content.right <= measured.panel.right + 1);
+    assert.ok(measured.controls.left >= measured.content.left && measured.controls.right <= measured.content.right + 1);
+    assert.equal(measured.current, 'settings');
+    assert.equal(measured.scrollX, 0);
+    assert.ok(measured.documentWidth <= measured.windowWidth);
+    assert.equal(measured.transform, 'none');
+  };
+
+  await page.keyboard.press('Tab');
+  report.headingFocus = [];
+  for (const route of ['dashboard', 'finance', 'plan']) {
+    await tab(route).click();
+    await settled();
+    await page.keyboard.press('Tab');
+    await heading.focus();
+    const title = await heading.evaluate(node => {
+      const style = getComputedStyle(node);
+      return { label: node.textContent, active: document.activeElement === node, focusVisible: node.matches(':focus-visible'),
+        tabIndex: node.tabIndex, outline: style.outlineStyle, width: style.outlineWidth, color: style.outlineColor,
+        shadow: style.boxShadow, border: style.borderTopStyle };
+    });
+    assert.equal(title.active, true);
+    assert.equal(title.tabIndex, -1);
+    if (expectedFixed) assert.equal(title.outline, 'none');
+    else assert.notEqual(title.outline, 'none');
+    report.headingFocus.push(title);
+    await screenshot('heading-' + route);
+  }
+  await tab('settings').focus();
+  const keyboardControl = await tab('settings').evaluate(node => ({ outline: getComputedStyle(node).outlineStyle, focused: node.matches(':focus-visible') }));
+  assert.ok(keyboardControl.focused && keyboardControl.outline !== 'none');
+  report.keyboardControl = keyboardControl;
+
+  await page.evaluate(() => { window.__qaSmartMoney.state.holdProtection = true; });
+  await swipe('left');
+  await page.waitForSelector('[data-track-dragging]');
+  const during = await geometry();
+  assert.equal(during.visible.length, 2);
+  assert.ok(Math.abs(during.visible[0].right - during.visible[1].left) < 1);
+  assert.equal(during.current, 'plan');
+  assert.ok(during.indicator && during.indicator.x > 195 && during.indicator.x < 292.5);
+  await screenshot('profile-drag');
+  await touch('touchEnd');
+  await page.waitForFunction(() => window.__qaSmartMoney.waitingForProtection() > 0);
+  await touch('touchStart', 188, 34);
+  await touch('touchEnd');
+  await page.evaluate(() => window.__qaSmartMoney.releaseProtection());
+  await page.waitForTimeout(500);
+  const interrupted = await geometry();
+  report.interruption = { drag: during, after: interrupted };
+  await screenshot('profile-interrupted');
+  if (expectedFixed) assert.equal(interrupted.transform, 'none');
+  else assert.notEqual(interrupted.transform, 'none');
+  assert.equal(interrupted.current, 'plan');
+  if (!expectedFixed) return;
+
+  await swipe('left'); await touch('touchEnd');
+  await page.getByRole('heading', { level: 1, name: 'Profile', exact: true }).waitFor();
+  await settled();
+  report.profileWidths = [];
+  for (const width of [320, 360, 390, 412, 768]) {
+    await page.setViewportSize({ width, height: 844 });
+    await settled();
+    const home = await geometry();
+    checkBounds(home);
+    await screenshot('profile-' + width);
+    await button('Appearance').click();
+    await page.getByRole('heading', { level: 1, name: 'Appearance', exact: true }).waitFor();
+    const nested = await geometry();
+    checkBounds(nested);
+    await swipe('right'); await touch('touchEnd');
+    assert.equal(await heading.textContent(), 'Appearance');
+    await back();
+    await page.getByRole('heading', { level: 1, name: 'Profile', exact: true }).waitFor();
+    report.profileWidths.push({ width, home, nested });
+  }
+  await page.setViewportSize(viewport);
+  for (const route of ['plan', 'finance', 'dashboard', 'finance', 'plan', 'settings']) {
+    const from = await page.locator('[data-tab][aria-current="page"]').getAttribute('data-tab');
+    const order = ['dashboard', 'finance', 'plan', 'settings'];
+    await swipe(order.indexOf(route) < order.indexOf(from) ? 'right' : 'left'); await touch('touchEnd');
+    await page.waitForFunction(route => document.querySelector('[data-tab="' + route + '"]')?.getAttribute('aria-current') === 'page', route);
+    await settled();
+    if (route === 'settings') checkBounds(await geometry());
+    report.interactions.push(from + ' to ' + route + ' settled');
+  }
+  await back();
+  await page.waitForFunction(() => document.querySelector('[data-tab="plan"]')?.getAttribute('aria-current') === 'page');
+  await settled();
+}
+
 async function main() {
-  const output = process.env.LIFEOS_MOTION_FIXTURE_DIST || path.join(evidence, 'fixture-dist');
+  const output = path.resolve(process.env.LIFEOS_MOTION_FIXTURE_DIST || path.join(evidence, 'fixture-dist'));
   if (!process.env.LIFEOS_MOTION_FIXTURE_DIST) {
     const { build, loadConfigFromFile } = await import(pathToFileURL(path.join(root, 'node_modules/vite/dist/node/index.js')));
     const { config } = await loadConfigFromFile({ command: 'build', mode: 'production' }, path.join(root, 'vite.config.ts'), root);
@@ -53,6 +287,7 @@ async function main() {
   report.browser = browser.version();
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1, colorScheme,
     reducedMotion: reduced ? 'reduce' : 'no-preference', isMobile: true, hasTouch: true });
+  if (profileCorrection || shareReview) await installSmartMoneyFixture(context, { coldAlert: shareReview ? coldAlert : undefined });
   await context.route('**/*', route => route.request().url().startsWith(origin + '/')
     || /^(data|blob):/.test(route.request().url()) ? route.continue() : route.abort());
   await context.addInitScript(() => {
@@ -71,7 +306,8 @@ async function main() {
   const page = await context.newPage();
   page.setDefaultTimeout(20000);
   page.on('pageerror', error => report.errors.push(error.message));
-  await page.goto(origin + '/tests/browser/index.html?onboarding-auth=success', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(origin + '/tests/browser/index.html?onboarding-auth=success' +
+    (profileCorrection || shareReview ? '&qa-native-back=enabled' : ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
   const button = (name, scope = page) => scope.getByRole('button', { name, exact: typeof name === 'string' });
   const tab = name => page.locator('[data-tab="' + name + '"]');
   const composer = () => page.locator('form#record-dialog');
@@ -96,7 +332,17 @@ async function main() {
 
   assert.equal(await page.locator('html').evaluate(root => root.classList.contains('dark')), colorScheme === 'dark');
 
+  if (shareReview) {
+    await auditShares(page, button);
+    assert.deepEqual(report.errors, []);
+    return;
+  }
   const cdp = await context.newCDPSession(page);
+  if (profileCorrection) {
+    await auditProfile(page, cdp, tab, button);
+    assert.deepEqual(report.errors, []);
+    return;
+  }
   await cdp.send('Performance.enable');
   let frames = null;
   cdp.on('Page.screencastFrame', frame => {

@@ -1461,6 +1461,19 @@ async function main() {
       await capture('smart-import-duplicate-390', false);
       await dialog().getByRole('button', { name: 'Cancel' }).click();
       await page.getByRole('alertdialog').getByRole('button', { name: /Discard/ }).click();
+
+      const distinct = await review(alert.replace('55200118', '55200119'));
+      await distinct.getByRole('button', { name: 'Review transaction' }).click();
+      await chooseOption(dialog(), 'Category', { index: 1 });
+      const submit = dialog().getByRole('button', { name: 'Add transaction', exact: true });
+      await submit.click();
+      const duplicate = page.getByRole('alertdialog', { name: 'Record a separate transaction?' });
+      await duplicate.getByRole('button', { name: 'Cancel', exact: true }).click();
+      assert.equal((await testRows()).count, 1);
+      await submit.click();
+      await duplicate.getByRole('button', { name: 'Save separate transaction' }).click();
+      await dialog().waitFor({ state: 'hidden' });
+      assert.equal((await testRows()).count, 2);
     });
 
     await journey('protected recovery save cancellation and confirmation', async () => {

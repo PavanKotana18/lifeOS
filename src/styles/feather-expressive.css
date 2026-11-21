@@ -261,7 +261,7 @@
 .feather-expressive .feather-composer-content .alive-disclosure { border: 0; }
 
 /* The viewport clips both panels as a single opaque track. */
-.ui-tab-viewport { display: grid; flex: 1; overflow-x: clip; overflow-y: clip; isolation: isolate; min-width: 0; }
+.ui-tab-viewport { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; overflow-x: clip; overflow-y: clip; isolation: isolate; min-width: 0; }
 .ui-tab-screen-stack[data-track-dragging] { transform: translate3d(var(--gesture-x, 0px), 0, 0); }
 .ui-tab-screen-stack > .ui-tab-screen[data-gesture-preview][hidden] {
   display: block !important;
@@ -292,6 +292,8 @@
   font-weight: 650;
   letter-spacing: -.035em;
 }
+/* Retain route announcement focus without outlining the noninteractive masthead. */
+h1#primary-route-title:focus, h1#profile-route-title:focus { outline: none; }
 .primary-masthead .money-period-control {
   flex: none;
   block-size: var(--masthead-control-size);
@@ -307,10 +309,11 @@
   max-width: var(--content-measure);
   padding-inline: 0;
 }
-.feather-expressive .ui-tab-screen-stack { align-items: stretch; }
+.feather-expressive .ui-tab-screen-stack { align-items: stretch; grid-template-columns: minmax(0, 1fr); }
 .feather-expressive .ui-tab-screen-stack > .ui-tab-screen {
   box-sizing: border-box;
-  padding-inline: var(--page-gutter);
+  padding-left: max(var(--page-gutter), env(safe-area-inset-left));
+  padding-right: max(var(--page-gutter), env(safe-area-inset-right));
   overflow-x: clip;
 }
 .feather-expressive .app-bottom-nav .nav-item { color: var(--ink); }
@@ -410,7 +413,7 @@
 
 .currency-summary-heading { margin-block-start: var(--space-3); font-size: .8rem; color: var(--ink-secondary); font-weight: 650; }
 
-.profile-track-page { max-inline-size: 42rem; margin-inline: auto; }
+.profile-track-page { inline-size: min(100%, 42rem); min-inline-size: 0; margin-inline: auto; }
 .profile-track-preview { display: none; }
 [data-gesture-preview] .profile-track-page[data-android-profile] > .profile-page,
 [data-gesture-preview] .profile-page:not([data-profile-section="home"]) { display: none; }

@@ -1,6 +1,7 @@
 package com.lifeos.personal;
 
 import android.os.Bundle;
+import android.content.Intent;
 import android.animation.ValueAnimator;
 import android.os.Handler;
 import android.os.Looper;
@@ -25,6 +26,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        setIntent(SmartImportSharePlugin.consumeShareIntent(getIntent()));
         // Save notification taps before Capacitor or React initialize. The native
         // plugin keeps this action until the authenticated JS router acknowledges it.
         NotificationTapLaunchPlugin.captureAction(this, getIntent());
@@ -55,6 +57,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NotificationTapLaunchPlugin.class);
         registerPlugin(NotificationDeliveryDiagnosticsPlugin.class);
         registerPlugin(RuntimeInfoPlugin.class);
+        registerPlugin(SmartImportSharePlugin.class);
         super.onCreate(savedInstanceState);
 
         // Start protected for every build. Debug UI may opt into screenshots only
@@ -66,10 +69,21 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onNewIntent(android.content.Intent intent) {
+        boolean sharedAlert = Intent.ACTION_SEND.equals(intent.getAction());
+        intent = SmartImportSharePlugin.consumeShareIntent(intent);
         setIntent(intent);
         android.content.Intent notificationAction = new android.content.Intent(intent);
         super.onNewIntent(intent);
         NotificationTapLaunchPlugin.captureAction(this, notificationAction);
+        if (sharedAlert && bridge != null && bridge.getPlugin("SmartImportShare") != null) {
+            SmartImportSharePlugin plugin = (SmartImportSharePlugin) bridge.getPlugin("SmartImportShare").getInstance();
+            if (plugin != null) plugin.signalAvailable();
+        }
+    }
+
+    boolean isProtectingSharedAlert() {
+        return activityResumed && !resumeValidationPending &&
+            (getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE) != 0;
     }
 
     public boolean isColdLaunch() {

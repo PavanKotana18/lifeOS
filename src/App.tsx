@@ -8,6 +8,8 @@ import { APP_NAME } from './config/appBrand';
 import Snackbar, { type SnackbarNotice } from './components/Snackbar';
 import AppHeader from './components/AppHeader';
 import SmartImportDialog from './components/SmartImportDialog';
+import { useSharedBankAlert } from './hooks/useSharedBankAlert';
+import { PossibleImportDuplicateError } from './services/smartImport';
 import TransactionSummary from './components/TransactionSummary';
 import MoneyPeriod from './components/MoneyPeriod';
 import { animateRoute } from './services/aliveMotion';
@@ -139,7 +141,18 @@ export default function App() {
   const { activeTab, activeTabRef, tabTransition, transitionPropsFor } = navigationMotion;
   const [primaryPrepared, setPrimaryPrepared] = useState(false);
   const profileRequest = useRef(0);
+  const pendingProfile = useRef(false);
+  const [profileAdmissionPending, setProfileAdmissionPending] = useState(false);
   const [smartImportOpen, setSmartImportOpen] = useState(false);
+  const [protectedImportComposer, setProtectedImportComposer] = useState(false);
+  const cancelProfileAdmission = (animate = true) => {
+    if (!pendingProfile.current) return false;
+    profileRequest.current += 1;
+    pendingProfile.current = false;
+    navigationMotion.endDrag(animate);
+    setProfileAdmissionPending(false);
+    return true;
+  };
   const releaseGestureCapture = (pointerId?: number) => {
     if (pointerId == null) return;
     const surface = gestureSurfaceElement.current;
@@ -148,6 +161,7 @@ export default function App() {
     }
   };
   const transitionToTab = (tab: MainTab, direction?: 'left' | 'right', velocity = 0, onCommit?: (from: MainTab, scrollBefore: number) => void) => {
+    cancelProfileAdmission();
     const pointerId = swipePointer.current?.pointerId;
     swipePointer.current = null;
     swipeOriginAction.current = null;
@@ -160,11 +174,17 @@ export default function App() {
     };
     if (tab !== "settings" || Capacitor.getPlatform() !== "android" || source === "settings") { enter(); return; }
     // The Android preview uses generic settings labels until the secure window is acknowledged.
+    pendingProfile.current = true;
+    setProfileAdmissionPending(true);
     void setSensitiveScreenshotState(true).then(() => {
-      if (profileRequest.current !== request || activeTabRef.current !== source || backState.current.isLocked) return;
-      flushSync(enter);
+      if (profileRequest.current !== request) return;
+      if (activeTabRef.current !== source || backState.current.isLocked) { cancelProfileAdmission(); return; }
+      pendingProfile.current = false;
+      flushSync(() => { enter(); setProfileAdmissionPending(false); });
     }).catch(() => {
-      if (profileRequest.current !== request || activeTabRef.current !== source) return;
+      if (profileRequest.current !== request) return;
+      pendingProfile.current = false;
+      setProfileAdmissionPending(false);
       navigationMotion.endDrag(true);
       showToast("Could not protect Profile. Try again.", "danger");
     });
@@ -409,7 +429,7 @@ export default function App() {
     }
   };
 
-  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || profileOpen || tabTransition?.from === "settings" || isSensitiveScreenshotState({
+  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === "settings" || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -591,7 +611,8 @@ export default function App() {
     releaseGestureCapture(pointerId);
     swipeOriginAction.current = null;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
-    clearGestureDrag(reason !== 'app-locked' && reason !== 'document-hidden');
+    const animate = reason !== 'app-locked' && reason !== 'document-hidden';
+    if (!cancelProfileAdmission(animate)) clearGestureDrag(animate);
   };
 
   useEffect(() => {
@@ -644,7 +665,7 @@ export default function App() {
   }, [interfaceMotion.preset, interfaceMotion.reducedMotion]);
 
   const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
-    profileRequest.current += 1;
+    cancelProfileAdmission();
     // A new contact is a new interaction, even if WebView reuses its pointer ID.
     swipeClickSuppression.current = null;
     activeTouchPointers.current.add(event.pointerId);
@@ -854,7 +875,7 @@ export default function App() {
   };
 
   const navigateBack = () => {
-    profileRequest.current += 1;
+    cancelProfileAdmission();
     const state = backState.current;
     if (typeof document !== 'undefined') {
       const scheduledDetail = document.querySelector<HTMLElement>('dialog[data-scheduled-details][open] [data-motion-back]');
@@ -1178,9 +1199,22 @@ export default function App() {
     if (activeTab !== 'dashboard' || isLocked) setTodayCustomizationOpen(false);
   }, [activeTab, isLocked]);
 
+  const sharedReviewAvailable = appReady && onboardingComplete && !onboardingRequired && !isLocked &&
+    !activityResumeGuard && !biometricAuthActive && !secureSetup && !recoveryOpen &&
+    !firstRecordSecurityOpen && !backupPrompt && !backupOperationInProgress;
+  const sharedAlert = useSharedBankAlert({
+    available: sharedReviewAvailable,
+    busy: smartImportOpen || Boolean(createKind || modalContent || confirmation || accountFormDraft ||
+      transferFormDraft || plannerDetailTaskId || lifeDetail || todayCustomizationOpen || showExitConfirmation || tabTransition || profileAdmissionPending),
+    open: () => setSmartImportOpen(true),
+  });
   useEffect(() => {
-    if (isLocked || activeTab !== "finance") setSmartImportOpen(false);
-  }, [isLocked, activeTab]);
+    if (isLocked || (activeTab !== "finance" && !sharedAlert.draft)) setSmartImportOpen(false);
+    if (isLocked) sharedAlert.hide();
+  }, [isLocked, activeTab, sharedAlert.draft]);
+  useEffect(() => {
+    if (createKind !== "transaction" || isLocked) setProtectedImportComposer(false);
+  }, [createKind, isLocked]);
 
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
     order: todayLayout.order.indexOf(id) + 2,
@@ -2357,7 +2391,21 @@ export default function App() {
         const accountId = values.accountId;
         if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
-        else await StorageService.transactions.add({ ...values, ...(createDraft.importFingerprint ? { importFingerprint: createDraft.importFingerprint } : {}) });
+        else if (createDraft.importFingerprint) {
+          const imported = { ...values, importFingerprint: createDraft.importFingerprint };
+          const options = { historicalFingerprints: value('historicalImportFingerprints').split(' ').filter(Boolean) };
+          try { await StorageService.transactions.add(imported, options); }
+          catch (error) {
+            if (!(error instanceof PossibleImportDuplicateError)) throw error;
+            const separate = await confirmAction({
+              title: 'Record a separate transaction?',
+              message: 'A similar transaction is already recorded. Save this only if it is a separate payment.',
+              confirmLabel: 'Save separate transaction',
+            });
+            if (!separate || backState.current.isLocked || !sessionManager.isUnlocked()) return;
+            await StorageService.transactions.add(imported, { ...options, allowPossibleDuplicate: true });
+          }
+        } else await StorageService.transactions.add(values);
       } else if (createKind === 'habit') {
         const targetPerDay = value('targetPerDay') ? Number(value('targetPerDay')) : undefined;
         if (targetPerDay !== undefined && (!Number.isFinite(targetPerDay) || targetPerDay <= 0)) throw new Error('Habit target must be greater than zero.');
@@ -2828,6 +2876,15 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {sharedReviewAvailable && sharedAlert.needsStorage && !smartImportOpen &&
+        <div className="app-content-width px-4 pt-2">
+          <button type="button" className="feather-secondary" onClick={async () => {
+            try { await ensurePrivateStorageBeforeWrite(); sharedAlert.recheck(); }
+            catch { showToast('Shared alert review is paused. Unlock LifeOS to continue.', 'info'); }
+          }}>Review shared alert</button>
+          <button type="button" className="feather-secondary" onClick={sharedAlert.discard}>Dismiss shared alert</button>
+        </div>}
 
       {/* Main Container */}
       <main data-profile-background className="app-main">
@@ -3644,15 +3701,20 @@ export default function App() {
       </AnimatePresence>
 
 
-      {smartImportOpen && <SmartImportDialog onDismiss={() => setSmartImportOpen(false)}
-        onReview={(suggestion, fingerprint) => {
+      {smartImportOpen && <SmartImportDialog initialText={sharedAlert.draft?.text} onTextConsumed={sharedAlert.releaseText} onDismiss={() => {
+        setSmartImportOpen(false); sharedAlert.finish();
+      }}
+        onReview={(suggestion, fingerprint, historical) => {
           setSmartImportOpen(false);
+          setProtectedImportComposer(Boolean(sharedAlert.draft));
+          sharedAlert.finish();
           openCreateForm("transaction");
           setCreateFormDirty(true);
-          setCreateDraft(draft => ({ ...draft, importFingerprint: fingerprint, title: suggestion.description || "",
+          setCreateDraft(draft => ({ ...draft, importFingerprint: fingerprint, historicalImportFingerprints: historical.join(" "), title: suggestion.description || "",
             type: suggestion.kind, amount: suggestion.amount, currencyCode: suggestion.currency, category: "",
-            date: suggestion.date || "", dateTime: suggestion.date && suggestion.time ? suggestion.date + "T" + suggestion.time : "" }));
-        }} onTransfer={() => { setSmartImportOpen(false); navigateFinanceSubtab("accounts"); setOpenMoneyTransferOnAccounts(true); }} />}
+            date: suggestion.date || "", importTime: suggestion.time || "",
+            dateTime: suggestion.date && suggestion.time ? suggestion.date + "T" + suggestion.time : "" }));
+        }} onTransfer={() => { setSmartImportOpen(false); sharedAlert.finish(); navigateTo("finance"); navigateFinanceSubtab("accounts"); setOpenMoneyTransferOnAccounts(true); }} />}
       {transferDetail && <dialog ref={transferDetailDialog} data-transfer-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transfer-detail-title"
         onClose={() => setTransferDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
         <section>
@@ -3710,12 +3772,15 @@ export default function App() {
               </div>
               <label className="block text-xs text-secondary">Merchant or description<input maxLength={120} value={createDraft.title || ''} onChange={event => setCreateDraft({ ...createDraft, title: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
               {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
-              {createDraft.importFingerprint && <label className="block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => setCreateDraft({ ...createDraft, date: event.target.value, dateTime: "" })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
+              {createDraft.importFingerprint && <label className="block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => {
+                const date = event.target.value;
+                setCreateDraft({ ...createDraft, date, dateTime: date && createDraft.importTime ? date + 'T' + createDraft.importTime : '' });
+              }} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
               <AliveDisclosure label="Currency, account, date and notes">
               {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
                 if (createOperation.current || (createFormDirty && !await confirmAction({ title: 'Discard this transaction draft?', message: 'Transfers use a separate form.', confirmLabel: 'Open transfer', cancelLabel: 'Keep editing' }))) return;
                 setCreateKind(null); setCreateFormDirty(false);
-                navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
+                navigateTo('finance'); navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
               }}>Transfer between accounts</button>}
                 <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Currency" value={createDraft.currencyCode || userPrefs.currency} searchable
                 options={[...(CURRENCY_CODES.map(code => [String(code), formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)] as const))]} onSelect={e => setCreateDraft({ ...createDraft, currencyCode: e, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e) ? createDraft.accountId : '' })} /></div>
@@ -3724,7 +3789,12 @@ export default function App() {
                 <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Notes<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
-                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly && !createDraft.importFingerprint} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly && !createDraft.importFingerprint} type="datetime-local" value={createDraft.dateTime || ''} onChange={event => {
+                  const dateTime = event.target.value;
+                  setCreateDraft({ ...createDraft, dateTime, ...(createDraft.importFingerprint && {
+                    date: dateTime.slice(0, 10) || createDraft.date, importTime: dateTime.slice(11),
+                  }) });
+                }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               </AliveDisclosure>
             </>}
             {createKind === 'habit' && <>

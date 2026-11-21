@@ -1,5 +1,6 @@
 import { createSampleData, isSampleRecord } from './sampleData';
 import { withCommitmentWriteLock } from './commitmentWriteLock';
+import { PossibleImportDuplicateError, type ImportDuplicateOptions } from './smartImport';
 import type {
   Transaction,
   Category,
@@ -28,6 +29,21 @@ import type {
 import { sortTransactions, formatLocalDate } from './domainUtils';
 import { advanceCommitmentDate } from './commitmentRecurrence';
 import { decimalToMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './financeCore';
+
+function resemblesImportedTransaction(row: Transaction, candidate: Transaction) {
+  if (row.date !== candidate.date || row.type !== candidate.type ||
+      !row.currencyCode || row.currencyCode !== candidate.currencyCode ||
+      (row.accountId && candidate.accountId && row.accountId !== candidate.accountId) ||
+      (row.occurredAt && candidate.occurredAt && row.occurredAt !== candidate.occurredAt)) return false;
+  const description = (value: string | undefined) => (value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const sameDescription = Boolean(description(row.description)) && description(row.description) === description(candidate.description);
+  const sameAccountAndTime = Boolean(row.accountId && row.occurredAt) &&
+    row.accountId === candidate.accountId && row.occurredAt === candidate.occurredAt;
+  if (!sameDescription && !sameAccountAndTime) return false;
+  try {
+    return (row.amountMinor ?? decimalToMinorUnits(row.amount, row.currencyCode).toString()) === candidate.amountMinor;
+  } catch { return false; }
+}
 import { validateAccountTransfer, validateFinancialAccount, validateManualExchangeRate, validatePlannedCommitment, validatePlannedCommitmentReferences } from './financialAccounting';
 
 function validateMoneyMetadata(value: { currencyCode?: string; amountMinor?: string; amount?: number }): void {
@@ -224,7 +240,7 @@ export function createEncryptedStorageFacade(
       getAll: async () => sortTransactions(await readAll<Transaction>('transactions')),
       getById: (id: string) => get<Transaction>('transactions', id),
 
-      add: async (input: Omit<Transaction, 'id' | 'createdAt'>) => {
+      add: async (input: Omit<Transaction, 'id' | 'createdAt'>, options?: ImportDuplicateOptions) => {
         if (input.commitmentId || input.commitmentOccurrenceDate) throw new Error('Scheduled occurrence identity is managed by its plan.');
         if (input.importFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(input.importFingerprint)) throw new Error('Invalid import identity.');
         const record: Transaction = {
@@ -249,13 +265,16 @@ export function createEncryptedStorageFacade(
             if (!account || !account.isActive) throw new Error('Choose an active financial account.');
             if (!record.currencyCode || record.currencyCode !== account.currencyCode) throw new Error('An assigned transaction must use the account currency.');
           }
-          if (record.importFingerprint && (await ctx.getAll<Transaction>('transactions')).some(row =>
-            row.importFingerprint === record.importFingerprint || (
-              row.date === record.date && row.type === record.type && row.currencyCode === record.currencyCode &&
-              row.amountMinor === record.amountMinor && row.accountId === record.accountId &&
-              (!row.occurredAt || !record.occurredAt || row.occurredAt === record.occurredAt) &&
-              (row.description || '').trim().toLowerCase() === record.description.trim().toLowerCase()
-            ))) throw new Error('A matching transaction is already recorded. Review Transactions before saving.');
+          if (record.importFingerprint) {
+            const rows = await ctx.getAll<Transaction>('transactions');
+            const identities = new Set([record.importFingerprint, ...(options?.historicalFingerprints || [])]);
+            if (rows.some(row => row.importFingerprint && identities.has(row.importFingerprint))) {
+              throw new Error('A matching transaction is already recorded. Review Transactions before saving.');
+            }
+            if (!options?.allowPossibleDuplicate && rows.some(row => resemblesImportedTransaction(row, record))) {
+              throw new PossibleImportDuplicateError();
+            }
+          }
           ctx.add('transactions', record);
           return record;
         });

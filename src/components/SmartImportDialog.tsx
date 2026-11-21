@@ -1,18 +1,20 @@
 ﻿import { useEffect, useId, useRef, useState } from 'react';
-import { alertFingerprint, pastedBankAlert, type SmartImportSuggestion } from '../services/smartImport';
+import { alertFingerprint, historicalAlertFingerprints, pastedBankAlert, type SmartImportSuggestion } from '../services/smartImport';
 
 export type SavableAlert = Extract<SmartImportSuggestion, { amount: string }>;
 
-export default function SmartImportDialog({ onDismiss, onReview, onTransfer }: {
+export default function SmartImportDialog({ initialText, onTextConsumed, onDismiss, onReview, onTransfer }: {
+  initialText?: string;
+  onTextConsumed: () => void;
   onDismiss: () => void;
-  onReview: (suggestion: SavableAlert, fingerprint: string) => void;
+  onReview: (suggestion: SavableAlert, fingerprint: string, historical: string[]) => void;
   onTransfer: () => void;
 }) {
   const id = useId();
   const dialog = useRef<HTMLDialogElement>(null);
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialText ?? '');
   const [suggestion, setSuggestion] = useState<SmartImportSuggestion | null>(null);
-  const [fingerprint, setFingerprint] = useState('');
+  const [identity, setIdentity] = useState<{ fingerprint: string; historical: string[] }>();
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
@@ -23,13 +25,16 @@ export default function SmartImportDialog({ onDismiss, onReview, onTransfer }: {
   const inspect = async () => {
     const alert = text;
     setText('');
-    setFingerprint('');
+    onTextConsumed();
+    setIdentity(undefined);
     setProcessing(true);
     try {
       const next = pastedBankAlert.parse(alert);
-      const fingerprint = 'amount' in next ? await alertFingerprint(alert, next) : '';
+      if ('amount' in next) {
+        const [fingerprint, historical] = await Promise.all([alertFingerprint(alert, next), historicalAlertFingerprints(alert, next)]);
+        setIdentity({ fingerprint, historical });
+      }
       setSuggestion(next);
-      setFingerprint(fingerprint);
     } catch { setSuggestion({ kind: 'unrecognized' }); }
     finally { setProcessing(false); }
   };
@@ -53,10 +58,13 @@ export default function SmartImportDialog({ onDismiss, onReview, onTransfer }: {
         {(suggestion.description || suggestion.accountHint || suggestion.reference || suggestion.time) && <p className="safe-wrap text-sm text-secondary">
           {[suggestion.description, suggestion.accountHint && 'Account ending ' + suggestion.accountHint, suggestion.reference && 'Reference ' + suggestion.reference, suggestion.time].filter(Boolean).join(' · ')}
         </p>}
-        <button type="button" className="feather-primary" disabled={!fingerprint} onClick={() => onReview(suggestion, fingerprint)}>Review transaction</button>
+        <button type="button" className="feather-primary" disabled={!identity} onClick={() => {
+          if (identity) onReview(suggestion, identity.fingerprint, identity.historical);
+        }}>Review transaction</button>
         <button type="button" className="feather-secondary" onClick={onTransfer}>Record as transfer</button>
       </> : <>
-        <p role="status">{{ transfer: 'This looks like a transfer.', refund: 'This looks like a refund. Review it against the original expense.', reversal: 'This looks like a reversal. Review it against the original entry.', failed: 'This payment appears to have failed.', pending: 'This payment appears to be pending.', unrecognized: 'No supported transaction was found.' }[suggestion.kind]}</p>
+        <p role="status">{{ transfer: 'This looks like a transfer.', refund: 'Review this refund against the original expense. Smart Import cannot link the entries.', reversal: 'Review this reversal against the original entry. Smart Import cannot link the entries.', failed: 'This payment appears to have failed.', pending: 'This looks like a pending payment or authorization.', ambiguous: 'This alert may describe multiple transactions. Check the original and enter each confirmed transaction separately.', unrecognized: 'No supported transaction was found.' }[suggestion.kind]}</p>
+        {suggestion.details && <p className="text-sm text-secondary">{suggestion.details.currency} {suggestion.details.amount}{suggestion.details.date && ' · ' + suggestion.details.date}</p>}
         {suggestion.kind === 'transfer' && <button type="button" className="feather-secondary" onClick={onTransfer}>Review transfer</button>}
         <button type="button" className="feather-primary" onClick={() => setSuggestion(null)}>Paste another alert</button>
       </>}
