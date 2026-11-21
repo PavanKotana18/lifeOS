@@ -22,7 +22,7 @@ assert.match(app, /onChange=\{\(\) => setCreateFormDirty\(true\)\}/, 'form chang
 assert.match(app, /if \(isLocked && confirmation\) settleConfirmation\(false\)/, 'a pending generic confirmation is dismissed when the session locks');
 
 assert.doesNotMatch(moneyHome, /Add transaction/, 'Money Home links to Transactions');
-assert.match(app, /transaction-workspace[\s\S]*?openCreateForm\('transaction'\)[^\n]*>Add transaction<\//, 'Transactions contains the primary add action');
+assert.match(app, /transaction-workspace[\s\S]*?openCreateForm\("transaction"\)[^\n]*>Add transaction<\//, 'Transactions contains the primary add action');
 assert.match(accounts, /No accounts yet[\s\S]*Add an account to track its balance and transfers\./, 'the first-use state explains the purpose of optional accounts');
 assert.doesNotMatch(moneyHome, /money-account-nudge/, 'the overview does not repeat an account-creation prompt');
 assert.match(app, /<MoneyDetailHeader section=\{financeSubtab\}[^]*onBack=\{\(\) => \{[^]*rememberActiveScroll\(\); financeSubtabHistory\.current = \[\]; setFinanceSubtab\('overview'\)/, 'Money overview restores its scroll and clears the nested history');
