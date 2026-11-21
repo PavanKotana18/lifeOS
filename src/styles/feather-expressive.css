@@ -392,7 +392,7 @@
 .period-months [aria-pressed="true"] { background: var(--accent); color: var(--accent-foreground); }
 .feather-expressive .lifeos-snackbar {
   position: fixed;
-  z-index: 76;
+  z-index: 85;
   inset: auto auto calc(max(var(--snackbar-inset, 0px), env(safe-area-inset-bottom)) + .875rem) 50%;
   transform: translateX(-50%);
   width: min(31rem, calc(100% - 2rem));

@@ -632,6 +632,7 @@ async function main() {
         const box = await page.locator('.lifeos-snackbar').boundingBox();
         const footer = await dialog().locator('.feather-composer-actions').boundingBox();
         assert.ok(footer.y - box.y - box.height >= 10 && footer.y - box.y - box.height <= 20);
+        assert.ok(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.lifeos-snackbar'), { x: box.x + box.width / 2, y: box.y + box.height / 2 }), 'the snackbar paints above the composer');
         await capture('transaction-error-snackbar-390', false);
         await amount.fill('125.50');
       }
@@ -643,6 +644,8 @@ async function main() {
       const navigationTop = (await page.getByRole('navigation', { name: 'Main navigation' }).boundingBox()).y;
       assert.ok(navigationTop - noticeBottom >= 10 && navigationTop - noticeBottom <= 20);
       await capture('transaction-recorded-snackbar-390', false);
+      await notice.getByRole('button', { name: 'Dismiss message' }).click();
+      await notice.waitFor({ state: 'hidden' });
       await capture('transactions-populated-390', false);
       await page.locator('[data-tab="finance"]').click();
       await page.getByText('QA acceptance: expense', { exact: true }).waitFor();
@@ -845,7 +848,7 @@ async function main() {
       await dialog().getByLabel('Time', { exact: true }).fill('19:36');
       await dialog().getByRole('button', { name: /^Reminder/ }).click();
       await dialog().getByRole('button', { name: /^Extra reminder/ }).click();
-      await page.getByRole('dialog', { name: 'Extra reminder' }).getByRole('button', { name: '15 minutes before' }).click();
+      await page.getByRole('dialog', { name: 'Extra reminder' }).getByRole('option', { name: '15 minutes before' }).click();
       await capture('task-timed-composer-390');
       await saveDialog('Add task');
       const stored = () => page.evaluate(async name => {
@@ -1068,7 +1071,7 @@ async function main() {
       await clickButton('Profile');
       await clickButton('Preferences');
       await clickButton(/Time format/);
-      await page.getByRole('dialog', { name: 'Time format' }).getByRole('button', { name: '24-hour' }).click();
+      await page.getByRole('dialog', { name: 'Time format' }).getByRole('option', { name: '24-hour' }).click();
       const dateOnly = page.getByLabel('Date-only task alerts');
       await dateOnly.fill('09:00');
       await page.waitForFunction(async () => {
@@ -1267,7 +1270,7 @@ async function main() {
       }
       await clickButton('Notifications');
       await clickButton(/^Notification tone/);
-      await page.getByRole('dialog', { name: 'Notification tone' }).getByRole('button', { name: 'Playful', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Notification tone' }).getByRole('option', { name: 'Playful', exact: true }).click();
       await page.getByRole('button', { name: 'Notification tone Playful', exact: true }).waitFor();
       await capture('notification-tone-playful-390');
       const category = page.getByRole('switch', { name: 'Habit reminders' });

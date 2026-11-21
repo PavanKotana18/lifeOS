@@ -2706,6 +2706,7 @@ export default function App() {
       && (!query || haystack.includes(query));
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
   [transactions, financeMonth, activityRange, financeTypeFilter, financeCategoryFilter, financeAccountFilter, financeCurrencyFilter, userPrefs.currency, financeSearch, financeSort]);
+  const transactionResultCount = filteredTransactions.length + filteredTransfers.length;
   const hasTransactionFilters = Boolean(financeSearch.trim() || financeCategoryFilter !== "all" || financeAccountFilter !== "all"
     || financeCurrencyFilter !== "all" || financeTypeFilter !== "all" || financeSort !== "date-desc" || Object.values(activityRange).some(Boolean));
   const financeOverviewTransactions = useMemo(
@@ -3089,7 +3090,7 @@ export default function App() {
                 options={[["date-desc", "Newest first"], ["date-asc", "Oldest first"], ["amount-desc", "Largest within each day"]]} onSelect={e => setFinanceSort(e)} /></div>
 
                 <button type="submit" className="lifeos-accent-button min-h-11 rounded-xl px-4">Show transactions</button></form></dialog>
-                <div className="money-detail-results"><span role="status">{filteredTransactions.length + filteredTransfers.length} results</span>{hasTransactionFilters && <button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button>}</div>
+                <div className="money-detail-results"><span role="status">{transactionResultCount} {transactionResultCount === 1 ? "result" : "results"}</span>{hasTransactionFilters && <button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button>}</div>
                 {/* Transactions List */}
                 <div className="transaction-timeline">
                   {!filteredTransactions.length && !filteredTransfers.length ? (
