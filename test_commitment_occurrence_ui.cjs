@@ -35,7 +35,7 @@ assert.match(markup, /disabled=""[^>]*aria-label="Record occurrence for Future p
 assert.match(markup, /Incoming · Monthly/);
 assert.match(markup, /aria-label="View Synthetic income"/);
 assert.match(markup, /aria-label="About Recurring Money confirmation"/);
-assert.match(markup, /A plan creates no transaction automatically/);
+assert.match(markup, /An upcoming occurrence is a plan until recording succeeds/);
 (async () => {
   for (const consent of [false, true]) {
     const states = [], errors = [], writes = [], confirmations = [];
