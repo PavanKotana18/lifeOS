@@ -28,7 +28,7 @@ assert.match(markup, /<label for="[^"]+"/);
 assert.match(markup, /aria-describedby="[^"]+-hint"/);
 assert.match(markup, /maxLength="200"/);
 assert.match(markup, /disabled=""[^>]*>Add task/);
-assert.match(markup, /Add the title now/);
+assert.match(markup, /Add a date when you are ready to schedule it/);
 assert.match(markup, /Schedule, priority and reminder/);
 assert.match(markup, /type="date"/);
 assert.match(markup, /Priority/);
