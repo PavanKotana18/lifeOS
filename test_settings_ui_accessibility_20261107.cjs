@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const profile = fs.readFileSync('src/components/ProfileSettings.tsx', 'utf8');
 const preferences = fs.readFileSync('src/components/ProfilePreferences.tsx', 'utf8');
-const settingsStart = app.indexOf('        {/* VIEW 6: SETTINGS */}');
+const settingsStart = app.indexOf('id="screen-settings"');
 const settingsEnd = app.indexOf('      {createKind && (', settingsStart);
 assert.ok(settingsStart >= 0 && settingsEnd > settingsStart, 'settings view boundaries are present');
 const settings = app.slice(settingsStart, settingsEnd);

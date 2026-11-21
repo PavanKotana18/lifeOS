@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const start = app.indexOf('        {/* VIEW 5: PLANNER */}');
-const end = app.indexOf('        {/* VIEW 6: SETTINGS */}', start);
+const end = app.indexOf('id="screen-settings"', start);
 assert.ok(start >= 0 && end > start, 'Planner view boundaries are present');
 const planner = app.slice(start, end);
 const taskDetail = fs.readFileSync('src/components/TaskDetailScreen.tsx', 'utf8');
