@@ -52,7 +52,7 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
       {photoBusy && <span role="status" className="text-secondary text-xs">Updating photo?</span>}
     </div>}
     {photoError && <p role="alert" className="mt-1 text-xs text-[var(--danger)]">{photoError}</p>}
-    {editing && <form className="mt-3 space-y-2" onSubmit={async event => {
+    {editing && <form data-no-tab-swipe className="mt-3 space-y-2" onSubmit={async event => {
       event.preventDefault();
       if (!draft.trim() || busy) return;
       setBusy(true); setError('');

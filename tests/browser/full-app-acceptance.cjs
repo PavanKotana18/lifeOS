@@ -409,6 +409,19 @@ async function main() {
         await money.getByRole('button', { name: 'Schedule' }).click();
         await page.getByRole('heading', { name: 'Schedule', exact: true }).waitFor();
         await capture('schedule-four-tabs', false);
+        if (process.env.LIFEOS_PROFILE_FORM_REVIEW === '1') {
+          await nav.getByRole('button', { name: 'Profile', exact: true }).click();
+          await clickButton('Edit name');
+          await page.getByLabel('Display name').fill('Synthetic unsaved edit');
+          const cdp = await context.newCDPSession(page);
+          try {
+            const touch = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x == null ? [] : [{ x, y: 395, id: 1 }] });
+            await touch('touchStart', 74); await touch('touchMove', 126); await touch('touchMove', 280); await touch('touchEnd');
+            assert.equal(await nav.getByRole('button', { name: 'Profile', exact: true }).getAttribute('aria-current'), 'page');
+            assert.equal(await page.getByLabel('Display name').inputValue(), 'Synthetic unsaved edit');
+          } finally { await cdp.detach(); }
+          await clickButton('Cancel');
+        }
         if (process.env.LIFEOS_PROFILE_AUDIT === '1') {
           await nav.getByRole('button', { name: 'Profile', exact: true }).click();
           const surfaces = [

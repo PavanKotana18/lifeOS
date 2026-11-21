@@ -690,7 +690,7 @@ export default function App() {
     const context = {
       enabled: userPrefs.swipeNavigationEnabled,
       pointerType: event.pointerType,
-      settingsScreen: profileOpen && profileSection !== "home",
+      settingsScreen: profileOpen && (profileSection !== "home" || Boolean(document.querySelector("#screen-settings form[data-no-tab-swipe]"))),
       modalOpen: Boolean(createKind || modalContent || (activeTab === 'finance' && (financeSubtab === 'accounts' ? (accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && (planningDrafts.commitment || planningDrafts.rate)))),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
