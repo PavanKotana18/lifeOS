@@ -6,7 +6,7 @@ const transactionFormStart = app.indexOf("{createKind === 'transaction' && <>");
 const transactionFormEnd = app.indexOf("{createKind === 'habit' && <>", transactionFormStart);
 assert.ok(transactionFormStart >= 0 && transactionFormEnd > transactionFormStart, 'transaction form remains an independently identifiable workflow');
 const transactionForm = app.slice(transactionFormStart, transactionFormEnd);
-assert.match(app, /createKind === 'transaction' \? 'Merchant or description \(optional\)'/);
+assert.match(transactionForm, /Merchant or description<input maxLength=\{120\}/, "the description field uses a short label and has no required constraint");
 assert.match(app, /required=\{createKind !== 'transaction'\}/, 'transaction description is optional while other record titles remain required');
 assert.match(transactionForm, /required type="number" min=\{10 \*\* -getCurrencyMetadata\(createDraft\.currencyCode \|\| userPrefs\.currency\)\.fractionDigits\} step=\{10 \*\* -getCurrencyMetadata\(createDraft\.currencyCode \|\| userPrefs\.currency\)\.fractionDigits\} inputMode="decimal"/, 'new quick entry leads with an amount field with the selected currency minor unit');
 assert.match(transactionForm, /label="Currency" value=\{createDraft\.currencyCode \|\| userPrefs\.currency\}/, 'each new transaction can use an explicit currency');
