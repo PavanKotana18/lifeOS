@@ -201,7 +201,12 @@ async function main() {
     if (swipeDirection) {
       const right = swipeDirection === 'right';
       const start = right ? 74 : viewport.width - 74;
-      const send = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x == null ? [] : [{ x, y: swipeY, id: 1 }] });
+      const safeY = await page.evaluate(({ x, preferred }) => [preferred, 215, 285, 350, 395, 590].find(y => {
+        const target = document.elementFromPoint(x, y);
+        return target?.closest('.app-main') && !target.closest('button,input,a,label,summary,[data-no-tab-swipe],[data-swipe-exclude]');
+      }), { x: start, preferred: swipeY });
+      assert.ok(safeY, name + ' has a non-interactive touch starting point');
+      const send = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x == null ? [] : [{ x, y: safeY, id: 1 }] });
       await send('touchStart', start);
       for (const step of [5, 11, 28, 56, 88, 116, 155]) {
         await page.waitForTimeout(18);
@@ -246,7 +251,7 @@ async function main() {
       ['swipe-today-money', 'finance', 'left'], ['swipe-money-plan', 'plan', 'left'],
       ['swipe-plan-money', 'finance', 'right'], ['swipe-money-today', 'dashboard', 'right'],
     ]) {
-      await capture(name, tab(destination), screens, direction, name === 'swipe-plan-money' ? 395 : 215);
+      await capture(name, tab(destination), screens, direction, name === 'swipe-plan-money' ? 395 : 250);
       assert.equal(await tab(destination).getAttribute('aria-current'), 'page', name + ' commits the target');
       assert.equal(await page.locator('[data-gesture-preview],[data-gesture-dragging]').count(), 0, name + ' removes drag surfaces');
     }
@@ -264,7 +269,7 @@ async function main() {
           return window.scrollY;
         });
         assert.ok(scroll > 0, 'Money fixture can reproduce a scrolled route before dragging');
-        await capture('swipe-scrolled-money-plan', tab('plan'), screens, 'left', 195);
+        await capture('swipe-scrolled-money-plan', tab('plan'), screens, 'left', 275);
         assert.equal(await tab('plan').getAttribute('aria-current'), 'page');
         await capture('swipe-plan-scrolled-money', tab('finance'), screens, 'right', 195);
         assert.equal(await tab('finance').getAttribute('aria-current'), 'page');
@@ -289,7 +294,7 @@ async function main() {
               assert.equal(sorted[1].opacity, 1, name + ' neighboring panel remains opaque');
               if (anchored && name.startsWith('swipe-')) {
                 const indicator = frame.surfaces.find(surface => surface.id === '.alive-nav-indicator');
-                const slotWidth = viewport.width / 3;
+                const slotWidth = viewport.width / 4;
                 const first = ['screen-dashboard', 'screen-finance', 'screen-plan'].indexOf(sorted[0].id);
                 if (first >= 0 && indicator) {
                   const left = Math.max(0, Math.min(1, -sorted[0].left / viewport.width));
@@ -327,14 +332,14 @@ async function main() {
   await button(/Review weekly plan/).waitFor();
   await capture('complete-task', page.getByRole('checkbox', { name: 'Mark Review weekly plan complete' }), '.plan-hub-task-check input|.alive-task-mark path|[data-alive-doodle]');
   await tab('dashboard').click();
-  await capture('open-profile', button('Open profile and settings'), '.profile-page-screen|.profile-settings');
+  await capture('open-profile', button('Profile'), '.profile-page-screen|.profile-settings');
   await capture('appearance', button('Appearance'), '.profile-page-screen|.profile-settings');
   const profileBack = await page.locator('.feather-expressive').count() ? 'Profile' : 'Back from profile';
   await capture('profile-back', button(profileBack), '.profile-page-screen|.profile-settings');
   await capture('profile-close', button('Back from profile'), '.profile-page-screen|.profile-settings');
   await tab('finance').click();
   const money = page.getByRole('navigation', { name: 'Money destinations' });
-  await capture('money-scheduled', button('Scheduled', money), '.money-page|[data-testid=money-planning]');
+  await capture('money-scheduled', button('Schedule', money), '.money-page|[data-testid=money-planning]');
   await button('Add').click();
   const planForm = page.locator('#money-commitment-dialog');
   await planForm.getByRole('textbox', { name: 'Name', exact: true }).fill('Monthly utility');
@@ -346,7 +351,7 @@ async function main() {
   const recurring = alive ? button('View Monthly utility') : button('Edit', page.locator('.scheduled-plan-row').filter({ hasText: 'Monthly utility' }));
   const scheduledSurface = '#money-commitment-dialog|dialog[data-scheduled-details]|.money-page';
   await capture('scheduled-detail', recurring, scheduledSurface);
-  await capture('scheduled-back', alive ? button('Back to Scheduled') : button('Cancel', planForm), scheduledSurface);
+  await capture('scheduled-back', alive ? button('Back to Schedule') : button('Cancel', planForm), scheduledSurface);
   await tab('plan').click();
   const plan = page.getByRole('navigation', { name: 'Plan destinations' });
   await capture('first-habit', button('Habits', plan), '#screen-habits|[data-alive-doodle]|.alive-doodle-ink');
@@ -382,7 +387,7 @@ async function main() {
     const settled = name => page.waitForFunction(name => document.querySelector('[data-tab="' + name + '"]')?.getAttribute('aria-current') === 'page'
       && !document.querySelector('.ui-tab-screen[data-transition-state=outgoing]')
       && document.querySelectorAll('.ui-tab-screen:not([hidden]):not([inert])').length === 1, name);
-    const targets = await page.locator('.app-bottom-nav [data-tab]').evaluateAll(nodes => nodes.map(node => {
+    const targets = await page.locator('.app-bottom-nav [data-tab]:not([data-tab=profile])').evaluateAll(nodes => nodes.map(node => {
       const rect = node.getBoundingClientRect();
       return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
     }));

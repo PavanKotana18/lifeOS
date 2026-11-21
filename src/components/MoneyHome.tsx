@@ -22,7 +22,6 @@ type Props = {
   formatDate: (date: string) => string;
   formatTime: (date: Date) => string;
   onMonthChange: (month: string) => void;
-  onAddTransaction: () => void;
   onTransactions: () => void;
   onBudgets: () => void;
   onSavings: () => void;
@@ -35,22 +34,20 @@ type Props = {
 };
 
 const moneyDestinations = [
-  { id: 'transactions', label: 'Activity', icon: Receipt },
+  { id: 'transactions', label: 'Transactions', icon: Receipt },
   { id: 'accounts', label: 'Accounts', icon: Landmark },
   { id: 'budgets', label: 'Budgets', icon: WalletCards },
   { id: 'savings', label: 'Savings', icon: PiggyBank },
   { id: 'analytics', label: 'Insights', icon: ChartNoAxesCombined },
-  { id: 'planning', label: 'Scheduled', icon: CalendarDays },
+  { id: 'planning', label: 'Schedule', icon: CalendarDays },
 ] as const;
 
 export default function MoneyHome({ month, monthly = false, showHeader = true, onMonthly, monthSavings, expenseChange, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
-  onAddTransaction, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, legacyCurrency, locale, onEditTransaction }: Props) {
+  onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, legacyCurrency, locale, onEditTransaction }: Props) {
   const destinationActions = { transactions: onTransactions, accounts: onAccounts, budgets: onBudgets, savings: onSavings, analytics: onAnalytics, planning: onPlanning };
 
   return <div className="money-home" data-testid="money-home">
     {!monthly && showHeader && <FeatherHeader title="Money" heading="h1" action={<MoneyPeriod label="Money" month={month} onChange={onMonthChange} />} />}
-
-    {!monthly && <button type="button" onClick={onAddTransaction} className="money-add-transaction" data-testid="money-add-transaction"><span aria-hidden="true">+</span><span><strong>Add transaction</strong></span></button>}
 
     <section className="money-cashflow" aria-labelledby="money-cashflow-title">
       <div className="money-cashflow-top justify-start"><h3 id="money-cashflow-title" className="type-section-title">Net cash flow</h3><InfoTip label="Net cash flow">Income received minus spending recorded in this period. Planned bills, transfers and savings contributions are separate.</InfoTip></div>
@@ -80,7 +77,7 @@ export default function MoneyHome({ month, monthly = false, showHeader = true, o
     </div>}
 
     <section className="money-activity" aria-labelledby="money-activity-title">
-      <div className="money-section-heading"><div><h3 id="money-activity-title" className="type-section-title">Activity</h3></div><button type="button" onClick={onTransactions} className="money-text-action">View activity</button></div>
+      <div className="money-section-heading"><div><h3 id="money-activity-title" className="type-section-title">Activity</h3></div><button type="button" onClick={onTransactions} className="money-text-action">View transactions</button></div>
       {!transactions.length ? <p className="money-empty-action" role="status">No activity this month.</p> : <ul className="money-transaction-list">{transactions.slice(0, 4).map(transaction => {
         const title = transaction.description?.trim() || transaction.category || (transaction.type === 'income' ? 'Income' : 'Expense');
         const amount = transaction.amountMinor !== undefined && transaction.amountMinor !== null

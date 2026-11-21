@@ -31,12 +31,14 @@ assert.match(shell, /onClick=\{\(\) => \{ void openRecovery\(\); \}\}/, 'lock re
 assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await setSensitiveScreenshotState\(true\);\s*setRecoveryOpen\(true\);/, 'recovery secrets are not rendered before native screenshot protection is acknowledged');
 assert.doesNotMatch(shell, /theme-toggle-btn|onClick=\{toggleTheme\}/, 'header has no duplicate theme shortcut');
 assert.match(fsSource, /aria-label="Theme previews"/, 'curated theme selection remains in Settings appearance');
-assert.match(fsSource, /aria-label="Open profile and settings"/, 'profile remains the header settings entry point');
+assert.match(fsSource, /data-tab="profile" aria-label="Profile"/, 'profile has a named bottom-navigation entry point');
 assert.doesNotMatch(fsSource, /lifeos-mark|BrandMark/, 'The permanent shell has no visible brand mark');
 assert.match(fsSource, /todayOverview\.routinesCompleted\} of \{todayOverview\.routinesDue\} done today/, 'habit heading remains in the semantic palette');
 assert.match(fsSource, /habit\.reminderTime/, 'habit details retain their reminder time');
 assert.match(footer, /onClick=\{\(\) => void CapacitorApp\.exitApp\(\)\}/, 'exit action remains connected');
-assert.match(footer, /role="status" aria-live="polite"/, 'toast remains announced to assistive technology');
+const snackbar = fs.readFileSync('src/components/Snackbar.tsx', 'utf8');
+assert.match(footer, /<Snackbar/);
+assert.ok(snackbar.includes("? 'alert' : 'status'"), 'the global snackbar announces status and errors');
 assert.match(styles, /\.lifeos-warning \{ color: var\(--warning\); \}/, 'warning text maps to the active theme');
 
 const SecureSetupDialog = require('./src/components/SecureSetupDialog.tsx').default;

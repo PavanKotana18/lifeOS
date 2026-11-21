@@ -810,7 +810,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 }
 .app-header-shell { container-name: app-header; container-type: inline-size; }
 .app-bottom-nav { display: block; container-name: primary-navigation; container-type: inline-size; }
-.app-nav-items { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.app-nav-items { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 /* Font-relative queries adapt to available room, including increased text size. */
 @container primary-navigation (max-width: 15em) {
   .app-bottom-nav .nav-item { min-height: 2.75rem; gap: .2rem; }
@@ -1040,7 +1040,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 .scheduled-history-row + .scheduled-history-row { border-top: 1px solid var(--stroke); }
 
 .alive-nav { position: relative; isolation: isolate; }
-.alive-nav-indicator { position: absolute; inset-block: 0; inset-inline-start: 0; width: calc(100% / 3); pointer-events: none; z-index: -1; }
+.alive-nav-indicator { position: absolute; inset-block: 0; inset-inline-start: 0; width: 25%; pointer-events: none; z-index: -1; }
 .alive-nav-indicator::before { content: ''; position: absolute; inset: 3px 10% 5px; border-radius: 16px; background: color-mix(in srgb, var(--accent) 19%, var(--surface)); }
 .alive-nav .nav-item[aria-current="page"] { background: transparent; }
 .alive-nav .nav-item[aria-current="page"]::before { display: none; }

@@ -36,7 +36,7 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
     const keydown = (event: KeyboardEvent) => {
       // Nested confirmations and native security dialogs own their own focus.
       const currentDialog = findDialog();
-      if (!currentDialog?.contains(document.activeElement) || document.activeElement?.closest('dialog[data-preference-choice][open]')) return;
+      if (!currentDialog?.contains(document.activeElement) || document.activeElement?.closest('dialog[open]')) return;
       if (event.key === 'Escape') { event.preventDefault(); dismissRef.current(); }
       if (event.key !== 'Tab') return;
       const controls = [...currentDialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(item => item.getClientRects().length && !item.closest('[inert]'));

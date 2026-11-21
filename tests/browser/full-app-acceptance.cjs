@@ -315,7 +315,7 @@ async function main() {
   const completed = new Set();
   try {
     await journey('first launch and safe browsing', async () => {
-      await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success${process.env.LIFEOS_EXPERIENCE_GATE === '1' ? '&qa-native-back=enabled' : ''}`, { waitUntil: 'networkidle' });
+      await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success${(process.env.LIFEOS_EXPERIENCE_GATE === '1' || process.env.LIFEOS_FINALIZATION_GATE === '1') ? '&qa-native-back=enabled' : ''}`, { waitUntil: 'networkidle' });
       await page.locator('input[autocomplete="nickname"]').fill('Synthetic acceptance user');
       await capture('welcome-390');
       await clickButton('Continue');
@@ -359,6 +359,60 @@ async function main() {
     });
 
 
+    if (process.env.LIFEOS_FINALIZATION_GATE === '1') {
+      await journey('finalization navigation, period and help', async () => {
+        const nav = page.getByRole('navigation', { name: 'Main navigation' });
+        assert.deepEqual(await nav.getByRole('button').allTextContents(), ['Today', 'Money', 'Plan', 'Profile']);
+        await page.getByRole('heading', { name: 'LifeOS', exact: true }).waitFor();
+        await capture('today-four-tabs', false);
+        await activeTab('finance');
+        await page.getByRole('heading', { name: 'Money', exact: true }).waitFor();
+        const money = page.getByRole('navigation', { name: 'Money destinations' });
+        assert.deepEqual(await money.getByRole('button').allTextContents(), ['Transactions', 'Accounts', 'Budgets', 'Savings', 'Insights', 'Schedule']);
+        await page.getByRole('heading', { name: 'Activity', exact: true }).waitFor();
+        assert.equal(await page.getByRole('button', { name: 'Add transaction', exact: true }).count(), 0);
+        await capture('money-home-four-tabs', false);
+        const period = page.locator('button.money-period-control:visible');
+        await period.click();
+        const picker = page.getByRole('dialog', { name: 'Reporting period' });
+        await picker.getByRole('button', { name: 'Next year' }).click();
+        await capture('month-picker', false);
+        await picker.getByRole('button', { name: 'December', exact: true }).click();
+        assert.match(await period.innerText(), /December/);
+        assert.equal(await period.evaluate(element => document.activeElement === element), true);
+        const help = page.getByRole('button', { name: 'About Net cash flow' });
+        await help.click();
+        const sheet = page.getByRole('dialog', { name: 'Net cash flow' });
+        await sheet.getByRole('heading', { name: 'Simple example' }).waitFor();
+        await sheet.getByRole('heading', { name: 'How LifeOS uses it' }).waitFor();
+        await capture('money-info-sheet', false);
+        const androidBack = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('qa-app-backButton', { detail: { canGoBack: true } })));
+        await androidBack();
+        await sheet.waitFor({ state: 'hidden' });
+        await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'About Net cash flow');
+        await money.getByRole('button', { name: 'Transactions' }).click();
+        await page.getByRole('heading', { name: 'Transactions' }).waitFor();
+        await page.getByText('Money in', { exact: true }).waitFor();
+        await capture('transactions-empty', false);
+        await nav.getByRole('button', { name: 'Profile' }).click();
+        await page.getByRole('heading', { name: 'Profile', exact: true }).waitFor();
+        assert.equal(await nav.getByRole('button', { name: 'Profile' }).getAttribute('aria-current'), 'page');
+        await capture('profile-four-tabs', false);
+        await androidBack();
+        await page.getByRole('heading', { name: 'Transactions' }).waitFor();
+        await nav.getByRole('button', { name: 'Profile' }).click();
+        await nav.getByRole('button', { name: 'Plan' }).click();
+        await page.getByRole('heading', { name: 'Plan', exact: true }).waitFor();
+        await capture('plan-four-tabs', false);
+        await activeTab('finance');
+        await nav.getByRole('button', { name: 'Money' }).click();
+        await money.getByRole('button', { name: 'Schedule' }).click();
+        await page.getByRole('heading', { name: 'Schedule', exact: true }).waitFor();
+        await capture('schedule-four-tabs', false);
+      });
+      return;
+    }
+
     if (process.env.LIFEOS_EXPERIENCE_GATE === '1') {
       await journey('reconstruction interaction gate', async () => {
         await activeTab('plan');
@@ -367,14 +421,14 @@ async function main() {
         const disclosure = dialog().getByRole('button', { name: 'Notes and subtasks', exact: true });
         assert.equal(await disclosure.getAttribute('aria-expanded'), 'false');
         await disclosure.click();
-        await fillDialogField('Notes (optional)', 'Keep this when collapsing');
+        await fillDialogField('Notes', 'Keep this when collapsing');
         await disclosure.click();
         await disclosure.click();
-        assert.equal(await dialog().getByLabel('Notes (optional)').inputValue(), 'Keep this when collapsing');
+        assert.equal(await dialog().getByLabel('Notes').inputValue(), 'Keep this when collapsing');
         const priority = dialog().getByRole('button', { name: /^Priority/ });
         await priority.click();
         const sheet = page.locator('dialog[data-preference-choice][open]');
-        await sheet.getByRole('button', { name: 'High', exact: true }).click();
+        await sheet.getByRole('option', { name: 'High', exact: true }).click();
         await sheet.waitFor({ state: 'hidden' });
         await page.waitForFunction(() => document.activeElement?.textContent.includes('High'));
         await priority.click();
@@ -419,7 +473,7 @@ async function main() {
         await dialog().getByRole('button', { name: 'Cancel', exact: true }).click();
         if (await discard.isVisible()) await discard.getByRole('button', { name: /Discard/ }).click();
         await dialog().waitFor({ state: 'hidden' });
-        await clickButton('Open profile and settings');
+        await clickButton('Profile');
         await clickButton('Appearance');
         await clickButton('Dark');
         await activeTab('finance');
@@ -439,7 +493,7 @@ async function main() {
         await captureScreen('today');
         await activeTab('finance');
         await captureScreen('money');
-        await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Scheduled', exact: true }).click();
+        await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Schedule', exact: true }).click();
         await captureScreen('scheduled');
         await activeTab('plan');
         await page.getByRole('navigation', { name: 'Plan destinations' }).waitFor();
@@ -484,7 +538,7 @@ async function main() {
         await page.getByRole('heading', { name: 'Finish one course' }).waitFor();
         await page.locator('.ui-toast').waitFor({ state: 'hidden' });
         await captureScreen('detail');
-        await clickButton('Open profile and settings');
+        await clickButton('Profile');
         await page.getByRole('heading', { name: 'Profile', exact: true }).waitFor();
         await captureScreen('profile');
       });
@@ -505,7 +559,7 @@ async function main() {
       await activeTab('plan');
       assert.equal(await page.getByRole('button', { name: 'Open calendar' }).count(), 0);
       assert.equal(await page.locator('[data-tab="plan"]').getAttribute('aria-current'), 'page');
-      assert.deepEqual(await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button').allTextContents(), ['Today', 'Money', 'Plan']);
+      assert.deepEqual(await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button').allTextContents(), ['Today', 'Money', 'Plan', 'Profile']);
       await planDestination('Habits');
       await page.getByRole('button', { name: /Add habit/ }).waitFor();
       await capture('habits-empty-390');
@@ -563,12 +617,34 @@ async function main() {
 
     await journey('create a posted expense and budget', async () => {
       await activeTab('finance');
-      await clickButton('Add transaction', { exact: false });
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
+      await clickButton('Add transaction', { exact: true });
       await fillDialogField('Amount', '125.50');
       await fillDialogField('Merchant or description', 'QA acceptance: expense');
       await capture('add-transaction-composer-390');
       await chooseOption(dialog(), 'Category', { index: 1 });
+      if (process.env.LIFEOS_SNACKBAR_REVIEW === '1') {
+        const amount = await fillDialogField('Amount', '90071992547409912.37');
+        assert.equal(await amount.evaluate(input => input.validity.valid), true, 'the browser delegates precision to the ledger');
+        await dialog().getByRole('button', { name: 'Add transaction', exact: true }).click();
+        const error = page.locator('.lifeos-snackbar').getByRole('alert');
+        await error.getByText('Amount is too large to store safely at this currency precision.').waitFor();
+        const box = await page.locator('.lifeos-snackbar').boundingBox();
+        const footer = await dialog().locator('.feather-composer-actions').boundingBox();
+        assert.ok(footer.y - box.y - box.height >= 10 && footer.y - box.y - box.height <= 20);
+        await capture('transaction-error-snackbar-390', false);
+        await amount.fill('125.50');
+      }
       await saveDialog('Add transaction');
+      const snackbar = page.locator('.lifeos-snackbar').getByRole('status');
+      await snackbar.getByText('Transaction recorded', { exact: true }).waitFor();
+      const notice = page.locator('.lifeos-snackbar');
+      const noticeBottom = (await notice.boundingBox()).y + (await notice.boundingBox()).height;
+      const navigationTop = (await page.getByRole('navigation', { name: 'Main navigation' }).boundingBox()).y;
+      assert.ok(navigationTop - noticeBottom >= 10 && navigationTop - noticeBottom <= 20);
+      await capture('transaction-recorded-snackbar-390', false);
+      await capture('transactions-populated-390', false);
+      await page.locator('[data-tab="finance"]').click();
       await page.getByText('QA acceptance: expense', { exact: true }).waitFor();
       await page.getByTestId('money-home').getByRole('button', { name: /^Budgets/ }).click();
       await clickButton('Add budget', { exact: false });
@@ -587,12 +663,12 @@ async function main() {
       await netCashflowInfo.waitFor();
       const infoDialog = page.locator(await netCashflowInfo.evaluate(button => `#${CSS.escape(button.getAttribute('aria-controls'))}`));
       assert.equal(await infoDialog.evaluate(element => element.open), false, 'contextual information starts closed');
-      assert.equal(await page.getByText('Income received minus spending recorded in this period.', { exact: false }).isVisible().catch(() => false), false,
+      assert.equal(await page.getByText('Net cash flow is money in minus money out.', { exact: false }).isVisible().catch(() => false), false,
         'the full explanation is hidden from the default screen');
       await capture('info-net-cashflow-hidden-390');
       await netCashflowInfo.click();
       await infoDialog.waitFor({ state: 'visible' });
-      await page.getByText('Income received minus spending recorded in this period.', { exact: false }).waitFor();
+      await page.getByText('Net cash flow is money in minus money out.', { exact: false }).waitFor();
       await capture('info-net-cashflow-open-390');
       await page.keyboard.press('Escape');
       await infoDialog.waitFor({ state: 'hidden' });
@@ -605,9 +681,9 @@ async function main() {
       await chooseOption(page, 'Time period', '3');
       assert.equal(await page.getByRole('button', { name: 'Time period', exact: true }).evaluate(button => button.closest('[data-choice-field]').getAttribute('data-choice-value')), '3');
       await capture('money-analytics-posted-390');
-      assert.match(await page.locator('.money-period-control input').getAttribute('aria-label'), /November 2026/,
+      assert.match(await page.locator('button.money-period-control:visible').getAttribute('aria-label'), /November 2026/,
         'period selector retains a full accessible month name');
-      assert.equal(await page.locator('.money-period-value').innerText(), 'November 2026',
+      assert.equal(await page.locator('.money-period-value:visible').innerText(), 'November 2026',
         'period selector shows the full month label');
       for (const width of [320, 390]) {
         await page.setViewportSize({ width, height: 844 });
@@ -697,7 +773,7 @@ async function main() {
       await planDestination('Goals'); await clickButton('Add goal', { exact: false });
       await fillDialogField('Goal title', 'QA acceptance: finish one course');
       await dialog().getByLabel('Target', { exact: true }).fill('10');
-      assert.equal(await dialog().getByLabel('Target date (optional)', { exact: true }).inputValue(), '');
+      assert.equal(await dialog().getByLabel('Target date', { exact: true }).inputValue(), '');
       await capture('add-goal-composer-390');
       await saveDialog('Add goal');
       await page.getByRole('button', { name: /^QA acceptance: finish one course/ }).click();
@@ -705,11 +781,11 @@ async function main() {
       await page.getByText('Open-ended', { exact: true }).waitFor();
       await clickButton('Edit goal');
       await dialog().getByRole('button', { name: 'Target date and notes' }).click();
-      await fillDialogField('Target date (optional)', '2026-12-31');
+      await fillDialogField('Target date', '2026-12-31');
       await saveDialog('Save changes');
       await clickButton('Edit goal');
       await dialog().getByRole('button', { name: 'Target date and notes' }).click();
-      const deadline = dialog().getByLabel('Target date (optional)', { exact: true });
+      const deadline = dialog().getByLabel('Target date', { exact: true });
       assert.equal(await deadline.inputValue(), '2026-12-31');
       await deadline.fill('');
       await saveDialog('Save changes');
@@ -766,7 +842,7 @@ async function main() {
       await fillDialogField('Task title', title);
       await dialog().getByRole('button', { name: /^Schedule/ }).click();
       await fillDialogField('Due date', '2099-04-22');
-      await fillDialogField('Time (optional)', '19:36');
+      await dialog().getByLabel('Time', { exact: true }).fill('19:36');
       await dialog().getByRole('button', { name: /^Reminder/ }).click();
       await dialog().getByRole('button', { name: /^Extra reminder/ }).click();
       await page.getByRole('dialog', { name: 'Extra reminder' }).getByRole('button', { name: '15 minutes before' }).click();
@@ -840,15 +916,15 @@ async function main() {
 
     await journey('Profile drawer focus, scroll and encrypted photo lifecycle', async () => {
       await activeTab('finance');
-      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Activity', exact: true }).click();
-      const opener = page.getByRole('button', { name: 'Open profile and settings' });
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
+      const opener = page.getByRole('button', { name: 'Profile' });
       const drawer = page.getByRole('main', { name: 'Profile and settings' });
       await opener.click();
       await drawer.waitFor();
       assert.ok(await drawer.evaluate(element => Math.abs(element.getBoundingClientRect().width - innerWidth) < 2));
       assert.ok(await page.locator('.app-header-shell').evaluate(element => element.inert));
       assert.ok(await page.locator('.app-main').evaluate(element => element.inert));
-      assert.equal(await page.locator('[data-tab]').count(), 3);
+      assert.equal(await page.locator('[data-tab]').count(), 4);
       await drawer.getByRole('button', { name: 'Appearance' }).click();
       await drawer.getByRole('button', { name: 'Themes' }).click();
       await page.keyboard.press('Escape');
@@ -903,7 +979,7 @@ async function main() {
     });
 
     await journey('compact settings and six-month sample data', async () => {
-      await clickButton('Open profile and settings');
+      await clickButton('Profile');
       await page.getByTestId('profile-settings-home').waitFor();
       await capture('profile-390');
       for (const name of ['Appearance', 'Preferences', 'Notifications', 'Privacy & Security', 'Backup & Restore', 'About', 'Developer tools']) {
@@ -932,7 +1008,7 @@ async function main() {
           await capture('habits-sample-390');
           await planDestination('Goals');
           await capture('goals-sample-390');
-          await clickButton('Open profile and settings');
+          await clickButton('Profile');
           await clickButton('Developer tools');
           await clickButton('Remove sample data');
           await page.getByRole('alertdialog').getByRole('button', { name: 'Remove sample data', exact: true }).click();
@@ -957,7 +1033,7 @@ async function main() {
         assert.equal(metrics.length, 6);
         assert.ok(metrics.every(([w,h]) => Math.abs(w - metrics[0][0]) < 1 && Math.abs(h - metrics[0][1]) < 1), 'Money destinations have matching dimensions');
         if (width < 768) assert.equal(new Set(metrics.map(row => row[2])).size, 3, 'phones show two columns and three rows');
-        for (const name of ['Activity', 'Accounts', 'Budgets', 'Savings', 'Insights', 'Scheduled']) {
+        for (const name of ['Transactions', 'Accounts', 'Budgets', 'Savings', 'Insights', 'Schedule']) {
           await menu.getByRole('button', { name, exact: true }).click();
           await page.getByRole('heading', { name, exact: true }).first().waitFor();
           const content = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -989,7 +1065,7 @@ async function main() {
 
 
     await journey('appearance and date-only alert settings persist', async () => {
-      await clickButton('Open profile and settings');
+      await clickButton('Profile');
       await clickButton('Preferences');
       await clickButton(/Time format/);
       await page.getByRole('dialog', { name: 'Time format' }).getByRole('button', { name: '24-hour' }).click();
@@ -1008,7 +1084,7 @@ async function main() {
       await page.reload();
       await page.getByTestId('today-dashboard').waitFor();
       assert.ok(await page.evaluate(() => document.documentElement.classList.contains('dark')), 'dark display persisted');
-      await clickButton('Open profile and settings');
+      await clickButton('Profile');
       await clickButton('Preferences');
       assert.equal(await page.getByLabel('Date-only task alerts').inputValue(), '09:00');
       assert.ok(await page.getByRole('button', { name: 'Time format 24-hour' }).isVisible());
@@ -1021,7 +1097,7 @@ async function main() {
     await journey('transaction detail edits and deletes through the encrypted store', async () => {
       await page.setViewportSize({width:390,height:844});
       await activeTab('finance');
-      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Activity', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
       await page.getByRole('button', { name: /View transaction QA acceptance:/ }).first().click();
       const detail = page.locator('dialog[data-transaction-details][open]');
       await detail.waitFor();
@@ -1063,7 +1139,7 @@ async function main() {
       await page.getByRole('heading', { name: 'Transfers', exact: true }).waitFor();
       await capture('money-accounts-populated-390');
       await clickButton('Money overview');
-      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Scheduled', exact: true }).click();
+      await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Schedule', exact: true }).click();
       await clickButton('Add scheduled item');
       const name = 'QA recurring utility bill';
       await dialog().getByRole('textbox', { name: 'Name', exact: true }).fill(name);
@@ -1170,7 +1246,7 @@ async function main() {
     });
 
     await journey('Profile nested destinations and notification choices persist', async () => {
-      await clickButton('Open profile and settings');
+      await clickButton('Profile');
       await clickButton('Edit name');
       await page.getByLabel('Display name').fill('Synthetic acceptance profile');
       await clickButton('Save name');
@@ -1201,7 +1277,7 @@ async function main() {
       await page.reload();
       await page.getByTestId('today-dashboard').waitFor();
       assert.equal(await page.getByRole('dialog', { name: 'Allow notifications' }).count(), 0);
-      await clickButton('Open profile and settings');
+      await clickButton('Profile');
       await clickButton('Notifications');
       assert.equal(await category.getAttribute('aria-checked'), 'false');
       await page.getByRole('button', { name: 'Notification tone Playful', exact: true }).waitFor();
@@ -1261,7 +1337,7 @@ async function main() {
         longestSampleMs: Math.max(...window.__qaNavigationFrames),
       }));
       assert.ok(report.navigationTiming.lastTransitionMs > 0 && report.navigationTiming.samples === 36 && report.navigationTiming.blankLayoutSamples === 0 && report.navigationTiming.tapsIssued === 30 && report.navigationTiming.switchesCommitted > 1);
-      await clickButton('Open profile and settings');
+      await clickButton('Profile');
       await clickButton('Edit name');
       await page.getByLabel('Display name').fill('AlexandriaWithAnUnusuallyLongUnbrokenDisplayName');
       await clickButton('Save name');

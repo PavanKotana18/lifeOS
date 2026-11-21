@@ -26,16 +26,18 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
   const id = useId();
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
+  const [focusKey, setFocusKey] = useState(value);
   const [invalid, setInvalid] = useState(false);
   const query = search.trim().toLocaleLowerCase();
   const choices = query ? options.filter(([key, name]) => (key + ' ' + name).toLocaleLowerCase().includes(query)) : options;
+  const focusable = choices.find(([key, , unavailable]) => key === focusKey && !unavailable)?.[0] ?? choices.find(([, , unavailable]) => !unavailable)?.[0];
   const matched = options.find(([key]) => key === value);
   const selected = matched?.[1] ?? (value || 'Choose an option');
   const missing = required && (!value || !matched || matched[2]);
   const showError = invalid && missing;
   const close = () => dialog.current?.close();
   useLayoutEffect(() => {
-    if (open) list.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest' });
+    if (open) list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
   }, [open]);
 
   return <div className={variant === 'field' ? 'choice-field' : 'choice-row'} data-choice-field={variant} data-choice-value={value}>
@@ -43,7 +45,7 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
     <button ref={trigger} type="button" className={icon ? 'task-option' : variant === 'field' ? 'choice-trigger' : 'preference-row'}
       aria-label={variant !== 'row' ? label : undefined} aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
       aria-invalid={showError || undefined} aria-describedby={variant !== 'row' ? id + '-value' + (showError ? ' ' + id + '-error' : '') : showError ? id + '-error' : undefined} disabled={disabled}
-      onClick={() => { setSearch(''); setOpen(true); dialog.current?.showModal(); }}>
+      onClick={() => { setSearch(''); setFocusKey(value); setOpen(true); dialog.current?.showModal(); }}>
       {icon}{icon ? <span><strong>{label}</strong><small id={id + '-value'}>{disabled && disabledHint ? disabledHint : selected}</small></span> : <>
         {variant === 'row' && <span>{label}</span>}
         <span id={id + '-value'} className="choice-current">{disabled && disabledHint ? disabledHint : selected}</span>
@@ -63,13 +65,13 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
           <button type="button" className="feather-secondary" onClick={close}>Close</button>
         </header>
         {open && searchable && <input aria-label={label === 'Currency' ? 'Search currencies' : 'Search ' + label.toLocaleLowerCase()}
-          className="lifeos-input min-h-11 w-full rounded-xl px-3" type="search" autoComplete="off"
+          className="lifeos-input min-h-11 w-full rounded-xl px-3" type="search" autoComplete="off" aria-controls={id + "-options"}
           placeholder="Search options" value={search} onChange={event => { event.stopPropagation(); setSearch(event.target.value); }}
           onKeyDown={event => {
             if (event.key === 'Enter') event.preventDefault();
             if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(); }
           }} />}
-        <div ref={list} className="preference-options choice-options" role="group" aria-label={label}
+        <div ref={list} id={id + "-options"} className="preference-options choice-options" role="listbox" aria-label={label}
           onKeyDown={event => {
             if (!['ArrowDown','ArrowUp','Home','End'].includes(event.key)) return;
             const buttons = [...(list.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
@@ -80,12 +82,13 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
             buttons[target]?.focus();
           }}>
           {open && choices.map(([key, name, unavailable]) => <button key={key} type="button" className="preference-row choice-option"
-            data-option-value={key} disabled={unavailable} aria-pressed={key === value}
+            data-option-value={key} role="option" disabled={unavailable} aria-disabled={unavailable || undefined} aria-selected={key === value}
+            tabIndex={key === focusable ? 0 : -1} onFocus={() => setFocusKey(key)}
             onClick={() => { if (key !== value) { notify?.(); onSelect(key); } setInvalid(false); close(); }}>
             <span>{name}</span>{key === value && <Check size={17} aria-hidden="true" />}
           </button>)}
-          {open && !choices.length && <p role="status" className="py-4 text-sm text-secondary">No matching options.</p>}
         </div>
+        {open && !choices.length && <p role="status" className="py-4 text-sm text-secondary">No matching options.</p>}
       </section>
     </dialog>
   </div>;

@@ -44,7 +44,7 @@ assert.ok(formatCurrency(1234567.89, 'INR', 'en-IN').includes('12,34,567.89'), '
 assert.ok(!formatCurrency(1234567.89, 'JPY', 'en-US').includes('.'), 'zero-minor-unit currency omits decimals');
 assert.match(moneyHome, /Net cash flow/);
 assert.match(moneyHome, /formatMoney\(netCashFlow\)/);
-assert.match(app, /aria-label="Open profile and settings"/);
+assert.match(app, /data-tab="profile" aria-label="Profile"/);
 assert.match(app, /primaryDestinationForTab\(activeTab\)/);
 assert.doesNotMatch(app, /overflow-x-auto[^\n]*financeSubtab|PRIMARY_NAVIGATION[\s\S]{0,500}explore/);
 const markup = renderToStaticMarkup(React.createElement(MoneyHome, {
@@ -65,10 +65,10 @@ assert.match(markup, /<strong>Savings<\/strong>/, 'savings remains available thr
 assert.match(markup, />Accounts</);
 assert.match(markup, /<nav class="money-destinations" aria-label="Money destinations">/);
 assert.match(markup, /Insights/);
-assert.match(markup, />Scheduled</);
+assert.match(markup, />Schedule</);
 assert.doesNotMatch(markup, /Track account balances \(optional\)/, 'optional account tracking does not compete with recording a transaction');
-assert.match(markup, /data-testid="money-add-transaction"/);
-assert.match(markup, /Add transaction/);
+assert.doesNotMatch(markup, /Add transaction/);
+assert.match(markup, />Transactions</);
 assert.doesNotMatch(markup, /Quick money actions/, 'one primary action opens transaction type options');
 assert.match(app, /openMoneyTransferOnAccounts/);
 assert.match(app, /autoOpenTransfer=\{openMoneyTransferOnAccounts\}/);

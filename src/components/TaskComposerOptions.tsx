@@ -1,3 +1,4 @@
+import InfoTip from './InfoTip';
 import { useId, useState, type Dispatch, type SetStateAction } from 'react';
 import { Bell, CalendarDays, Flag, Repeat2 } from 'lucide-react';
 import { AliveDisclosure, AliveReveal } from './AliveDisclosure';
@@ -40,7 +41,7 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
     <div className="task-quick-actions" aria-label="Task options" role="group">
       <button type="button" className="task-option" aria-expanded={panel === 'schedule'} aria-controls={id + '-schedule'} onClick={() => toggle('schedule')}>
         <CalendarDays size={18} aria-hidden="true" />
-        <span><strong>Schedule</strong><small>{draft.date || 'Anytime'}</small></span>
+        <span><strong>Schedule</strong><small>{draft.date || 'No date'}</small></span>
       </button>
       <button type="button" className="task-option" aria-expanded={panel === 'reminder'} aria-controls={id + '-reminder'} onClick={() => toggle('reminder')}>
         <Bell size={18} aria-hidden="true" />
@@ -53,19 +54,20 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
     </div>
     <AliveReveal id={id + '-schedule'} open={panel === 'schedule'}>
       <div className="task-option-panel grid grid-cols-2 gap-3">
-        <label className="text-xs text-secondary">Due date (optional)
+        <label className="text-xs text-secondary">Due date
           <input type="date" value={draft.date || ''} onChange={event => {
             const date = event.target.value;
             update(current => ({ ...current, date, ...(!date ? { time: '', reminderAt: '', reminderLead: '', recurring: 'None' } : {}) }));
           }} className={field} />
         </label>
-        <label className="text-xs text-secondary">Time (optional)
+        <label className="text-xs text-secondary">Time
           <input disabled={!draft.date} type="time" value={draft.time || ''} onChange={event => set('time', event.target.value)} className={field} />
         </label>
       </div>
     </AliveReveal>
     <AliveReveal id={id + '-reminder'} open={panel === 'reminder'}>
       <div className="task-option-panel space-y-2">
+        <div className="flex items-center gap-2 text-xs text-secondary">Task reminders <InfoTip label="Task reminders" /></div>
         <label className="flex min-h-11 items-center gap-3 text-sm">
           <input type="checkbox" disabled={!draft.date || !(draft.time || dateOnlyAlertTime)} checked={draft.dueAlert !== 'off'}
             onChange={event => set('dueAlert', event.target.checked ? 'on' : 'off')} /> Alert at due time
@@ -84,7 +86,7 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
     </AliveReveal>
     <AliveDisclosure label={editing ? "Task notes" : "Notes and subtasks"}>
       <div className="task-option-panel space-y-3">
-        <label className="block text-xs text-secondary">Notes (optional)
+        <label className="block text-xs text-secondary">Notes
           <textarea rows={2} maxLength={500} value={draft.description || ''} onChange={event => set('description', event.target.value)} className={field} />
         </label>
 

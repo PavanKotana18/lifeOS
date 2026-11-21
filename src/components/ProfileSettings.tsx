@@ -67,7 +67,7 @@ export function ProfileNavigationRow({ title, icon: Icon, onClick, value }: { ti
   </button>;
 }
 
-export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPhotoChange, onNameChange, onOpen, onBack, developerAllowed = false, securityStatus }: {
+export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPhotoChange, onNameChange, onOpen, onBack, sharedHeader = false, developerAllowed = false, securityStatus }: {
   name: string;
   initial: string;
   photo?: string | null;
@@ -77,11 +77,12 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
   onNameChange: (name: string) => Promise<void>;
   onOpen: (section: typeof profileLinks[number]['section'] | 'developer') => void;
   onBack: () => void;
+  sharedHeader?: boolean;
   developerAllowed?: boolean;
   securityStatus?: string;
 }) {
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
-    <FeatherHeader title="Profile" heading="h1" back={{ label: 'Back from profile', onClick: onBack }} />
+    {!sharedHeader && <FeatherHeader title="Profile" heading="h1" back={{ label: 'Back from profile', onClick: onBack }} />}
     <ProfileIdentityCard name={name} initial={initial} photo={photo} photoBusy={photoBusy} photoError={photoError} onPhotoChange={onPhotoChange} onChange={onNameChange} />
     <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
       {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>
@@ -96,7 +97,7 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
 
 export function ProfileSubpage({ title, onBack, backLabel = 'Profile', children }: { title: string; description?: string; backLabel?: string; onBack: () => void; children: ReactNode }) {
   return <section className="profile-settings profile-subpage mx-auto w-full max-w-xl space-y-4" data-testid="profile-settings-subpage">
-    <FeatherHeader title={title} heading="h1" back={{ label: backLabel, onClick: onBack }} />
+    <FeatherHeader title={title} heading="h2" back={{ label: backLabel, onClick: onBack }} />
     {children}
   </section>;
 }

@@ -63,7 +63,7 @@ export default function AliveDetailDialog({ title, eyebrow, onClose, children }:
   return <dialog ref={dialogRef} aria-labelledby="scheduled-detail-title" className="alive-detail-dialog lifeos-page"
     data-scheduled-details onClose={onClose} onCancel={event => { event.preventDefault(); returnToList(); }}>
     <header className="alive-detail-header">
-      <button type="button" onClick={returnToList} data-motion-back aria-label="Back to Scheduled" className="profile-page-back lifeos-raised">
+      <button type="button" onClick={returnToList} data-motion-back aria-label="Back to Schedule" className="profile-page-back lifeos-raised">
         <ChevronLeft size={23} aria-hidden="true" />
       </button>
       <div><p className="text-xs text-secondary">{eyebrow}</p><h2 className="type-page-title" id="scheduled-detail-title">{title}</h2></div>

@@ -4,6 +4,10 @@ import { useAliveNavigation } from './hooks/useAliveNavigation';
 import TaskComposerOptions from './components/TaskComposerOptions';
 import { AnimatePresence, LazyMotion, domAnimation } from 'motion/react';
 import ComposerShell from './components/ComposerShell';
+import { APP_NAME } from './config/appBrand';
+import Snackbar, { type SnackbarNotice } from './components/Snackbar';
+import AppHeader from './components/AppHeader';
+import TransactionSummary from './components/TransactionSummary';
 import MoneyPeriod from './components/MoneyPeriod';
 import { animateRoute } from './services/aliveMotion';
 import { useInterfaceMotion } from './hooks/useInterfaceMotion';
@@ -15,7 +19,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal, flushSync } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { Activity, ArrowLeftRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Flag, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, Tag, Target, WalletCards } from 'lucide-react';
+import { Activity, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Flag, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, Tag, Target, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -448,6 +452,10 @@ export default function App() {
   const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics' | 'projection'>('overview');
   const [transactionDetailId, setTransactionDetailId] = useState<string | null>(null);
   const transactionDetailDialog = useRef<HTMLDialogElement>(null);
+  const [transferDetailId, setTransferDetailId] = useState<string | null>(null);
+  const transferDetailDialog = useRef<HTMLDialogElement>(null);
+  const transferDetail = activeTab === "finance" ? accountTransfers.find(row => row.id === transferDetailId) : undefined;
+  useEffect(() => { if (transferDetail && !transferDetailDialog.current?.open) transferDetailDialog.current?.showModal(); }, [transferDetail]);
   const transactionDetail = activeTab === 'finance' ? transactions.find(row => row.id === transactionDetailId) : undefined;
   useEffect(() => {
     const dialog = transactionDetailDialog.current;
@@ -480,7 +488,7 @@ export default function App() {
   const [plannerPriority, setPlannerPriority] = useState('all');
 
   // UI Toast & Modal State
-  const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'danger' } | null>(null);
+  const [toast, setToast] = useState<SnackbarNotice | null>(null);
   const [modalContent, setModalContent] = useState<React.ReactNode | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationOptions | null>(null);
   const confirmationResolver = useRef<((confirmed: boolean) => void) | null>(null);
@@ -505,7 +513,7 @@ export default function App() {
 
   const navigateTo = (destination: MainTab, direction?: 'left' | 'right', velocity = 0) => {
     if (destination === 'settings') { openProfile(); return; }
-    if (backState.current.profileOpen) closeProfile();
+    if (backState.current.profileOpen && !profileClosing) closeProfile();
     const tab = destination === 'life' ? 'plan' : destination;
     const previous = activeTabRef.current;
     if (previous === tab) return;
@@ -838,7 +846,7 @@ export default function App() {
       if (scheduledDetail) { scheduledDetail.click(); return; }
       const choices = document.querySelectorAll<HTMLDialogElement>('dialog[data-preference-choice][open]');
       if (choices.length) { choices[choices.length - 1].close(); return; }
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open]');
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-money-period][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
@@ -1058,12 +1066,14 @@ export default function App() {
     if (profileSection === 'themes' && section !== 'themes' && themePreviewId) cancelVisualThemePreview();
     setProfileSection(section);
   };
+  const profileReturn = useRef<MainTab | null>(null);
   const openProfile = () => {
     closeTodayCustomization();
     navigationMotion.cancel();
     cancelPrimaryGesture('profile-opened');
     setShowExitConfirmation(false);
     if (backState.current.profileOpen) return;
+    profileReturn.current = null;
     setProfileClosing(false);
     setProfileSection('home');
     setProfileOpen(true);
@@ -1075,6 +1085,9 @@ export default function App() {
     navigateProfileSection('home');
     setProfileOpen(false);
     setProfileClosing(false);
+    const destination = profileReturn.current;
+    profileReturn.current = null;
+    if (destination) navigateTo(destination);
   };
   const backFromProfile = () => {
     if (profileClosing) return;
@@ -1116,9 +1129,14 @@ export default function App() {
   }, [lifeDetail, interfaceMotion.preset, interfaceMotion.reducedMotion]);
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3200);
+    setToast(current => current?.message === message && current.type === type ? current : { message, type });
   };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), toast.type === 'danger' ? 10000 : 4200);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   const confirmAction = (options: ConfirmationOptions): Promise<boolean> => new Promise(resolve => {
     confirmationResolver.current?.(false);
@@ -2458,7 +2476,7 @@ export default function App() {
       const wasEditingGoal = editingGoalId;
       const wasEditingContribution = editingContributionId;
       const reminderSyncFailed = createKind === 'task' && Boolean(value('date')) && notificationsEnabled && notificationPreferences.taskReminders && !schedulesUpdated;
-      showToast(reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderSyncFailed ? 'danger' : 'success');
+      showToast(reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'transaction' ? 'Transaction recorded' : createKind === 'goal' ? 'Goal saved' : createKind === 'savings' ? 'Savings goal saved' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderSyncFailed ? 'danger' : 'success');
     } catch (error) {
       if (!committed && errorField) errorField.textContent = error instanceof Error ? error.message : 'Could not save this item.';
       showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
@@ -2688,6 +2706,8 @@ export default function App() {
       && (!query || haystack.includes(query));
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
   [transactions, financeMonth, activityRange, financeTypeFilter, financeCategoryFilter, financeAccountFilter, financeCurrencyFilter, userPrefs.currency, financeSearch, financeSort]);
+  const hasTransactionFilters = Boolean(financeSearch.trim() || financeCategoryFilter !== "all" || financeAccountFilter !== "all"
+    || financeCurrencyFilter !== "all" || financeTypeFilter !== "all" || financeSort !== "date-desc" || Object.values(activityRange).some(Boolean));
   const financeOverviewTransactions = useMemo(
     () => sortTransactions(transactions.filter(tx => tx.date?.startsWith(financeMonth)), 'date-desc').slice(0, 4),
     [transactions, financeMonth]
@@ -2785,16 +2805,10 @@ export default function App() {
 
   return (
     <LazyMotion features={domAnimation} strict>
-    <div ref={gestureSurfaceElement} className="lifeos-page app-shell feather-expressive" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
+    <div ref={gestureSurfaceElement} className="lifeos-page app-shell feather-expressive" data-reduced={interfaceMotion.reducedMotion} onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
-      <header data-profile-background className="app-header app-header-shell primary-masthead sticky top-0 z-40">
-        <button type="button" id="profile-opener" aria-expanded={profileOpen} aria-controls={profileOpen ? "screen-settings" : undefined} onClick={openProfile} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">
-          <ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} />
-        </button>
-        {sectionTitle && <h1 id="primary-route-title" tabIndex={-1} className="primary-route-title">{sectionTitle}</h1>}
-        {activeTab === 'finance' && financeSubtab === 'overview' &&
-          <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />}
-      </header>
+      <AppHeader title={primarySection === 'dashboard' ? APP_NAME : sectionTitle || APP_NAME} brand={primarySection === 'dashboard'}
+        action={activeTab === 'finance' && financeSubtab === 'overview' && <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />} />
 
       {!isOnline && (
         <div data-profile-background role="status" aria-live="polite" className="app-content-width px-4 pt-2">
@@ -2861,7 +2875,7 @@ export default function App() {
             <div className="today-money-summary today-section-money lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-sm font-semibold">Money this month</h3>
-                <button onClick={() => navigateTo('finance')} className="min-h-11 text-xs lifeos-accent-text font-semibold">Details &rarr;</button>
+                <button onClick={() => { navigateTo('finance'); navigateFinanceSubtab('monthly'); }} className="min-h-11 text-xs lifeos-accent-text font-semibold">See breakdown</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
                 <div className="p-3 rounded-xl lifeos-raised">
@@ -2873,9 +2887,9 @@ export default function App() {
                   <p className="mt-0.5 text-base font-bold tabular-nums" style={{ color: 'var(--danger)' }}>{formatMoney(financeAnalytics.totalExpenses)}</p>
                 </div>
               </div>
-              <div className="flex justify-between gap-3 text-xs text-secondary">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 text-xs text-secondary">
                 <span>Net cash flow: <strong className="text-primary tabular-nums">{formatMoney(financeAnalytics.netSavings)}</strong></span>
-                <span>Cash-flow margin: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
+                <div className="inline-flex items-center gap-1">Cash-flow margin <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong><InfoTip label="Cash-flow margin" /></div>
               </div>
             </div>
 
@@ -3011,7 +3025,6 @@ export default function App() {
                 formatDate={formatDate}
                 formatTime={formatTime}
                 onMonthChange={setFinanceMonth}
-                onAddTransaction={() => openCreateForm('transaction')}
                 onTransactions={() => navigateFinanceSubtab('transactions')}
                 onBudgets={() => navigateFinanceSubtab('budgets')}
                 onSavings={() => navigateFinanceSubtab('savings')}
@@ -3037,22 +3050,23 @@ export default function App() {
 
             {/* Transactions Subtab */}
             {financeSubtab === 'transactions' && (
-              <div className="space-y-3">
-                <div className="flex gap-2">
+              <div className="transaction-workspace">
+                <TransactionSummary transactions={transactions} month={financeMonth} legacyCurrency={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} />
+                <button type="button" onClick={() => openCreateForm('transaction')} className="feather-primary transaction-add">Add transaction</button>
+                <div className="transaction-toolbar">
                   <input
-                    type="text"
-                    aria-label="Search transactions" placeholder="Search description, category..."
+                    type="search"
+                    aria-label="Search transactions" placeholder="Search transactions"
                     value={financeSearch}
                     onChange={(e) => setFinanceSearch(e.target.value)}
                     className="lifeos-input min-h-11 flex-1 rounded-xl px-3 py-2.5 text-xs"
                   />
-                  <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
+                  <button type="button" aria-haspopup="dialog" className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold" onClick={() => activityFilterDialog.current?.showModal()}>Filters</button>
                 </div>
-                <button type="button" aria-haspopup="dialog" className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold" onClick={() => activityFilterDialog.current?.showModal()}>Filters</button>
-                <dialog ref={activityFilterDialog} data-activity-filters aria-label="Activity filters" className="plan-filter-sheet lifeos-page" onClick={event => { if (event.target === event.currentTarget) activityFilterDialog.current?.close(); }}>
+                <dialog ref={activityFilterDialog} data-activity-filters aria-label="Transaction filters" className="plan-filter-sheet lifeos-page" onClick={event => { if (event.target === event.currentTarget) activityFilterDialog.current?.close(); }}>
                 <form onSubmit={event => { event.preventDefault(); activityFilterDialog.current?.close(); }}>
-                <header className="flex items-center justify-between"><h3 className="type-section-title">Activity filters</h3><button type="button" className="min-h-11 px-3" onClick={() => activityFilterDialog.current?.close()}>Close</button></header>
-                <div className="plan-filter-fields">{(['from', 'through', 'min', 'max'] as const).map((key, index) => <label key={key}>{['From date', 'Through date', 'Minimum amount', 'Maximum amount'][index]}<input type={index < 2 ? 'date' : 'number'} min={key === 'through' ? activityRange.from || undefined : index >= 2 ? key === 'max' ? activityRange.min || '0' : '0' : undefined} max={key === 'from' ? activityRange.through || undefined : key === 'min' ? activityRange.max || undefined : undefined} step={index >= 2 ? 'any' : undefined} value={activityRange[key]} onChange={event => setActivityRange(current => ({ ...current, [key]: event.target.value }))} /></label>)}</div><div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><div className="text-[10px] text-secondary"><PreferenceChoice variant="field" label="Category" value={financeCategoryFilter} searchable
+                <header className="flex items-center justify-between"><h3 className="type-section-title">Transaction filters</h3><button type="button" className="min-h-11 px-3" onClick={() => activityFilterDialog.current?.close()}>Close</button></header>
+                <div className="plan-filter-fields">{(['from', 'through', 'min', 'max'] as const).map((key, index) => <label key={key}>{['From date', 'Through date', 'Minimum amount', 'Maximum amount'][index]}<input type={index < 2 ? 'date' : 'number'} min={key === 'through' ? activityRange.from || undefined : index >= 2 ? key === 'max' ? activityRange.min || '0' : '0' : undefined} max={key === 'from' ? activityRange.through || undefined : key === 'min' ? activityRange.max || undefined : undefined} step={index >= 2 ? 'any' : undefined} value={activityRange[key]} onChange={event => setActivityRange(current => ({ ...current, [key]: event.target.value }))} /></label>)}</div><div className="grid grid-cols-2 gap-2"><div className="text-[10px] text-secondary"><PreferenceChoice variant="field" label="Category" value={financeCategoryFilter} searchable
                 options={[["all", "All categories"], ...(categories.map(category => [String(category.name), category.name] as const))]} onSelect={e => setFinanceCategoryFilter(e)} /></div><div className="text-[10px] text-secondary"><PreferenceChoice variant="field" label="Filter transactions by account" value={financeAccountFilter} searchable
                 options={[["all", "All accounts"], ["unassigned", "Unassigned"], ...(financialAccounts.map(account => [String(account.id), String(account.name) + String(account.isActive ? "" : " · Archived")] as const))]} onSelect={e => setFinanceAccountFilter(e)} /></div><div className="text-[10px] text-secondary"><PreferenceChoice variant="field" label="Filter transactions by currency" value={financeCurrencyFilter} searchable
                 options={[["all", "All currencies"], ...(CURRENCY_CODES.map(code => [String(code), formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)] as const))]} onSelect={e => setFinanceCurrencyFilter(e)} /></div></div>
@@ -3072,29 +3086,25 @@ export default function App() {
                   ))}
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-secondary"><PreferenceChoice variant="field" label="Sort" value={financeSort}
-                options={[["date-desc", "Newest first"], ["date-asc", "Oldest first"], ["amount-desc", "Largest amount"]]} onSelect={e => setFinanceSort(e)} /></div>
+                options={[["date-desc", "Newest first"], ["date-asc", "Oldest first"], ["amount-desc", "Largest within each day"]]} onSelect={e => setFinanceSort(e)} /></div>
 
-                <button type="submit" className="lifeos-accent-button min-h-11 rounded-xl px-4">Show activity</button></form></dialog>
-                <div className="money-detail-results"><span role="status">{filteredTransactions.length + filteredTransfers.length} items</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button></div>
+                <button type="submit" className="lifeos-accent-button min-h-11 rounded-xl px-4">Show transactions</button></form></dialog>
+                <div className="money-detail-results"><span role="status">{filteredTransactions.length + filteredTransfers.length} results</span>{hasTransactionFilters && <button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button>}</div>
                 {/* Transactions List */}
-                <div className="space-y-2">
+                <div className="transaction-timeline">
                   {!filteredTransactions.length && !filteredTransfers.length ? (
-                    <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
+                    <p className="money-empty-action">{transactions.length || accountTransfers.length ? 'No transactions match your search and filters.' : 'Your recorded transactions will appear here.'}</p>
                   ) : (
                     [...new Set([...filteredTransactions.map(row => row.date), ...filteredTransfers.map(row => row.date)])].sort((a, b) => financeSort === 'date-asc' ? a.localeCompare(b) : b.localeCompare(a)).map(date => (
-                      <section key={date} className="space-y-2" aria-label={formatDate(date)}><h3 className="type-caption text-secondary">{formatDate(date)}</h3>
-                      {filteredTransfers.filter(row => row.date === date).map(row => <article className="transaction-history-item lifeos-panel rounded-xl border px-3 py-2" key={row.id}><div className="transaction-history-main"><button type="button" className="transaction-history-copy" onClick={() => navigateFinanceSubtab('accounts')}><strong>{row.reversalOfId ? 'Transfer reversal' : 'Transfer'}</strong><span>{financialAccounts.find(account => account.id === row.fromAccountId)?.name || 'Archived account'} ? {financialAccounts.find(account => account.id === row.toAccountId)?.name || 'Archived account'}</span>{row.notes && <span>{row.notes}</span>}</button><span className="transaction-history-amount">{formatMinorUnits(BigInt(row.fromAmountMinor), row.fromCurrencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</span></div></article>)}
+                      <section key={date} className="transaction-day" aria-label={formatDate(date)}><h3 className="transaction-day-heading">{formatDate(date)}</h3>
+                      {filteredTransfers.filter(row => row.date === date).map(row => <article className="transaction-history-item" key={row.id}><button type="button" onClick={() => setTransferDetailId(row.id)} className="transaction-entry"><span className="transaction-icon" aria-hidden="true"><ArrowLeftRight size={18} /></span><span className="transaction-copy"><strong>{row.reversalOfId ? "Transfer reversal" : "Transfer"}</strong><small>{financialAccounts.find(account => account.id === row.fromAccountId)?.name || "Archived account"} to {financialAccounts.find(account => account.id === row.toAccountId)?.name || "Archived account"}</small></span><span className="transaction-value"><strong>{formatMinorUnits(BigInt(row.fromAmountMinor), row.fromCurrencyCode)}</strong><small>{row.fromCurrencyCode === row.toCurrencyCode ? row.fromCurrencyCode : "To " + formatMinorUnits(BigInt(row.toAmountMinor), row.toCurrencyCode)}</small></span></button></article>)}
                       {filteredTransactions.filter(row => row.date === date).map(t => (
-                      <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border px-3 py-1">
-                        <div className="transaction-history-main">
-                          <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={`View transaction ${t.description || t.category}`} className="transaction-history-copy">
-                            <strong>{t.description || t.category}</strong>
-                            <span>{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ' · time not recorded'} &bull; {t.category} ({t.paymentMethod || 'Other'}){t.accountId ? ` · ${financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'}` : ''}</span>
-                          </button>
-                          <span className={`transaction-history-amount ${t.type === 'income' ? 'is-income' : 'is-expense'}`}>
-                            {t.type === 'income' ? '+' : '−'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(t.amount, t.currencyCode || userPrefs.currency)}
-                          </span>
-                        </div>
+                      <article key={t.id} className="transaction-history-item">
+                        <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={"View transaction " + (t.description || t.category)} className="transaction-entry">
+                          <span className={"transaction-icon is-" + t.type} aria-hidden="true">{t.type === "income" ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}</span>
+                          <span className="transaction-copy"><strong>{t.description || t.category}</strong><small>{[t.category !== t.description && t.category, t.accountId && (financialAccounts.find(account => account.id === t.accountId)?.name || "Archived account"), t.occurredAt && formatTime(new Date(t.occurredAt))].filter(Boolean).join(" · ")}</small></span>
+                          <span className={"transaction-value is-" + t.type}><strong>{t.type === "income" ? "+" : "−"}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === "system" ? undefined : userPrefs.locale) : formatMoney(t.amount, t.currencyCode || userPrefs.currency)}</strong><small>{t.type === "income" ? "Income" : "Expense"} &middot; {t.currencyCode || userPrefs.currency}</small></span>
+                        </button>
                       </article>
                     ))}</section>))
                   )}
@@ -3136,7 +3146,7 @@ export default function App() {
 
             {financeSubtab === 'savings' && <div className="space-y-3">
               <button type="button" onClick={() => navigateFinanceSubtab('projection')} className="money-month-link lifeos-panel">View savings projection</button>
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
+              <div className="flex items-center justify-between"><div><div className="flex items-center gap-1"><h3 className="font-semibold">Savings goals</h3><InfoTip label="Savings contributions" /></div><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
                   if (!(await confirmAction({ title: 'Delete this contribution?', message: `${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} will be removed and the saved goal total will be adjusted.`, confirmLabel: 'Delete contribution', destructive: true }))) return;
                   try { await StorageService.savings.deleteContribution(contribution.id); await reloadAllData(); showToast('Contribution deleted and savings total updated', 'success'); }
@@ -3191,7 +3201,7 @@ export default function App() {
           <div className="space-y-4">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
             {!lifeDetail && <div className="life-section-heading">
               <div>
-                <h2 className="text-lg font-bold">Habits</h2>
+                <div className="flex items-center gap-2"><h2 className="text-lg font-bold">Habits</h2><InfoTip label="Habit consistency" /></div>
                 <p className="text-xs text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>
               </div>
               <button onClick={() => openCreateForm('habit')} className="feather-primary">+ Add habit</button>
@@ -3270,7 +3280,7 @@ export default function App() {
         <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
           <div className="space-y-4">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
             {!lifeDetail && <>
-              <div className="flex justify-between items-center"><h2 className="type-section-title">Goals</h2><button onClick={() => openCreateForm('goal')} className="feather-primary">+ Add goal</button></div>
+              <div className="flex justify-between items-center"><div className="flex items-center gap-1"><h2 className="type-section-title">Goals</h2><InfoTip label="Goal progress" /></div><button onClick={() => openCreateForm('goal')} className="feather-primary">+ Add goal</button></div>
               {goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 feather-goal-filters">{(['active', 'paused', 'completed', 'archived'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
               <PreferenceChoice variant="field" label="Goal category" value={goalsCategoryFilter}
@@ -3400,9 +3410,10 @@ export default function App() {
       </AnimatePresence>
       {profileOpen && <ProfileDrawer section={profileSection} scrollPositions={profileScroll.current} onBack={backFromProfile} closing={profileClosing} onExited={finishProfileClose} preset={interfaceMotion.preset} reduced={interfaceMotion.reducedMotion} swipeEnabled={userPrefs.swipeNavigationEnabled}>
           <div className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome sharedHeader onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
+              <div className="flex items-center gap-2">Device protection <InfoTip label="Device protection" /></div>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
                 <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} /></div>
             </ProfileSubpage>}
@@ -3458,7 +3469,8 @@ export default function App() {
               <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
             </ProfileSubpage>}
 
-            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
+            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}>
+              <div className="flex items-center gap-2">Profile preferences <InfoTip label="Profile preferences" /></div><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
               try {
                 await StorageService.settings.set('dateOnlyAlertTime', time);
                 setDateOnlyAlertTime(time);
@@ -3525,6 +3537,7 @@ export default function App() {
             </ProfileSubpage>}
 
             {profileSection === 'data' && <ProfileSubpage title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
+              <div className="flex items-center gap-2">Encrypted backups <InfoTip label="Encrypted backups" /></div>
             {/* Backup & Restore */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Backup & Restore</h3>
@@ -3625,11 +3638,25 @@ export default function App() {
           </div>
       </ProfileDrawer>}
 
+      {transferDetail && <dialog ref={transferDetailDialog} data-transfer-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transfer-detail-title"
+        onClose={() => setTransferDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
+        <section>
+          <header className="flex items-center justify-between gap-3"><h2 id="transfer-detail-title" className="type-section-title">{transferDetail.reversalOfId ? "Transfer reversal" : "Transfer"}</h2>
+            <button type="button" className="feather-secondary" onClick={() => transferDetailDialog.current?.close()}>Close</button></header>
+          <dl className="transaction-summary-grid">
+            <div><dt>{financialAccounts.find(account => account.id === transferDetail.fromAccountId)?.name || "Archived account"} &middot; Sent</dt><dd>{formatMinorUnits(BigInt(transferDetail.fromAmountMinor), transferDetail.fromCurrencyCode)}</dd></div>
+            <div><dt>{financialAccounts.find(account => account.id === transferDetail.toAccountId)?.name || "Archived account"} &middot; Received</dt><dd>{formatMinorUnits(BigInt(transferDetail.toAmountMinor), transferDetail.toCurrencyCode)}</dd></div>
+          </dl>
+          <p>{formatDate(transferDetail.date)}</p>
+          {transferDetail.notes && !transferDetail.reversalOfId && <p className="safe-wrap">{transferDetail.notes}</p>}
+          <button type="button" className="feather-primary" onClick={() => { transferDetailDialog.current?.close(); navigateFinanceSubtab("accounts"); }}>Manage transfers</button>
+        </section>
+      </dialog>}
       {transactionDetail && <dialog ref={transactionDetailDialog} data-transaction-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transaction-detail-title" onClose={() => setTransactionDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
         <section>
           <header className="flex items-center justify-between gap-3"><h2 id="transaction-detail-title" className="text-xl font-semibold">{transactionDetail.description || transactionDetail.category}</h2><button type="button" className="min-h-11 px-3" onClick={() => transactionDetailDialog.current?.close()}>Close</button></header>
           <strong className="type-display-amount tabular-nums">{transactionDetail.type === 'income' ? '+' : '-'}{transactionDetail.amountMinor != null && transactionDetail.currencyCode ? formatMinorUnits(BigInt(transactionDetail.amountMinor), transactionDetail.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(transactionDetail.amount, transactionDetail.currencyCode)}</strong>
-          <dl className="grid grid-cols-2 gap-3"><div><dt className="text-xs text-secondary">Date</dt><dd>{formatDate(transactionDetail.date)}</dd></div><div><dt className="text-xs text-secondary">Category</dt><dd>{transactionDetail.category}</dd></div><div><dt className="text-xs text-secondary">Payment</dt><dd>{transactionDetail.paymentMethod || 'Other'}</dd></div>{transactionDetail.accountId && <div><dt className="text-xs text-secondary">Account</dt><dd>{financialAccounts.find(account => account.id === transactionDetail.accountId)?.name || 'Archived account'}</dd></div>}</dl>
+          <dl className="grid grid-cols-2 gap-3"><div><dt className="text-xs text-secondary">Date</dt><dd>{formatDate(transactionDetail.date)}{transactionDetail.occurredAt && <> &middot; {formatTime(new Date(transactionDetail.occurredAt))}</>}</dd></div><div><dt className="text-xs text-secondary">Category</dt><dd>{transactionDetail.category}</dd></div><div><dt className="text-xs text-secondary">Payment</dt><dd>{transactionDetail.paymentMethod || 'Other'}</dd></div>{transactionDetail.accountId && <div><dt className="text-xs text-secondary">Account</dt><dd>{financialAccounts.find(account => account.id === transactionDetail.accountId)?.name || 'Archived account'}</dd></div>}</dl>
           {transactionDetail.notes && <p className="whitespace-pre-wrap break-words text-sm">{transactionDetail.notes}</p>}
           <div className="flex flex-wrap gap-3"><button type="button" className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 font-semibold" onClick={() => { transactionDetailDialog.current?.close(); openEditTransaction(transactionDetail); }}>Edit transaction</button><details className="lifeos-input rounded-xl px-3"><summary className="min-h-11 content-center cursor-pointer">Transaction actions</summary><button type="button" className="block min-h-11 w-full text-left" onClick={() => { transactionDetailDialog.current?.close(); openDuplicateTransaction(transactionDetail); }}>Duplicate</button><button type="button" className="block min-h-11 w-full text-left text-[var(--danger)]" onClick={async () => {
             const id = transactionDetail.id;
@@ -3648,7 +3675,7 @@ export default function App() {
           saving={recordSaving} reduced={interfaceMotion.reducedMotion} dismiss={requestCloseForm}
           onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} onChoiceChange={() => setCreateFormDirty(true)}>
             {!['budget', 'contribution', 'goal-progress', 'transaction'].includes(createKind) && <label className="feather-composer-lead">
-              {createKind === 'transaction' ? 'Merchant or description (optional)' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
+              {createKind === 'transaction' ? 'Merchant or description' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
               <input placeholder={createKind === 'task' ? 'What needs to be done?' : createKind === 'habit' ? 'What would you like to build?' : createKind === 'goal' ? 'What would you like to achieve?' : undefined} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {createKind === 'transaction' && <>
@@ -3666,7 +3693,7 @@ export default function App() {
                   [String(category.name), category.name] as const
                 )))]} onSelect={e => setCreateDraft({ ...createDraft, category: e })} />
               </div>
-              <label className="block text-xs text-secondary">Merchant or description (optional)<input maxLength={120} value={createDraft.title || ''} onChange={event => setCreateDraft({ ...createDraft, title: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
+              <label className="block text-xs text-secondary">Merchant or description<input maxLength={120} value={createDraft.title || ''} onChange={event => setCreateDraft({ ...createDraft, title: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
               {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
               <AliveDisclosure label="Currency, account, date and notes">
               {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
@@ -3679,7 +3706,7 @@ export default function App() {
                 <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Account (optional)" value={createDraft.accountId || ''} searchable
                 options={[["", "Unassigned"], ...(financialAccounts.filter(account => account.isActive).map(account => [String(account.id), String(account.name) + String("· ") + String(account.currencyCode)] as const))]} onSelect={e => { const account = financialAccounts.find(row => row.id === e); setCreateDraft({ ...createDraft, accountId: e, ...(account ? { currencyCode: account.currencyCode } : {}) }); }} /></div>
                 <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-xs text-secondary">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 block text-xs text-secondary">Notes<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
                 <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               </AliveDisclosure>
@@ -3696,15 +3723,15 @@ export default function App() {
               <AliveDisclosure label="Schedule options"><fieldset className="task-composer-section"><legend className="text-sm font-semibold">Scheduled weekdays</legend><div className="flex flex-wrap gap-2">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map((day, index) => {
                 const selected = (createDraft.weekdays || '').split(',').filter(Boolean);
                 return <label key={day} className="lifeos-raised flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs"><input type="checkbox" checked={selected.includes(String(index))} onChange={event => setCreateDraft({ ...createDraft, weekdays: (event.target.checked ? [...selected, String(index)] : selected.filter(value => value !== String(index))).join(',') })} />{day}</label>;
-              })}</div><label className="mt-2 block text-xs text-secondary">Sessions per week (optional)<input type="number" min="1" max="7" value={createDraft.weeklySessions || ''} onChange={event => setCreateDraft({ ...createDraft, weeklySessions: event.target.value })} className="lifeos-input mt-1 block min-h-11 w-full rounded-xl px-3" /></label>
+              })}</div><label className="mt-2 block text-xs text-secondary">Sessions per week<input type="number" min="1" max="7" value={createDraft.weeklySessions || ''} onChange={event => setCreateDraft({ ...createDraft, weeklySessions: event.target.value })} className="lifeos-input mt-1 block min-h-11 w-full rounded-xl px-3" /></label>
               <button type="button" className="lifeos-raised mt-2 min-h-11 rounded-xl px-3 text-xs" onClick={() => setCreateDraft({ ...createDraft, trackingMode: 'quantity', quantityUnit: 'minute' })} disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))}>Track duration in minutes</button></fieldset></AliveDisclosure>
               <AliveDisclosure label="Reminders">
-              <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Reminder time<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.frequency === 'weekly' && <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Reminder weekday" value={createDraft.reminderWeekday || '2'}
                 options={[...(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => [String(index + 1), day] as const))]} onSelect={e => setCreateDraft({ ...createDraft, reminderWeekday: e })} /></div>}
               </AliveDisclosure>
               <AliveDisclosure label="Habit notes">
-              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Description<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {goals.length > 0 && <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Linked goal" value={createDraft.goalId || ''} searchable
                 options={[["", "No linked goal"], ...(goals.map(goal => [String(goal.id), goal.title] as const))]} onSelect={event => setCreateDraft({ ...createDraft, goalId: event })} /></div>}
               </AliveDisclosure>
@@ -3718,7 +3745,7 @@ export default function App() {
               </div>
               {createDraft.goalMode === 'reduce' && <label className="mb-3 block text-xs">Starting value<input type="number" min="0" step="any" value={createDraft.baselineValue || ''} onChange={e => setCreateDraft({ ...createDraft, baselineValue: e.target.value })} className="lifeos-input mt-1 block min-h-11 w-full rounded-xl px-3" /></label>}
               {createDraft.goalMode !== "milestone" &&               <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>}
-              <label className="mb-3 block text-xs text-secondary">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Unit<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <AliveDisclosure label={editingGoalId ? "Category and status" : "Goal category"}>
               <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Category" value={createDraft.category} searchable
                 options={[...(['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => [String(category), category] as const))]} onSelect={e => setCreateDraft({ ...createDraft, category: e })} /></div>
@@ -3726,8 +3753,8 @@ export default function App() {
                 options={[...(['In Progress', 'Paused', 'Completed'].map(status => [String(status), status] as const))]} onSelect={e => setCreateDraft({ ...createDraft, status: e })} /></div>}
               </AliveDisclosure>
               <AliveDisclosure label="Target date and notes">
-              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="block text-xs text-secondary">Target date (optional)<input type="date" value={createDraft.date || ''} onChange={event => setCreateDraft({ ...createDraft, date: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
+              <label className="mb-3 block text-xs text-secondary">Description<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="block text-xs text-secondary">Target date<input type="date" value={createDraft.date || ''} onChange={event => setCreateDraft({ ...createDraft, date: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
               </AliveDisclosure>
             </>}
             {createKind === 'budget' && <>
@@ -3764,7 +3791,7 @@ export default function App() {
             {createKind === 'task' && <TaskComposerOptions draft={createDraft} update={setCreateDraft}
               dateOnlyAlertTime={dateOnlyAlertTime} goals={goals} editing={Boolean(editingTaskId)} dirty={() => setCreateFormDirty(true)} />}
             {createKind === 'milestone' && <label className="mb-4 block text-xs text-secondary">
-              Target date (optional)
+              Target date
               <input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {editingTransactionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this transaction?', message: 'This transaction will be removed from your history. This cannot be undone.', confirmLabel: 'Delete transaction', destructive: true }))) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setCreateFormDirty(false); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
@@ -3774,18 +3801,23 @@ export default function App() {
       </AnimatePresence>
 
       {/* Floating Bottom Nav */}
-      <nav data-profile-background ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2">
+      <nav data-record-background data-profile-active={profileOpen} data-reduced={interfaceMotion.reducedMotion} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2">
         <div className="app-nav-items alive-nav">
         <span ref={navigationMotion.indicator} className="alive-nav-indicator" aria-hidden="true"
-          style={{ transform: `var(--track-indicator, translate3d(${PRIMARY_NAVIGATION.findIndex(item => item.tab === (primaryDestinationForTab(activeTab) ?? 'dashboard')) * 100}%,0,0))` }} />
+          style={{ transform: `var(--track-indicator, translate3d(${(profileOpen && !profileClosing ? PRIMARY_NAVIGATION.length : PRIMARY_NAVIGATION.findIndex(item => item.tab === (primaryDestinationForTab(activeTab) ?? 'dashboard'))) * 100}%,0,0))` }} />
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays })[icon];
-          const isSelected = primaryDestinationForTab(activeTab) === tab;
+          const isSelected = !profileOpen && primaryDestinationForTab(activeTab) === tab;
           return (
           <button
             key={tab}
             data-tab={tab}
             onClick={() => {
+              if (profileOpen) {
+                profileReturn.current = primaryDestinationForTab(activeTab) === tab ? null : tab;
+                closeProfile();
+                return;
+              }
               if (isSelected) {
                 navigationMotion.cancelPending();
                 if (activeTab !== tab) { navigateTo(tab); return; }
@@ -3803,6 +3835,11 @@ export default function App() {
           </button>
           );
         })}
+          <button type="button" id="profile-opener" data-tab="profile" aria-label="Profile" aria-controls={profileOpen ? "screen-settings" : undefined} aria-current={profileOpen ? "page" : undefined}
+            className="nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium"
+            onClick={() => { if (!profileOpen) openProfile(); else if (!profileClosing) navigateProfileSection("home"); }}>
+            <span className="nav-profile-avatar" aria-hidden="true"><ProfileAvatar photo={profilePhoto} /></span><span>Profile</span>
+          </button>
         </div>
       </nav>
 
@@ -3810,12 +3847,7 @@ export default function App() {
 
       {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 
-      {/* In-app Toast Notification */}
-      {toast && (
-        <div role="status" aria-live="polite" className={`ui-toast lifeos-raised lifeos-border fixed top-4 left-1/2 z-[75] flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl ${toast.type === 'success' ? 'ui-success-feedback' : ''}`}>
-          <span>{toast.message}</span>
-        </div>
-      )}
+      <AnimatePresence>{toast && <Snackbar key="app-snackbar" notice={toast} onDismiss={() => setToast(null)} reduced={interfaceMotion.reducedMotion} />}</AnimatePresence>
     </div>
     </LazyMotion>
   );

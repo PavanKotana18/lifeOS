@@ -3,8 +3,8 @@ import MoneyPeriod from './MoneyPeriod';
 
 export type MoneyDetail = 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics' | 'projection';
 const titles: Record<MoneyDetail, string> = {
-  monthly: 'Monthly summary', transactions: 'Activity', accounts: 'Accounts', budgets: 'Budgets',
-  savings: 'Savings', planning: 'Scheduled', analytics: 'Insights', projection: 'Savings projection',
+  monthly: 'Monthly summary', transactions: 'Transactions', accounts: 'Accounts', budgets: 'Budgets',
+  savings: 'Savings', planning: 'Schedule', analytics: 'Insights', projection: 'Savings projection',
 };
 
 export default function MoneyDetailHeader({ section, month, onMonthChange, onBack }: {

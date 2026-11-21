@@ -131,7 +131,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
   };
 
   return <main className="space-y-4" data-testid="money-planning">
-    <div className="scheduled-tabs" role="group" aria-label="Scheduled views">
+    <div className="scheduled-tabs" role="group" aria-label="Schedule views">
       {([['upcoming', 'Upcoming'], ['recurring', 'Recurring'], ['history', 'History'], ['rates', 'Exchange rates']] as const).map(([id, label]) =>
         <button key={id} type="button" className="lifeos-input" aria-pressed={planningPanel === id} onClick={() => setPlanningPanel(id)}>{label}</button>)}
     </div>
@@ -149,14 +149,13 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
     </section> : planningPanel !== 'rates' ? <section className="scheduled-workspace">
       <header className="scheduled-workspace-header">
         <div className="flex items-center gap-2">
-          <h3 className="type-section-title">{planningPanel === 'recurring' ? 'Recurring commitments' : 'Scheduled plans'}</h3>
+          <h3 className="type-section-title">{planningPanel === 'recurring' ? 'Recurring commitments' : 'Upcoming items'}</h3>
           <InfoTip label="Recurring Money confirmation">A plan creates no transaction automatically. When due, review and confirm one occurrence to record it and advance the plan.</InfoTip>
         </div>
         <button type="button" onClick={addCommitment} className="feather-primary shrink-0">
           <Plus size={15} className="mr-1 inline" aria-hidden="true" />Add scheduled item
         </button>
       </header>
-      <p className="text-xs text-secondary">Nothing is posted until you confirm an occurrence.</p>
       {nextPlan && <section className="scheduled-next" aria-label="Next commitment">
         <p><CalendarClock size={17} aria-hidden="true" />Next commitment</p>
         {renderPlan(nextPlan, true)}

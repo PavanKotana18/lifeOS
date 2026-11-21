@@ -1,3 +1,4 @@
+import AppHeader from './AppHeader';
 import { animateRoute, readRoutePose } from '../services/aliveMotion';
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { profileParent, type ProfileSection } from './ProfileSettings';
@@ -49,7 +50,7 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
     const from = previousSection.current;
     previousSection.current = section;
     const content = element.querySelector<HTMLElement>('.profile-settings');
-    const heading = element.querySelector<HTMLElement>('.profile-settings h1');
+    const heading = element.querySelector<HTMLElement>(section === 'home' ? '#profile-route-title' : '.profile-settings h2');
     heading?.setAttribute('tabindex', '-1');
     heading?.focus({ preventScroll: true });
     element.addEventListener('scroll', saveScroll, { passive: true });
@@ -65,10 +66,10 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
       if (!element || event.defaultPrevented || document.querySelector('dialog[open], [role="alertdialog"][aria-modal="true"]')) return;
       if (event.key === 'Escape') { event.preventDefault(); onBack(); return; }
       if (event.key !== 'Tab') return;
-      const controls = Array.from(element.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], summary, [tabindex="0"]')).filter(control => control.getClientRects().length);
+      const controls = [...Array.from(element.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), a[href], summary, [tabindex="0"]')), ...document.querySelectorAll<HTMLElement>('.app-bottom-nav [data-tab]')].filter(control => control.getClientRects().length);
       const first = controls[0], last = controls[controls.length - 1];
       const focused = document.activeElement;
-      if (!element.contains(focused)) { event.preventDefault(); (event.shiftKey ? last : first)?.focus(); }
+      if (!element.contains(focused) && !focused?.closest('.app-bottom-nav')) { event.preventDefault(); (event.shiftKey ? last : first)?.focus(); }
       else if (event.shiftKey && (focused === first || focused?.getAttribute('tabindex') === '-1')) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && focused === last) { event.preventDefault(); first?.focus(); }
     };
@@ -122,6 +123,7 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
         const travel = event.clientX - start.x;
         if (start.x > 28 && travel >= 64 && travel > Math.abs(start.y - event.clientY) * 1.5) onBack();
       }}>
+      <AppHeader title="Profile" profile back={onBack} />
       {children}
     </main>;
 }

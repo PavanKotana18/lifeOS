@@ -21,11 +21,8 @@ assert.match(app, /Discard unsaved changes\?/, 'edited forms clearly explain the
 assert.match(app, /onChange=\{\(\) => setCreateFormDirty\(true\)\}/, 'form changes mark the draft dirty through normal input events');
 assert.match(app, /if \(isLocked && confirmation\) settleConfirmation\(false\)/, 'a pending generic confirmation is dismissed when the session locks');
 
-const actionIndex = moneyHome.indexOf('data-testid="money-add-transaction"');
-const balanceIndex = moneyHome.indexOf('aria-labelledby="money-cashflow-title"');
-assert.ok(actionIndex >= 0 && actionIndex < balanceIndex, 'One transaction action appears before the overview detail');
-assert.match(moneyHome, /onClick=\{onAddTransaction\}/, 'income and expense are contextual options within transaction entry');
-assert.equal((moneyHome.match(/className="money-add-transaction"/g) || []).length, 1, 'Money has one primary transaction action');
+assert.doesNotMatch(moneyHome, /Add transaction/, 'Money Home links to Transactions');
+assert.match(app, /transaction-workspace[\s\S]*?openCreateForm\('transaction'\)[^\n]*>Add transaction<\//, 'Transactions contains the primary add action');
 assert.match(accounts, /No accounts yet[\s\S]*Add an account to track its balance and transfers\./, 'the first-use state explains the purpose of optional accounts');
 assert.doesNotMatch(moneyHome, /money-account-nudge/, 'the overview does not repeat an account-creation prompt');
 assert.match(app, /<MoneyDetailHeader section=\{financeSubtab\}[^]*onBack=\{\(\) => \{[^]*rememberActiveScroll\(\); financeSubtabHistory\.current = \[\]; setFinanceSubtab\('overview'\)/, 'Money overview restores its scroll and clears the nested history');

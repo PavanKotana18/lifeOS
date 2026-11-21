@@ -36,8 +36,8 @@ const homeProps = {
   savingsGoals: [], legacyCurrency: 'USD', onEditTransaction: noop,
 };
 const home = renderToStaticMarkup(React.createElement(MoneyHome, homeProps));
-assert.equal((home.match(/data-testid="money-add-transaction"/g) || []).length, 1, 'Money has one clear primary transaction entry point');
-assert.match(home, /Add transaction/, 'the primary transaction entry point names its available records');
+assert.doesNotMatch(home, /Add transaction/, 'Money Home directs users to Transactions to add a record');
+assert.match(home, />Transactions</);
 assert.match(home, /Net cash flow/);
 assert.match(home, /aria-label="About Net cash flow" aria-haspopup="dialog" aria-expanded="false"/,
   'the cash-flow explanation stays hidden behind its contextual info control');
@@ -46,7 +46,7 @@ assert.doesNotMatch(home, /Showing 3 of 4 accounts/, "Balances appear on the mon
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="View Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
 assert.match(home, />View monthly summary/);
-assert.match(home, />Scheduled</);
+assert.match(home, />Schedule</);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],

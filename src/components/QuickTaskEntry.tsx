@@ -1,3 +1,4 @@
+import InfoTip from './InfoTip';
 import { PreferenceChoice } from './PreferenceChoice';
 import { useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
@@ -51,13 +52,13 @@ export default function QuickTaskEntry({ onAdd, label = 'Quick task' }: Props) {
         className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 py-2 text-sm disabled:opacity-60" />
       <button type="submit" disabled={saving || !title.trim()} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">{saving ? 'Adding...' : 'Add task'}</button>
     </div>
-    <p id={hintId} className="mt-2 text-xs text-secondary">Add the title now. Open the options below only when you want to schedule it.</p>
+    <p id={hintId} className="mt-2 text-xs text-secondary">Add a date when you are ready to schedule it.</p>
     <details className="mt-2 rounded-xl border border-[var(--stroke)] px-3"><summary className="flex min-h-11 cursor-pointer items-center text-xs font-semibold text-secondary">Schedule, priority and reminder</summary><div className="grid grid-cols-2 gap-2 pb-3">
       <label className="text-xs text-secondary">Due date<input type="date" value={dueDate} onChange={event => { setDueDate(event.target.value); if (!event.target.value) { setDueTime(''); setReminderAt(''); } }} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm" /></label>
       <label className="text-xs text-secondary">Time<input type="time" disabled={!dueDate} value={dueTime} onChange={event => setDueTime(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm disabled:opacity-50" /></label>
       <div className="text-xs text-secondary"><PreferenceChoice variant="field" label="Priority" value={priority}
                 options={[...(['Low', 'Medium', 'High', 'Urgent'].map(item => [String(item), item] as const))]} onSelect={event => setPriority(event as Task['priority'])} /></div>
-      <label className="col-span-2 text-xs text-secondary">Reminder<input type="datetime-local" disabled={!dueDate} value={reminderAt} onChange={event => setReminderAt(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm disabled:opacity-50" /><span className="mt-1 block text-[10px]">Notifications are requested only when you set a reminder.</span></label>
+      <label className="col-span-2 text-xs text-secondary">Reminder<input type="datetime-local" disabled={!dueDate} value={reminderAt} onChange={event => setReminderAt(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm disabled:opacity-50" /></label><div className="flex items-center gap-2 text-xs text-secondary">Task reminders <InfoTip label="Task reminders" /></div>
     </div></details>
     {error && <p id={errorId} role="alert" className="mt-2 text-sm text-[var(--danger)]">{error}</p>}
   </form>;

@@ -1,8 +1,9 @@
+﻿import { APP_NAME } from './src/config/appBrand';
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.lifeos.personal',
-  appName: 'LifeOS',
+  appName: APP_NAME,
   webDir: 'dist',
   loggingBehavior: 'none',
   android: {
