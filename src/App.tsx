@@ -2915,7 +2915,7 @@ export default function App() {
                   const log = quantity ? habitLogs.find(row => row.habitId === habit.id && row.date === todayKey && row.quantity !== undefined) : undefined;
                   const status = quantity ? (log && log.quantityUnit !== habit.quantityUnit
                     ? formatHabitQuantity(log.quantity || 0, log.quantityUnit)
-                    : formatHabitQuantity(log?.quantity || 0) + " / " + formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit))
+                    : new Intl.NumberFormat(userPrefs.locale === "system" ? undefined : userPrefs.locale).format(log?.quantity || 0) + " / " + formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit))
                     : completed ? "Checked in" : "Ready to check in";
                   return <li key={habit.id} className="today-routine-row">
                     <div><strong>{habit.name}</strong><small>{status}</small></div>

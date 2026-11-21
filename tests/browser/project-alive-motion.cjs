@@ -310,6 +310,21 @@ async function main() {
         }
       }
     }
+    if (fourDestinations) {
+      await tab('settings').click();
+      await page.getByRole('heading', { name: 'Profile', exact: true }).waitFor();
+      await page.waitForTimeout(620);
+      await button('Appearance').click();
+      await page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor();
+      const touch = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x == null ? [] : [{ x, y: 350, id: 1 }] });
+      await touch('touchStart', 74);
+      await touch('touchMove', 136);
+      await touch('touchMove', 265);
+      await touch('touchEnd');
+      assert.equal(await tab('settings').getAttribute('aria-current'), 'page');
+      await page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor();
+      report.interactions.push('A horizontal touch on Appearance does not switch primary destinations');
+    }
     if (process.env.LIFEOS_PLAN_PRESS_COMPARE === '1') {
       await tab('plan').click();
       const action = page.getByRole('button', { name: 'Add task', exact: true });
