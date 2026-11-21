@@ -423,7 +423,7 @@ async function main() {
           report.profileGeometry = [];
           for (const [title, path] of surfaces) {
             await nav.getByRole('button', { name: 'Profile', exact: true }).click();
-            for (const item of path) await clickButton(item, { exact: true });
+            for (const item of path) await clickButton(new RegExp("^" + item));
             await page.getByRole('heading', { name: title, exact: true, level: 1 }).waitFor();
             const geometry = await page.evaluate(() => {
               const header = document.querySelector('.primary-masthead').getBoundingClientRect();
@@ -432,7 +432,14 @@ async function main() {
             });
             assert.ok(geometry.contentTop - geometry.headerHeight < 36 && geometry.overflow < 2, title + ' layout');
             report.profileGeometry.push({ title, ...geometry });
-            await capture('profile-audit-' + title.toLowerCase().replace(/[^a-z]+/g, '-'), false);
+            const name = 'profile-audit-' + title.toLowerCase().replace(/[^a-z]+/g, '-');
+            await capture(name, false);
+            await page.setViewportSize({ width: 320, height: 844 });
+            await page.evaluate(() => document.documentElement.style.fontSize = '125%');
+            assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), title + ' enlarged width');
+            await capture(name + '-large', false);
+            await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+            await page.setViewportSize({ width: 390, height: 844 });
           }
         }
       });

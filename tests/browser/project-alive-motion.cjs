@@ -310,6 +310,25 @@ async function main() {
         }
       }
     }
+    if (process.env.LIFEOS_PLAN_PRESS_COMPARE === '1') {
+      await tab('plan').click();
+      const action = page.getByRole('button', { name: 'Add task', exact: true });
+      await action.waitFor();
+      await page.waitForTimeout(620);
+      const box = await action.boundingBox();
+      await page.screenshot({ path: path.join(evidence, 'plan-press-rest.png') });
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.waitForTimeout(80);
+      report.planPress = await action.evaluate(element => ({ transform: getComputedStyle(element).transform, shadow: getComputedStyle(element).boxShadow }));
+      await page.screenshot({ path: path.join(evidence, 'plan-press-held.png'), animations: 'allow' });
+      await page.mouse.move(2, 2);
+      await page.mouse.up();
+      if (fourDestinations) {
+        assert.equal(report.planPress.transform, 'none');
+        assert.notEqual(report.planPress.shadow, 'none');
+      }
+    }
     await cdp.send('Page.stopScreencast');
     assert.deepEqual(report.errors, []);
     return;
