@@ -16,7 +16,9 @@ const ProfilePreferences = require('./src/components/ProfilePreferences.tsx').de
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const profile = fs.readFileSync('src/components/ProfileSettings.tsx', 'utf8');
 const preferences = fs.readFileSync('src/components/ProfilePreferences.tsx', 'utf8');
-const settings = app.slice(app.indexOf('{profileOpen && <ProfileDrawer'), app.indexOf('      {createKind && ('));
+const settingsStart = app.indexOf('id="screen-settings"');
+const settings = app.slice(settingsStart, app.indexOf('</main>', settingsStart));
+assert.ok(settingsStart > 0 && settings.includes('transitionPropsFor("settings")'));
 for (const section of ['appearance', 'preferences', 'notifications', 'privacy', 'data', 'about']) {
   assert.ok(profile.includes(`section: '${section}'`), `Profile links to ${section}`);
   assert.ok(settings.includes(`profileSection === '${section}'`), `${section} has an independent destination`);
