@@ -40,7 +40,7 @@ assert.equal(buildPlannedCashFlow(plans, '', 'USD').valid, false);
 assert.equal(buildPlannedCashFlow(plans, '2024-13', 'USD').valid, false);
 assert.equal(buildPlannedCashFlow(plans, '2024-02', 'XXX').valid, false);
 const markup = renderToStaticMarkup(React.createElement(PlannedCashFlow, { commitments: [...plans, { ...base, id: 'other', currencyCode: 'INR' }], month: '2024-02', currencyCode: 'USD', locale: 'en-US' }));
-assert.match(markup, /Expected cash flow/); assert.match(markup, /Amount[s]? are estimates, not recorded activity/); assert.match(markup, /Cash flow changes only after you record an occurrence/);
+assert.match(markup, /Expected cash flow/); assert.match(markup, /Amount[s]? are estimates, not recorded activity/); assert.match(markup, /LifeOS shows planned income and expenses separately from recorded transactions/);
 assert.match(markup, /<caption/); assert.match(markup, /scope="col"/); assert.match(markup, /scope="row"/); assert.match(markup, /<time dateTime="2024-02-29"/);
 assert.match(markup, /No exchange rate has been assumed/); assert.ok(!markup.includes('qa-plan'), 'Internal IDs are not rendered as product labels');
 const partialMarkup = renderToStaticMarkup(React.createElement(PlannedCashFlow, { commitments: [{ ...base, nextDueDate: 'bad' }], month: '2024-02', currencyCode: 'USD' }));
