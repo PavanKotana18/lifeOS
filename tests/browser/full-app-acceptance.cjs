@@ -987,7 +987,7 @@ async function main() {
       await capture('profile-390');
       for (const name of ['Appearance', 'Preferences', 'Notifications', 'Privacy & Security', 'Backup & Restore', 'About', 'Developer tools']) {
         await clickButton(new RegExp('^' + name));
-        await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true, level: 1 }).waitFor();
+        await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true, level: 2 }).waitFor();
         await inspectVisiblePage(name);
         await capture(name.toLowerCase().replaceAll(' ', '-') + '-390');
         if (name === 'Developer tools') {
@@ -1262,7 +1262,7 @@ async function main() {
         await clickButton(new RegExp('^' + parent));
         for (const name of children) {
           await clickButton(new RegExp('^' + name));
-          await page.getByRole('heading', { name, level: 1, exact: true }).waitFor();
+          await page.getByRole('heading', { name, level: 2, exact: true }).waitFor();
           await capture('profile-' + name.toLowerCase().replaceAll(' ', '-') + '-390');
           await clickButton(back);
         }

@@ -334,7 +334,7 @@ async function main() {
   await tab('dashboard').click();
   await capture('open-profile', button('Profile'), '.profile-page-screen|.profile-settings');
   await capture('appearance', button('Appearance'), '.profile-page-screen|.profile-settings');
-  const profileBack = await page.locator('.feather-expressive').count() ? 'Profile' : 'Back from profile';
+  const profileBack = await page.locator('.feather-expressive').count() ? 'Back to Profile' : 'Back from profile';
   await capture('profile-back', button(profileBack), '.profile-page-screen|.profile-settings');
   await capture('profile-close', button('Back from profile'), '.profile-page-screen|.profile-settings');
   await tab('finance').click();

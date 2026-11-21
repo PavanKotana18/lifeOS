@@ -95,7 +95,7 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
   </div>;
 }
 
-export function ProfileSubpage({ title, onBack, backLabel = 'Profile', children }: { title: string; description?: string; backLabel?: string; onBack: () => void; children: ReactNode }) {
+export function ProfileSubpage({ title, onBack, backLabel = 'Back to Profile', children }: { title: string; description?: string; backLabel?: string; onBack: () => void; children: ReactNode }) {
   return <section className="profile-settings profile-subpage mx-auto w-full max-w-xl space-y-4" data-testid="profile-settings-subpage">
     <FeatherHeader title={title} heading="h2" back={{ label: backLabel, onClick: onBack }} />
     {children}

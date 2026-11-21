@@ -123,7 +123,7 @@ export default function ProfileDrawer({ section, scrollPositions, onBack, closin
         const travel = event.clientX - start.x;
         if (start.x > 28 && travel >= 64 && travel > Math.abs(start.y - event.clientY) * 1.5) onBack();
       }}>
-      <AppHeader title="Profile" profile back={onBack} />
+      <AppHeader title="Profile" profile back={section === "home" ? onBack : undefined} />
       {children}
     </main>;
 }
