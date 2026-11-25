@@ -102,7 +102,7 @@ async function bootstrapAppearance() {
     ? () => SystemAppearance.getSystemAppearance()
     : undefined);
   const dark = resolveAppearance(preference, systemDark) === 'dark';
-  (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark = systemDark;
+  if (Capacitor.isNativePlatform()) (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark = systemDark;
   document.documentElement.classList.toggle('dark', dark);
   applyThemeTokens(themeId, dark ? 'dark' : 'light');
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';

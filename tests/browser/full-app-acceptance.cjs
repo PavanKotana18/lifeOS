@@ -94,6 +94,8 @@ async function planDestination(name) {
 }
 
 async function activeTab(name) {
+  const profileBack = page.locator('.profile-page-heading button:visible');
+  for (let depth = 0; depth < 3 && await profileBack.isVisible(); depth++) await profileBack.click();
   const tab = page.locator(`[data-tab="${name}"]`);
   await tab.waitFor({ state: 'visible' });
   if (await tab.getAttribute('aria-current') !== 'page') await tab.click();
@@ -214,7 +216,8 @@ async function main() {
   const completed = new Set();
   try {
     await journey('first launch and safe browsing', async () => {
-      await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success`, { waitUntil: 'networkidle' });
+      const backFixture = process.env.LIFEOS_PROFILE_APPEARANCE_GATE === '1' ? '&qa-native-back=enabled' : '';
+      await page.goto(`${origin}/tests/browser/index.html?onboarding-auth=success${backFixture}`, { waitUntil: 'networkidle' });
       await page.locator('input[autocomplete="nickname"]').fill('Synthetic acceptance user');
       await capture('welcome-390');
       await clickButton('Continue');
@@ -583,6 +586,170 @@ async function main() {
       }
     });
 
+    if (process.env.LIFEOS_PROFILE_APPEARANCE_GATE === '1') {
+      await journey('Profile and Appearance studio geometry, persistence and motion', async () => {
+        const heading = name => page.getByRole('heading', { name, level: 1, exact: true });
+        const back = async (name) => {
+          await page.evaluate(() => window.dispatchEvent(new CustomEvent('qa-app-backButton', { detail: { canGoBack: true } })));
+          await heading(name).waitFor();
+          assert.equal(await heading(name).evaluate(node => node === document.activeElement), true);
+        };
+        const dark = expected => page.waitForFunction(expected => document.documentElement.classList.contains('dark') === expected, expected);
+        const pressed = async (name, expected = true) => page.waitForFunction(({ name, expected }) =>
+          [...document.querySelectorAll('button[aria-pressed]')].some(button => button.getAttribute('aria-label') === name && button.getAttribute('aria-pressed') === String(expected)), { name, expected });
+        const inspect = () => page.evaluate(() => {
+          const root = document.querySelector('.profile-settings');
+          const bounds = root.getBoundingClientRect();
+          const controls = [...root.querySelectorAll('button, input:not([type=radio]), label, .appearance-mini, .accent-studio-swatch, .motion-demo-track')].filter(node => node.getClientRects().length);
+          return {
+            overflow: document.documentElement.scrollWidth - innerWidth,
+            horizontalScroll: scrollX,
+            clipped: controls.flatMap(node => {
+              const rect = node.getBoundingClientRect();
+              return rect.left < bounds.left - 1 || rect.right > bounds.right + 1 ||
+                (node.scrollWidth - node.clientWidth > 2 && !node.matches('input')) ?
+                [{ name: node.getAttribute('aria-label') || node.textContent.slice(0, 60), innerOverflow: node.scrollWidth - node.clientWidth }] : [];
+            }),
+            rows: [...root.querySelectorAll('.profile-navigation-row')].map(row => {
+              const edge = row.closest('.profile-link-group').getBoundingClientRect();
+              const box = row.getBoundingClientRect();
+              const icon = row.querySelector('.profile-navigation-icon').getBoundingClientRect();
+              const copy = row.querySelector('.profile-navigation-copy').getBoundingClientRect();
+              return { left: icon.left-edge.left, right: edge.right-box.right, icon: icon.width, gap: copy.left-icon.right };
+            }),
+          };
+        });
+        const route = async name => {
+          if (await page.getByRole('button', { name: 'Open profile and settings' }).isVisible()) await clickButton('Open profile and settings');
+          const backButton = page.locator('.profile-page-heading button:visible');
+          for (let depth = 0; depth < 2 && !(await heading('Profile').isVisible()); depth++) await backButton.click();
+          if (name !== 'Profile') await clickButton('Appearance');
+          if (name !== 'Profile' && name !== 'Appearance') await clickButton(name);
+          await heading(name).waitFor();
+          await heading(name).evaluate(node => Promise.allSettled(node.closest('.profile-settings').getAnimations().map(animation => animation.finished)));
+        };
+        await clickButton('Open profile and settings');
+        await heading('Profile').waitFor();
+        await clickButton('Appearance');
+        await clickButton('Themes');
+        report.appearanceGeometry = [];
+        for (const mode of ['Light', 'Dark']) {
+          await route('Themes');
+          await clickButton(mode);
+          await dark(mode === 'Dark');
+          for (const name of ['Profile', 'Appearance', 'Themes', 'Accent color', 'Motion']) {
+            await route(name);
+            await page.setViewportSize({ width: 390, height: 844 });
+            await capture('premium-' + mode.toLowerCase() + '-' + name.toLowerCase().replaceAll(' ', '-'));
+            for (const width of [320, 360, 390, 412, 768]) {
+              await page.setViewportSize({ width, height: 844 });
+              await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+              const geometry = await inspect();
+              assert.equal(geometry.overflow, 0, mode + ' ' + name + ' document width');
+              assert.equal(geometry.horizontalScroll, 0);
+              assert.deepEqual(geometry.clipped, [], mode + ' ' + name + ' at ' + width + ' CSS px');
+              for (const row of geometry.rows) {
+                assert.ok(row.left >= 16 && row.right >= 16 && (width > 412 || row.left <= 20 && row.right <= 20));
+                assert.equal(row.icon, 42);
+                assert.equal(row.gap, 13);
+              }
+              report.appearanceGeometry.push({ mode, name, width, ...geometry });
+              if (width === 320) await capture('premium-' + mode.toLowerCase() + '-' + name.toLowerCase().replaceAll(' ', '-') + '-200');
+              await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+            }
+          }
+          await page.setViewportSize({ width: 390, height: 844 });
+          await route('Themes');
+          for (const palette of ['Soft Ivory + Sage Feather', 'Ocean Mist', 'Warm Sand', 'Lavender Haze', 'Midnight Slate', 'Rose Clay']) {
+            const name = 'Preview ' + palette;
+            await clickButton(name);
+            await pressed(name);
+            const usesCatalog = await page.getByRole('button', { name, exact: true }).evaluate(button =>
+              getComputedStyle(button.querySelector('.appearance-mini')).backgroundColor === getComputedStyle(document.querySelector('.app-shell')).backgroundColor);
+            assert.equal(usesCatalog, true, palette + ' uses its real background');
+          }
+          await clickButton('Cancel preview');
+          await route('Accent color');
+          for (const accent of ['Sage', 'Ocean', 'Sand', 'Lavender', 'Slate', 'Clay']) {
+            await clickButton(accent);
+            await pressed(accent);
+            const ratio = await page.getByRole('button', { name: accent, exact: true }).evaluate(async node => {
+              const { contrastRatio } = await import('/src/services/themeCatalog.ts');
+              const swatch = getComputedStyle(node.querySelector('.accent-studio-swatch'));
+              const hex = rgb => '#' + rgb.match(/\d+/g).slice(0, 3).map(value => Number(value).toString(16).padStart(2, '0')).join('');
+              return contrastRatio(hex(swatch.color), hex(swatch.backgroundColor));
+            });
+            assert.ok(ratio >= 4.5, mode + ' ' + accent + ' contrast ' + ratio);
+          }
+          await clickButton('Use palette accent');
+          await page.waitForFunction(() => localStorage.getItem('lifeos-custom-accent') === null);
+        }
+        await route('Themes');
+        await clickButton('System');
+        await pressed('System');
+        await page.emulateMedia({ colorScheme: 'light' });
+        await dark(false);
+        await page.emulateMedia({ colorScheme: 'dark' });
+        await dark(true);
+        await clickButton('Preview Ocean Mist');
+        await clickButton('Apply theme');
+        await page.waitForFunction(() => localStorage.getItem('lifeos-theme-id') === 'ocean-mist');
+        await clickButton('Preview Warm Sand');
+        await back('Appearance');
+        await clickButton('Accent color');
+        await page.getByLabel('Hex color').fill('#12');
+        await page.getByRole('alert').getByText(/Enter six hexadecimal digits/).waitFor();
+        await page.getByLabel('Hex color').fill('#FFFF00');
+        await clickButton('Apply accent');
+        await page.waitForFunction(() => localStorage.getItem('lifeos-custom-accent') === '#FFFF00');
+        await back('Appearance');
+        await clickButton('Motion');
+        await clickButton('Preview Silky');
+        assert.equal(await page.locator('[data-motion-demo="silky"]').getAttribute('data-demo-at-end'), 'true');
+        assert.equal(await page.locator('.motion-demo-piece').evaluateAll(nodes => nodes.flatMap(node => node.getAnimations()).length), 0);
+        await page.emulateMedia({ reducedMotion: 'no-preference' });
+        report.motionPreviews = [];
+        for (const id of ['silky', 'snappy', 'oil']) {
+          const track = page.locator('[data-motion-demo="' + id + '"]');
+          const preview = page.getByRole('button', { name: 'Preview ' + id[0].toUpperCase() + id.slice(1), exact: true });
+          const samples = await track.evaluate(track => new Promise(resolve => {
+            const samples = [];
+            const node = track.querySelector('.motion-demo-piece');
+            track.closest('.motion-studio-card').querySelector('button').click();
+            const start = performance.now();
+            const sample = time => {
+              samples.push(new DOMMatrix(getComputedStyle(node).transform).m41);
+              if (track.hasAttribute('data-demo-at-end') || time - start > 1200) resolve(samples);
+              else requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+          }));
+          assert.ok(samples.some(offset => offset > 1), id + ' has intermediate motion');
+          assert.equal(await track.getAttribute('data-demo-at-end'), 'true');
+          await preview.click();
+          await preview.click();
+          await preview.click();
+          assert.ok(await page.locator('.motion-demo-piece').evaluateAll(nodes => nodes.flatMap(node => node.getAnimations()).length) <= 1);
+          await track.locator('xpath=..').locator('xpath=..').locator('.motion-studio-select').click();
+          await page.waitForFunction(value => document.querySelector('input[type=radio][value="' + value + '"]')?.checked, id);
+          report.motionPreviews.push({ id, samples });
+        }
+        await back('Appearance');
+        await page.reload();
+        await page.getByTestId('today-dashboard').waitFor();
+        await route('Themes');
+        await pressed('System');
+        await pressed('Preview Ocean Mist');
+        await back('Appearance');
+        await clickButton('Accent color');
+        assert.equal(await page.getByLabel('Hex color').inputValue(), '#FFFF00');
+        await back('Appearance');
+        await clickButton('Motion');
+        assert.equal(await page.getByRole('radio', { name: 'Oil', exact: true }).isChecked(), true);
+      });
+      return;
+    }
+
     await journey('compact settings and six-month sample data', async () => {
       await clickButton('Open profile and settings');
       await page.getByTestId('profile-settings-home').waitFor();
@@ -682,6 +849,7 @@ async function main() {
       });
       await clickButton('Profile');
       await clickButton('Appearance');
+      await clickButton('Themes');
       await clickButton('Dark');
       await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
       await activeTab('finance');
