@@ -544,6 +544,7 @@ async function main() {
       await page.getByRole('heading', { name: title, exact: true }).waitFor();
       await capture('task-timed-detail-390');
       await clickButton('Edit task');
+      await dialog().getByRole('button', { name: /Reminder Extra alert/ }).click();
       await dialog().getByLabel('Alert at due time').uncheck();
       await saveDialog('Save task');
       assert.equal((await stored()).dueAlertDisabled, true);
