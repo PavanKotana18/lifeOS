@@ -33,10 +33,10 @@ const declaredTests = fs.readdirSync(pathToAndroidTests)
   });
 // Timed and denied-access scenarios run with explicit exact-alarm state in the
 // disposable native lab. Unattended profiles keep their existing inventory.
-assert.equal(declaredTests.length, 27, 'Android test inventory changed; update the hosted expected counts deliberately');
+assert.equal(declaredTests.length, 31, 'Android test inventory changed; update the hosted expected counts deliberately');
 for (const [inventory, expectedCount, requiredTest] of [
-  ['instrumentation-exclusions-api29.txt', 17, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
-  ['instrumentation-exclusions-api34-35.txt', 22, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
+  ['instrumentation-exclusions-api29.txt', 20, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
+  ['instrumentation-exclusions-api34-35.txt', 26, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
 ]) {
   const exclusionPath = path.resolve(__dirname, `../android/qa/${inventory}`);
   const exclusions = fs.readFileSync(exclusionPath, 'utf8').trim().split(/\r?\n/).filter(Boolean);
@@ -45,6 +45,9 @@ for (const [inventory, expectedCount, requiredTest] of [
   assert.equal(declaredTests.length - exclusions.length, expectedCount, `${inventory} does not match its expected unattended count`);
   assert.ok(declaredTests.includes(requiredTest), `${inventory} required test is not declared`);
   assert.ok(!exclusions.includes(requiredTest), `${inventory} excludes its own required test`);
+  assert.equal(exclusions.includes('com.lifeos.personal.SmartImportShareAcceptanceTest#coldTextShareRetainsMetadataAndAcknowledgesWithoutExposingText'),
+    inventory === 'instrumentation-exclusions-api29.txt',
+    'the cold-share WebView test runs on supported engines; stock API 29 exercises native compatibility and intent checks');
 }
 const visualRunner = fs.readFileSync(path.resolve(__dirname, 'run-directed-android-visual.sh'), 'utf8');
 assert.match(visualRunner, /ANDROID_EXPECTED_TESTS=1/, 'the excluded visual case has its own mandatory one-test count');

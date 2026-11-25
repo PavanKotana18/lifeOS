@@ -1,3 +1,4 @@
+import { PossibleImportDuplicateError, type ImportDuplicateOptions } from './smartImport';
 import { createSampleData, isSampleRecord } from './sampleData';
 import { withCommitmentWriteLock } from './commitmentWriteLock';
 import type {
@@ -129,6 +130,21 @@ function reconcileGoal(goal: Goal, milestones: Milestone[]): Goal {
     (goal.status === 'Completed' ? 'In Progress' : goal.status) };
 }
 
+function resemblesImportedTransaction(row: Transaction, candidate: Transaction) {
+  if (row.date !== candidate.date || row.type !== candidate.type ||
+      !row.currencyCode || row.currencyCode !== candidate.currencyCode ||
+      (row.accountId && candidate.accountId && row.accountId !== candidate.accountId) ||
+      (row.occurredAt && candidate.occurredAt && row.occurredAt !== candidate.occurredAt)) return false;
+  const description = (value: string | undefined) => (value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const sameDescription = Boolean(description(row.description)) && description(row.description) === description(candidate.description);
+  const sameAccountAndTime = Boolean(row.accountId && row.occurredAt) &&
+    row.accountId === candidate.accountId && row.occurredAt === candidate.occurredAt;
+  if (!sameDescription && !sameAccountAndTime) return false;
+  try {
+    return (row.amountMinor ?? decimalToMinorUnits(row.amount, row.currencyCode).toString()) === candidate.amountMinor;
+  } catch { return false; }
+}
+
 export function createEncryptedStorageFacade(
   repositories: EncryptedRepositories,
   underlyingCoordinator: EncryptedStorageTransaction,
@@ -222,8 +238,9 @@ export function createEncryptedStorageFacade(
       getAll: async () => sortTransactions(await readAll<Transaction>('transactions')),
       getById: (id: string) => get<Transaction>('transactions', id),
 
-      add: async (input: Omit<Transaction, 'id' | 'createdAt'>) => {
+      add: async (input: Omit<Transaction, 'id' | 'createdAt'>, options?: ImportDuplicateOptions) => {
         if (input.commitmentId || input.commitmentOccurrenceDate) throw new Error('Scheduled occurrence identity is managed by its plan.');
+        if (input.importFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(input.importFingerprint)) throw new Error('Invalid import identity.');
         const record: Transaction = {
           ...input,
           id: helpers.createRecordId('tx'),
@@ -246,6 +263,16 @@ export function createEncryptedStorageFacade(
             if (!account || !account.isActive) throw new Error('Choose an active financial account.');
             if (!record.currencyCode || record.currencyCode !== account.currencyCode) throw new Error('An assigned transaction must use the account currency.');
           }
+          if (record.importFingerprint) {
+            const rows = await ctx.getAll<Transaction>('transactions');
+            const identities = new Set([record.importFingerprint, ...(options?.historicalFingerprints || [])]);
+            if (rows.some(row => row.importFingerprint && identities.has(row.importFingerprint))) {
+              throw new Error('A matching transaction is already recorded. Review Transactions before saving.');
+            }
+            if (!options?.allowPossibleDuplicate && rows.some(row => resemblesImportedTransaction(row, record))) {
+              throw new PossibleImportDuplicateError();
+            }
+          }
           ctx.add('transactions', record);
           return record;
         });
@@ -255,7 +282,7 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           const existing = await ctx.get<Transaction>('transactions', id);
           if (!existing) throw new Error('Transaction not found.');
-          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt, commitmentId: existing.commitmentId, commitmentOccurrenceDate: existing.commitmentOccurrenceDate };
+          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt, commitmentId: existing.commitmentId, commitmentOccurrenceDate: existing.commitmentOccurrenceDate, importFingerprint: existing.importFingerprint };
           helpers.validateTransactionRecord(merged, true);
           const [categories, accounts] = await Promise.all([
             ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')

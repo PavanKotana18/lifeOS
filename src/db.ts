@@ -1,3 +1,4 @@
+import type { ImportDuplicateOptions } from './services/smartImport';
 import Dexie, { Table } from 'dexie';
 import { createSessionManager } from './services/sessionManager';
 import { createLifeOSEncryptedRuntime } from './services/encryptedStorageRuntime';
@@ -332,7 +333,7 @@ export interface IDataStorage {
   transactions: {
     getAll(): Promise<Transaction[]>;
     getById(id: string): Promise<Transaction | undefined>;
-    add(tx: Omit<Transaction, 'id' | 'createdAt'>): Promise<Transaction>;
+    add(tx: Omit<Transaction, 'id' | 'createdAt'>, options?: ImportDuplicateOptions): Promise<Transaction>;
     update(id: string, updates: Partial<Transaction>): Promise<void>;
     delete(id: string): Promise<void>;
     filter(params: { month?: string; year?: string; category?: string; type?: string; query?: string }): Promise<Transaction[]>;
@@ -506,6 +507,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'updatedAt', 'transactions', i);
     optionalBoolean(r, 'isRecurring', 'transactions', i);
     optionalString(r, 'commitmentId', 'transactions', i);
+    if (r.importFingerprint !== undefined && (typeof r.importFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(r.importFingerprint))) fail('transactions', i, 'importFingerprint');
     if (r.commitmentOccurrenceDate !== undefined && !date(r.commitmentOccurrenceDate)) fail('transactions', i, 'commitmentOccurrenceDate');
     if (Boolean(r.commitmentId) !== Boolean(r.commitmentOccurrenceDate)) fail('transactions', i, 'occurrence identity');
     try { validateMoneyMetadata(r); } catch { fail('transactions', i, 'currency/amountMinor'); }
