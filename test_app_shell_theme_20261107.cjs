@@ -30,7 +30,8 @@ assert.match(shell, /onClick=\{triggerBiometricAuth\}/, 'lock screen retains the
 assert.match(shell, /onClick=\{\(\) => \{ void openRecovery\(\); \}\}/, 'lock recovery opens through the protection gate');
 assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await setSensitiveScreenshotState\(true\);\s*setRecoveryOpen\(true\);/, 'recovery secrets are not rendered before native screenshot protection is acknowledged');
 assert.doesNotMatch(shell, /theme-toggle-btn|onClick=\{toggleTheme\}/, 'header has no duplicate theme shortcut');
-assert.match(fsSource, /aria-label="Theme previews"/, 'curated theme selection remains in Settings appearance');
+assert.match(fsSource, /<ThemeStudio\b/, 'curated theme selection remains in Settings appearance');
+assert.match(fs.readFileSync('src/components/AppearanceStudio.tsx', 'utf8'), /role="group" aria-labelledby="appearance-palettes"/);
 assert.match(fsSource, /aria-label="Open profile and settings"/, 'profile remains the header settings entry point');
 assert.match(fsSource, /lifeos-mark/, 'LifeOS mark uses its semantic shell class');
 assert.match(fsSource, /BrandMark/, 'App shell renders the shared original vector brand mark');
