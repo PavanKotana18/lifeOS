@@ -284,7 +284,10 @@ public class DirectedVisualAcceptanceTest {
             }
         } finally { scenario.onActivity(a -> a.getBridge().getWebView().getSettings().setTextZoom(originalZoom[0])); }
     }
-    private void swipeFromContent(String selector,String destination,boolean left,String alignment) throws Exception {
+    private void swipeFromContent(String selector, String destination, boolean left, String alignment) throws Exception {
+        swipeFromContent(selector, destination, left, alignment, null);
+    }
+    private void swipeFromContent(String selector, String destination, boolean left, String alignment, String intermediate) throws Exception {
         js("document.querySelector("+JSONObject.quote(selector)+").scrollIntoView({block:"+JSONObject.quote(alignment)+",behavior:'instant'})");
         if("end".equals(alignment))js("window.scrollBy({top:document.querySelector('.app-bottom-nav').getBoundingClientRect().height+16,behavior:'instant'})");
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector("+JSONObject.quote(selector)+").getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
@@ -297,6 +300,7 @@ public class DirectedVisualAcceptanceTest {
         MotionEvent e=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
         for(int i=1;i<=6;i++) { long now=SystemClock.uptimeMillis();e=MotionEvent.obtain(down,now,MotionEvent.ACTION_MOVE,x+travel*i/6f,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();if(i==3&&selector.equals("#primary-route-title")) {
             until("(()=>{const a=document.querySelector('[data-gesture-dragging=true]'),b=document.querySelector('[data-gesture-preview=true]');return !!(a&&b&&b.inert&&Math.abs(a.getBoundingClientRect().right-b.getBoundingClientRect().left)<2)})()");
+            if (intermediate != null) capture(intermediate);
         }Thread.sleep(30); }
         e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,x+travel,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
         until("document.querySelector('[data-tab="+destination+"]')?.getAttribute('aria-current')==='page'");
@@ -367,7 +371,20 @@ public class DirectedVisualAcceptanceTest {
                     new android.os.Handler(collector.getLooper())));
             try {
                 for (String theme : new String[]{"light", "dark"}) {
-                    js("document.documentElement.classList.toggle('dark'," + theme.equals("dark") + ")");
+                    tab("dashboard");
+                    click("Open profile and settings");
+                    until("!!document.querySelector('#screen-settings')");
+                    scenario.onActivity(activity -> assertTrue("Profile must be protected before presentation",
+                            (activity.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE) != 0));
+                    click("Appearance");
+                    click("Themes");
+                    click(theme.equals("dark") ? "Dark" : "Light");
+                    until("document.documentElement.classList.contains('dark')===" + theme.equals("dark"));
+                    for (int depth = 0; depth < 3; depth++) {
+                        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+                        Thread.sleep(150);
+                    }
+                    until("!document.querySelector('#screen-settings')");
                     tab("dashboard");
                     until("!document.querySelector('[data-transition-state=outgoing]')");
                     for (String destination : new String[]{"finance", "plan", "life"}) {
@@ -395,6 +412,9 @@ public class DirectedVisualAcceptanceTest {
                                 item.getJSONArray("webViewAnimationFrameTimestampsMs").length() >= 5);
                         report.put(item);
                     }
+                    tab("dashboard");
+                    until("!document.querySelector('[data-transition-state=outgoing]')");
+                    swipeFromContent("#primary-route-title", "finance", true, "start", "retained-track-" + theme + "-intermediate");
                 }
             } finally {
                 scenario.onActivity(activity -> activity.getWindow().removeOnFrameMetricsAvailableListener(listener));

@@ -596,7 +596,9 @@ async function main() {
       const stable = () => page.waitForFunction(() => !document.querySelector('[data-transition-state=outgoing],[data-track-dragging]'));
       try {
         for (const theme of ['light', 'dark']) {
-          await page.evaluate(mode => document.documentElement.classList.toggle('dark', mode === 'dark'), theme);
+          await page.emulateMedia({ colorScheme: theme });
+          await page.waitForFunction(mode => document.documentElement.classList.contains('dark') === (mode === 'dark'), theme);
+          const pageColor = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--page'));
           for (const [from, to] of [['dashboard', 'finance'], ['finance', 'plan'], ['plan', 'life']]) {
             await activeTab(from);
             await stable();
@@ -643,12 +645,14 @@ async function main() {
             await stable();
             assert.ok(Math.abs((await geometry()).stageX) < 1);
             if (!report.retainedNavigation) report.retainedNavigation = [];
-            report.retainedNavigation.push({ theme, from, to, before, middle });
+            report.retainedNavigation.push({ theme, pageColor, from, to, before, middle });
           }
         }
+        const colors = new Set(report.retainedNavigation.map(sample => sample.pageColor));
+        assert.equal(colors.size, 2, 'light and dark use different rendered page tokens');
       } finally {
         await cdp.detach();
-        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
         await page.reload();
         await page.getByTestId('today-dashboard').waitFor();
       }
