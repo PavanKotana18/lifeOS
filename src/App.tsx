@@ -2887,7 +2887,7 @@ export default function App() {
                 <div className="today-routines-heading"><h3 id="today-routines-title" className="type-section-title">Daily routines</h3>
                   {todayOverview.routinesDue > 0 && <p className="type-caption text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} checked</p>}</div>
                 <button type="button" className="min-h-11 px-2 text-xs font-semibold lifeos-accent-text" onClick={() => habits.length ? navigateTo("habits") : openCreateForm("habit")}>{habits.length ? "All habits" : "Add habit"}</button>
-                {habits.length > 0 && <button type="button" className="min-h-11 px-2 text-xs font-semibold lifeos-accent-text" onClick={() => openCreateForm("habit")}>Add habit</button>}
+                {habits.length > 0 && <button type="button" className="min-h-11 px-2 text-xs font-semibold lifeos-accent-text" onClick={() => openCreateForm('habit')}>Add habit</button>}
               </header>
               {habits.length === 0 ? <p className="today-routines-empty">Your habits will appear here.</p> :
                 <ul className="today-routine-list">{habits.filter(habit => routineDueToday(habit)).slice(0, 3).map(habit => {
