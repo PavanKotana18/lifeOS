@@ -7,7 +7,11 @@ import ComposerShell from './components/ComposerShell';
 import { APP_NAME } from './config/appBrand';
 import Snackbar, { type SnackbarNotice } from './components/Snackbar';
 import AppHeader from './components/AppHeader';
-import SmartImportDialog from './components/SmartImportDialog';
+import SmartImportDialog, { type SavableAlert } from './components/SmartImportDialog';
+import TransactionDetail from './components/TransactionDetail';
+import { BankSmsSettings } from './components/BankSmsSettings';
+import { BankSmsReview } from './components/BankSmsReview';
+import { bankSms, hasBankSms } from './services/bankSms';
 import { useSharedBankAlert } from './hooks/useSharedBankAlert';
 import { PossibleImportDuplicateError } from './services/smartImport';
 import TransactionSummary from './components/TransactionSummary';
@@ -55,7 +59,7 @@ import { buildCustomAccentOverrides, normalizeCustomAccent } from './services/cu
 import CustomAccentPicker from './components/CustomAccentPicker';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
 import MoneyHome from './components/MoneyHome';
-import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
+import MoneyAccounts, { buildTransferDraft, type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
 import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
@@ -144,6 +148,7 @@ export default function App() {
   const pendingProfile = useRef(false);
   const [profileAdmissionPending, setProfileAdmissionPending] = useState(false);
   const [smartImportOpen, setSmartImportOpen] = useState(false);
+  const [bankSmsReviewOpen, setBankSmsReviewOpen] = useState(false);
   const [protectedImportComposer, setProtectedImportComposer] = useState(false);
   const cancelProfileAdmission = (animate = true) => {
     if (!pendingProfile.current) return false;
@@ -429,7 +434,7 @@ export default function App() {
     }
   };
 
-  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === "settings" || isSensitiveScreenshotState({
+  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || bankSmsReviewOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === "settings" || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -486,16 +491,11 @@ export default function App() {
   const moneyRoute = useRef({ depth: 0, section: 'overview' });
   const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics' | 'projection'>('overview');
   const [transactionDetailId, setTransactionDetailId] = useState<string | null>(null);
-  const transactionDetailDialog = useRef<HTMLDialogElement>(null);
   const [transferDetailId, setTransferDetailId] = useState<string | null>(null);
-  const transferDetailDialog = useRef<HTMLDialogElement>(null);
   const transferDetail = activeTab === "finance" ? accountTransfers.find(row => row.id === transferDetailId) : undefined;
-  useEffect(() => { if (transferDetail && !transferDetailDialog.current?.open) transferDetailDialog.current?.showModal(); }, [transferDetail]);
+  const editableTransferDetail = transferDetail && !transferDetail.reversalOfId &&
+    !accountTransfers.some(row => row.reversalOfId === transferDetail.id);
   const transactionDetail = activeTab === 'finance' ? transactions.find(row => row.id === transactionDetailId) : undefined;
-  useEffect(() => {
-    const dialog = transactionDetailDialog.current;
-    if (transactionDetail && dialog && !dialog.open) dialog.showModal();
-  }, [transactionDetail]);
   const [openMoneyTransferOnAccounts, setOpenMoneyTransferOnAccounts] = useState(false);
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
@@ -882,7 +882,9 @@ export default function App() {
       if (scheduledDetail) { scheduledDetail.click(); return; }
       const choices = document.querySelectorAll<HTMLDialogElement>('dialog[data-preference-choice][open]');
       if (choices.length) { choices[choices.length - 1].close(); return; }
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-money-period][open],dialog[data-smart-import][open]');
+      const transactionOptions = document.querySelector<HTMLDialogElement>('dialog[data-transaction-actions][open]');
+      if (transactionOptions) { transactionOptions.close(); return; }
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-money-period][open],dialog[data-smart-import][open],dialog[data-bank-sms-review][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
@@ -1204,7 +1206,7 @@ export default function App() {
     !firstRecordSecurityOpen && !backupPrompt && !backupOperationInProgress;
   const sharedAlert = useSharedBankAlert({
     available: sharedReviewAvailable,
-    busy: smartImportOpen || Boolean(createKind || modalContent || confirmation || accountFormDraft ||
+    busy: smartImportOpen || bankSmsReviewOpen || Boolean(createKind || modalContent || confirmation || accountFormDraft ||
       transferFormDraft || plannerDetailTaskId || lifeDetail || todayCustomizationOpen || showExitConfirmation || tabTransition || profileAdmissionPending),
     open: () => setSmartImportOpen(true),
   });
@@ -1214,6 +1216,7 @@ export default function App() {
   }, [isLocked, activeTab, sharedAlert.draft]);
   useEffect(() => {
     if (createKind !== "transaction" || isLocked) setProtectedImportComposer(false);
+    if (isLocked) setBankSmsReviewOpen(false);
   }, [createKind, isLocked]);
 
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
@@ -1987,6 +1990,7 @@ export default function App() {
       if (text === null) return;
       const hasRecords = await StorageService.backup.hasData();
       if (hasRecords && !(await confirmAction({ title: 'Replace existing LifeOS data?', message: 'Restoring this backup replaces the records currently on this device. Export a backup first if you may need a copy.', confirmLabel: 'Replace and restore', cancelLabel: 'Keep current data', destructive: true }))) return;
+      if (hasBankSms()) { await bankSms.disable(); await bankSms.clear(); }
       await StorageService.backup.importData(text, { replaceExisting: hasRecords });
       restored = true;
       const records = await reloadAllData();
@@ -2184,6 +2188,7 @@ export default function App() {
       title: transaction.description || '', amount: transaction.amountMinor !== undefined && transaction.currencyCode ? minorUnitsToDecimal(BigInt(transaction.amountMinor), transaction.currencyCode) : String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
       currencyCode: transaction.currencyCode || userPrefs.currency, accountId: transaction.accountId || '',
+      date: transaction.date,
       dateTime: transaction.occurredAt ? formatLocalDateTime(new Date(transaction.occurredAt)) : '',
       notes: transaction.notes || '', isRecurring: transaction.isRecurring ? 'yes' : '',
     });
@@ -2207,6 +2212,32 @@ export default function App() {
   const openDuplicateTransaction = (transaction: Transaction) => {
     openCreateForm('transaction');
     setCreateDraft(current => buildDuplicateTransactionDraft(current, transaction, financialAccounts));
+  };
+
+  const reviewImportedTransaction = (suggestion: SavableAlert, fingerprint: string, historical: string[],
+    source: NonNullable<Transaction['importSource']>, bankSmsId?: string) => {
+    setProtectedImportComposer(source !== 'paste');
+    openCreateForm('transaction');
+    setCreateFormDirty(true);
+    setCreateDraft(draft => ({
+      ...draft, importFingerprint: fingerprint, historicalImportFingerprints: historical.join(' '),
+      importSource: source, importReference: suggestion.reference || '', bankSmsId: bankSmsId || '',
+      title: suggestion.description || '', type: suggestion.kind, amount: suggestion.amount,
+      currencyCode: suggestion.currency, category: '', date: suggestion.date || '', importTime: suggestion.time || '',
+      dateTime: suggestion.date && suggestion.time ? suggestion.date + 'T' + suggestion.time : '',
+    }));
+  };
+
+  const openBankSmsQueue = async () => {
+    if (!hasBankSms()) return;
+    if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated() || backState.current.isLocked) {
+      showToast('Unlock protected storage to review bank alerts.', 'info');
+      return;
+    }
+    try {
+      await setSensitiveScreenshotState(true);
+      if (!backState.current.isLocked && sessionManager.isUnlocked()) setBankSmsReviewOpen(true);
+    } catch { showToast('Could not open the review queue securely.', 'danger'); }
   };
 
   const openEditGoal = (goal: Goal) => {
@@ -2387,12 +2418,19 @@ export default function App() {
       if (createKind === 'transaction') {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
         const preserveUnknownTime = !value('dateTime') && Boolean(createDraft.importFingerprint || (existingTransaction && !existingTransaction.occurredAt));
-        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: createDraft.importFingerprint ? value('date') : existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
+        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: value('date') || existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
+        if (existingTransaction?.occurredAt && value('dateTime') === formatLocalDateTime(new Date(existingTransaction.occurredAt))) {
+          values.occurredAt = existingTransaction.occurredAt;
+        }
         const accountId = values.accountId;
-        if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
+        if (accountId && !financialAccounts.some(account => account.id === accountId && (account.isActive || account.id === existingTransaction?.accountId) &&
+          account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.');
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
         else if (createDraft.importFingerprint) {
-          const imported = { ...values, importFingerprint: createDraft.importFingerprint };
+          const imported = { ...values, importFingerprint: createDraft.importFingerprint,
+            ...(createDraft.importSource ? { importSource: createDraft.importSource as Transaction['importSource'] } : {}),
+            ...(createDraft.importReference ? { importReference: createDraft.importReference } : {}),
+          };
           const options = { historicalFingerprints: value('historicalImportFingerprints').split(' ').filter(Boolean) };
           try { await StorageService.transactions.add(imported, options); }
           catch (error) {
@@ -2521,6 +2559,9 @@ export default function App() {
       }
       // A resolved storage write is committed. Close before fallible refresh work.
       committed = true;
+      if (createKind === 'transaction' && createDraft.bankSmsId) {
+        void bankSms.remove({ id: createDraft.bankSmsId }).catch(() => undefined);
+      }
       setCreateKind(null);
       setCreateFormDirty(false);
       setEditingTaskId(null); setEditingHabitId(null);
@@ -3106,12 +3147,15 @@ export default function App() {
               <div className="transaction-workspace">
                 <TransactionSummary transactions={transactions} month={financeMonth} legacyCurrency={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} />
                 <div className="transaction-actions">
-  <button type="button" onClick={() => openCreateForm("transaction")} className="feather-primary transaction-add">Add transaction</button>
-  <button type="button" className="feather-secondary" onClick={async () => {
-    try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
-    catch { showToast("Could not open Smart Import securely.", "danger"); }
-  }}>Import alert</button>
-</div>
+                  <button type="button" onClick={() => openCreateForm("transaction")} className="feather-primary transaction-add">Add transaction</button>
+                </div>
+                <div className="transaction-import-actions" role="group" aria-label="Import transactions">
+                  <button type="button" onClick={async () => {
+                    try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
+                    catch { showToast("Could not open Smart Import securely.", "danger"); }
+                  }}>Import alert</button>
+                  {hasBankSms() && <button type="button" onClick={() => void openBankSmsQueue()}>Bank SMS review</button>}
+                </div>
                 <div className="transaction-toolbar">
                   <input
                     type="search"
@@ -3453,7 +3497,7 @@ export default function App() {
 
         <RetainedScreen active={profileOpen} retainInactive prepare={primaryPrepared} id="screen-settings" {...transitionPropsFor("settings")} render={() => (
           <div className="profile-track-page" role="region" aria-label="Profile and settings" data-android-profile={Capacitor.getPlatform() === "android" || undefined}>
-            <div className="profile-track-preview" aria-hidden="true"><p>Appearance</p><p>Preferences</p><p>Notifications</p><p>Privacy &amp; security</p></div>
+            <div className="profile-track-preview" aria-hidden="true"><p>Appearance</p><p>Preferences</p><p>Notifications</p><p>Money &amp; Imports</p><p>Privacy &amp; security</p></div>
           <div className="profile-page" data-profile-section={profileSection}>
             {profileSection === 'home' && <ProfileHome sharedHeader onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
@@ -3493,8 +3537,8 @@ export default function App() {
                 {(Object.entries(THEME_CATALOG) as Array<[ThemeId, typeof THEME_CATALOG[ThemeId]]>).map(([id, option]) => {
                   const previewTokens = option[theme];
                   const selected = (themePreviewId || visualThemeId) === id;
-                  return <button key={id} type="button" aria-pressed={selected} aria-label={`Preview ${option.label}`} onClick={() => previewVisualTheme(id)} className={`lifeos-panel flex min-h-14 items-center gap-2 rounded-xl border p-2 text-left text-xs ${selected ? 'ring-2 ring-offset-2 ring-offset-[var(--page)]' : ''}`} style={selected ? { outlineColor: previewTokens.focus, ['--tw-ring-color' as string]: previewTokens.focus } as React.CSSProperties : undefined}>
-                    <span className="flex shrink-0 gap-0.5" aria-hidden="true">{[previewTokens.background, previewTokens.accent, ...previewTokens.chartSeries.slice(1, 3)].map(color => <span key={color} className="h-5 w-2.5 rounded-full border" style={{ backgroundColor: color, borderColor: previewTokens.border }} />)}</span>
+                  return <button key={id} type="button" aria-pressed={selected} aria-label={`Preview ${option.label}`} onClick={() => previewVisualTheme(id)} className={`profile-theme-option lifeos-panel min-h-14 gap-2 rounded-xl border p-2 text-left text-xs ${selected ? 'ring-2 ring-offset-2 ring-offset-[var(--page)]' : ''}`} style={selected ? { outlineColor: previewTokens.focus, ['--tw-ring-color' as string]: previewTokens.focus } as React.CSSProperties : undefined}>
+                    <span aria-hidden="true">{[previewTokens.background, previewTokens.accent, ...previewTokens.chartSeries.slice(1, 3)].map(color => <span key={color} className="rounded-full border" style={{ backgroundColor: color, borderColor: previewTokens.border }} />)}</span>
                     <span className="font-medium">{option.label}</span>
                   </button>;
                 })}
@@ -3659,6 +3703,7 @@ export default function App() {
                   if (!(await confirmAction({ title: 'Erase all LifeOS data?', message: 'This permanently removes all personal records stored on this device. This cannot be undone.', confirmLabel: 'Erase all data', cancelLabel: 'Keep my data', destructive: true }))) return;
                   try {
                     await NotificationService.cancelAllRecordReminders();
+                    if (hasBankSms()) { await bankSms.disable(); await bankSms.clear(); }
                     await StorageService.backup.clearAll();
                     await reloadAllData();
                     showToast('All personal records erased', 'info');
@@ -3671,6 +3716,14 @@ export default function App() {
                 Clear All Application Data
               </button>
             </div>
+            </ProfileSubpage>}
+            {profileSection === 'money-imports' && <ProfileSubpage embedded title="Money & Imports" onBack={() => navigateProfileSection('home')}>
+              <BankSmsSettings active={profileOpen} privateReady={sessionManager.isUnlocked() && isEncryptedStorageActivated()}
+                onUnlock={ensurePrivateStorageBeforeWrite} onReview={() => void openBankSmsQueue()}
+                onClear={() => confirmAction({ title: 'Clear pending suggestions?', message: 'This clears the review queue. Saved transactions stay in your history.', confirmLabel: 'Clear queue', destructive: true })}
+                history={transactions.filter(row => row.importFingerprint)} onHistory={row => {
+                  navigateTo('finance'); navigateFinanceSubtab('transactions'); setTransactionDetailId(row.id);
+                }} />
             </ProfileSubpage>}
             {profileSection === 'about' && <ProfileSubpage embedded title="About LifeOS" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><div className="preference-row"><span>Version</span><span className="text-secondary">{packageInfo.version}</span></div>
@@ -3706,50 +3759,54 @@ export default function App() {
       }}
         onReview={(suggestion, fingerprint, historical) => {
           setSmartImportOpen(false);
-          setProtectedImportComposer(Boolean(sharedAlert.draft));
+          reviewImportedTransaction(suggestion, fingerprint, historical, sharedAlert.draft ? 'share' : 'paste');
           sharedAlert.finish();
-          openCreateForm("transaction");
-          setCreateFormDirty(true);
-          setCreateDraft(draft => ({ ...draft, importFingerprint: fingerprint, historicalImportFingerprints: historical.join(" "), title: suggestion.description || "",
-            type: suggestion.kind, amount: suggestion.amount, currencyCode: suggestion.currency, category: "",
-            date: suggestion.date || "", importTime: suggestion.time || "",
-            dateTime: suggestion.date && suggestion.time ? suggestion.date + "T" + suggestion.time : "" }));
         }} onTransfer={() => { setSmartImportOpen(false); sharedAlert.finish(); navigateTo("finance"); navigateFinanceSubtab("accounts"); setOpenMoneyTransferOnAccounts(true); }} />}
-      {transferDetail && <dialog ref={transferDetailDialog} data-transfer-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transfer-detail-title"
-        onClose={() => setTransferDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
-        <section>
-          <header className="flex items-center justify-between gap-3"><h2 id="transfer-detail-title" className="type-section-title">{transferDetail.reversalOfId ? "Transfer reversal" : "Transfer"}</h2>
-            <button type="button" className="feather-secondary" onClick={() => transferDetailDialog.current?.close()}>Close</button></header>
-          <dl className="transaction-summary-grid">
-            <div><dt>{financialAccounts.find(account => account.id === transferDetail.fromAccountId)?.name || "Archived account"} &middot; Sent</dt><dd>{formatMinorUnits(BigInt(transferDetail.fromAmountMinor), transferDetail.fromCurrencyCode)}</dd></div>
-            <div><dt>{financialAccounts.find(account => account.id === transferDetail.toAccountId)?.name || "Archived account"} &middot; Received</dt><dd>{formatMinorUnits(BigInt(transferDetail.toAmountMinor), transferDetail.toCurrencyCode)}</dd></div>
-          </dl>
-          <p>{formatDate(transferDetail.date)}</p>
-          {transferDetail.notes && !transferDetail.reversalOfId && <p className="safe-wrap">{transferDetail.notes}</p>}
-          <button type="button" className="feather-primary" onClick={() => { transferDetailDialog.current?.close(); navigateFinanceSubtab("accounts"); }}>Manage transfers</button>
-        </section>
-      </dialog>}
-      {transactionDetail && <dialog ref={transactionDetailDialog} data-transaction-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transaction-detail-title" onClose={() => setTransactionDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
-        <section>
-          <header className="flex items-center justify-between gap-3"><h2 id="transaction-detail-title" className="text-xl font-semibold">{transactionDetail.description || transactionDetail.category}</h2><button type="button" className="min-h-11 px-3" onClick={() => transactionDetailDialog.current?.close()}>Close</button></header>
-          <strong className="type-display-amount tabular-nums">{transactionDetail.type === 'income' ? '+' : '-'}{transactionDetail.amountMinor != null && transactionDetail.currencyCode ? formatMinorUnits(BigInt(transactionDetail.amountMinor), transactionDetail.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(transactionDetail.amount, transactionDetail.currencyCode)}</strong>
-          <dl className="grid grid-cols-2 gap-3"><div><dt className="text-xs text-secondary">Date</dt><dd>{formatDate(transactionDetail.date)}{transactionDetail.occurredAt && <> &middot; {formatTime(new Date(transactionDetail.occurredAt))}</>}</dd></div><div><dt className="text-xs text-secondary">Category</dt><dd>{transactionDetail.category}</dd></div><div><dt className="text-xs text-secondary">Payment</dt><dd>{transactionDetail.paymentMethod || 'Other'}</dd></div>{transactionDetail.accountId && <div><dt className="text-xs text-secondary">Account</dt><dd>{financialAccounts.find(account => account.id === transactionDetail.accountId)?.name || 'Archived account'}</dd></div>}</dl>
-          {transactionDetail.notes && <p className="whitespace-pre-wrap break-words text-sm">{transactionDetail.notes}</p>}
-          <div className="flex flex-wrap gap-3"><button type="button" className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 font-semibold" onClick={() => { transactionDetailDialog.current?.close(); openEditTransaction(transactionDetail); }}>Edit transaction</button><details className="lifeos-input rounded-xl px-3"><summary className="min-h-11 content-center cursor-pointer">Transaction actions</summary><button type="button" className="block min-h-11 w-full text-left" onClick={() => { transactionDetailDialog.current?.close(); openDuplicateTransaction(transactionDetail); }}>Duplicate</button><button type="button" className="block min-h-11 w-full text-left text-[var(--danger)]" onClick={async () => {
-            const id = transactionDetail.id;
-            transactionDetailDialog.current?.close();
-            if (!await confirmAction({ title: 'Delete this transaction?', message: 'It will be removed from your history.', confirmLabel: 'Delete transaction', destructive: true })) return;
-            try { await StorageService.transactions.delete(id); await reloadAllData(); showToast('Transaction deleted', 'info'); }
-            catch { showToast('Could not finish deleting the transaction. Refresh before retrying.', 'danger'); }
-          }}>Delete transaction</button></details></div>
-        </section>
-      </dialog>}
+      {bankSmsReviewOpen && <BankSmsReview transactions={transactions} categories={categories}
+        onDismiss={() => setBankSmsReviewOpen(false)}
+        onReview={(id, suggestion, fingerprint, historical) => {
+          setBankSmsReviewOpen(false);
+          navigateTo('finance'); navigateFinanceSubtab('transactions');
+          reviewImportedTransaction(suggestion, fingerprint, historical, 'bank-sms', id);
+        }} onTransfer={() => { setBankSmsReviewOpen(false); navigateTo('finance'); navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true); }} />}
+      {transferDetail && <TransactionDetail key={transferDetail.id} kind="transfer"
+        title={transferDetail.reversalOfId ? 'Transfer reversal' : 'Transfer'}
+        amount={formatMinorUnits(BigInt(transferDetail.fromAmountMinor), transferDetail.fromCurrencyCode)} currency={transferDetail.fromCurrencyCode}
+        context={[
+          ['From account', financialAccounts.find(account => account.id === transferDetail.fromAccountId)?.name || 'Archived account'],
+          ['To account', financialAccounts.find(account => account.id === transferDetail.toAccountId)?.name || 'Archived account'],
+          ['Amount received', formatMinorUnits(BigInt(transferDetail.toAmountMinor), transferDetail.toCurrencyCode)],
+          ['Date', formatDate(transferDetail.date)],
+        ]} notes={!transferDetail.reversalOfId ? transferDetail.notes : undefined}
+        onClose={() => setTransferDetailId(null)} primaryLabel={editableTransferDetail ? 'Edit transfer' : 'Manage transfer'} onPrimary={() => {
+          navigateFinanceSubtab('accounts');
+          if (editableTransferDetail) { setTransferFormDirty(false); setTransferFormDraft(buildTransferDraft(transferDetail)); }
+        }} />}
+      {transactionDetail && <TransactionDetail key={transactionDetail.id} kind={transactionDetail.type}
+        title={transactionDetail.description || transactionDetail.category} currency={transactionDetail.currencyCode || userPrefs.currency}
+        amount={(transactionDetail.type === 'income' ? '+' : '−') + (transactionDetail.amountMinor != null && transactionDetail.currencyCode
+          ? formatMinorUnits(BigInt(transactionDetail.amountMinor), transactionDetail.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale)
+          : formatMoney(transactionDetail.amount, transactionDetail.currencyCode))}
+        context={[
+          ['Date and time', formatDate(transactionDetail.date) + (transactionDetail.occurredAt ? ' · ' + formatTime(new Date(transactionDetail.occurredAt)) : '')],
+          ['Account', transactionDetail.accountId ? financialAccounts.find(account => account.id === transactionDetail.accountId)?.name || 'Archived account' : 'Unassigned'],
+          ['Category', transactionDetail.category],
+          ...(transactionDetail.importReference ? [['Reference', transactionDetail.importReference] as [string, string]] : []),
+          ...(transactionDetail.paymentMethod && transactionDetail.paymentMethod !== 'Other' ? [['Payment method', transactionDetail.paymentMethod] as [string, string]] : []),
+          ...(transactionDetail.importSource === 'bank-sms' ? [['Source', 'Bank SMS'] as [string, string]] : []),
+        ]} notes={transactionDetail.notes} onClose={() => setTransactionDetailId(null)}
+        primaryLabel="Edit transaction" onPrimary={() => openEditTransaction(transactionDetail)}
+        onDuplicate={() => openDuplicateTransaction(transactionDetail)} onDelete={async () => {
+          if (!await confirmAction({ title: 'Delete this transaction?', message: 'It will be removed from your history and totals.', confirmLabel: 'Delete transaction', destructive: true })) return;
+          try { await StorageService.transactions.delete(transactionDetail.id); await reloadAllData(); showToast('Transaction deleted', 'info'); }
+          catch { showToast('Could not finish deleting the transaction. Refresh before retrying.', 'danger'); }
+        }} />}
       <AnimatePresence initial={false}>
       {createKind && (
         <ComposerShell key={createKind} id="record-dialog"
           mode={['contribution', 'milestone', 'goal-progress'].includes(createKind) ? 'sheet' : 'page'}
           title={composerTitle} submitLabel={composerAction}
-          saving={recordSaving} reduced={interfaceMotion.reducedMotion} dismiss={requestCloseForm}
+          saving={recordSaving} reduced={interfaceMotion.reducedMotion} dismiss={requestCloseForm} footerDismissOnly={createKind === 'transaction'}
           onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} onChoiceChange={() => setCreateFormDirty(true)}>
             {!['budget', 'contribution', 'goal-progress', 'transaction'].includes(createKind) && <label className="feather-composer-lead">
               {createKind === 'transaction' ? 'Merchant or description' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
@@ -3770,31 +3827,33 @@ export default function App() {
                   [String(category.name), category.name] as const
                 )))]} onSelect={e => setCreateDraft({ ...createDraft, category: e })} />
               </div>
+                <div className="transaction-composer-account"><PreferenceChoice variant="field" label="Account (optional)" value={createDraft.accountId || ''} searchable
+                  options={[["", "Unassigned"], ...(financialAccounts.filter(account => account.isActive || account.id === createDraft.accountId).map(account => [
+                    account.id, account.name + ' · ' + account.currencyCode + (account.isActive ? '' : ' · Archived'),
+                  ] as const))]} onSelect={e => { const account = financialAccounts.find(row => row.id === e); setCreateDraft({ ...createDraft, accountId: e, ...(account ? { currencyCode: account.currencyCode } : {}) }); }} /></div>
               <label className="block text-xs text-secondary">Merchant or description<input maxLength={120} value={createDraft.title || ''} onChange={event => setCreateDraft({ ...createDraft, title: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
               {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
-              {createDraft.importFingerprint && <label className="block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => {
+              {(createDraft.importFingerprint || editingLegacyDateOnly) && <label className="block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => {
                 const date = event.target.value;
                 setCreateDraft({ ...createDraft, date, dateTime: date && createDraft.importTime ? date + 'T' + createDraft.importTime : '' });
               }} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
-              <AliveDisclosure label="Currency, account, date and notes">
+                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-secondary">Time is optional.</span>}<input required={!editingLegacyDateOnly && !createDraft.importFingerprint} type="datetime-local" value={createDraft.dateTime || ''} onChange={event => {
+                  const dateTime = event.target.value;
+                  setCreateDraft({ ...createDraft, dateTime, ...((createDraft.importFingerprint || editingLegacyDateOnly) && {
+                    date: dateTime.slice(0, 10) || createDraft.date, importTime: dateTime.slice(11),
+                  }) });
+                }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <AliveDisclosure label="Payment, currency & notes">
+                <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Currency" value={createDraft.currencyCode || userPrefs.currency} searchable
+                options={[...(CURRENCY_CODES.map(code => [String(code), formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)] as const))]} onSelect={e => setCreateDraft({ ...createDraft, currencyCode: e, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e) ? createDraft.accountId : '' })} /></div>
+                <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 block text-xs text-secondary">Notes<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
               {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
                 if (createOperation.current || (createFormDirty && !await confirmAction({ title: 'Discard this transaction draft?', message: 'Transfers use a separate form.', confirmLabel: 'Open transfer', cancelLabel: 'Keep editing' }))) return;
                 setCreateKind(null); setCreateFormDirty(false);
                 navigateTo('finance'); navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
               }}>Transfer between accounts</button>}
-                <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Currency" value={createDraft.currencyCode || userPrefs.currency} searchable
-                options={[...(CURRENCY_CODES.map(code => [String(code), formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)] as const))]} onSelect={e => setCreateDraft({ ...createDraft, currencyCode: e, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e) ? createDraft.accountId : '' })} /></div>
-                <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Account (optional)" value={createDraft.accountId || ''} searchable
-                options={[["", "Unassigned"], ...(financialAccounts.filter(account => account.isActive).map(account => [String(account.id), String(account.name) + String("· ") + String(account.currencyCode)] as const))]} onSelect={e => { const account = financialAccounts.find(row => row.id === e); setCreateDraft({ ...createDraft, accountId: e, ...(account ? { currencyCode: account.currencyCode } : {}) }); }} /></div>
-                <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-xs text-secondary">Notes<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
-                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly && !createDraft.importFingerprint} type="datetime-local" value={createDraft.dateTime || ''} onChange={event => {
-                  const dateTime = event.target.value;
-                  setCreateDraft({ ...createDraft, dateTime, ...(createDraft.importFingerprint && {
-                    date: dateTime.slice(0, 10) || createDraft.date, importTime: dateTime.slice(11),
-                  }) });
-                }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               </AliveDisclosure>
             </>}
             {createKind === 'habit' && <>
@@ -3880,7 +3939,6 @@ export default function App() {
               Target date
               <input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
-            {editingTransactionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this transaction?', message: 'This transaction will be removed from your history. This cannot be undone.', confirmLabel: 'Delete transaction', destructive: true }))) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setCreateFormDirty(false); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
             {editingContributionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this contribution?', message: 'The contribution will be removed and subtracted from the saved goal total.', confirmLabel: 'Delete contribution', destructive: true }))) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setCreateFormDirty(false); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
         </ComposerShell>
       )}

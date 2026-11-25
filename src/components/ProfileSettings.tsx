@@ -1,14 +1,14 @@
 import { useState, type ReactNode } from 'react';
-import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info } from 'lucide-react';
+import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wallet } from 'lucide-react';
 import { FeatherHeader } from './FeatherHeader';
 import type { LucideIcon } from 'lucide-react';
 
-export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses';
+export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses' | 'money-imports';
 
 export const PROFILE_TITLES: Record<ProfileSection, string> = {
   home: 'Profile', appearance: 'Appearance', preferences: 'Preferences', notifications: 'Notifications',
   privacy: 'Privacy & security', data: 'Backup & Restore', about: 'About LifeOS', developer: 'Developer tools',
-  themes: 'Themes', accent: 'Accent color', motion: 'Motion', 'app-lock': 'App lock', recovery: 'Recovery', licenses: 'Open-source licenses',
+  themes: 'Themes', accent: 'Accent color', motion: 'Motion', 'app-lock': 'App lock', recovery: 'Recovery', licenses: 'Open-source licenses', 'money-imports': 'Money & Imports',
 };
 
 export function profileParent(section: ProfileSection): ProfileSection {
@@ -26,6 +26,7 @@ const profileLinks = [
   { section: 'appearance', title: 'Appearance', detail: 'Theme, color and display mode', Icon: Palette },
   { section: 'preferences', title: 'Preferences', detail: 'Currency, dates, time and units', Icon: SlidersHorizontal },
   { section: 'notifications', title: 'Notifications', detail: 'Choose which reminders LifeOS sends', Icon: Bell },
+  { section: 'money-imports', title: 'Money & Imports', detail: 'Bank alerts and import settings', Icon: Wallet },
   { section: 'privacy', title: 'Privacy & Security', detail: 'App lock and recovery status', Icon: Shield },
   { section: 'data', title: 'Backup & Restore', detail: 'Encrypted backup and local records', Icon: Database },
   { section: 'about', title: 'About', detail: 'Version and privacy information', Icon: Info },

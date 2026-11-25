@@ -518,6 +518,8 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalBoolean(r, 'isRecurring', 'transactions', i);
     optionalString(r, 'commitmentId', 'transactions', i);
     if (r.importFingerprint !== undefined && (typeof r.importFingerprint !== 'string' || !/^[a-f0-9]{64}$/.test(r.importFingerprint))) fail('transactions', i, 'importFingerprint');
+    if (r.importSource !== undefined && (!r.importFingerprint || !enumValue(r.importSource, ['paste', 'share', 'bank-sms']))) fail('transactions', i, 'importSource');
+    if (r.importReference !== undefined && (!r.importFingerprint || typeof r.importReference !== 'string' || !/^[a-z0-9][a-z0-9-]{5,29}$/i.test(r.importReference))) fail('transactions', i, 'importReference');
     if (r.commitmentOccurrenceDate !== undefined && !date(r.commitmentOccurrenceDate)) fail('transactions', i, 'commitmentOccurrenceDate');
     if (Boolean(r.commitmentId) !== Boolean(r.commitmentOccurrenceDate)) fail('transactions', i, 'occurrence identity');
     try { validateMoneyMetadata(r); } catch { fail('transactions', i, 'currency/amountMinor'); }

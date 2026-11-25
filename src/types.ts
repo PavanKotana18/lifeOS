@@ -18,6 +18,9 @@ export interface Transaction {
   isRecurring?: boolean;
   /** Hash of the confirmed import identity. Raw alerts are never persisted. */
   importFingerprint?: string;
+  /** Provenance of a confirmed import, present on newer transactions only. */
+  importSource?: 'paste' | 'share' | 'bank-sms';
+  importReference?: string;
   commitmentId?: string;
   commitmentOccurrenceDate?: string;
   occurredAt?: string; // ISO instant represented by the user-selected local date/time

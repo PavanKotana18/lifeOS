@@ -17,11 +17,12 @@ type Props = {
   onSubmit: FormEventHandler<HTMLFormElement>;
   onChange?: FormEventHandler<HTMLFormElement>;
   portal?: boolean;
+  footerDismissOnly?: boolean;
   onChoiceChange?: () => void;
   children: ReactNode;
 };
 
-export default function ComposerShell({ id, title, accessibleName, submitLabel, mode, saving, reduced, dismiss, onSubmit, onChange, onChoiceChange, portal, children }: Props) {
+export default function ComposerShell({ id, title, accessibleName, submitLabel, mode, saving, reduced, dismiss, onSubmit, onChange, onChoiceChange, portal, footerDismissOnly, children }: Props) {
   const pressed = useRef<{ button: HTMLButtonElement; pointerId: number } | null>(null);
   const releasePress = (event: PointerEvent<HTMLFormElement>) => {
     if (pressed.current?.pointerId !== event.pointerId) return;
@@ -68,7 +69,7 @@ export default function ComposerShell({ id, title, accessibleName, submitLabel, 
         if (error) error.textContent = field.validity.valueMissing ? 'Complete the highlighted field.' : 'Check the highlighted value.';
         if (!field.hasAttribute('data-choice-validation')) requestAnimationFrame(() => { if (field.isConnected) field.focus(); });
       }}>
-      <FeatherHeader title={title} id={titleId} back={{ label: 'Close', onClick: dismiss, disabled: saving }} />
+      <FeatherHeader title={title} id={titleId} back={footerDismissOnly ? undefined : { label: 'Close', onClick: dismiss, disabled: saving }} />
       <div className="feather-composer-content">
         <p data-record-validation role="alert" className="record-validation text-sm text-[var(--danger)]" />
         <ChoiceCommitContext.Provider value={onChoiceChange}>{children}</ChoiceCommitContext.Provider>

@@ -257,6 +257,7 @@ async function fixture({ activate = true } = {}) {
   function appDeps() {
     const deps = { ...domain, ...preferences, ...load('src/services/themeCatalog.ts'), ...load('src/services/systemAppearance.ts'), ...load('src/services/todayLayout.ts'), ...db, ...notificationModule, ...state,
       ...load('src/services/csvExportService.ts'), ...load('src/services/onboardingJourney.ts'), ...load('src/services/notificationCopy.ts'), ...load('src/services/customAccent.ts'), ...load('src/services/profilePhoto.ts'),
+      ...load('src/services/bankSms.ts'),
       reconcileNotificationOnboardingOnResume: load('src/services/notificationOnboarding.ts').reconcileNotificationOnboardingOnResume,
       reconcileNotificationPreferences: async () => {},
       setDateOnlyAlertTime: () => {}, setNotificationTone: () => {}, setDeviceCredentialOnly: () => {},

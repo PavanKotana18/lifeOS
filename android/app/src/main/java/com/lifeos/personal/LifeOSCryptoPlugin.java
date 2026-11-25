@@ -1353,6 +1353,18 @@ public class LifeOSCryptoPlugin extends Plugin {
         call.resolve(response);
     }
 
+    String smsVaultBinding() throws Exception {
+        cryptoLock.readLock().lock();
+        try {
+            if (dataKey == null || recoveryNeedsRebind) return null;
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(dataKey, "HmacSHA256"));
+            return Base64.encodeToString(mac.doFinal("lifeos.local.sms.vault.v1".getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP);
+        } finally {
+            cryptoLock.readLock().unlock();
+        }
+    }
+
     private long getLockGeneration() {
         cryptoLock.readLock().lock();
         try {

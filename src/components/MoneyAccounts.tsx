@@ -15,6 +15,15 @@ type AccountInput = Omit<FinancialAccount, 'id' | 'createdAt' | 'updatedAt'>;
 type TransferInput = Omit<AccountTransfer, 'id' | 'createdAt' | 'updatedAt' | 'reversalOfId'>;
 export type AccountDraft = { id?: string; name: string; type: FinancialAccountType; currencyCode: string; opening: string; description: string; isActive: boolean };
 export type TransferDraft = { id?: string; from: string; to: string; fromAmount: string; toAmount: string; rate: string; date: string; notes: string };
+
+export function buildTransferDraft(transfer: AccountTransfer): TransferDraft {
+  return {
+    id: transfer.id, from: transfer.fromAccountId, to: transfer.toAccountId,
+    fromAmount: minorUnitsToDecimal(BigInt(transfer.fromAmountMinor), transfer.fromCurrencyCode),
+    toAmount: minorUnitsToDecimal(BigInt(transfer.toAmountMinor), transfer.toCurrencyCode),
+    rate: transfer.exchangeRate || '', date: transfer.date, notes: transfer.notes || '',
+  };
+}
 type Props = {
   reduced?: boolean;
   accounts: FinancialAccount[];
@@ -120,9 +129,7 @@ export default function MoneyAccounts(props: Props) {
   const beginTransfer = (transfer?: AccountTransfer) => {
     setError('');
     setTransferDirty(false);
-    setTransferDraft(transfer ? { id: transfer.id, from: transfer.fromAccountId, to: transfer.toAccountId,
-      fromAmount: minorUnitsToDecimal(BigInt(transfer.fromAmountMinor), transfer.fromCurrencyCode),
-      toAmount: minorUnitsToDecimal(BigInt(transfer.toAmountMinor), transfer.toCurrencyCode), rate: transfer.exchangeRate || '', date: transfer.date, notes: transfer.notes || '' }
+    setTransferDraft(transfer ? buildTransferDraft(transfer)
       : { from: active[0]?.id || '', to: active[1]?.id || '', fromAmount: '', toAmount: '', rate: '', date: today(), notes: '' });
   };
   const closeTransferDraft = async () => {

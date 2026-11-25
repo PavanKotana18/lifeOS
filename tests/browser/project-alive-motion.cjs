@@ -20,6 +20,7 @@ const fourDestinations = process.env.LIFEOS_FOUR_DESTINATIONS === '1';
 const primaryOnly = process.env.LIFEOS_MOTION_PRIMARY === '1';
 const profileCorrection = process.env.LIFEOS_PROFILE_CORRECTION === '1';
 const shareReview = process.env.LIFEOS_SHARE_REVIEW === '1';
+const bankSmsReview = process.env.LIFEOS_BANK_SMS_REVIEW === '1';
 const coldAlert = 'Bank account xxxx4521 debited INR 17.25 at Sydney Cafe on 21/11/2026 Ref 552001818273';
 fs.mkdirSync(evidence, { recursive: false });
 
@@ -29,6 +30,105 @@ const report = {
   worktreeStatus: execFileSync('git', ['status', '--short'], { cwd: root, encoding: 'utf8' }).trim(),
 };
 let server, browser;
+
+async function auditBankSms(page, button, tab) {
+  const settings = page.getByRole('region', { name: 'Automatic bank SMS monitoring' });
+  const queue = page.getByRole('dialog', { name: 'Bank SMS review' });
+  const ledger = () => page.evaluate(async () => {
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('LifeOS_Database');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const rows = await new Promise((resolve, reject) => {
+      const request = database.transaction('transactions').objectStore('transactions').getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+    return { count: rows.length, sealed: rows.every(row => row.__lifeosEncrypted === 1 && !row.description && !row.importReference) };
+  });
+  const receive = (id, text) => page.evaluate(({ id, text }) => window.__qaSmartMoney.receiveSms(id, text), { id, text });
+  const mark = state => settings.getByRole('status').filter({ hasText: new RegExp('^' + state + '$') }).waitFor();
+  const appSignal = isActive => page.evaluate(isActive => {
+    window.dispatchEvent(new CustomEvent('qa-app-appStateChange', { detail: { isActive } }));
+  }, isActive);
+  const seed = () => page.evaluate(() => { window.__qaSmartMoney.sms.nextGrant = true; });
+  const merchant = 'SMS fixture bakery';
+  const alert = coldAlert.replace('Sydney Cafe', merchant);
+  await tab('settings').click();
+  await button('Money & Imports').click();
+  await mark('Off');
+  await button('Set up protected storage', settings).click();
+  await button('Protect this device and save').click();
+  await button('Enable monitoring', settings).click();
+  await mark('Permission needed');
+  assert.equal(await queue.count(), 0);
+  await seed();
+  await button('Enable monitoring', settings).click();
+  await mark('On');
+  report.interactions.push('Explicit opt-in handled simulated denial and grant.');
+  await appSignal(false);
+  await page.getByRole('heading', { name: /locked/i }).waitFor();
+  await receive('pending-fixture', alert);
+  await receive('duplicate-fixture', alert);
+  await receive('refund-fixture', 'Bank account refunded INR 8.00 on 21/11/2026 Ref 552001877321');
+  assert.equal(await page.evaluate(() => window.__qaSmartMoney.sms.peeks), 0);
+  assert.equal(await queue.count(), 0);
+  await appSignal(true);
+  await mark('On');
+  await button('Open review queue', settings).click();
+  await queue.getByText(merchant, { exact: false }).waitFor();
+  await queue.getByText(/Refund · check the original expense/).waitFor();
+  assert.equal(await queue.getByRole('button', { name: 'Review & save' }).count(), 1);
+  assert.deepEqual(await ledger(), { count: 0, sealed: true });
+  await page.screenshot({ path: path.join(evidence, 'sms-review-queue.png') });
+  await button('Review & save', queue).click();
+  const composer = page.locator('#record-dialog');
+  await composer.getByLabel('Merchant or description').fill(merchant + ' edited');
+  await button(/^Category/, composer).click();
+  await page.getByRole('dialog', { name: 'Category' }).getByRole('option').nth(1).click();
+  await button('Add transaction', composer).click();
+  await composer.waitFor({ state: 'hidden' });
+  assert.deepEqual(await ledger(), { count: 1, sealed: true });
+  report.interactions.push('Locked delivery withheld the raw alert. Duplicate delivery collapsed. An edited confirmed expense wrote one ciphertext row.');
+
+  await page.evaluate(alert => window.__qaSmartMoney.share('same-sms-shared', alert), alert);
+  const share = page.getByRole('dialog', { name: 'Smart Import' });
+  await button('Detect transaction', share).click();
+  await button('Review transaction', share).click();
+  await button(/^Category/, composer).click();
+  await page.getByRole('dialog', { name: 'Category' }).getByRole('option').nth(1).click();
+  await button('Add transaction', composer).click();
+  await page.getByText(/matching transaction is already recorded/).first().waitFor();
+  assert.equal((await ledger()).count, 1);
+  await button('Cancel', composer).click();
+  await button(/Discard/, page.getByRole('alertdialog')).click();
+  await composer.waitFor({ state: 'hidden' });
+  await tab('settings').click();
+  await button('Money & Imports').click();
+  await mark('On');
+  await button('Turn off monitoring', settings).click();
+  await mark('Off');
+  await receive('disabled-fixture', alert.replace('552001818273', '552001818279'));
+  await button('Open review queue', settings).click();
+  await queue.getByText(/Refund · check the original expense/).waitFor();
+  assert.equal(await queue.getByRole('button', { name: 'Dismiss', exact: true }).count(), 1);
+  await button('Dismiss', queue).click();
+  await queue.getByText('No suggestions waiting for review.').waitFor();
+  await button('Close', queue).click();
+  await button('Enable monitoring', settings).click();
+  await mark('On');
+  await page.evaluate(() => {
+    window.__qaSmartMoney.sms.granted = false;
+    window.__qaSmartMoney.sms.requestable = false;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await mark('Permission needed');
+  assert.equal(await button('Enable monitoring', settings).isDisabled(), true);
+  assert.deepEqual(await ledger(), { count: 1, sealed: true });
+  report.interactions.push('Share replay, disable, refund dismissal and simulated revocation left the confirmed ledger unchanged.');
+}
 
 async function auditShares(page, button) {
   const sheet = page.getByRole('dialog', { name: 'Smart Import' });
@@ -296,7 +396,9 @@ async function main() {
   report.browser = browser.version();
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1, colorScheme,
     reducedMotion: reduced ? 'reduce' : 'no-preference', isMobile: true, hasTouch: true });
-  if (profileCorrection || shareReview) await installSmartMoneyFixture(context, { coldAlert: shareReview ? coldAlert : undefined });
+  if (profileCorrection || shareReview || bankSmsReview) await installSmartMoneyFixture(context, {
+    coldAlert: shareReview ? coldAlert : undefined, privateSms: bankSmsReview,
+  });
   await context.route('**/*', route => route.request().url().startsWith(origin + '/')
     || /^(data|blob):/.test(route.request().url()) ? route.continue() : route.abort());
   await context.addInitScript(() => {
@@ -316,7 +418,7 @@ async function main() {
   page.setDefaultTimeout(20000);
   page.on('pageerror', error => report.errors.push(error.message));
   await page.goto(origin + '/tests/browser/index.html?onboarding-auth=success' +
-    (profileCorrection || shareReview ? '&qa-native-back=enabled' : ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
+    (profileCorrection || shareReview || bankSmsReview ? '&qa-native-back=enabled' : ''), { waitUntil: 'domcontentloaded', timeout: 60000 });
   const button = (name, scope = page) => scope.getByRole('button', { name, exact: typeof name === 'string' });
   const tab = name => page.locator('[data-tab="' + name + '"]');
   const composer = () => page.locator('form#record-dialog');
@@ -343,6 +445,11 @@ async function main() {
 
   if (shareReview) {
     await auditShares(page, button);
+    assert.deepEqual(report.errors, []);
+    return;
+  }
+  if (bankSmsReview) {
+    await auditBankSms(page, button, tab);
     assert.deepEqual(report.errors, []);
     return;
   }

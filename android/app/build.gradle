@@ -26,6 +26,11 @@ def lifeosReleaseSigningReady =
         System.getenv(it)?.trim()
     }
 android {
+    // The default Debug and all Release builds exclude the receiver and its code.
+    if (providers.gradleProperty('lifeosPrivateSms').orNull == 'true') {
+        sourceSets.debug.manifest.srcFile 'src/privateSms/AndroidManifest.xml'
+        sourceSets.debug.java.srcDir 'src/privateSms/java'
+    }
     signingConfigs {
         if (lifeosReleaseSigningReady) {
             release {

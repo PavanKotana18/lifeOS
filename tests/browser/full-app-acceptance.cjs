@@ -128,7 +128,7 @@ async function chooseOption(scope, label, value) {
   await trigger.click();
   const choices = page.locator('dialog[data-preference-choice][open]').last();
   const buttons = choices.locator('button[data-option-value]:enabled');
-  const option = typeof value === 'object' ? buttons.nth(value.index) :
+  const option = value instanceof RegExp ? choices.getByRole('option', { name: value }) : typeof value === 'object' ? buttons.nth(value.index) :
     choices.locator('button[data-option-value=' + JSON.stringify(value) + ']');
   const selected = await option.getAttribute('data-option-value');
   await option.click();
@@ -258,6 +258,7 @@ async function main() {
     ? 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe' : undefined);
   browser = await chromium.launch({ ...(edge ? { executablePath: edge } : {}), headless: true, timeout: 30_000 });
   context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1,
+    colorScheme: process.env.LIFEOS_BROWSER_THEME === 'dark' ? 'dark' : 'light',
     reducedMotion: 'reduce', acceptDownloads: false, isMobile: touchReview, hasTouch: touchReview });
   await context.route('**/*', route => {
     const url = route.request().url();
@@ -431,9 +432,10 @@ async function main() {
             ['Privacy & security', ['Privacy & Security']], ['App lock', ['Privacy & Security', 'App lock']],
             ['Recovery', ['Privacy & Security', 'Recovery']], ['Backup & Restore', ['Backup & Restore']],
             ['About LifeOS', ['About']], ['Open-source licenses', ['About', 'Open-source licenses']],
-            ['Developer tools', ['Developer tools']],
+            ['Developer tools', ['Developer tools']], ['Money & Imports', ['Money & Imports']],
           ];
           report.profileGeometry = [];
+          report.profileDescendants = [];
           for (const [title, path] of surfaces) {
             await nav.getByRole('button', { name: 'Profile', exact: true }).click();
             for (const item of path) await clickButton(new RegExp("^" + item));
@@ -447,6 +449,27 @@ async function main() {
             report.profileGeometry.push({ title, ...geometry });
             const name = 'profile-audit-' + title.toLowerCase().replace(/[^a-z]+/g, '-');
             await capture(name, false);
+            if (process.env.LIFEOS_PROFILE_DESCENDANTS === '1') {
+              for (const width of [320, 360, 390, 412, 768]) {
+                await page.setViewportSize({ width, height: 844 });
+                await page.evaluate(() => document.documentElement.style.fontSize = '150%');
+                const clipping = await page.evaluate(() => {
+                  const root = document.querySelector('#screen-settings .profile-settings');
+                  const bounds = root.getBoundingClientRect();
+                  const visible = node => node.getClientRects().length && getComputedStyle(node).visibility === 'visible';
+                  return [...root.querySelectorAll('button, a, label, input, select, p, pre, h2, h3, .preference-row')].filter(visible)
+                    .flatMap(node => {
+                      const rect = node.getBoundingClientRect();
+                      const overflow = node.scrollWidth - node.clientWidth;
+                      return rect.left < bounds.left - 1 || rect.right > bounds.right + 1 || (overflow > 2 && !node.matches('input,select'))
+                        ? [{ element: node.tagName, label: (node.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 48), left: rect.left, right: rect.right, overflow }] : [];
+                    });
+                });
+                report.profileDescendants.push({ title, width, clipping });
+                if (process.env.LIFEOS_PROFILE_STRICT === '1') assert.deepEqual(clipping, [], title + ' clips descendants at ' + width);
+              }
+              await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+            }
             await page.setViewportSize({ width: 320, height: 844 });
             await page.evaluate(() => document.documentElement.style.fontSize = '125%');
             assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), title + ' enlarged width');
@@ -1170,8 +1193,8 @@ async function main() {
       await capture('edit-transaction-composer-390');
       await saveDialog('Save changes');
       await page.getByRole('button', {name:'View transaction ' + title,exact:true}).click();
-      await detail.getByText('Transaction actions', {exact:true}).click();
-      await detail.getByRole('button', {name:'Delete transaction',exact:true}).click();
+      await detail.getByRole('button', {name:'More options',exact:true}).click();
+      await page.getByRole('dialog', {name:'More options'}).getByRole('button', {name:'Delete transaction',exact:true}).click();
       await page.getByRole('alertdialog').getByRole('button', {name:'Delete transaction',exact:true}).click();
       await page.waitForFunction(async name => {
         const { StorageService } = await import('/src/db.ts');
@@ -1207,11 +1230,81 @@ async function main() {
       assert.match(await totals.locator('dd').first().innerText(), /^\D*0[.,]00$/, 'a recorded transfer stays out of money in');
       await page.getByRole('button', { name: /^Transfer QA edited cash account to QA reserve account/ }).click();
       const transfer = page.locator('dialog[data-transfer-details][open]');
-      assert.equal(await transfer.locator('dd').count(), 2);
-      assert.ok((await transfer.locator('dd').allTextContents()).every(amount => amount.includes('20.25')));
+      assert.ok((await transfer.locator('.transaction-detail-amount').innerText()).includes('20.25'));
+      assert.ok((await transfer.locator('dl').innerText()).includes('20.25'));
       await capture('transfer-timeline-detail-390', false);
       await page.keyboard.press('Escape');
       await transfer.waitFor({ state: 'hidden' });
+      if (process.env.LIFEOS_TRANSACTION_REVIEW === '1') {
+        const budget = await page.evaluate(async () => {
+          const { StorageService } = await import('/src/db.ts');
+          const budget = (await StorageService.budgets.getAll())[0];
+          const categories = await StorageService.categories.getAll();
+          return { ...budget, category: (budget.categoryId ? categories.find(row => row.id === budget.categoryId) : categories.find(row => row.type === 'expense'))?.name };
+        });
+        assert.ok(budget.category, 'fixture budget has a category');
+        const financialState = () => page.evaluate(async ({ budget }) => {
+          const { StorageService, lifeOSDatabase } = await import('/src/db.ts');
+          const { calculateAccountBalances } = await import('/src/services/financialAccounting.ts');
+          const { buildFinanceAnalytics } = await import('/src/services/financeAnalytics.ts');
+          const [accounts, transactions, transfers, categories] = await Promise.all([
+            StorageService.accounts.getAll(), StorageService.transactions.getAll(), StorageService.accounts.getTransfers(),
+            StorageService.categories.getAll(),
+          ]);
+          const balances = calculateAccountBalances(accounts, transactions, transfers);
+          const monthly = buildFinanceAnalytics(transactions, [budget], budget.monthYear, 6, categories, budget.currencyCode);
+          const relevant = transactions.filter(row => row.description === 'QA account and budget edit');
+          const row = relevant[0];
+          const stored = await lifeOSDatabase.transactions.get(row?.id || 'missing');
+          return {
+            cash: String(balances.get(accounts.find(item => item.name === 'QA edited cash account').id)),
+            reserve: String(balances.get(accounts.find(item => item.name === 'QA reserve account').id)),
+            spent: monthly.budgetRows[0].spentMinor,
+            count: relevant.length, id: row?.id, encrypted: stored?.__lifeosEncrypted === 1 && !stored.description,
+          };
+        }, { budget });
+        const starting = await financialState();
+        await clickButton('Add transaction');
+        await fillDialogField('Amount', '42.75');
+        await fillDialogField('Merchant or description', 'QA account and budget edit');
+        await chooseOption(dialog(), 'Category', budget.category);
+        await chooseOption(dialog(), 'Account (optional)', /^QA edited cash account/);
+        await saveDialog('Add transaction');
+        const original = await financialState();
+        assert.equal(original.cash, String(BigInt(starting.cash) - 4275n));
+        assert.equal(original.reserve, starting.reserve);
+        assert.equal(original.spent, String(BigInt(starting.spent) + 4275n));
+        assert.ok(original.id && original.count === 1 && original.encrypted);
+        await clickButton('View transaction QA account and budget edit');
+        await clickButton('Edit transaction');
+        await fillDialogField('Amount', '14.25');
+        await chooseOption(dialog(), 'Account (optional)', /^QA reserve account/);
+        const accountId = await page.evaluate(async () => {
+          const { StorageService } = await import('/src/db.ts');
+          const reserve = (await StorageService.accounts.getAll()).find(row => row.name === 'QA reserve account');
+          await StorageService.accounts.update(reserve.id, { isActive: false });
+          return reserve.id;
+        });
+        await dialog().getByRole('button', { name: 'Save changes' }).click();
+        await dialog().getByRole('alert').getByText(/active financial account/i).waitFor();
+        assert.deepEqual(await financialState(), original, 'rejected edit leaves balances and ledger untouched');
+        await page.evaluate(async id => {
+          const { StorageService } = await import('/src/db.ts');
+          await StorageService.accounts.update(id, { isActive: true });
+        }, accountId);
+        await saveDialog('Save changes');
+        const modified = await financialState();
+        assert.deepEqual(modified, { ...original, cash: starting.cash, reserve: String(BigInt(starting.reserve) - 1425n),
+          spent: String(BigInt(starting.spent) + 1425n) });
+        await clickButton('View transaction QA account and budget edit');
+        await clickButton('More options');
+        await page.getByRole('dialog', { name: 'More options' }).getByRole('button', { name: 'Duplicate', exact: true }).click();
+        assert.equal(await dialog().getByLabel('Amount', { exact: false }).inputValue(), '14.25');
+        await dialog().getByRole('button', { name: 'Cancel', exact: true }).click();
+        await dialog().waitFor({ state: 'hidden' });
+        assert.deepEqual(await financialState(), modified, 'duplication opens a draft and cancel writes nothing');
+        report.transactionLedger = { starting, original, modified };
+      }
       await clickButton('Money overview');
       await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Schedule', exact: true }).click();
       await clickButton('Add scheduled item');

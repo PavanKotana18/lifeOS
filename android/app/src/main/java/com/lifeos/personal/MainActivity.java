@@ -58,6 +58,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NotificationDeliveryDiagnosticsPlugin.class);
         registerPlugin(RuntimeInfoPlugin.class);
         registerPlugin(SmartImportSharePlugin.class);
+        registerPrivateSmsPlugin();
         super.onCreate(savedInstanceState);
 
         // Start protected for every build. Debug UI may opt into screenshots only
@@ -65,6 +66,14 @@ public class MainActivity extends BridgeActivity {
         applyScreenshotProtection();
         applySystemFontScale();
         showWebViewUpdateIfRequired();
+    }
+
+    private void registerPrivateSmsPlugin() {
+        try {
+            registerPlugin(Class.forName("com.lifeos.personal.BankSmsPlugin").asSubclass(com.getcapacitor.Plugin.class));
+        } catch (ClassNotFoundException ignored) {
+            // The default distribution does not package this feature.
+        }
     }
 
     @Override

@@ -11,7 +11,7 @@ assert.match(app, /required=\{createKind !== 'transaction'\}/, 'transaction desc
 assert.match(transactionForm, /required type="number" min=\{10 \*\* -getCurrencyMetadata\(createDraft\.currencyCode \|\| userPrefs\.currency\)\.fractionDigits\} step=\{10 \*\* -getCurrencyMetadata\(createDraft\.currencyCode \|\| userPrefs\.currency\)\.fractionDigits\} inputMode="decimal"/, 'new quick entry leads with an amount field with the selected currency minor unit');
 assert.match(transactionForm, /label="Currency" value=\{createDraft\.currencyCode \|\| userPrefs\.currency\}/, 'each new transaction can use an explicit currency');
 assert.match(transactionForm, /label="Account \(optional\)"/, 'account assignment remains optional');
-assert.match(transactionForm, /<AliveDisclosure label="Currency, account, date and notes"/, 'transaction create and edit share a named collapsed group');
+assert.match(transactionForm, /<AliveDisclosure label="Payment, currency & notes"/, 'transaction create and edit share a named collapsed group');
 assert.match(transactionForm, /Transaction date and time[\s\S]*?type="datetime-local"/, 'optional transaction timestamp can still be edited');
 assert.match(app, /dateTime: formatLocalDateTime\(now\)/, 'new entries default to the current local date and time');
 assert.doesNotMatch(transactionForm, /autoCapitalize=|autoCorrect=/, 'text entry keeps platform keyboard behavior without forcing text rewriting');

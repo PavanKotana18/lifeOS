@@ -243,6 +243,8 @@ export function createEncryptedStorageFacade(
       add: async (input: Omit<Transaction, 'id' | 'createdAt'>, options?: ImportDuplicateOptions) => {
         if (input.commitmentId || input.commitmentOccurrenceDate) throw new Error('Scheduled occurrence identity is managed by its plan.');
         if (input.importFingerprint !== undefined && !/^[a-f0-9]{64}$/.test(input.importFingerprint)) throw new Error('Invalid import identity.');
+        if (input.importSource !== undefined && (!input.importFingerprint || !['paste', 'share', 'bank-sms'].includes(input.importSource))) throw new Error('Invalid import source.');
+        if (input.importReference !== undefined && (!input.importFingerprint || !/^[a-z0-9][a-z0-9-]{5,29}$/i.test(input.importReference))) throw new Error('Invalid import reference.');
         const record: Transaction = {
           ...input,
           id: helpers.createRecordId('tx'),
@@ -284,7 +286,8 @@ export function createEncryptedStorageFacade(
         coordinator.run(async ctx => {
           const existing = await ctx.get<Transaction>('transactions', id);
           if (!existing) throw new Error('Transaction not found.');
-          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt, commitmentId: existing.commitmentId, commitmentOccurrenceDate: existing.commitmentOccurrenceDate, importFingerprint: existing.importFingerprint };
+          const merged = { ...existing, ...changes, id, createdAt: existing.createdAt, commitmentId: existing.commitmentId, commitmentOccurrenceDate: existing.commitmentOccurrenceDate, importFingerprint: existing.importFingerprint,
+            importSource: existing.importSource, importReference: existing.importReference };
           helpers.validateTransactionRecord(merged, true);
           const [categories, accounts] = await Promise.all([
             ctx.getAll<Category>('categories'), ctx.getAll<FinancialAccount>('financialAccounts')

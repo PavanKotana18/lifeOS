@@ -40,6 +40,10 @@ for (const [text, kind, amount, date, time] of [
   ['Bank refunded INR 58.24 to account XX1122.', 'refund', '58.24'],
   ['Bank account debit INR 500 reversed.', 'reversal', '500.00'],
   ['Own account transfer INR 1800 received.', 'transfer', '1800.00'],
+  ['[AX-EXAMPLEBANK] UPI DR INR 45.50 at Market Lane on 2026-11-21 UPI Ref 123456789012', 'expense', '45.50', '2026-11-21'],
+  ['UPI CR INR 320.00 from example@upi UTR 123456789015', 'income', '320.00'],
+  ['Example Bank: Account XX1122 credited INR 40000 salary on 21/11/2026', 'income', '40000.00', '2026-11-21'],
+  ['Example Bank: Card XX2200 charged INR 25.00 annual fee', 'expense', '25.00'],
 ]) {
   const result = parse(text);
   assert.equal(result.kind, kind, text);
@@ -48,6 +52,9 @@ for (const [text, kind, amount, date, time] of [
   assert.equal(details.date, date, text);
   assert.equal(details.time, time, text);
 }
+assert.equal(parse('Example Bank: Account XX1122 credited INR 40000 salary').description, 'Salary');
+assert.equal(parse('Example Bank: Account XX1122 credited INR 100').description, undefined);
+assert.equal(parse('Example Bank: Card XX2200 charged INR 25.00 annual fee').bankHint, 'Example Bank');
 (async () => {
   const one = await alertFingerprint(message, suggestion);
   const alternate = message.replace('Local Cafe', 'LOCAL CAFE');
