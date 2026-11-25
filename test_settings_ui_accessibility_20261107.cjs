@@ -9,11 +9,12 @@ const settingsEnd = app.indexOf('      {createKind && (', settingsStart);
 assert.ok(settingsStart >= 0 && settingsEnd > settingsStart, 'settings view boundaries are present');
 const settings = app.slice(settingsStart, settingsEnd);
 
-assert.match(app, /aria-pressed=\{appearance === value\}/);
-assert.match(app, /lifeos-panel flex min-h-11 items-center justify-center/);
-assert.match(app, /aria-label=\{`Preview \$\{option\.label\}`\}/);
-assert.match(app, /onClick=\{cancelVisualThemePreview\}/);
-assert.match(app, /onClick=\{\(\) => void applyVisualTheme\(\)\}/);
+const appearance = fs.readFileSync('src/components/AppearanceStudio.tsx', 'utf8');
+assert.match(appearance, /aria-label=\{displayLabels\[mode\]\} aria-pressed=\{appearance === mode\}/);
+assert.match(appearance, /className="appearance-choice appearance-mode-card"/);
+assert.match(appearance, /aria-label=\{'Preview ' \+ option\.label\}/);
+assert.match(app, /onCancel=\{cancelVisualThemePreview\}/);
+assert.match(app, /onApply=\{\(\) => void applyVisualTheme\(\)\}/);
 assert.match(app, /role="switch" aria-checked=\{biometricEnabled\}[^\n]*min-h-11/);
 assert.match(app, /role="switch" aria-label="All notifications" aria-checked=\{notificationsEnabled\}/);
 assert.match(app, /aria-checked=\{notificationsEnabled && notificationPreferences\[key\]\} disabled=\{!notificationsEnabled\}/);

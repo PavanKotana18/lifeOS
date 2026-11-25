@@ -1161,10 +1161,10 @@ async function main() {
       }
     });
 
-    await journey('Profile drawer focus, scroll and encrypted photo lifecycle', async () => {
+    await journey('Full-screen Profile focus, scroll and encrypted photo lifecycle', async () => {
       await activeTab('finance');
       await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
-      const opener = page.getByRole('button', { name: 'Profile' });
+      const opener = page.getByRole('button', { name: 'Profile', exact: true });
       const drawer = page.getByRole('region', { name: 'Profile and settings' });
       await opener.click();
       await drawer.waitFor();
