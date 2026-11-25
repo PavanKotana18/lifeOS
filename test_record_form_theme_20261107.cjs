@@ -12,7 +12,7 @@ const shell = fs.readFileSync('src/components/ComposerShell.tsx', 'utf8');
 const css = fs.readFileSync('src/styles/approved-composers.css', 'utf8');
 assert.match(dialog, /<ComposerShell key=\{createKind\} id="record-dialog"/);
 assert.match(shell, /role="dialog" aria-modal="true"[\s\S]*aria-labelledby=\{accessibleName \? undefined : titleId\}/);
-assert.match(shell, /<FeatherHeader title=\{title\} id=\{titleId\} back=\{\{ label: 'Close'/);
+assert.match(shell, /<FeatherHeader title=\{title\} id=\{present \? titleId : undefined\} back=\{\{ label: 'Close'/);
 assert.match(css, /\.feather-composer-content \{[^}]*overflow-y: auto/);
 assert.match(css, /\.feather-icon-button[\s\S]*min-(?:block|inline)-size:/);
 assert.ok(!/\b(?:text|bg|border)-(?:slate|indigo|emerald|amber|rose)-\d{2,3}(?:\/\d+)?\b/.test(dialog), 'dialog surfaces use semantic theme colors');

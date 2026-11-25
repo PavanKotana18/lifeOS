@@ -38,7 +38,7 @@ export default function ComposerShell({ id, title, accessibleName, descriptionId
     data-exiting={!present} aria-hidden={!present || undefined}
     ref={element => element?.toggleAttribute('inert', !present)}
     onMouseDown={event => { if (!saving && event.target === event.currentTarget) dismiss(); }}>
-    <m.form id={id} role="dialog" aria-modal="true" aria-label={accessibleName} aria-labelledby={accessibleName ? undefined : titleId} aria-busy={saving} aria-describedby={descriptionId}
+    <m.form id={present ? id : undefined} role="dialog" aria-modal="true" aria-label={accessibleName} aria-labelledby={accessibleName ? undefined : titleId} aria-busy={saving} aria-describedby={descriptionId}
       className="feather-composer lifeos-page" data-mode={mode} data-composer-focus={page || undefined} tabIndex={-1}
       initial={reduced ? false : { transform: outside, opacity: page ? 1 : 0 }}
       animate={{ transform: rest, opacity: 1 }}
@@ -53,7 +53,11 @@ export default function ComposerShell({ id, title, accessibleName, descriptionId
         pressed.current = { button, pointerId: event.pointerId };
       }}
       onPointerUpCapture={releasePress} onPointerCancelCapture={releasePress} onLostPointerCapture={releasePress}
-      onSubmit={onSubmit} onChange={event => {
+      onSubmit={event => {
+        if (!present || saving) { event.preventDefault(); return; }
+        onSubmit(event);
+      }}
+      onChange={event => {
         const form = event.currentTarget;
         if (!form.querySelector(':invalid')) {
           const error = form.querySelector<HTMLElement>('[data-record-validation]');
@@ -69,7 +73,7 @@ export default function ComposerShell({ id, title, accessibleName, descriptionId
         if (error) error.textContent = field.validity.valueMissing ? 'Complete the highlighted field.' : 'Check the highlighted value.';
         if (!field.hasAttribute('data-choice-validation')) requestAnimationFrame(() => { if (field.isConnected) field.focus(); });
       }}>
-      <FeatherHeader title={title} id={titleId} back={{ label: 'Close', onClick: dismiss, disabled: saving }} />
+      <FeatherHeader title={title} id={present ? titleId : undefined} back={{ label: 'Close', onClick: dismiss, disabled: saving }} />
       <div className="feather-composer-content">
         <p data-record-validation role="alert" className="record-validation text-sm text-[var(--danger)]" />
         <ChoiceCommitContext.Provider value={onChoiceChange}>{children}</ChoiceCommitContext.Provider>
