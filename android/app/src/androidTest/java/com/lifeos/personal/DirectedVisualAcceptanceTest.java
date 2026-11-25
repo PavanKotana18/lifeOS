@@ -19,12 +19,15 @@ import java.io.File;
 import java.io.FileOutputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
 /** Fresh emulator only, no private writes or authentication bypass. */
 @RunWith(AndroidJUnit4.class)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class DirectedVisualAcceptanceTest {
     private ActivityScenario<MainActivity> scenario;
     private File output;
@@ -352,11 +355,12 @@ public class DirectedVisualAcceptanceTest {
             android.os.HandlerThread collector = new android.os.HandlerThread("retained-track-frames");
             collector.start();
             JSONArray report = new JSONArray();
-            java.util.List<Long> frames = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+            java.util.List<long[]> frames = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
             java.util.concurrent.atomic.AtomicInteger dropped = new java.util.concurrent.atomic.AtomicInteger();
             android.view.Window.OnFrameMetricsAvailableListener listener = (window, metrics, missed) -> {
                 long total = metrics.getMetric(android.view.FrameMetrics.TOTAL_DURATION);
-                if (total > 0) frames.add(total);
+                if (total > 0) frames.add(new long[]{metrics.getMetric(android.view.FrameMetrics.INTENDED_VSYNC_TIMESTAMP),
+                        metrics.getMetric(android.view.FrameMetrics.VSYNC_TIMESTAMP), total});
                 dropped.addAndGet(missed);
             };
             scenario.onActivity(activity -> activity.getWindow().addOnFrameMetricsAvailableListener(listener,
@@ -375,11 +379,18 @@ public class DirectedVisualAcceptanceTest {
                         JSONObject item = new JSONObject();
                         item.put("theme", theme);
                         item.put("destination", destination);
-                        synchronized (frames) { item.put("androidWindowFrameDurationsNs", new JSONArray(frames)); }
+                        JSONArray nativeFrames = new JSONArray();
+                        synchronized (frames) {
+                            for (long[] frame : frames) {
+                                nativeFrames.put(new JSONArray().put(frame[0]).put(frame[1]).put(frame[2]));
+                            }
+                        }
+                        item.put("androidWindowFieldsNs", new JSONArray().put("intendedVsync").put("vsync").put("totalDuration"));
+                        item.put("androidWindowFrames", nativeFrames);
                         item.put("androidWindowListenerDrops", dropped.get());
                         item.put("webViewAnimationFrameTimestampsMs", new JSONArray(js("window.__retainedFrames")));
                         assertTrue("Android Window did not report frame metrics for " + destination,
-                                item.getJSONArray("androidWindowFrameDurationsNs").length() > 0);
+                                nativeFrames.length() > 0);
                         assertTrue("WebView did not report frame timestamps for " + destination,
                                 item.getJSONArray("webViewAnimationFrameTimestampsMs").length() >= 5);
                         report.put(item);
