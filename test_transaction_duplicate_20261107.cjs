@@ -27,11 +27,13 @@ const legacyDraft = buildDuplicateTransactionDraft(defaults, legacy);
 assert.equal(legacyDraft.dateTime, defaults.dateTime, 'date-only legacy transaction does not synthesize its historic time');
 assert.equal(legacyDraft.title, '', 'blank description remains blank');
 assert.match(app, /openDuplicateTransaction/);
-assert.match(app, /openDuplicateTransaction\(transactionDetail\); \}\}>Duplicate<\/button>/);
+assert.match(app, /onDuplicate=\{\(\) => openDuplicateTransaction\(transactionDetail\)\}/);
+const detail = fs.readFileSync('src/components/TransactionDetail.tsx', 'utf8');
+assert.match(detail, /exit\(onDuplicate\)[\s\S]*?>Duplicate<\/button>/);
 assert.match(app, /Delete transaction/);
-assert.match(app, /if \(!\(await confirmAction\(\{ title: 'Delete this transaction\?'/,
+assert.match(app, /if \(!await confirmAction\(\{ title: 'Delete this transaction\?'/,
   'transaction deletion uses the shared accessible confirmation before mutating storage');
-assert.match(app, /StorageService\.transactions\.delete\(editingTransactionId\)/,
+assert.match(app, /StorageService\.transactions\.delete\(transactionDetail\.id\)/,
   'the existing transaction delete action remains connected after confirmation');
 assert.doesNotMatch(app, /window\.confirm\(/,
   'native browser confirmations are not used for app-level transaction actions');
