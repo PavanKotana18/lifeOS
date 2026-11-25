@@ -3346,11 +3346,14 @@ export default function App() {
 
         <RetainedScreen active={activeTab === 'life'} retainInactive prepare={primaryPrepared} id="screen-life" {...transitionPropsFor('life')} render={() => (
           <LifeHub
-            habits={habits.slice(0, 4).map(habit => ({
-              ...getHabitStreaks(habit.id, todayKey), id: habit.id, name: habit.name,
-              targetPerDay: habit.trackingMode === 'quantity' ? habit.targetPerDay : undefined, quantityUnit: habit.quantityUnit,
-              quantity: habitLogs.find(log => log.habitId === habit.id && log.date === todayKey)?.quantity,
-            }))}
+            habits={habits.slice(0, 4).map(habit => {
+              const log = habitLogs.find(row => row.habitId === habit.id && row.date === todayKey && row.quantity !== undefined);
+              return {
+                ...getHabitStreaks(habit.id, todayKey), id: habit.id, name: habit.name,
+                targetPerDay: habit.trackingMode === 'quantity' ? habit.targetPerDay : undefined,
+                quantityUnit: habit.quantityUnit, quantity: log?.quantity, recordedQuantityUnit: log ? log.quantityUnit || '' : undefined,
+              };
+            })}
             goals={goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => ({
               id: goal.id, title: goal.title, progress: goalProgress(goal),
               current: displayGoalMeasure(goal.currentValue, goal.unit), target: displayGoalMeasure(goal.targetValue, goal.unit), targetDate: goal.targetDate ? formatDate(goal.targetDate) : '',
