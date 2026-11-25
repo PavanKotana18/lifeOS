@@ -12,15 +12,23 @@ import static org.junit.Assert.*;
 
 /** Diagnostics contain runtime metadata only, never app text, records or keys. */
 final class WebViewTestSupport {
+    interface ActivityAccess {
+        void onActivity(ActivityScenario.ActivityAction<MainActivity> action);
+    }
+
     static void checkpoint(String phase) {
         Log.i("LifeOSAcceptance", phase);
     }
 
     static String evaluate(ActivityScenario<MainActivity> scenario, String script) throws Exception {
+        return evaluate(scenario::onActivity, script);
+    }
+
+    private static String evaluate(ActivityAccess activityAccess, String script) throws Exception {
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<String> result = new AtomicReference<>();
         AtomicReference<String> failure = new AtomicReference<>();
-        scenario.onActivity(activity -> {
+        activityAccess.onActivity(activity -> {
             // Assertions on the UI thread can terminate the app instead of
             // reporting an instrumentation failure. Marshal diagnostics back.
             try {
@@ -45,13 +53,17 @@ final class WebViewTestSupport {
 
     /** evaluateJavascript serializes a Promise as {}, so explicitly await async test operations. */
     static String evaluateAsync(ActivityScenario<MainActivity> scenario, String expression) throws Exception {
+        return evaluateAsync(scenario::onActivity, expression);
+    }
+
+    static String evaluateAsync(ActivityAccess activityAccess, String expression) throws Exception {
         String start = "(()=>{window.__lifeosNativeTestResult='PENDING';Promise.resolve(" + expression +
             ").then(v=>window.__lifeosNativeTestResult=JSON.stringify({ok:true,value:v})," +
             "e=>window.__lifeosNativeTestResult=JSON.stringify({ok:false,error:String(e)}));return 'started';})()";
-        evaluate(scenario, start);
+        evaluate(activityAccess, start);
         long deadline = android.os.SystemClock.elapsedRealtime() + 15000;
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
-            String raw = evaluate(scenario, "window.__lifeosNativeTestResult");
+            String raw = evaluate(activityAccess, "window.__lifeosNativeTestResult");
             Object encoded = new JSONTokener(raw).nextValue();
             if (encoded instanceof String && !"PENDING".equals(encoded)) {
                 JSONObject outcome = new JSONObject((String) encoded);
@@ -66,8 +78,12 @@ final class WebViewTestSupport {
     }
 
     static void awaitReactRoot(ActivityScenario<MainActivity> scenario) throws Exception {
+        awaitReactRoot(scenario::onActivity);
+    }
+
+    static void awaitReactRoot(ActivityAccess activityAccess) throws Exception {
         AtomicInteger engine = new AtomicInteger(0);
-        scenario.onActivity(activity -> {
+        activityAccess.onActivity(activity -> {
             if (activity.getBridge() != null && activity.getBridge().getWebView() != null) {
                 engine.set(WebViewCompatibility.chromiumMajor(
                     activity.getBridge().getWebView().getSettings().getUserAgentString()));
@@ -80,10 +96,10 @@ final class WebViewTestSupport {
             + "; compatibility-message acceptance is a separate test", major >= WebViewCompatibility.MINIMUM_CHROMIUM_MAJOR);
         long deadline = android.os.SystemClock.elapsedRealtime() + 30000;
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
-            if ("true".equals(evaluate(scenario, "location.hostname === 'localhost' && document.readyState === 'complete' && !!document.getElementById('root') && document.getElementById('root').childElementCount > 0"))) return;
+            if ("true".equals(evaluate(activityAccess, "location.hostname === 'localhost' && document.readyState === 'complete' && !!document.getElementById('root') && document.getElementById('root').childElementCount > 0"))) return;
             Thread.sleep(100);
         }
-        fail("Packaged application did not render its React root: " + evaluate(scenario,
+        fail("Packaged application did not render its React root: " + evaluate(activityAccess,
             "JSON.stringify({ready:document.readyState,themeReady:document.documentElement.dataset.themeReady || '',rootChildren:document.getElementById('root') ? document.getElementById('root').childElementCount : -1})"));
     }
 
