@@ -47,7 +47,6 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
 
   return <div className="money-home" data-testid="money-home">
     {!monthly && <header className="money-home-heading">
-      <h2 className="type-page-title">Money</h2>
       <MoneyPeriod label="Money" month={month} onChange={onMonthChange} />
     </header>}
 

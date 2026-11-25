@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { getMotionPreset } from './services/interfaceMotion';
 import { AppearanceStudio, ThemeStudio } from './components/AppearanceStudio';
 import { useInterfaceMotion } from './hooks/useInterfaceMotion';
@@ -7,12 +8,14 @@ import { useSharedBankAlert } from './hooks/useSharedBankAlert';
 import { PossibleImportDuplicateError } from './services/smartImport';
 import MoneyDetailHeader from './components/MoneyDetailHeader';
 import InfoTip from './components/InfoTip';
-import { resistDrag } from './services/interfaceMotion';
+import { estimateDragVelocity } from './services/interfaceMotion';
+import { useAliveNavigation } from './hooks/useAliveNavigation';
+import LifeHub from './components/LifeHub';
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, HeartPulse } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -48,7 +51,6 @@ import MoneyHome from './components/MoneyHome';
 import MoneyAccounts, { type AccountDraft, type TransferDraft } from './components/MoneyAccounts';
 import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
-import { buildSpringSettle, readTranslateX } from './services/springMotion';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
@@ -62,14 +64,14 @@ import { useRecordDialog } from './hooks/useRecordDialog';
 import { useBottomNavigationInset } from './hooks/useBottomNavigationInset';
 import { PRIMARY_NAVIGATION, primaryDestinationForTab, resolvePlanPath, type MainTab } from './services/navigationCatalog';
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
-import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldAnimatePrimaryGestureSettlement, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
-import { readMotionDuration, screenScrollKey } from './services/uiNavigation';
+import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
+import { screenScrollKey } from './services/uiNavigation';
 import { normalizeNotificationTone, NOTIFICATION_TONES, reminderCopy, type NotificationTone } from './services/notificationCopy';
 import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics, type ReminderAction } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
 import { INITIAL_ONBOARDING_JOURNEY, ONBOARDING_NOTIFICATIONS_STEP, normalizeOnboardingJourney, resumeOnboardingStep, type OnboardingJourney } from './services/onboardingJourney';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, isHabitScheduledOnDate, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
@@ -119,15 +121,26 @@ import {
   Task
 } from './types';
 
+function keyboardOwnsViewport() {
+  return document.activeElement?.matches('textarea, input:not([type=checkbox]):not([type=radio]):not([type=button]), [contenteditable=true]')
+    || (window.visualViewport != null && window.innerHeight - window.visualViewport.height > 120 && window.visualViewport.scale === 1);
+}
+
 export default function App() {
   const interfaceMotion = useInterfaceMotion();
   // Navigation & Theme State
-  const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
-  const activeTabRef = useRef<MainTab>('dashboard');
-  const [tabTransition, setTabTransition] = useState<{ id: number; to: MainTab; phase: 'prepare' | 'running'; direction?: 'left' | 'right' } | null>(null);
-  const tabTransitionSequence = useRef(0);
-  const activeTransitionId = useRef<number | null>(null);
-  const tabTransitionStarted = useRef(0);
+  const navigationMotion = useAliveNavigation(interfaceMotion.preset, interfaceMotion.reducedMotion);
+  const { activeTab, activeTabRef, tabTransition, transitionPropsFor, cancel: cancelTrack } = navigationMotion;
+  navigationMotion.measure.current = import.meta.env.DEV;
+  const [primaryPrepared, setPrimaryPrepared] = useState(false);
+  const profileAdmission = useRef<symbol | null>(null);
+  const [profileAdmissionPending, setProfileAdmissionPending] = useState(false);
+  const cancelProfileAdmission = () => {
+    if (!profileAdmission.current) return false;
+    profileAdmission.current = null;
+    setProfileAdmissionPending(false);
+    return true;
+  };
   const releaseGestureCapture = (pointerId?: number) => {
     if (pointerId == null) return;
     const surface = gestureSurfaceElement.current;
@@ -135,31 +148,32 @@ export default function App() {
       try { surface.releasePointerCapture(pointerId); } catch { /* Pointer may already have ended. */ }
     }
   };
-  const transitionToTab = (tab: MainTab, direction?: 'left' | 'right') => {
-    const previous = activeTabRef.current;
-    const outgoing = document.getElementById(`screen-${previous}`);
-    outgoing?.removeAttribute('data-gesture-dragging');
-    outgoing?.style.removeProperty('--gesture-x');
-    swipeSettleAnimation.current?.cancel();
-    swipeSettleAnimation.current = null;
+  const transitionToTab = (tab: MainTab, direction?: 'left' | 'right', velocity = 0, onCommit?: (from: MainTab, scrollBefore: number) => void) => {
+    cancelProfileAdmission();
     const pointerId = swipePointer.current?.pointerId;
     swipePointer.current = null;
     swipeOriginAction.current = null;
     releaseGestureCapture(pointerId);
-    activeTabRef.current = tab;
-    if (previous === tab) { setActiveTab(tab); return; }
-    const reducedMotion = typeof window === 'undefined' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (reducedMotion) {
-      activeTransitionId.current = null;
-      setTabTransition(null);
-      setActiveTab(tab);
+    const enter = () => {
+      if (tab === 'settings') setProfileSection('home');
+      navigationMotion.jumpTo(tab, direction, velocity, routeScrollOffset(tab), onCommit);
+    };
+    if (tab !== 'settings' || Capacitor.getPlatform() !== 'android' || activeTabRef.current === 'settings') {
+      enter();
       return;
     }
-    const id = ++tabTransitionSequence.current;
-    activeTransitionId.current = id;
-    tabTransitionStarted.current = performance.now();
-    setTabTransition({ id, to: tab, phase: 'prepare', direction });
-    setActiveTab(tab);
+    const request = Symbol();
+    profileAdmission.current = request;
+    setProfileAdmissionPending(true);
+    void setSensitiveScreenshotState(true).then(() => {
+      if (profileAdmission.current !== request) return;
+      cancelProfileAdmission();
+      if (!backState.current.isLocked) enter();
+    }).catch(() => {
+      if (profileAdmission.current !== request) return;
+      cancelProfileAdmission();
+      showToast('Could not protect Profile. Try again.', 'danger');
+    });
   };
   const navigationHistory = useRef<MainTab[]>([]);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
@@ -194,7 +208,7 @@ export default function App() {
   });
   const nativeGestureInsets = useRef<{ left: number; right: number } | null>(null);
   const swipeMoveFrame = useRef<number | null>(null);
-  const swipeSettleAnimation = useRef<Animation | null>(null);
+  const swipeSamples = useRef<{ x: number; time: number }[]>([]);
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
@@ -409,7 +423,7 @@ export default function App() {
 
   const [smartImportOpen, setSmartImportOpen] = useState(false);
   const [protectedImportComposer, setProtectedImportComposer] = useState(false);
-  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || isSensitiveScreenshotState({
+  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -515,16 +529,25 @@ export default function App() {
   const backState = useRef({ createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail });
   backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail };
 
-  const navigateTo = (destination: MainTab, direction?: 'left' | 'right') => {
-    const tab = destination === 'life' ? 'plan' : destination;
-    const previous = activeTabRef.current;
-    if (previous === tab) return;
-    rememberActiveScroll();
-    if (tab === 'settings') navigateProfileSection('home');
-    navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
-    setShowExitConfirmation(false);
-    transitionToTab(tab, direction);
+  const navigateTo = (tab: MainTab, direction?: 'left' | 'right', velocity = 0) => {
+    if (activeTabRef.current === tab) { cancelProfileAdmission(); return; }
+    transitionToTab(tab, direction, velocity, (previous, scrollBefore) => {
+      scrollPositions.current[screenKeyForTab(previous)] = scrollBefore;
+      navigationHistory.current = pushTabHistory(navigationHistory.current, previous, tab);
+      setShowExitConfirmation(false);
+    });
   };
+
+  useEffect(() => {
+    if (!appReady || !onboardingComplete || isLocked || primaryPrepared) return;
+    let cancelled = false;
+    const warmup = window.setTimeout(() => {
+      void import('./components/PlanHub').then(() => {
+        if (!cancelled) setPrimaryPrepared(true);
+      }).catch(() => undefined);
+    }, 120);
+    return () => { cancelled = true; window.clearTimeout(warmup); };
+  }, [appReady, onboardingComplete, isLocked, primaryPrepared]);
 
   const planPathHandler = useRef<(path: string) => void>(() => undefined);
   planPathHandler.current = path => {
@@ -543,7 +566,6 @@ export default function App() {
 
   const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals') => (
     <header className="plan-destination-header">
-      <h1 className="type-page-title">Plan</h1>
       <nav aria-label="Plan destinations" className="plan-destinations">
         {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }] as const).map(({ tab, label }) =>
           <button key={tab} type="button" aria-current={selected === tab ? 'page' : undefined} onClick={() => {
@@ -559,21 +581,7 @@ export default function App() {
     </header>
   );
 
-  const clearGestureDrag = (animateBack: boolean, velocity = 0) => {
-    const screen = document.getElementById(`screen-${activeTabRef.current}`);
-    if (!screen?.hasAttribute('data-gesture-dragging')) return;
-    const transform = getComputedStyle(screen).transform;
-    screen.removeAttribute('data-gesture-dragging');
-    screen.style.removeProperty('--gesture-x');
-    if (!animateBack || !shouldAnimatePrimaryGestureSettlement(window.matchMedia('(prefers-reduced-motion: reduce)').matches) || typeof screen.animate !== 'function') return;
-    const settle = buildSpringSettle(readTranslateX(transform), velocity, interfaceMotion.preset);
-    if (!settle.duration) return;
-    const animation = screen.animate(settle.keyframes, { duration: settle.duration, easing: 'linear' });
-    swipeSettleAnimation.current = animation;
-    void animation.finished.catch(() => undefined).finally(() => {
-      if (swipeSettleAnimation.current === animation) swipeSettleAnimation.current = null;
-    });
-  };
+  const clearGestureDrag = (animateBack: boolean, velocity = 0) => navigationMotion.endDrag(animateBack, velocity);
 
   const cancelPrimaryGesture = (reason: string, pointerId = swipePointer.current?.pointerId ?? -1) => {
     const session = swipePointer.current;
@@ -598,12 +606,14 @@ export default function App() {
 
   useEffect(() => {
     const cancelForEnvironmentChange = () => {
+      cancelTrack();
       cancelPrimaryGesture('window-resized');
       activeTouchPointers.current.clear();
       swipeSuppressed.current = false;
     };
     const cancelForBackground = () => {
       if (document.visibilityState !== 'visible') {
+        cancelTrack();
         cancelPrimaryGesture('document-hidden');
         activeTouchPointers.current.clear();
         swipeSuppressed.current = false;
@@ -621,16 +631,18 @@ export default function App() {
     const cancelForContextMenu = () => cancelPrimaryGesture('context-menu');
     window.addEventListener('contextmenu', cancelForContextMenu);
     window.addEventListener('resize', cancelForEnvironmentChange, { passive: true });
+    window.visualViewport?.addEventListener('resize', cancelForEnvironmentChange, { passive: true });
     window.addEventListener('blur', cancelForBlur);
     document.addEventListener('visibilitychange', cancelForBackground);
     return () => {
       document.removeEventListener('selectionchange', cancelForSelection);
       window.removeEventListener('contextmenu', cancelForContextMenu);
       window.removeEventListener('resize', cancelForEnvironmentChange);
+      window.visualViewport?.removeEventListener('resize', cancelForEnvironmentChange);
       window.removeEventListener('blur', cancelForBlur);
       document.removeEventListener('visibilitychange', cancelForBackground);
     };
-  }, []);
+  }, [cancelTrack]);
 
   const handleContentPointerDown = (event: React.PointerEvent<HTMLElement>) => {
     // A new contact is a new interaction, even if WebView reuses its pointer ID.
@@ -643,9 +655,8 @@ export default function App() {
       return;
     }
     if (swipeSuppressed.current) return;
-    swipeSettleAnimation.current?.cancel();
-    swipeSettleAnimation.current = null;
     swipePointer.current = null;
+    swipeSamples.current = [];
 
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
@@ -680,8 +691,10 @@ export default function App() {
     const context = {
       enabled: userPrefs.swipeNavigationEnabled,
       pointerType: event.pointerType,
-      settingsScreen: activeTab === 'settings',
-      modalOpen: Boolean(createKind || modalContent || (activeTab === 'finance' && (financeSubtab === 'accounts' ? (accountFormDraft || transferFormDraft) : financeSubtab === 'planning' && (planningDrafts.commitment || planningDrafts.rate)))),
+      settingsScreen: !PRIMARY_NAVIGATION.some(({ tab }) => tab === activeTab) || (activeTab === 'finance' && financeSubtab !== 'overview'),
+      modalOpen: Boolean(createKind || modalContent || confirmation || firstRecordSecurityOpen || secureSetup || showExitConfirmation
+        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || (activeTab === 'finance' && financeSubtab !== 'overview')
+        || document.querySelector('dialog[open]') || keyboardOwnsViewport()),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
       targetKind,
@@ -692,6 +705,7 @@ export default function App() {
       return;
     }
     swipeOriginAction.current = interactive instanceof HTMLElement ? interactive : null;
+    swipeSamples.current = [{ x: event.clientX, time: performance.now() }];
     swipePointer.current = beginPrimaryGesture({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, at: performance.now(), viewportWidth: window.innerWidth });
     recordGestureTrace({ event: 'pointerdown', pointerId: event.pointerId, deltaX: 0, deltaY: 0, state: 'pending' }, import.meta.env.DEV);
   };
@@ -702,21 +716,23 @@ export default function App() {
     if (start.viewportWidth !== window.innerWidth) { cancelPrimaryGesture('viewport-changed', event.pointerId); return; }
     const update = updatePrimaryGesture(start, event.pointerId, event.clientX, event.clientY);
     swipePointer.current = update.session;
+    swipeSamples.current.push({ x: event.clientX, time: performance.now() });
+    if (swipeSamples.current.length > 8) swipeSamples.current.shift();
     recordGestureTrace({ event: 'pointermove', pointerId: event.pointerId, deltaX: update.deltaX, deltaY: update.deltaY, state: update.session.axis }, import.meta.env.DEV);
     if (update.session.axis === 'vertical') { clearGestureDrag(false); return; }
     if (update.session.axis === 'horizontal' && start.axis !== 'horizontal') {
+      navigationMotion.beginDrag(routeScrollOffset);
+      navigationMotion.moveDrag(update.deltaX);
       // Capture only after horizontal intent is clear. A normal button tap and
       // browser-owned vertical scroll keep their native pointer/click lifecycle.
       try { gestureSurfaceElement.current?.setPointerCapture(event.pointerId); } catch { /* Window tracking remains active if capture is unavailable. */ }
     }
     if (!update.accepted || swipeMoveFrame.current !== null) return;
-    const screen = document.getElementById(`screen-${activeTabRef.current}`);
-    if (!screen) return;
     swipeMoveFrame.current = window.requestAnimationFrame(() => {
       swipeMoveFrame.current = null;
-      if (swipePointer.current?.pointerId !== start.pointerId || swipePointer.current.axis !== 'horizontal') return;
-      screen.setAttribute('data-gesture-dragging', 'true');
-      screen.style.setProperty('--gesture-x', `${resistDrag(swipePointer.current.latestOffsetX, window.innerWidth, interfaceMotion.preset)}px`);
+      const current = swipePointer.current;
+      if (current?.pointerId !== start.pointerId || current.axis !== 'horizontal') return;
+      navigationMotion.moveDrag(current.latestOffsetX);
     });
   };
 
@@ -731,9 +747,13 @@ export default function App() {
     if (swipeSuppressed.current) return;
     if (swipeMoveFrame.current !== null) { window.cancelAnimationFrame(swipeMoveFrame.current); swipeMoveFrame.current = null; }
     if (!start || start.pointerId !== event.pointerId) return;
-    const target = resolvePrimaryGestureEnd(activeTabRef.current, start, event.pointerId, event.clientX, event.clientY, performance.now(), userPrefs.swipeNavigationEnabled);
+    const requested = resolvePrimaryGestureEnd(activeTabRef.current, start, event.pointerId, event.clientX, event.clientY, performance.now(), userPrefs.swipeNavigationEnabled);
     const deltaX = event.clientX - start.startX;
     const deltaY = event.clientY - start.startY;
+    if (start.axis === 'horizontal') navigationMotion.moveDrag(deltaX);
+    const target = requested && navigationMotion.canCommitDrag(requested) ? requested : null;
+    const velocity = estimateDragVelocity([...swipeSamples.current, { x: event.clientX, time: performance.now() }], interfaceMotion.preset);
+    swipeSamples.current = [];
     recordGestureTrace({ event: 'pointerup', pointerId: event.pointerId, deltaX, deltaY, state: start.axis, decision: target || 'settle-back' }, import.meta.env.DEV);
     swipePointer.current = null;
     if (target) {
@@ -742,13 +762,13 @@ export default function App() {
         swipeClickSuppression.current = { pointerId: event.pointerId, target: originAction, expiresAt: performance.now() + 500 };
       }
       swipeOriginAction.current = null;
-      navigateTo(target, deltaX < 0 ? 'left' : 'right');
+      flushSync(() => navigateTo(target, deltaX < 0 ? 'left' : 'right', velocity));
     } else {
       if (shouldSuppressPrimaryGestureClick(start) && swipeOriginAction.current) {
         swipeClickSuppression.current = { pointerId: event.pointerId, target: swipeOriginAction.current, expiresAt: performance.now() + 500 };
       }
       swipeOriginAction.current = null;
-      clearGestureDrag(true, deltaX * 1000 / Math.max(1, performance.now() - start.startedAt));
+      clearGestureDrag(true, velocity);
     }
   };
 
@@ -838,6 +858,9 @@ export default function App() {
 
   const navigateBack = () => {
     const state = backState.current;
+    if (swipePointer.current) cancelPrimaryGesture('navigation-back');
+    if (cancelProfileAdmission()) return;
+    navigationMotion.cancelPending();
     if (typeof document !== 'undefined') {
       const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open],dialog[data-smart-import][open]');
       if (filterSheet) { filterSheet.close(); return; }
@@ -845,7 +868,7 @@ export default function App() {
       if (contextualInfo) { contextualInfo.close(); return; }
     }
     if (confirmationResolver.current) { settleConfirmation(false); return; }
-    if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(false).catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
+    if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(state.activeTab === 'settings').catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
     if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
       void requestCloseFinanceDraft(); return;
     }
@@ -1065,14 +1088,16 @@ export default function App() {
     return () => window.clearTimeout(toRest);
   }, [appReady, isLocked, onboardingRequired, onboardingComplete]);
 
-  const activeScreenKey = screenScrollKey({
-    tab: activeTab,
+  const screenKeyForTab = (tab: MainTab) => screenScrollKey({
+    tab,
     financeSubtab,
     profileSection,
     goalsSubtab,
     habitsSubtab,
-    detailKey: lifeDetail?.kind === (activeTab === 'habits' ? 'habit' : 'goal') ? lifeDetail.id : undefined,
+    detailKey: lifeDetail?.kind === (tab === 'habits' ? 'habit' : 'goal') ? lifeDetail.id : undefined,
   });
+  const activeScreenKey = screenKeyForTab(activeTab);
+  const routeScrollOffset = (tab: MainTab) => scrollPositions.current[screenKeyForTab(tab)] || 0;
 
   const rememberActiveScroll = () => { scrollPositions.current[activeScreenKey] = window.scrollY; };
   const showLifeDetail = (detail: typeof lifeDetail) => { rememberActiveScroll(); setLifeDetail(detail); };
@@ -1088,66 +1113,18 @@ export default function App() {
     root.style.scrollBehavior = 'auto';
     window.scrollTo(0, scrollPositions.current[activeScreenKey] || 0);
     root.style.scrollBehavior = previous;
+    navigationMotion.alignOutgoingScroll();
   }, [activeScreenKey]);
-
-  const finishTabTransition = (id: number) => {
-    if (activeTransitionId.current !== id) return;
-    activeTransitionId.current = null;
-    if (import.meta.env.DEV) {
-      performance.clearMeasures('lifeos-tab-transition');
-      performance.measure('lifeos-tab-transition', { start: tabTransitionStarted.current, end: performance.now() });
-    }
-    setTabTransition(current => current?.id === id ? null : current);
-  };
-
-  useEffect(() => {
-    if (!tabTransition) return;
-    const { id, phase } = tabTransition;
-    if (phase === 'prepare') {
-      // Commit the new opaque screen once before starting its short entrance.
-      const frame = window.requestAnimationFrame(() => {
-        setTabTransition(current => current?.id === id ? { ...current, phase: 'running' } : current);
-      });
-      return () => window.cancelAnimationFrame(frame);
-    }
-    const duration = readMotionDuration(getComputedStyle(document.documentElement).getPropertyValue('--motion-tab'), 260);
-    const fallback = window.setTimeout(() => finishTabTransition(id), duration + 120);
-    return () => window.clearTimeout(fallback);
-  }, [tabTransition]);
-
-  useEffect(() => {
-    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const settleImmediately = () => {
-      if (!preference.matches) return;
-      swipeSettleAnimation.current?.cancel();
-      swipeSettleAnimation.current = null;
-      activeTransitionId.current = null;
-      setTabTransition(null);
-    };
-    preference.addEventListener?.('change', settleImmediately);
-    return () => preference.removeEventListener?.('change', settleImmediately);
-  }, []);
 
   useEffect(() => {
     if (!isLocked) return;
+    cancelProfileAdmission();
     cancelPrimaryGesture('app-locked');
     activeTouchPointers.current.clear();
     swipeSuppressed.current = false;
     swipeClickSuppression.current = null;
-    activeTransitionId.current = null;
-    setTabTransition(null);
-  }, [isLocked]);
-
-  const transitionPropsFor = (screen: MainTab) => {
-    if (!tabTransition || tabTransition.to !== screen || activeTab !== screen) return {};
-    return {
-      transitionPhase: tabTransition.phase,
-      transitionDirection: tabTransition.direction,
-      onTransitionEnd: (event: React.TransitionEvent<HTMLDivElement>) => {
-        if (event.target === event.currentTarget && event.propertyName === 'transform') finishTabTransition(tabTransition.id);
-      },
-    };
-  };
+    cancelTrack();
+  }, [isLocked, cancelTrack]);
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
     setToast({ message, type });
@@ -2625,6 +2602,7 @@ export default function App() {
     () => getTodayOverview(tasks, habits, habitLogs, todayKey),
     [tasks, habits, habitLogs, todayKey]
   );
+  const routineDueToday = (habit: Habit) => habit.frequency !== 'weekly' && isHabitScheduledOnDate(habit.frequency, todayKey);
   const tomorrowDate = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 1);
   const tomorrowKey = formatLocalDate(tomorrowDate);
   const calendarDays = useMemo(() => getMonthCalendarDays(plannerDisplayedMonth.getFullYear(), plannerDisplayedMonth.getMonth(), userPrefs.firstDayOfWeek === 'monday'), [plannerDisplayedMonth, userPrefs.firstDayOfWeek]);
@@ -2732,7 +2710,7 @@ export default function App() {
   if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 lifeos-border" style={{ borderTopColor: 'var(--accent)' }} aria-hidden="true" />}</div>;
 
   if (firstRecordSecurityOpen) return <FirstRecordSecurityDialog onDecision={choice => {
-    void setSensitiveScreenshotState(false).catch(() => {});
+    void setSensitiveScreenshotState(profileAdmissionPending || profileOpen).catch(() => {});
     firstRecordSecurityResolver.current?.(choice);
   }} />;
 
@@ -2798,12 +2776,12 @@ export default function App() {
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       {/* Top Mobile Header */}
       {!profileOpen && <header className="app-header app-header-shell sticky top-0 z-40 flex items-center gap-3 px-4 py-3 sm:px-5">
-        <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full profile-entry-button text-sm font-semibold transition active:scale-95"><ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} /></button>
+        <button type="button" data-no-tab-swipe onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full profile-entry-button text-sm font-semibold transition active:scale-95"><ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} /></button>
         <div className="flex min-w-0 items-center gap-3">
           <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
             <BrandMark className="h-8 w-8" />
           </div>
-          <h1 className="app-brand-name">LifeOS</h1>
+          <h1 id="primary-route-title" tabIndex={-1} className="app-brand-name">{activeTab === 'dashboard' ? 'LifeOS' : PRIMARY_NAVIGATION.find(({ tab }) => tab === primaryDestinationForTab(activeTab))?.label ?? 'LifeOS'}</h1>
         </div>
       </header>}
 
@@ -2826,9 +2804,9 @@ export default function App() {
 
       {/* Main Container */}
       <main className={profileOpen ? "app-main profile-main" : "app-main"}>
-        <div className="ui-tab-screen-stack">
+        <div className="ui-tab-viewport"><div className="ui-tab-screen-stack" ref={navigationMotion.attachStage}>
         {/* VIEW 1: DASHBOARD */}
-        <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
+        <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
           <div className="today-sections command-centre" data-testid="today-dashboard">
             <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
@@ -2899,44 +2877,33 @@ export default function App() {
               </div>
             </div>
 
-            {/* Today's Habits Summary */}
-            <div className="today-habit-summary lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('habits')}>
-              <div className="flex justify-between items-center mb-3">
-                <div><p className="type-eyebrow">DAILY ROUTINES</p><h3 className="text-sm font-semibold">Habits today</h3><p className="type-caption text-secondary">{todayOverview.routinesDue ? `${todayOverview.routinesCompleted} of ${todayOverview.routinesDue} checked` : 'Check in at your own pace.'}</p></div>
-                <div className="today-habit-actions"><button type="button" onClick={() => openCreateForm('habit')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Add habit</button><button type="button" onClick={() => navigateTo('habits')} className="min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">All habits</button></div>
-              </div>
-              {habits.length === 0 ? (
-                <div className="today-inline-empty"><p>No habits to check in yet. Add one when you’re ready.</p></div>
-              ) : (
-                <div className="space-y-2">
-                  {habits.slice(0, 2).map(h => {
-                    const todayStr = todayKey;
-                    const stats = getHabitStreaks(h.id, todayStr);
-                    return (
-                      <div key={h.id} className="p-3 rounded-xl lifeos-raised flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}
-                            type="button"
-                            aria-pressed={stats.completedToday}
-                            aria-label={`${stats.completedToday ? 'Mark' : 'Complete'} ${h.name} ${stats.completedToday ? 'incomplete' : 'for today'}`}
-                            className="lifeos-panel flex min-h-11 min-w-11 items-center justify-center rounded-full border-2 text-xs transition"
-                            style={{ borderColor: stats.completedToday ? 'var(--success)' : 'var(--stroke)', backgroundColor: stats.completedToday ? 'var(--success)' : 'var(--surface)', color: 'var(--page)' }}
-                          >
-                            {stats.completedToday ? '✓' : ''}
-                          </button>
-                          <div>
-                            <p className={`text-sm font-medium ${stats.completedToday ? 'line-through text-muted' : ''}`}>{h.name}</p>
-                            <p className="text-[10px] text-[var(--warning)] font-semibold">🔥 {stats.currentStreak} day streak</p>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
+            <section className="today-habit-summary" style={todaySectionStyle("habits")} aria-labelledby="today-routines-title">
+              <header className="today-section-heading">
+                <div className="today-routines-heading"><h3 id="today-routines-title" className="type-section-title">Daily routines</h3>
+                  {todayOverview.routinesDue > 0 && <p className="type-caption text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} checked</p>}</div>
+                <button type="button" className="min-h-11 px-2 text-xs font-semibold lifeos-accent-text" onClick={() => habits.length ? navigateTo("habits") : openCreateForm("habit")}>{habits.length ? "All habits" : "Add habit"}</button>
+                {habits.length > 0 && <button type="button" className="min-h-11 px-2 text-xs font-semibold lifeos-accent-text" onClick={() => openCreateForm("habit")}>Add habit</button>}
+              </header>
+              {habits.length === 0 ? <p className="today-routines-empty">Your habits will appear here.</p> :
+                <ul className="today-routine-list">{habits.filter(habit => routineDueToday(habit)).slice(0, 3).map(habit => {
+                  const completed = getHabitStreaks(habit.id, todayKey).completedToday;
+                  const quantity = habit.trackingMode === "quantity";
+                  const log = quantity ? habitLogs.find(row => row.habitId === habit.id && row.date === todayKey && row.quantity !== undefined) : undefined;
+                  const status = quantity ? (log && log.quantityUnit !== habit.quantityUnit
+                    ? formatHabitQuantity(log.quantity || 0, log.quantityUnit)
+                    : new Intl.NumberFormat(userPrefs.locale === "system" ? undefined : userPrefs.locale).format(log?.quantity || 0) + " / " + formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit))
+                    : completed ? "Checked in" : "Ready to check in";
+                  return <li key={habit.id} className="today-routine-row">
+                    <div><strong>{habit.name}</strong><small>{status}</small></div>
+                    {quantity ? <button type="button" className="lifeos-input today-routine-action" aria-label={"Add one " + habit.quantityUnit + " to " + habit.name}
+                      onClick={() => void handleHabitQuantity(habit, todayKey, 1)}>+1</button>
+                      : <button type="button" className="lifeos-input today-routine-action alive-habit-check" aria-pressed={completed}
+                        aria-label={completed ? "Mark " + habit.name + " incomplete" : "Complete " + habit.name + " for today"}
+                        onClick={() => void handleHabitCompletion(habit.id, habit.name, todayKey, completed)}>{completed ? "Done" : "Check in"}</button>}
+                  </li>;
+                })}</ul>}
+              {habits.length > 0 && !habits.some(habit => routineDueToday(habit)) && <p className="today-routines-empty">No routines scheduled for today.</p>}
+            </section>
             {/* Future dated tasks are separate from today's agenda. */}
             <section className="today-upcoming-section lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
@@ -2985,7 +2952,7 @@ export default function App() {
         )} />
 
         {/* VIEW 2: FINANCE */}
-        <RetainedScreen active={activeTab === 'plan'} retainInactive id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><div className="space-y-4">{renderPlanNavigation('plan')}<PlanHub onCreate={() => openCreateForm('task')} tasks={tasks} today={todayKey} now={clockNow}
+        <RetainedScreen active={activeTab === 'plan'} retainInactive prepare={primaryPrepared} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><div className="space-y-4">{renderPlanNavigation('plan')}<PlanHub onCreate={() => openCreateForm('task')} tasks={tasks} today={todayKey} now={clockNow}
           onOpenTask={(task, trigger) => { taskDetailReturnTabRef.current = 'plan'; taskDetailReturnFocusRef.current = trigger; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter(task.dueDate ? 'all' : 'unscheduled'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
           /></div></Suspense>} />
@@ -3008,7 +2975,7 @@ export default function App() {
           onGoals={() => { setLifeDetail(null); setGoalsSubtab('active'); navigateTo('goals'); }}
         /></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" {...transitionPropsFor('finance')} render={() => (
+        <RetainedScreen active={activeTab === 'finance'} retainInactive prepare={primaryPrepared} id="screen-finance" {...transitionPropsFor('finance')} render={() => (
           <div className="money-page space-y-5" data-detail={financeSubtab}>
             {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => { if (financeSubtab === 'projection') { navigateBack(); return; } rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }} />}
 
@@ -3376,6 +3343,34 @@ export default function App() {
           </>
         )} />
 
+        <RetainedScreen active={activeTab === 'life'} retainInactive prepare={primaryPrepared} id="screen-life" {...transitionPropsFor('life')} render={() => (
+          <LifeHub
+            habits={habits.slice(0, 4).map(habit => ({
+              ...getHabitStreaks(habit.id, todayKey), id: habit.id, name: habit.name,
+              targetPerDay: habit.trackingMode === 'quantity' ? habit.targetPerDay : undefined, quantityUnit: habit.quantityUnit,
+              quantity: habitLogs.find(log => log.habitId === habit.id && log.date === todayKey)?.quantity,
+            }))}
+            goals={goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => ({
+              id: goal.id, title: goal.title, progress: goalProgress(goal),
+              current: displayGoalMeasure(goal.currentValue, goal.unit), target: displayGoalMeasure(goal.targetValue, goal.unit), targetDate: goal.targetDate ? formatDate(goal.targetDate) : '',
+              completedMilestones: milestones.filter(row => row.goalId === goal.id && row.completed).length,
+              milestoneCount: milestones.filter(row => row.goalId === goal.id).length,
+            }))}
+            routinesDue={todayOverview.routinesDue} completedRoutines={todayOverview.routinesCompleted}
+            weeklyCompleted={todayOverview.weeklyRoutinesCompleted} weeklyTotal={todayOverview.weeklyRoutinesTotal}
+            onCheckIn={item => {
+              const habit = habits.find(row => row.id === item.id);
+              if (!habit) return;
+              if (habit.trackingMode === 'quantity') void handleHabitQuantity(habit, todayKey, 1);
+              else void handleHabitCompletion(habit.id, habit.name, todayKey, item.completedToday);
+            }}
+            onCreateHabit={() => openCreateForm('habit')} onCreateGoal={() => openCreateForm('goal')}
+            onHabits={() => { setHabitsSubtab('checklist'); navigateTo('habits'); }}
+            onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
+            onInsights={() => navigateTo('insights')}
+          />
+        )} />
+
         {/* VIEW 6: SETTINGS */}
         <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
           <div ref={profilePage} className="profile-page space-y-5">
@@ -3574,7 +3569,7 @@ export default function App() {
             </ProfileSubpage>}
           </div>
         )} />
-        </div>
+        </div></div>
       </main>
 
       {transactionDetail && <dialog ref={transactionDetailDialog} data-transaction-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transaction-detail-title" onClose={() => setTransactionDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
@@ -3719,10 +3714,12 @@ export default function App() {
       )}
 
       {/* Floating Bottom Nav */}
-      <nav hidden={profileOpen} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
+      <nav data-no-tab-swipe hidden={profileOpen} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
         <div className="app-nav-items">
+        <span ref={navigationMotion.indicator} className="alive-nav-indicator" aria-hidden="true"
+          style={{ transform: 'var(--track-indicator, translate3d(' + Math.max(0, PRIMARY_NAVIGATION.findIndex(({ tab }) => tab === primaryDestinationForTab(activeTab))) * 100 + '%,0,0))' }} />
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
-          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays })[icon];
+          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, life: HeartPulse })[icon];
           const isSelected = primaryDestinationForTab(activeTab) === tab;
           return (
           <button
@@ -3730,6 +3727,7 @@ export default function App() {
             data-tab={tab}
             onClick={() => {
               if (isSelected) {
+                navigationMotion.cancelPending();
                 if (activeTab !== tab) { navigateTo(tab); return; }
                 if (tab === 'finance' && financeSubtab !== 'overview') { rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }
                 return;
@@ -3738,7 +3736,7 @@ export default function App() {
             }}
             aria-label={label}
             aria-current={isSelected ? 'page' : undefined}
-            className={`nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium ${isSelected ? 'lifeos-tint lifeos-accent-text font-bold' : 'text-secondary'}`}
+            className="nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium"
           >
             <Icon size={18} strokeWidth={isSelected ? 2.4 : 1.8} aria-hidden="true" />
             <span>{label}</span>

@@ -160,8 +160,7 @@ export function updatePrimaryGesture(
     ? {
         ...session,
         axis,
-        // Near finger-speed with a viewport-relative rubber-band limit.
-        latestOffsetX: Math.max(-session.viewportWidth * 0.42, Math.min(session.viewportWidth * 0.42, deltaX * 0.92)),
+        latestOffsetX: Math.max(-session.viewportWidth, Math.min(session.viewportWidth, deltaX)),
       }
     : { ...session, axis };
   return { session: next, deltaX, deltaY, accepted: axis === 'horizontal', intent: axis };

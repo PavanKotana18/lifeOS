@@ -277,7 +277,7 @@ async function main() {
       await activeTab('plan');
       assert.equal(await page.getByRole('button', { name: 'Open calendar' }).count(), 0);
       assert.equal(await page.locator('[data-tab="plan"]').getAttribute('aria-current'), 'page');
-      assert.deepEqual(await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button').allTextContents(), ['Today', 'Money', 'Plan']);
+      assert.deepEqual(await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('button').allTextContents(), ['Today', 'Money', 'Plan', 'Life']);
       await planDestination('Habits');
       await page.getByRole('button', { name: /Add habit/ }).waitFor();
       await capture('habits-empty-390');
@@ -297,7 +297,7 @@ async function main() {
       const views = page.getByRole('group', { name: 'Task views' }).getByRole('button');
       assert.match(await views.first().innerText(), /^All/);
       assert.equal(await views.first().getAttribute('aria-pressed'), 'true');
-      await clickButton('Create Task');
+      await clickButton('Add task');
       await fillDialogField('Task title', 'QA acceptance: review weekly plan');
       await capture('task-composer-390');
       await dialog().locator('button[type=submit]').click();
@@ -515,7 +515,7 @@ async function main() {
       await filterButton.click();
       await clickButton('Clear filters');
       await clickButton('Apply filters');
-      await clickButton('Create Task');
+      await clickButton('Add task');
       const title = 'QA acceptance: timed task';
       await fillDialogField('Task title', title);
       await fillDialogField('Due date', '2099-04-22');
@@ -586,6 +586,71 @@ async function main() {
         await atRest();
       } finally {
         await cdp.detach();
+      }
+    });
+
+    await journey('retained navigation intermediate frames in light and dark', async () => {
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      const cdp = await context.newCDPSession(page);
+      const touch = (type, points = []) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+      const stable = () => page.waitForFunction(() => !document.querySelector('[data-transition-state=outgoing],[data-track-dragging]'));
+      try {
+        for (const theme of ['light', 'dark']) {
+          await page.evaluate(mode => document.documentElement.classList.toggle('dark', mode === 'dark'), theme);
+          for (const [from, to] of [['dashboard', 'finance'], ['finance', 'plan'], ['plan', 'life']]) {
+            await activeTab(from);
+            await stable();
+            await page.locator('#screen-' + to).waitFor({ state: 'attached' });
+            const geometry = () => page.evaluate(({ from, to }) => {
+              const outgoing = document.getElementById('screen-' + from);
+              const incoming = document.getElementById('screen-' + to);
+              const stage = document.querySelector('.ui-tab-screen-stack');
+              const clip = document.querySelector('.ui-tab-viewport').getBoundingClientRect();
+              const indicator = document.querySelector('.alive-nav-indicator');
+              return {
+                stageX: new DOMMatrix(getComputedStyle(stage).transform).m41,
+                outgoingRight: outgoing.getBoundingClientRect().right,
+                incomingLeft: incoming.getBoundingClientRect().left,
+                width: clip.width, clipLeft: clip.left, clipRight: clip.right,
+                opacity: [getComputedStyle(outgoing).opacity, getComputedStyle(incoming).opacity],
+                indicator: new DOMMatrix(getComputedStyle(indicator).transform).m41 / indicator.offsetWidth,
+                heading: document.querySelector('#primary-route-title').getBoundingClientRect().left,
+                previewInert: incoming.inert && incoming.getAttribute('aria-hidden') === 'true',
+              };
+            }, { from, to });
+            const before = await geometry();
+            await touch('touchStart', [{ x: 300, y: 160, id: 7 }]);
+            await touch('touchMove', [{ x: 257, y: 160, id: 7 }]);
+            await touch('touchMove', [{ x: 170, y: 160, id: 7 }]);
+            await page.waitForFunction(() => {
+              const stage = document.querySelector('.ui-tab-screen-stack');
+              return document.querySelector('[data-gesture-preview=true]')
+                && new DOMMatrix(getComputedStyle(stage).transform).m41 < -100;
+            });
+            const middle = await geometry();
+            assert.ok(middle.stageX < -100, 'track follows the finger');
+            assert.ok(Math.abs(middle.outgoingRight - middle.incomingLeft) < 1, 'adjacent panels meet without a gap or overlap');
+            assert.ok(middle.incomingLeft > middle.clipLeft && middle.incomingLeft < middle.clipRight);
+            assert.deepEqual(middle.opacity, ['1', '1']);
+            assert.equal(middle.heading, before.heading, 'masthead stays stationary');
+            assert.ok(middle.previewInert, 'visual preview remains inaccessible');
+            assert.ok(Math.abs(middle.indicator - before.indicator - Math.abs(middle.stageX) / middle.width) < .02);
+            await page.screenshot({ path: path.join(evidence, `track-${theme}-${from}-to-${to}.png`) });
+            report.screenshots.push(`track-${theme}-${from}-to-${to}.png`);
+            await touch('touchMove', [{ x: 72, y: 160, id: 7 }]);
+            await touch('touchEnd');
+            await page.waitForFunction(tab => document.querySelector('[data-tab=' + tab + ']')?.getAttribute('aria-current') === 'page', to);
+            await stable();
+            assert.ok(Math.abs((await geometry()).stageX) < 1);
+            if (!report.retainedNavigation) report.retainedNavigation = [];
+            report.retainedNavigation.push({ theme, from, to, before, middle });
+          }
+        }
+      } finally {
+        await cdp.detach();
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await page.reload();
+        await page.getByTestId('today-dashboard').waitFor();
       }
     });
 
@@ -1090,7 +1155,7 @@ async function main() {
     await journey('synthetic Mark done persists the selected task only', async () => {
       await activeTab('plan');
       await planDestination('Tasks');
-      await clickButton('Create Task');
+      await clickButton('Add task');
       await fillDialogField('Title', 'QA notification action task');
       await saveDialog('Save task');
       const completed = page.getByRole('checkbox', { name: 'Mark QA notification action task incomplete' });
