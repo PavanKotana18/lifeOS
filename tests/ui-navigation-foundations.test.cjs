@@ -24,7 +24,7 @@ assert.equal(navigation.screenScrollKey({ tab: 'finance', financeSubtab: 'overvi
 assert.equal(navigation.screenScrollKey({ tab: 'settings', profileSection: 'appearance' }), 'settings:appearance');
 assert.equal(navigation.screenScrollKey({ tab: 'goals', goalsSubtab: 'completed' }), 'goals:completed');
 assert.equal(navigation.screenScrollKey({ tab: 'habits', habitsSubtab: 'weekly' }), 'habits:weekly');
-assert.equal(navigation.readMotionDuration('170ms', 260), 170);
+assert.equal(navigation.screenScrollKey({ tab: 'planner', detailKey: 'fixture' }), 'planner:fixture');\nassert.equal(navigation.readMotionDuration('170ms', 260), 170);
 assert.equal(navigation.readMotionDuration('0ms', 260), 0);
 assert.equal(navigation.readMotionDuration('invalid', 260), 260);
 assert.equal(navigation.retainedScreenTransitionState(true, 'prepare'), 'enter-prepare');

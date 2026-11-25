@@ -139,6 +139,7 @@ body {
 .app-header-shell { width: min(100%, var(--page-measure)); margin-inline: auto; padding-top: calc(env(safe-area-inset-top) + 0.55rem); }
 .app-brand-name { font-size: clamp(1.05rem, 1rem + 0.3vw, 1.2rem); font-weight: 650; letter-spacing: -.035em; }
 .app-content-width { width: min(100%, var(--content-measure)); margin-inline: auto; }
+html:has(.app-header-shell) { scroll-padding-block-start: calc(env(safe-area-inset-top) + 5rem); }
 .app-header-shell { touch-action: pan-y pinch-zoom; }
 .app-main { width: min(100%, var(--content-measure)); min-width: 0; margin-inline: auto; padding: var(--page-gutter); touch-action: pan-y pinch-zoom; overscroll-behavior-x: contain; overflow-x: clip; }
 /* One opaque track moves beneath the stationary masthead. */
