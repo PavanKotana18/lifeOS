@@ -144,7 +144,7 @@ html:has(.app-header-shell) { scroll-padding-block-start: calc(env(safe-area-ins
 .app-header-shell { touch-action: pan-y pinch-zoom; }
 .app-main { width: min(100%, var(--content-measure)); min-width: 0; margin-inline: auto; padding: var(--page-gutter); touch-action: pan-y pinch-zoom; overscroll-behavior-x: contain; overflow-x: clip; }
 /* One opaque track moves beneath the stationary masthead. */
-.ui-tab-viewport { display: grid; grid-template-columns: minmax(0, 1fr); overflow: clip; isolation: isolate; }
+.ui-tab-viewport { display: grid; grid-template-columns: minmax(0, 1fr); overflow: clip; }
 .ui-tab-screen-stack { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; align-items: stretch; }
 .ui-tab-screen-stack > [data-lifeos-screen] { grid-area: 1 / 1; min-width: 0; }
 .ui-tab-screen { position: relative; min-width: 0; background: var(--page); }
