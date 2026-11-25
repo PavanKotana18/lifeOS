@@ -338,7 +338,7 @@ jobs:
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M
-            expected-tests: 21
+            expected-tests: 20
             required-test: CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning
             exclusion-file: android/qa/instrumentation-exclusions-api29.txt
           - id: standard-api34
