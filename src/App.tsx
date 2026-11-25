@@ -1,3 +1,5 @@
+import { getMotionPreset } from './services/interfaceMotion';
+import { AppearanceStudio, ThemeStudio } from './components/AppearanceStudio';
 import { useInterfaceMotion } from './hooks/useInterfaceMotion';
 import MotionPreferences from './components/MotionPreferences';
 import MoneyDetailHeader from './components/MoneyDetailHeader';
@@ -7,7 +9,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, UserRound, WalletCards } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, UserRound, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -35,7 +37,7 @@ import { buildDuplicateTransactionDraft } from './services/transactionDraft';
 import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodaySectionVisible, TODAY_SECTION_LABELS, type TodayLayout, type TodaySectionId } from './services/todayLayout';
 import { groupUpcomingTasks } from './services/taskViews';
 import TaskDetailScreen from './components/TaskDetailScreen';
-import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
+import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, type ThemeId } from './services/themeCatalog';
 import { buildCustomAccentOverrides, normalizeCustomAccent } from './services/customAccent';
 import CustomAccentPicker from './components/CustomAccentPicker';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
@@ -171,6 +173,9 @@ export default function App() {
   const reminderProcessing = useRef(false);
   const handledNotificationIds = useRef(new Set<number>());
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
+  const profileOpen = activeTab === 'settings';
+  const profilePage = useRef<HTMLDivElement>(null);
+  const previousProfileSection = useRef<ProfileSection | null>(null);
   const swipePointer = useRef<PrimaryGestureSession | null>(null);
   const activeTouchPointers = useRef(new Set<number>());
   const swipeSuppressed = useRef(false);
@@ -189,10 +194,13 @@ export default function App() {
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
+  const appearanceSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [visualThemeId, setVisualThemeId] = useState<ThemeId>(() => {
     try { return resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { return DEFAULT_THEME_ID; }
   });
   const [themePreviewId, setThemePreviewId] = useState<ThemeId | null>(null);
+  const [savingVisualTheme, setSavingVisualTheme] = useState(false);
+  const visualThemeWrite = useRef(false);
   const [customAccent, setCustomAccent] = useState<string | undefined>(() => {
     try { return normalizeCustomAccent(localStorage.getItem('lifeos-custom-accent')); } catch { return undefined; }
   });
@@ -1008,15 +1016,34 @@ export default function App() {
     const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved, themePreviewId || visualThemeId, customAccent); };
     const nativeTheme = (event: Event) => update((event as CustomEvent<{ dark: boolean }>).detail.dark ? 'dark' : 'light');
     window.addEventListener('lifeos:system-appearance', nativeTheme);
-    const stopMedia = typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
+    const stopMedia = Capacitor.isNativePlatform() && typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
       ? () => {}
       : watchSystemTheme(window.matchMedia('(prefers-color-scheme: dark)'), update);
     return () => { stopMedia(); window.removeEventListener('lifeos:system-appearance', nativeTheme); };
   }, [appearance, visualThemeId, themePreviewId, customAccent]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyDomTheme(theme, themePreviewId || visualThemeId, customAccent);
   }, [theme, visualThemeId, themePreviewId, customAccent]);
+
+  useLayoutEffect(() => {
+    if (themePreviewId && (!profileOpen || profileSection !== 'themes')) setThemePreviewId(null);
+  }, [profileOpen, profileSection, themePreviewId]);
+
+  useLayoutEffect(() => {
+    const previous = previousProfileSection.current;
+    previousProfileSection.current = profileOpen ? profileSection : null;
+    const page = profilePage.current;
+    if (!profileOpen || !page) return;
+    page.querySelector('h1')?.focus({ preventScroll: true });
+    if (!previous || previous === profileSection || interfaceMotion.reducedMotion || !page.animate) return;
+    const direction = profileParent(previous) === profileSection ? -1 : 1;
+    const { duration, easing } = getMotionPreset(interfaceMotion.preset);
+    const content = page.querySelector('.profile-settings');
+    const animation = content?.animate([{ transform: 'translateX(' + direction * 12 + 'px)', opacity: .9 },
+      { transform: 'translateX(0)', opacity: 1 }], { duration: Math.round(duration * .55), easing });
+    return () => animation?.cancel();
+  }, [profileOpen, profileSection, interfaceMotion.reducedMotion, interfaceMotion.preset]);
 
   useEffect(() => {
     if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
@@ -1379,36 +1406,41 @@ export default function App() {
   const effectiveNotificationPreferences = (preferences: NotificationPreferences, master = notificationsEnabled): NotificationPreferences => master ? preferences : DEFAULT_NOTIFICATION_PREFERENCES;
 
   const applyAppearance = async (preference: AppearancePreference) => {
-    setAppearancePreference(preference);
-    const resolved = resolveAppearance(preference, systemDarkPreference());
-    setTheme(resolved);
-    applyDomTheme(resolved, themePreviewId || visualThemeId, customAccent);
-    await StorageService.settings.set('theme', preference);
-    localStorage.setItem('lifeos-appearance', preference);
+    const save = appearanceSaveQueue.current.then(async () => {
+      await StorageService.settings.set('theme', preference);
+      setAppearancePreference(preference);
+      setTheme(resolveAppearance(preference, systemDarkPreference()));
+      try { localStorage.setItem('lifeos-appearance', preference); } catch { /* Settings remain authoritative. */ }
+    });
+    appearanceSaveQueue.current = save.catch(() => {});
+    try { await save; }
+    catch { showToast('Could not save display mode. Try again.', 'danger'); }
   };
 
   const previewVisualTheme = (themeId: ThemeId) => {
-    setThemePreviewId(themeId);
-    applyDomTheme(theme, themeId, customAccent);
+    setThemePreviewId(themeId === visualThemeId ? null : themeId);
   };
 
   const cancelVisualThemePreview = () => {
     setThemePreviewId(null);
-    applyDomTheme(theme, visualThemeId, customAccent);
   };
 
   const applyVisualTheme = async () => {
-    if (!themePreviewId) return;
+    if (!themePreviewId || visualThemeWrite.current) return;
+    visualThemeWrite.current = true;
+    setSavingVisualTheme(true);
     try {
       await StorageService.settings.set('visualTheme', themePreviewId);
       setVisualThemeId(themePreviewId);
       try { localStorage.setItem('lifeos-theme-id', themePreviewId); } catch { /* Persistent setting remains authoritative. */ }
       setThemePreviewId(null);
-      applyDomTheme(theme, themePreviewId, customAccent);
       showToast('Color theme applied', 'success');
     } catch (error) {
       cancelVisualThemePreview();
       showToast(error instanceof Error ? error.message : 'Could not save this theme.', 'danger');
+    } finally {
+      visualThemeWrite.current = false;
+      setSavingVisualTheme(false);
     }
   };
 
@@ -2678,17 +2710,15 @@ export default function App() {
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       {/* Top Mobile Header */}
-      <header className="app-header app-header-shell sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+      {!profileOpen && <header className="app-header app-header-shell sticky top-0 z-40 flex items-center gap-3 px-4 py-3 sm:px-5">
+        <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full profile-entry-button text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
         <div className="flex min-w-0 items-center gap-3">
           <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
             <BrandMark className="h-8 w-8" />
           </div>
           <h1 className="app-brand-name">LifeOS</h1>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button type="button" onClick={() => activeTab === 'settings' ? navigateProfileSection('home') : navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
-        </div>
-      </header>
+      </header>}
 
       {!isOnline && (
         <div role="status" aria-live="polite" className="app-content-width px-4 pt-2">
@@ -2699,7 +2729,7 @@ export default function App() {
       )}
 
       {/* Main Container */}
-      <main className="app-main">
+      <main className={profileOpen ? "app-main profile-main" : "app-main"}>
         <div className="ui-tab-screen-stack">
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
@@ -3248,8 +3278,8 @@ export default function App() {
 
         {/* VIEW 6: SETTINGS */}
         <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
-          <div className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
+          <div ref={profilePage} className="profile-page space-y-5">
+            {profileSection === 'home' && <ProfileHome onBack={navigateBack} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
@@ -3272,39 +3302,19 @@ export default function App() {
             </ProfileSubpage>}
 
             {profileSection === 'appearance' && <ProfileSubpage title="Appearance" onBack={() => navigateProfileSection('home')}>
-              <section className="lifeos-panel rounded-2xl border p-4 space-y-3" aria-label="Display mode"><h2 className="text-sm font-semibold">Display mode</h2>
-              <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
-
-              </section>
-              <div className="preference-group"><ProfileSettingRow title="Themes" value={THEME_CATALOG[visualThemeId].label} onClick={() => navigateProfileSection('themes')} />
-                <ProfileSettingRow title="Accent color" value={customAccent ? 'Custom' : 'Theme default'} onClick={() => navigateProfileSection('accent')} />
-                <ProfileSettingRow title="Motion" onClick={() => navigateProfileSection('motion')} /></div>
+              <AppearanceStudio theme={visualThemeId} mode={appearance} accent={customAccent}
+                motion={interfaceMotion.preset} onOpen={navigateProfileSection} />
             </ProfileSubpage>}
             {profileSection === 'themes' && <ProfileSubpage title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
-              <section className="lifeos-panel rounded-2xl border p-4 space-y-3" aria-label="Theme previews">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {(Object.entries(THEME_CATALOG) as Array<[ThemeId, typeof THEME_CATALOG[ThemeId]]>).map(([id, option]) => {
-                  const previewTokens = option[theme];
-                  const selected = (themePreviewId || visualThemeId) === id;
-                  return <button key={id} type="button" aria-pressed={selected} aria-label={`Preview ${option.label}`} onClick={() => previewVisualTheme(id)} className={`lifeos-panel flex min-h-14 items-center gap-2 rounded-xl border p-2 text-left text-xs ${selected ? 'ring-2 ring-offset-2 ring-offset-[var(--page)]' : ''}`} style={selected ? { outlineColor: previewTokens.focus, ['--tw-ring-color' as string]: previewTokens.focus } as React.CSSProperties : undefined}>
-                    <span className="flex shrink-0 gap-0.5" aria-hidden="true">{[previewTokens.background, previewTokens.accent, ...previewTokens.chartSeries.slice(1, 3)].map(color => <span key={color} className="h-5 w-2.5 rounded-full border" style={{ backgroundColor: color, borderColor: previewTokens.border }} />)}</span>
-                    <span className="font-medium">{option.label}</span>
-                  </button>;
-                })}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => previewVisualTheme(DEFAULT_THEME_ID)} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm">Restore default</button>
-                <button type="button" disabled={!themePreviewId} onClick={cancelVisualThemePreview} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50">Cancel</button>
-                <button type="button" disabled={!themePreviewId} onClick={() => void applyVisualTheme()} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">Apply theme</button>
-              </div>
-
-              </section>
+              <ThemeStudio current={visualThemeId} preview={themePreviewId} appearance={appearance} resolved={theme}
+                saving={savingVisualTheme} onAppearance={value => void applyAppearance(value)} onPreview={previewVisualTheme}
+                onApply={() => void applyVisualTheme()} onCancel={cancelVisualThemePreview} />
             </ProfileSubpage>}
             {profileSection === 'motion' && <ProfileSubpage title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <MotionPreferences value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
             </ProfileSubpage>}
             {profileSection === 'accent' && <ProfileSubpage title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
-              <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
+              <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={visualThemeId} mode={theme} />
             </ProfileSubpage>}
 
             {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
@@ -3586,7 +3596,7 @@ export default function App() {
       )}
 
       {/* Floating Bottom Nav */}
-      <nav ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
+      <nav hidden={profileOpen} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
         <div className="app-nav-items">
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
           const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays })[icon];

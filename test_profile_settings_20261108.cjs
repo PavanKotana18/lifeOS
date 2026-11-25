@@ -35,7 +35,7 @@ assert.equal(mergeUserPreferences({ ...fresh, swipeNavigationEnabled: false }, '
 assert.equal(mergeUserPreferences({ currency: 'JPY' }, 'INR').currency, 'JPY', 'saved supported currency survives hydration');
 assert.equal(mergeUserPreferences({}, 'INR').currency, DEFAULT_USER_PREFERENCES.currency);
 
-const homeMarkup = renderToStaticMarkup(React.createElement(ProfileHome, { name: 'Asha', initial: 'A', onNameChange: () => {}, onOpen: () => {} }));
+const homeMarkup = renderToStaticMarkup(React.createElement(ProfileHome, { name: 'Asha', initial: 'A', onNameChange: () => {}, onOpen: () => {}, onBack: () => {} }));
 for (const title of ['Appearance', 'Preferences', 'Notifications', 'Privacy &amp; Security', 'Backup &amp; Restore', 'About']) assert.ok(homeMarkup.includes(title), `rendered profile exposes ${title.replaceAll('&amp;', '&')}`);
 assert.ok(homeMarkup.includes('Asha'));
 assert.match(homeMarkup, /aria-label="Profile settings"/);
