@@ -223,7 +223,7 @@ jobs:
           disable-linux-hw-accel: false
           disable-animations: true
           script: |
-            ANDROID_TEST_EXCLUSION_FILE=android/qa/instrumentation-exclusions-api34-35.txt ANDROID_EXPECTED_TESTS=22 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
+            ANDROID_TEST_EXCLUSION_FILE=android/qa/instrumentation-exclusions-api34-35.txt ANDROID_EXPECTED_TESTS=26 bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-emulator-evidence
       - name: Require all supported API 34 tests and zero skips
         if: success()
         run: |
@@ -235,7 +235,7 @@ jobs:
           skipped = int(report.attrib.get('skipped', '0'))
           errors = int(report.attrib.get('errors', '0'))
           print(f"JUnit tests={tests} failures={failures} skipped={skipped} runner_errors={errors}")
-          expected = 22
+          expected = 26
           print(f"Expected={expected} executed={tests} passed={tests-failures-skipped} failed={failures} skipped={skipped} runner_errors={errors}")
           if tests != expected or failures or skipped or errors:
               sys.exit(1)
@@ -338,7 +338,7 @@ jobs:
             profile: "Nexus 5X"
             ram-size: 2048M
             heap-size: 256M
-            expected-tests: 17
+            expected-tests: 21
             required-test: CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning
             exclusion-file: android/qa/instrumentation-exclusions-api29.txt
           - id: standard-api34
@@ -346,7 +346,7 @@ jobs:
             profile: pixel_6
             ram-size: 4096M
             heap-size: 512M
-            expected-tests: 22
+            expected-tests: 26
             required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
           - id: large-api35
@@ -354,7 +354,7 @@ jobs:
             profile: pixel_7_pro
             ram-size: 4096M
             heap-size: 512M
-            expected-tests: 22
+            expected-tests: 26
             required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
     steps:
