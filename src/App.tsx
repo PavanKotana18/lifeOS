@@ -12,7 +12,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, UserRound, WalletCards } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -53,7 +53,8 @@ import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyP
 import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
-import { ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, type ProfileSection } from './components/ProfileSettings';
+import { pickProfilePhoto, prepareProfilePhoto, PROFILE_PHOTO_SETTING, readProfilePhoto } from './services/profilePhoto';
+import { ProfileAvatar, ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences, { PreferenceChoice } from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
@@ -210,6 +211,12 @@ export default function App() {
   const customAccentSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [userPrefs, setUserPrefs] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const [displayName, setDisplayName] = useState('');
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+  const [pendingProfilePhoto, setPendingProfilePhoto] = useState<File | null>(null);
+  const [profilePhotoBusy, setProfilePhotoBusy] = useState(false);
+  const [profilePhotoError, setProfilePhotoError] = useState('');
+  const profilePhotoOperation = useRef(false);
+  const profilePhotoVersion = useRef(0);
   const [clockNow, setClockNow] = useState(() => new Date());
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [logoPhase, setLogoPhase] = useState<'brand' | 'rest'>('brand');
@@ -2029,7 +2036,8 @@ export default function App() {
   };
 
   const reloadAllData = async () => {
-    const [txs, cats, bgs, sgs, scs, accounts, transfers, rates, commitments, hbs, hLogs, gls, mls, tks] = await Promise.all([
+    const photoVersion = ++profilePhotoVersion.current;
+    const [txs, cats, bgs, sgs, scs, accounts, transfers, rates, commitments, hbs, hLogs, gls, mls, tks, storedPhoto] = await Promise.all([
       StorageService.transactions.getAll(),
       StorageService.categories.getAll(),
       StorageService.budgets.getAll(),
@@ -2043,7 +2051,8 @@ export default function App() {
       StorageService.habits.getLogs(),
       StorageService.goals.getAll(),
       StorageService.goals.getAllMilestones(),
-      StorageService.tasks.getAll()
+      StorageService.tasks.getAll(),
+      isEncryptedStorageActivated() && sessionManager.isUnlocked() ? StorageService.settings.get<unknown>(PROFILE_PHOTO_SETTING, null) : null,
     ]);
 
     setTransactions(txs);
@@ -2060,6 +2069,9 @@ export default function App() {
     setGoals(gls);
     setMilestones(mls);
     setTasks(tks);
+    if (photoVersion === profilePhotoVersion.current) {
+      setProfilePhoto(sessionManager.isUnlocked() ? readProfilePhoto(storedPhoto) : null);
+    }
     return { tasks: tks, habits: hbs, goals: gls, milestones: mls };
   };
 
@@ -2270,6 +2282,45 @@ export default function App() {
     await StorageService.settings.set('biometricLockEnabled', true);
     await reloadAllData();
   };
+
+  const changeProfilePhoto = async (remove = false) => {
+    if (profilePhotoOperation.current) return;
+    profilePhotoOperation.current = true;
+    setProfilePhotoBusy(true);
+    setProfilePhotoError('');
+    let selected = false;
+    try {
+      if (remove) {
+        if (!isEncryptedStorageActivated() || !sessionManager.isUnlocked()) throw new Error('Unlock LifeOS before removing your photo.');
+        await StorageService.settings.delete(PROFILE_PHOTO_SETTING);
+        profilePhotoVersion.current++;
+        setProfilePhoto(null);
+      } else {
+        const file = await pickProfilePhoto();
+        if (file) { selected = true; setPendingProfilePhoto(file); }
+      }
+    } catch { setProfilePhotoError('Could not change your profile photo. Try again.'); }
+    finally {
+      if (!selected) { profilePhotoOperation.current = false; setProfilePhotoBusy(false); }
+    }
+  };
+
+  useEffect(() => {
+    if (!pendingProfilePhoto || !appReady || isLocked || activityResumeGuard) return;
+    setPendingProfilePhoto(null);
+    void (async () => {
+      try {
+        const photo = await prepareProfilePhoto(pendingProfilePhoto);
+        await ensurePrivateStorageBeforeWrite();
+        if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Unlock LifeOS and choose your photo again.');
+        await StorageService.settings.set(PROFILE_PHOTO_SETTING, photo);
+        profilePhotoVersion.current++;
+        setProfilePhoto(photo);
+        showToast('Profile photo saved', 'success');
+      } catch (error) { setProfilePhotoError(error instanceof Error ? error.message : 'Could not save your profile photo.'); }
+      finally { profilePhotoOperation.current = false; setProfilePhotoBusy(false); }
+    })();
+  }, [pendingProfilePhoto, appReady, isLocked, activityResumeGuard]);
 
   const runPreparedFinanceWrite = async (write: () => Promise<unknown>) => {
     if (financeWriteOperation.current) throw new Error('A financial record is already being saved.');
@@ -2747,7 +2798,7 @@ export default function App() {
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       {/* Top Mobile Header */}
       {!profileOpen && <header className="app-header app-header-shell sticky top-0 z-40 flex items-center gap-3 px-4 py-3 sm:px-5">
-        <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full profile-entry-button text-sm font-semibold transition active:scale-95">{profileInitial(displayName) || <UserRound size={18} aria-hidden="true" />}</button>
+        <button type="button" onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full profile-entry-button text-sm font-semibold transition active:scale-95"><ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} /></button>
         <div className="flex min-w-0 items-center gap-3">
           <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
             <BrandMark className="h-8 w-8" />
@@ -3328,7 +3379,7 @@ export default function App() {
         {/* VIEW 6: SETTINGS */}
         <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
           <div ref={profilePage} className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome onBack={navigateBack} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome onBack={navigateBack} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
