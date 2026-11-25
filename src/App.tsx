@@ -1099,7 +1099,8 @@ export default function App() {
     profileSection,
     goalsSubtab,
     habitsSubtab,
-    detailKey: lifeDetail?.kind === (tab === 'habits' ? 'habit' : 'goal') ? lifeDetail.id : undefined,
+    detailKey: tab === 'planner' ? plannerDetailTaskId ?? undefined
+      : lifeDetail?.kind === (tab === 'habits' ? 'habit' : 'goal') ? lifeDetail.id : undefined,
   });
   const activeScreenKey = screenKeyForTab(activeTab);
   const routeScrollOffset = (tab: MainTab) => scrollPositions.current[screenKeyForTab(tab)] || 0;
