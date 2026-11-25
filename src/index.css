@@ -926,7 +926,6 @@ html.dark .text-amber-400 { color: var(--warning); }
 .life-workspace .life-routine-section, .life-workspace .life-goal-section { border:1px solid var(--stroke); padding:.9rem; border-radius:1.2rem; background:var(--surface); }
 .life-workspace .life-habit-row { min-height:3.3rem; }
 .profile-settings-list > button:last-child { border-bottom:0; }
-.profile-subpage > header > button { flex:0 0 2.75rem; justify-content:center; }
 .profile-preferences summary { padding-inline:.35rem; }
 .profile-preferences :is(input,select) { min-height:3rem; }
 [aria-label="Planning views"] button[aria-pressed="true"] { background:var(--accent-tint); color:var(--accent); font-weight:650; }
@@ -1083,7 +1082,7 @@ html.dark .text-amber-400 { color: var(--warning); }
 .appearance-choice-label > svg, .motion-studio-select > svg { color: var(--accent-text, var(--accent)); opacity: 0; transition: opacity 140ms ease-out; }
 .appearance-choice[aria-pressed="true"] .appearance-choice-label > svg, .motion-studio-card[data-selected="true"] .motion-studio-select > svg { opacity: 1; }
 .appearance-mode-preview { display: grid; min-inline-size: 0; }
-.appearance-mode-system { grid-template-columns: repeat(auto-fit, minmax(min(100%, 2.5rem), 1fr)); gap: .13rem; }
+.appearance-mode-system { grid-template-columns: repeat(auto-fit, minmax(min(100%, 3.4rem), 1fr)); gap: .13rem; }
 .appearance-mini {
   display: grid;
   align-content: start;
@@ -1096,9 +1095,9 @@ html.dark .text-amber-400 { color: var(--warning); }
   line-height: 1.18;
   overflow-wrap: anywhere;
 }
-.appearance-mini-header { display: flex; align-items: center; gap: .2rem; font-weight: 700; }
+.appearance-mini-header { display: flex; min-inline-size: 0; align-items: center; gap: .2rem; font-weight: 700; }
 .appearance-mini-header > span { flex: 0 0 .32rem; inline-size: .32rem; block-size: .32rem; border-radius: 50%; }
-.appearance-mini-card { display: grid; gap: .14rem; padding: .22rem; border: 1px solid; border-radius: .3rem; }
+.appearance-mini-card { display: grid; min-inline-size: 0; grid-template-columns: minmax(0, 1fr); gap: .14rem; padding: .22rem; border: 1px solid; border-radius: .3rem; }
 .appearance-mini-action { justify-self: start; border-radius: .25rem; padding: .1rem .26rem; font-weight: 650; }
 .appearance-mode-system :is(.appearance-mini, .appearance-mini-card) { padding: .16rem; }
 .appearance-mode-system .appearance-mini-header > span { display: none; }

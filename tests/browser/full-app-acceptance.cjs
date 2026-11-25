@@ -597,7 +597,9 @@ async function main() {
         const dark = expected => page.waitForFunction(expected => document.documentElement.classList.contains('dark') === expected, expected);
         const pressed = async (name, expected = true) => page.waitForFunction(({ name, expected }) =>
           [...document.querySelectorAll('button[aria-pressed]')].some(button => button.getAttribute('aria-label') === name && button.getAttribute('aria-pressed') === String(expected)), { name, expected });
-        const inspect = () => page.evaluate(() => {
+        const inspect = () => page.evaluate(async () => {
+          await document.fonts.ready;
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
           const root = document.querySelector('.profile-settings');
           const bounds = root.getBoundingClientRect();
           const controls = [...root.querySelectorAll('button, input:not([type=radio]), label, .appearance-mini, .accent-studio-swatch, .motion-demo-track')].filter(node => node.getClientRects().length);
