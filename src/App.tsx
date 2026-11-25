@@ -1,5 +1,8 @@
 import { useInterfaceMotion } from './hooks/useInterfaceMotion';
 import MotionPreferences from './components/MotionPreferences';
+import SmartImportDialog from './components/SmartImportDialog';
+import { useSharedBankAlert } from './hooks/useSharedBankAlert';
+import { PossibleImportDuplicateError } from './services/smartImport';
 import MoneyDetailHeader from './components/MoneyDetailHeader';
 import InfoTip from './components/InfoTip';
 import { resistDrag } from './services/interfaceMotion';
@@ -389,7 +392,9 @@ export default function App() {
     }
   };
 
-  const sensitiveScreenshot = activityResumeGuard || isSensitiveScreenshotState({
+  const [smartImportOpen, setSmartImportOpen] = useState(false);
+  const [protectedImportComposer, setProtectedImportComposer] = useState(false);
+  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -819,7 +824,7 @@ export default function App() {
   const navigateBack = () => {
     const state = backState.current;
     if (typeof document !== 'undefined') {
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open]');
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open],dialog[data-smart-import][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
@@ -1184,6 +1189,23 @@ export default function App() {
     () => { if (createKind) requestCloseForm(); else void requestCloseFinanceDraft(); }, recordDialogId);
   useRecordDialog(todayCustomizationOpen && activeTab === 'dashboard' && !isLocked && !createKind && !modalContent && !firstRecordSecurityOpen && secureSetup === null,
     closeTodayCustomization, 'today-customization');
+
+  const sharedReviewAvailable = appReady && onboardingComplete && !onboardingRequired && !isLocked &&
+    !activityResumeGuard && !biometricAuthActive && !secureSetup && !recoveryOpen &&
+    !firstRecordSecurityOpen && !backupPrompt && !backupOperationInProgress;
+  const sharedAlert = useSharedBankAlert({
+    available: sharedReviewAvailable,
+    busy: smartImportOpen || Boolean(createKind || modalContent || confirmation || accountFormDraft ||
+      transferFormDraft || plannerDetailTaskId || lifeDetail || todayCustomizationOpen || showExitConfirmation || tabTransition),
+    open: () => setSmartImportOpen(true),
+  });
+  useEffect(() => {
+    if (isLocked || (activeTab !== "finance" && !sharedAlert.draft)) setSmartImportOpen(false);
+    if (isLocked) sharedAlert.hide();
+  }, [isLocked, activeTab, sharedAlert.draft]);
+  useEffect(() => {
+    if (createKind !== "transaction" || isLocked) setProtectedImportComposer(false);
+  }, [createKind, isLocked]);
 
   const navigateFinanceSubtab = (next: typeof financeSubtab) => {
     if (next === financeSubtab) return;
@@ -2280,12 +2302,26 @@ export default function App() {
       }
       if (createKind === 'transaction') {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
-        const preserveUnknownTime = Boolean(existingTransaction && !existingTransaction.occurredAt && !value('dateTime'));
-        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
+        const preserveUnknownTime = !value('dateTime') && Boolean(createDraft.importFingerprint || (existingTransaction && !existingTransaction.occurredAt));
+        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: createDraft.importFingerprint ? value('date') : existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
         const accountId = values.accountId;
         if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
-        else await StorageService.transactions.add(values);
+        else if (createDraft.importFingerprint) {
+          const imported = { ...values, importFingerprint: createDraft.importFingerprint };
+          const options = { historicalFingerprints: value('historicalImportFingerprints').split(' ').filter(Boolean) };
+          try { await StorageService.transactions.add(imported, options); }
+          catch (error) {
+            if (!(error instanceof PossibleImportDuplicateError)) throw error;
+            const separate = await confirmAction({
+              title: 'Record a separate transaction?',
+              message: 'A similar transaction is already recorded. Save this only if it is a separate payment.',
+              confirmLabel: 'Save separate transaction',
+            });
+            if (!separate || backState.current.isLocked || !sessionManager.isUnlocked()) return;
+            await StorageService.transactions.add(imported, { ...options, allowPossibleDuplicate: true });
+          }
+        } else await StorageService.transactions.add(values);
       } else if (createKind === 'habit') {
         const targetPerDay = value('targetPerDay') ? Number(value('targetPerDay')) : undefined;
         if (targetPerDay !== undefined && (!Number.isFinite(targetPerDay) || targetPerDay <= 0)) throw new Error('Habit target must be greater than zero.');
@@ -2698,6 +2734,15 @@ export default function App() {
         </div>
       )}
 
+      {sharedReviewAvailable && sharedAlert.needsStorage && !smartImportOpen &&
+        <div className="app-content-width px-4 pt-2">
+          <button type="button" className="smart-import-secondary" onClick={async () => {
+            try { await ensurePrivateStorageBeforeWrite(); sharedAlert.recheck(); }
+            catch { showToast('Shared alert review is paused. Unlock LifeOS to continue.', 'info'); }
+          }}>Review shared alert</button>
+          <button type="button" className="smart-import-secondary" onClick={sharedAlert.discard}>Dismiss shared alert</button>
+        </div>}
+
       {/* Main Container */}
       <main className="app-main">
         <div className="ui-tab-screen-stack">
@@ -2941,6 +2986,10 @@ export default function App() {
                   />
                   <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
                 </div>
+                <button type="button" className="smart-import-secondary" onClick={async () => {
+                  try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
+                  catch { showToast('Could not open Smart Import securely.', 'danger'); }
+                }}>Import alert</button>
                 <details className="money-detail-filters"><summary>Filters</summary><div className="grid grid-cols-2 gap-2"><label className="text-[10px] text-secondary">Month<input aria-label="Transaction month" type="month" value={financeMonth} onChange={e => setFinanceMonth(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs" /></label><label className="text-[10px] text-secondary">Category<select value={financeCategoryFilter} onChange={e => setFinanceCategoryFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All categories</option>{categories.map(category => <option key={category.id} value={category.name}>{category.name}</option>)}</select></label><label className="text-[10px] text-secondary">Account<select aria-label="Filter transactions by account" value={financeAccountFilter} onChange={e => setFinanceAccountFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All accounts</option><option value="unassigned">Unassigned</option>{financialAccounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isActive ? "" : " · Archived"}</option>)}</select></label><label className="text-[10px] text-secondary">Currency<select aria-label="Filter transactions by currency" value={financeCurrencyFilter} onChange={e => setFinanceCurrencyFilter(e.target.value)} className="lifeos-input mt-1 block min-h-11 w-full rounded-lg px-2 py-2 text-xs"><option value="all">All currencies</option>{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)}</option>)}</select></label></div>
 
                 {/* Filters */}
@@ -3482,6 +3531,20 @@ export default function App() {
           }}>Delete transaction</button></details></div>
         </section>
       </dialog>}
+      {smartImportOpen && <SmartImportDialog initialText={sharedAlert.draft?.text} onTextConsumed={sharedAlert.releaseText} onDismiss={() => {
+        setSmartImportOpen(false); sharedAlert.finish();
+      }}
+        onReview={(suggestion, fingerprint, historical) => {
+          setSmartImportOpen(false);
+          setProtectedImportComposer(true);
+          sharedAlert.finish();
+          openCreateForm("transaction");
+          setCreateFormDirty(true);
+          setCreateDraft(draft => ({ ...draft, importFingerprint: fingerprint, historicalImportFingerprints: historical.join(" "), title: suggestion.description || "",
+            type: suggestion.kind, amount: suggestion.amount, currencyCode: suggestion.currency, category: "",
+            date: suggestion.date || "", importTime: suggestion.time || "",
+            dateTime: suggestion.date && suggestion.time ? suggestion.date + "T" + suggestion.time : "" }));
+        }} onTransfer={() => { setSmartImportOpen(false); sharedAlert.finish(); navigateTo("finance"); navigateFinanceSubtab("accounts"); setOpenMoneyTransferOnAccounts(true); }} />}
       {createKind && (
         <div className="ui-sheet-backdrop record-composer-backdrop" data-full-composer={!["contribution","milestone","goal-progress"].includes(createKind)} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
           <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer" onMouseDown={event => event.stopPropagation()}>
@@ -3516,6 +3579,10 @@ export default function App() {
                 ))}
               </select></label>
               {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
+              {createDraft.importFingerprint && <label className="mb-3 block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => {
+                const date = event.target.value;
+                setCreateDraft({ ...createDraft, date, dateTime: date && createDraft.importTime ? date + 'T' + createDraft.importTime : '' });
+              }} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
               <button type="button" className="mb-3 min-h-11 rounded-lg px-2 text-left text-xs font-semibold lifeos-accent-text" aria-expanded={transactionDetailsOpen} aria-controls="transaction-optional-details" onClick={() => setTransactionDetailsOpen(open => !open)}>{transactionDetailsOpen ? 'Hide optional details' : 'Add optional details'}</button>
               {transactionDetailsOpen && <div id="transaction-optional-details" className="transaction-optional-details rounded-xl p-3">
                 <label className="mb-3 block text-xs text-secondary">Currency<select value={createDraft.currencyCode || userPrefs.currency} onChange={e => setCreateDraft({ ...createDraft, currencyCode: e.target.value, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e.target.value) ? createDraft.accountId : '' })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</option>)}</select><span className="mt-1 block">This labels the transaction. Changing the reporting currency does not convert saved records.</span></label>
@@ -3523,7 +3590,12 @@ export default function App() {
                 <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
-                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly} type="datetime-local" value={createDraft.dateTime || ''} onChange={e => setCreateDraft({ ...createDraft, dateTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly && !createDraft.importFingerprint} type="datetime-local" value={createDraft.dateTime || ''} onChange={event => {
+                  const dateTime = event.target.value;
+                  setCreateDraft({ ...createDraft, dateTime, ...(createDraft.importFingerprint && {
+                    date: dateTime.slice(0, 10) || createDraft.date, importTime: dateTime.slice(11),
+                  }) });
+                }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               </div>}
             </>}
             {createKind === 'habit' && <>

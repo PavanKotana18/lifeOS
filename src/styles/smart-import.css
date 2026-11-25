@@ -1,0 +1,9 @@
+.smart-import-content { display: grid; gap: .75rem; }
+.smart-import-field { display: grid; gap: .5rem; font-size: .875rem; }
+.smart-import-field textarea { inline-size: 100%; min-block-size: 102px; padding: .75rem; border-radius: var(--radius-control); resize: vertical; }
+.smart-import-primary, .smart-import-secondary {
+  min-block-size: 44px; padding-inline: .8rem; border-radius: var(--radius-control); font-size: .82rem; font-weight: 600;
+}
+.smart-import-primary { background: var(--accent); color: var(--accent-foreground); }
+.smart-import-primary:disabled { opacity: .55; }
+.smart-import-secondary { border: 1px solid var(--stroke); background: var(--surface); }

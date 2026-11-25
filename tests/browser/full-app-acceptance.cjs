@@ -10,6 +10,8 @@ const path = require('node:path');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
 const { chromium } = require('playwright-core');
+const { installSmartMoneyFixture } = require('./smart-money-2-fixture.cjs');
+const standardImportGate = process.env.LIFEOS_STANDARD_IMPORT_GATE === '1';
 
 const root = path.resolve(__dirname, '../..');
 const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
@@ -208,6 +210,7 @@ async function main() {
     if (url.startsWith(origin + '/') || url.startsWith('data:') || url.startsWith('blob:')) return route.continue();
     report.networkBlocked.push(url); return route.abort();
   });
+  if (standardImportGate) await installSmartMoneyFixture(context);
   page = await context.newPage(); page.setDefaultTimeout(12_000); page.setDefaultNavigationTimeout(30_000);
   page.on('pageerror', error => report.pageErrors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') report.consoleErrors.push(message.text()); });
@@ -582,6 +585,73 @@ async function main() {
         await cdp.detach();
       }
     });
+
+    if (standardImportGate) {
+      await journey('Standard Smart Import review and encrypted duplicate protection', async () => {
+        await activeTab('finance');
+        await page.getByRole('navigation', { name: 'Money destinations' }).getByRole('button', { name: 'Transactions', exact: true }).click();
+        const alert = 'Bank account xxxx4521 debited INR 17.25 at Fixture Cafe on 21/11/2026 Ref 552001818273';
+        const sheet = page.getByRole('dialog', { name: 'Smart Import' });
+        const detect = () => sheet.getByRole('button', { name: 'Detect transaction' }).click();
+        const confirmCategory = () => dialog().getByLabel('Category').selectOption({ index: 1 });
+        const review = async input => {
+          await clickButton('Import alert');
+          await sheet.getByLabel('Bank alert').fill(input);
+          await detect();
+        };
+        await review('Your OTP is 991172 from Bank account xxxx4521');
+        await sheet.getByText('No supported transaction was found.').waitFor();
+        await sheet.getByRole('button', { name: 'Close', exact: true }).click();
+
+        await review(alert);
+        await sheet.getByRole('button', { name: 'Review transaction' }).click();
+        assert.equal(await dialog().getByLabel('Transaction date', { exact: true }).inputValue(), '2026-11-21');
+        await confirmCategory();
+        const testRows = () => page.evaluate(async () => {
+          const { lifeOSDatabase, StorageService } = await import('/src/db.ts');
+          const rows = (await StorageService.transactions.getAll()).filter(row => row.description === 'Fixture Cafe');
+          const encrypted = await Promise.all(rows.map(async row => {
+            const raw = await lifeOSDatabase.transactions.get(row.id);
+            return raw?.__lifeosEncrypted === 1 && !raw.importFingerprint && !raw.description && !raw.amount;
+          }));
+          return { count: rows.length, amount: rows[0]?.amountMinor, hasTime: !!rows[0]?.occurredAt, encrypted: encrypted.every(Boolean) };
+        });
+        assert.equal((await testRows()).count, 0, 'review alone does not record a transaction');
+        await saveDialog('Save transaction');
+        assert.deepEqual(await testRows(), { count: 1, amount: '1725', hasTime: false, encrypted: true });
+
+        const state = () => page.evaluate(() => window.__qaSmartMoney.state);
+        const peekCount = (await state()).peeks;
+        const share = (id, text) => page.evaluate(({ id, text }) => window.__qaSmartMoney.share(id, text), { id, text });
+        await page.evaluate(() => { window.__qaSmartMoney.state.holdProtection = true; });
+        const alias = alert.replace('xxxx4521', '').replace('Fixture Cafe', 'FIXTURE CAFE');
+        await share('duplicate-share', alias);
+        await page.waitForFunction(() => window.__qaSmartMoney.waitingForProtection() > 0);
+        assert.equal((await state()).peeks, peekCount);
+        assert.equal(await sheet.count(), 0);
+        await page.evaluate(() => window.__qaSmartMoney.releaseProtection());
+        assert.equal(await sheet.getByLabel('Bank alert').inputValue(), alias);
+        await detect();
+        await sheet.getByRole('button', { name: 'Review transaction' }).click();
+        assert.equal((await state()).secure, true);
+        await confirmCategory();
+        await dialog().getByRole('button', { name: 'Save transaction', exact: true }).click();
+        await page.getByText(/matching transaction is already recorded/).waitFor();
+        assert.equal((await testRows()).count, 1);
+        await dialog().getByRole('button', { name: 'Close', exact: true }).click();
+        await page.getByRole('alertdialog').getByRole('button', { name: /Discard/ }).click();
+
+        await review(alert.replace('552001818273', '552001818274'));
+        await sheet.getByRole('button', { name: 'Review transaction' }).click();
+        await confirmCategory();
+        await dialog().getByRole('button', { name: 'Save transaction', exact: true }).click();
+        const confirmation = page.getByRole('alertdialog', { name: 'Record a separate transaction?' });
+        await confirmation.getByRole('button', { name: 'Save separate transaction' }).click();
+        await dialog().waitFor({ state: 'hidden' });
+        assert.equal((await testRows()).count, 2);
+      });
+      return;
+    }
 
     await journey('compact settings and six-month sample data', async () => {
       await clickButton('Open profile and settings');
