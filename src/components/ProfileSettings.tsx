@@ -24,17 +24,35 @@ const profileLinks = [
   { section: 'about', title: 'About', detail: 'Version and privacy information', Icon: Info },
 ] as const;
 
-export function ProfileIdentityCard({ name, initial, onChange }: { name: string; initial: string; onChange: (name: string) => Promise<void> }) {
+export function ProfileAvatar({ photo, initial }: { photo?: string | null; initial: string }) {
+  return photo ? <img className="profile-avatar-image" src={photo} alt="" draggable={false} />
+    : initial || <UserRound size={18} aria-hidden="true" />;
+}
+
+type ProfilePhotoControls = {
+  photo?: string | null;
+  photoBusy?: boolean;
+  photoError?: string;
+  onPhotoChange?: (remove?: boolean) => Promise<void>;
+};
+
+export function ProfileIdentityCard({ name, initial, onChange, photo, photoBusy, photoError, onPhotoChange }: { name: string; initial: string; onChange: (name: string) => Promise<void> } & ProfilePhotoControls) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return <section className="profile-identity-card lifeos-panel rounded-2xl border" aria-labelledby="profile-identity-title">
     <div className="profile-identity-row flex items-center gap-3">
-      <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-lg font-semibold" aria-hidden="true">{initial || <UserRound size={21} />}</div>
+      <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-lg font-semibold" aria-hidden="true"><ProfileAvatar photo={photo} initial={initial} /></div>
       <h2 id="profile-identity-title" className="min-w-0 flex-1 safe-wrap text-xl font-semibold">{name.trim() || 'Your profile'}</h2>
       {!editing && <button type="button" className="min-h-11 text-sm lifeos-accent-text" onClick={() => { setDraft(name); setEditing(true); }}>Edit name</button>}
     </div>
+    {onPhotoChange && <div className="profile-photo-actions" aria-busy={photoBusy}>
+      <button type="button" disabled={photoBusy} onClick={() => void onPhotoChange()}>{photo ? 'Replace photo' : 'Choose photo'}</button>
+      {photo && <button type="button" disabled={photoBusy} onClick={() => void onPhotoChange(true)}>Remove photo</button>}
+      {photoBusy && <span role="status" className="text-xs text-secondary">Updating photo?</span>}
+    </div>}
+    {photoError && <p role="alert" className="mt-1 text-xs text-[var(--danger)]">{photoError}</p>}
     {editing && <form className="mt-3 space-y-2" onSubmit={async event => {
       event.preventDefault();
       if (!draft.trim() || busy) return;
@@ -61,7 +79,7 @@ export function ProfileNavigationRow({ title, detail, icon: Icon, onClick, value
   </button>;
 }
 
-export function ProfileHome({ name, initial, onNameChange, onOpen, onBack, developerAllowed = false, securityStatus }: {
+export function ProfileHome({ name, initial, onNameChange, onOpen, onBack, developerAllowed = false, securityStatus, ...photoControls }: {
   name: string;
   initial: string;
   onNameChange: (name: string) => Promise<void>;
@@ -69,10 +87,10 @@ export function ProfileHome({ name, initial, onNameChange, onOpen, onBack, devel
   onBack: () => void;
   developerAllowed?: boolean;
   securityStatus?: string;
-}) {
+} & ProfilePhotoControls) {
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
     <ProfilePageHeader title="Profile" backLabel="Back from profile" onBack={onBack} />
-    <ProfileIdentityCard name={name} initial={initial} onChange={onNameChange} />
+    <ProfileIdentityCard name={name} initial={initial} onChange={onNameChange} {...photoControls} />
     <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
       {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>
         <section key={index} aria-label={index === 0 ? "Personal preferences" : "Security and information"} className="profile-link-group">

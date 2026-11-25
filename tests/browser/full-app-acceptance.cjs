@@ -822,6 +822,75 @@ async function main() {
       return;
     }
 
+    await journey('Profile photo picker and encrypted persistence', async () => {
+      const opener = page.getByRole('button', { name: 'Open profile and settings', exact: true });
+      const profile = page.getByTestId('profile-settings-home');
+      const image = profile.locator('img.profile-avatar-image');
+      await opener.click();
+
+      const upload = async (label, color, mimeType = 'image/png') => {
+        const data = await page.evaluate(fill => {
+          const canvas = document.createElement('canvas');
+          canvas.width = canvas.height = 12;
+          const context = canvas.getContext('2d');
+          context.fillStyle = fill;
+          context.fillRect(0, 0, 12, 12);
+          return canvas.toDataURL().split(',')[1];
+        }, color);
+        const chooser = page.waitForEvent('filechooser');
+        await profile.getByRole('button', { name: label, exact: true }).click();
+        await (await chooser).setFiles({ name: 'synthetic-profile.png', mimeType, buffer: Buffer.from(data, 'base64') });
+      };
+
+      await upload('Choose photo', 'navy', 'text/plain');
+      await profile.getByRole('alert').getByText(/Choose a JPEG/).waitFor();
+      await upload('Choose photo', 'navy');
+      await image.waitFor();
+      const first = await image.getAttribute('src');
+      await upload('Replace photo', 'gold');
+      await page.waitForFunction(previous => {
+        const src = document.querySelector('[data-testid="profile-settings-home"] .profile-avatar-image')?.getAttribute('src');
+        return Boolean(src && src !== previous);
+      }, first);
+      const replacement = await image.getAttribute('src');
+      assert.notEqual(first, replacement);
+
+      const persisted = await page.evaluate(async () => {
+        const { StorageService, lifeOSDatabase, validateBackupTables } = await import('/src/db.ts');
+        const { encryptBackup, decryptBackup } = await import('/src/services/backupCryptoService.ts');
+        const exported = await StorageService.backup.exportData();
+        const sealed = await encryptBackup(exported, 'Disposable-browser-passphrase-2026');
+        const restored = JSON.parse(await decryptBackup(sealed, 'Disposable-browser-passphrase-2026'));
+        validateBackupTables(restored.tables);
+        const raw = await lifeOSDatabase.settings.get('profilePhoto');
+        return {
+          restoredPhoto: restored.tables.settings.find(row => row.key === 'profilePhoto')?.value,
+          rowIsEncrypted: raw?.__lifeosEncrypted === 1 && raw.value === undefined,
+          photoInBackupCiphertext: sealed.includes('data:image/jpeg'),
+          cachedLocally: Object.values(localStorage).some(value => value.includes('data:image/jpeg')),
+        };
+
+      });
+      assert.deepEqual(persisted, { restoredPhoto: replacement, rowIsEncrypted: true, photoInBackupCiphertext: false, cachedLocally: false });
+
+      await profile.getByRole('button', { name: 'Back from profile' }).click();
+      assert.equal(await opener.locator('img').getAttribute('src'), replacement);
+      await page.reload();
+      await opener.click();
+      assert.equal(await image.getAttribute('src'), replacement);
+      const chooser = page.waitForEvent('filechooser');
+      await profile.getByRole('button', { name: 'Replace photo', exact: true }).click();
+      await (await chooser).setFiles([]);
+      await profile.getByRole('button', { name: 'Replace photo', exact: true }).waitFor();
+      assert.equal(await image.getAttribute('src'), replacement);
+      await profile.getByRole('button', { name: 'Remove photo', exact: true }).click();
+      await image.waitFor({ state: 'detached' });
+      assert.equal(await page.evaluate(async () => (await import('/src/db.ts')).StorageService.settings.get('profilePhoto', null)), null);
+      await profile.getByRole('button', { name: 'Back from profile' }).click();
+      assert.equal(await opener.locator('img').count(), 0);
+    });
+    if (process.env.LIFEOS_PROFILE_PHOTO_GATE === '1') return;
+
     await journey('compact settings and six-month sample data', async () => {
       await clickButton('Open profile and settings');
       await page.getByTestId('profile-settings-home').waitFor();

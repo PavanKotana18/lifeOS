@@ -290,7 +290,10 @@ async function fixture({ activate = true } = {}) {
       async triggerBiometricAuth() { throw new Error('Unexpected optional biometric UI call'); },
       async refreshNotificationDiagnostics() {}, showToast() {} };
     const reload = appFunction('reloadAllData');
-    deps.reloadAllData = bind(reload, { ...deps, ...noopSetters(reload) });
+    deps.reloadAllData = bind(reload, {
+      ...deps, ...noopSetters(reload), ...load('src/services/profilePhoto.ts'),
+      profilePhotoVersion: { current: 0 },
+    });
     const sync = appFunction('syncNotificationSchedules');
     deps.syncNotificationSchedules = bind(sync, deps);
     return deps;
