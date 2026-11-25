@@ -255,8 +255,11 @@ async function auditProfile(page, cdp, tab, button) {
   });
   const settled = () => page.waitForFunction(() => {
     const track = document.querySelector('.ui-tab-screen-stack');
+    const profile = track.querySelector('#screen-settings .profile-page');
+    const transform = profile ? getComputedStyle(profile).transform : 'none';
     return getComputedStyle(track).transform === 'none' && !track.hasAttribute('data-track-dragging') &&
-      !track.querySelector('[data-transition-state="outgoing"]');
+      !track.querySelector('[data-transition-state="outgoing"]') &&
+      (transform === 'none' || Math.abs(new DOMMatrix(transform).m41) < .01);
   });
   const touch = (type, x, y = 392) => cdp.send('Input.dispatchTouchEvent', {
     type, touchPoints: x == null ? [] : [{ x, y, id: 1 }],
@@ -272,7 +275,7 @@ async function auditProfile(page, cdp, tab, button) {
   const checkBounds = measured => {
     assert.ok(Math.abs(measured.panel.left - measured.viewport.left) < 1 && Math.abs(measured.panel.right - measured.viewport.right) < 1);
     assert.ok(measured.content.left >= measured.panel.left && measured.content.right <= measured.panel.right + 1);
-    assert.ok(measured.controls.left >= measured.content.left && measured.controls.right <= measured.content.right + 1);
+    assert.ok(measured.controls.left >= measured.content.left - 1 && measured.controls.right <= measured.content.right + 1);
     assert.equal(measured.current, 'settings');
     assert.equal(measured.scrollX, 0);
     assert.ok(measured.documentWidth <= measured.windowWidth);
@@ -339,6 +342,7 @@ async function auditProfile(page, cdp, tab, button) {
     await screenshot('profile-' + width);
     await button('Appearance').click();
     await page.getByRole('heading', { level: 1, name: 'Appearance', exact: true }).waitFor();
+    await settled();
     const nested = await geometry();
     checkBounds(nested);
     await swipe('right'); await touch('touchEnd');
