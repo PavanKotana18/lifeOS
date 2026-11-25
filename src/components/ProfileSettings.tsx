@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wallet } from 'lucide-react';
+import { useId, useState, type ReactNode } from 'react';
+import { Bell, ChevronRight, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wallet } from 'lucide-react';
 import { FeatherHeader } from './FeatherHeader';
 import type { LucideIcon } from 'lucide-react';
 
@@ -67,10 +67,15 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
   </section>;
 }
 
-export function ProfileNavigationRow({ title, icon: Icon, onClick, value }: { title: string; detail: string; value?: string; icon: LucideIcon; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="profile-navigation-row lifeos-panel group flex min-h-14 w-full items-center gap-3 border-b px-3 py-2 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)] active:scale-[.995]">
-    <span className="lifeos-tint flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lifeos-accent-text" aria-hidden="true"><Icon size={17} strokeWidth={1.9} /></span>
-    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span>{value && <span className="block text-xs text-secondary">{value}</span>}</span>
+export function ProfileNavigationRow({ title, detail, icon: Icon, onClick, value }: { title: string; detail: string; value?: string; icon: LucideIcon; onClick: () => void }) {
+  const description = useId();
+  return <button type="button" onClick={onClick} className="profile-navigation-row" aria-label={title} aria-describedby={description}>
+    <span className="profile-navigation-icon" aria-hidden="true"><Icon size={19} strokeWidth={1.8} /></span>
+    <span className="profile-navigation-copy">
+      <span className="profile-navigation-title">{title}</span>
+      <span id={description} className="profile-navigation-description">{detail}{value && <strong>{value}</strong>}</span>
+    </span>
+    <ChevronRight className="profile-navigation-chevron" size={15} aria-hidden="true" />
   </button>;
 }
 
@@ -93,11 +98,11 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
     <ProfileIdentityCard name={name} initial={initial} photo={photo} photoBusy={photoBusy} photoError={photoError} onPhotoChange={onPhotoChange} onChange={onNameChange} />
     <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
       {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>
-        <section key={index} aria-label={index === 0 ? "Personal preferences" : "Security and information"} className="profile-link-group lifeos-panel rounded-2xl border">
+        <section key={index} aria-label={index === 0 ? "Personal preferences" : "Security and information"} className="profile-link-group">
           {group.map(({ section, title, detail, Icon }) => <ProfileNavigationRow key={section} title={title} detail={detail} icon={Icon}
             value={section === "privacy" ? securityStatus : undefined} onClick={() => onOpen(section)} />)}
         </section>)}
-      {developerAllowed && <section className="profile-link-group lifeos-panel rounded-2xl border"><ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} /></section>}
+      {developerAllowed && <section className="profile-link-group"><ProfileNavigationRow title="Developer tools" detail="Diagnostics and demonstration data" icon={Info} onClick={() => onOpen('developer')} /></section>}
     </nav>
   </div>;
 }

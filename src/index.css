@@ -955,9 +955,6 @@ html.dark .text-amber-400 { color: var(--warning); }
 .goal-card-open small { color: var(--ink-secondary); font-size: .8rem; margin-top: .15rem; }
 .goal-percent { flex: none; color: var(--accent-ink, var(--ink)); background: var(--accent-tint); padding: .35rem .55rem; border-radius: .65rem; font-weight: 700; }
 .profile-identity-card { padding: clamp(1rem, 3vw, 1.4rem); }
-.profile-link-group { overflow: hidden; padding: .25rem .6rem; }
-.profile-link-group .profile-navigation-row { padding: .65rem .55rem; min-height: 3.5rem; border-radius: 0; }
-.profile-link-group .profile-navigation-row:last-child { border-bottom: 0; }
 .profile-subpage > header > h1 { overflow-wrap: anywhere; min-width: 0; }
 .transaction-history-amount { max-inline-size: 100%; overflow-wrap: anywhere; }
 

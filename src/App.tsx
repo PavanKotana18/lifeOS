@@ -7,6 +7,7 @@ import ComposerShell from './components/ComposerShell';
 import { APP_NAME } from './config/appBrand';
 import Snackbar, { type SnackbarNotice } from './components/Snackbar';
 import AppHeader from './components/AppHeader';
+import { AppearanceStudio, ThemeStudio } from './components/AppearanceStudio';
 import SmartImportDialog, { type SavableAlert } from './components/SmartImportDialog';
 import TransactionDetail from './components/TransactionDetail';
 import { BankSmsSettings } from './components/BankSmsSettings';
@@ -26,7 +27,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal, flushSync } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { Activity, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Flag, Home, Leaf, Moon, Search, Shield, ShieldCheck, Smartphone, Sun, Tag, Target, WalletCards } from 'lucide-react';
+import { Activity, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Flag, Home, Leaf, Search, Shield, ShieldCheck, Tag, Target, WalletCards } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -54,7 +55,7 @@ import { buildDuplicateTransactionDraft } from './services/transactionDraft';
 import { DEFAULT_TODAY_LAYOUT, moveTodaySection, normalizeTodayLayout, setTodaySectionVisible, TODAY_SECTION_LABELS, type TodayLayout, type TodaySectionId } from './services/todayLayout';
 import { groupUpcomingTasks } from './services/taskViews';
 import TaskDetailScreen from './components/TaskDetailScreen';
-import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, THEME_CATALOG, type ThemeId } from './services/themeCatalog';
+import { applyThemeTokens, DEFAULT_THEME_ID, resolveThemeId, type ThemeId } from './services/themeCatalog';
 import { buildCustomAccentOverrides, normalizeCustomAccent } from './services/customAccent';
 import CustomAccentPicker from './components/CustomAccentPicker';
 import { resolveInitialVisualTheme } from './services/systemAppearance';
@@ -211,6 +212,8 @@ export default function App() {
   const handledNotificationIds = useRef(new Set<number>());
   const profileOpen = activeTab === "settings";
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
+  const profileContent = useRef<HTMLDivElement>(null);
+  const shownProfileSection = useRef<ProfileSection | null>(null);
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [pendingProfilePhoto, setPendingProfilePhoto] = useState<File | null>(null);
   const [profilePhotoBusy, setProfilePhotoBusy] = useState(false);
@@ -234,10 +237,13 @@ export default function App() {
   const scrollPositions = useRef<Record<string, number>>({});
   const [theme, setTheme] = useState<'dark' | 'light'>(() => systemDarkPreference() ? 'dark' : 'light');
   const [appearance, setAppearancePreference] = useState<AppearancePreference>('system');
+  const appearanceSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const [visualThemeId, setVisualThemeId] = useState<ThemeId>(() => {
     try { return resolveThemeId(localStorage.getItem('lifeos-theme-id')); } catch { return DEFAULT_THEME_ID; }
   });
   const [themePreviewId, setThemePreviewId] = useState<ThemeId | null>(null);
+  const [savingVisualTheme, setSavingVisualTheme] = useState(false);
+  const visualThemeWrite = useRef(false);
   const [customAccent, setCustomAccent] = useState<string | undefined>(() => {
     try { return normalizeCustomAccent(localStorage.getItem('lifeos-custom-accent')); } catch { return undefined; }
   });
@@ -1074,15 +1080,19 @@ export default function App() {
     const update = (resolved: 'dark' | 'light') => { setTheme(resolved); applyDomTheme(resolved, themePreviewId || visualThemeId, customAccent); };
     const nativeTheme = (event: Event) => update((event as CustomEvent<{ dark: boolean }>).detail.dark ? 'dark' : 'light');
     window.addEventListener('lifeos:system-appearance', nativeTheme);
-    const stopMedia = typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
+    const stopMedia = Capacitor.isNativePlatform() && typeof (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark === 'boolean'
       ? () => {}
       : watchSystemTheme(window.matchMedia('(prefers-color-scheme: dark)'), update);
     return () => { stopMedia(); window.removeEventListener('lifeos:system-appearance', nativeTheme); };
   }, [appearance, visualThemeId, themePreviewId, customAccent]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyDomTheme(theme, themePreviewId || visualThemeId, customAccent);
   }, [theme, visualThemeId, themePreviewId, customAccent]);
+
+  useLayoutEffect(() => {
+    if (themePreviewId && (!profileOpen || profileSection !== 'themes')) setThemePreviewId(null);
+  }, [profileOpen, profileSection, themePreviewId]);
 
   const activeScreenKey = screenScrollKey({
     tab: activeTab,
@@ -1122,6 +1132,18 @@ export default function App() {
   useLayoutEffect(() => {
     if (profileOpen) document.getElementById("primary-route-title")?.focus({ preventScroll: true });
   }, [profileOpen, profileSection]);
+
+  useLayoutEffect(() => {
+    const previous = shownProfileSection.current;
+    shownProfileSection.current = profileOpen ? profileSection : null;
+    const page = profileContent.current;
+    const isAppearance = (section: ProfileSection) => ['appearance', 'themes', 'accent', 'motion'].includes(section);
+    if (!profileOpen || !previous || previous === profileSection || interfaceMotion.reducedMotion ||
+      (!isAppearance(previous) && !isAppearance(profileSection)) || !page?.animate) return;
+    const direction = profileParent(previous) === profileSection ? -1 : 1;
+    const animation = animateRoute(page, { x: direction * 12, opacity: .9 }, { x: 0, opacity: 1 }, interfaceMotion.preset);
+    return () => animation.cancel();
+  }, [profileOpen, profileSection, interfaceMotion.reducedMotion, interfaceMotion.preset]);
 
   useLayoutEffect(() => {
     window.scrollTo({ top: scrollPositions.current[activeScreenKey] || 0, left: 0, behavior: 'instant' });
@@ -1448,36 +1470,41 @@ export default function App() {
   const effectiveNotificationPreferences = (preferences: NotificationPreferences, master = notificationsEnabled): NotificationPreferences => master ? preferences : DEFAULT_NOTIFICATION_PREFERENCES;
 
   const applyAppearance = async (preference: AppearancePreference) => {
-    setAppearancePreference(preference);
-    const resolved = resolveAppearance(preference, systemDarkPreference());
-    setTheme(resolved);
-    applyDomTheme(resolved, themePreviewId || visualThemeId, customAccent);
-    await StorageService.settings.set('theme', preference);
-    localStorage.setItem('lifeos-appearance', preference);
+    const save = appearanceSaveQueue.current.then(async () => {
+      await StorageService.settings.set('theme', preference);
+      setAppearancePreference(preference);
+      setTheme(resolveAppearance(preference, systemDarkPreference()));
+      try { localStorage.setItem('lifeos-appearance', preference); } catch { /* Settings remain authoritative. */ }
+    });
+    appearanceSaveQueue.current = save.catch(() => {});
+    try { await save; }
+    catch { showToast('Could not save display mode. Try again.', 'danger'); }
   };
 
   const previewVisualTheme = (themeId: ThemeId) => {
-    setThemePreviewId(themeId);
-    applyDomTheme(theme, themeId, customAccent);
+    setThemePreviewId(themeId === visualThemeId ? null : themeId);
   };
 
   const cancelVisualThemePreview = () => {
     setThemePreviewId(null);
-    applyDomTheme(theme, visualThemeId, customAccent);
   };
 
   const applyVisualTheme = async () => {
-    if (!themePreviewId) return;
+    if (!themePreviewId || visualThemeWrite.current) return;
+    visualThemeWrite.current = true;
+    setSavingVisualTheme(true);
     try {
       await StorageService.settings.set('visualTheme', themePreviewId);
       setVisualThemeId(themePreviewId);
       try { localStorage.setItem('lifeos-theme-id', themePreviewId); } catch { /* Persistent setting remains authoritative. */ }
       setThemePreviewId(null);
-      applyDomTheme(theme, themePreviewId, customAccent);
       showToast('Color theme applied', 'success');
     } catch (error) {
       cancelVisualThemePreview();
       showToast(error instanceof Error ? error.message : 'Could not save this theme.', 'danger');
+    } finally {
+      visualThemeWrite.current = false;
+      setSavingVisualTheme(false);
     }
   };
 
@@ -2907,7 +2934,9 @@ export default function App() {
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell feather-expressive" data-reduced={interfaceMotion.reducedMotion} onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       <AppHeader title={primarySection === 'dashboard' ? APP_NAME : sectionTitle || APP_NAME} brand={primarySection === 'dashboard'}
-        back={profileOpen && profileSection !== "home" ? backFromProfile : undefined} backLabel={profileSection === 'home' ? 'Back from profile' : 'Back to ' + PROFILE_TITLES[profileParent(profileSection)]}
+        back={profileOpen ? backFromProfile : undefined} backLabel={profileSection === 'home' ? 'Back from profile' : 'Back to ' + PROFILE_TITLES[profileParent(profileSection)]}
+        leading={<button type="button" className="app-profile-button" aria-label="Open profile"
+          onClick={() => navigateTo('settings')}><ProfileAvatar photo={profilePhoto} /></button>}
         action={activeTab === 'finance' && financeSubtab === 'overview' && <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />} />
 
       {!isOnline && (
@@ -3498,7 +3527,7 @@ export default function App() {
         <RetainedScreen active={profileOpen} retainInactive prepare={primaryPrepared} id="screen-settings" {...transitionPropsFor("settings")} render={() => (
           <div className="profile-track-page" role="region" aria-label="Profile and settings" data-android-profile={Capacitor.getPlatform() === "android" || undefined}>
             <div className="profile-track-preview" aria-hidden="true"><p>Appearance</p><p>Preferences</p><p>Notifications</p><p>Money &amp; Imports</p><p>Privacy &amp; security</p></div>
-          <div className="profile-page" data-profile-section={profileSection}>
+          <div className="profile-page" ref={profileContent} data-profile-section={profileSection}>
             {profileSection === 'home' && <ProfileHome sharedHeader onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage embedded title="Privacy & security" onBack={() => navigateProfileSection('home')}>
@@ -3523,36 +3552,14 @@ export default function App() {
             </ProfileSubpage>}
 
             {profileSection === 'appearance' && <ProfileSubpage embedded title="Appearance" onBack={() => navigateProfileSection('home')}>
-              <section className="lifeos-panel rounded-2xl border p-4 space-y-3" aria-label="Display mode"><h2 className="text-sm font-semibold">Display mode</h2>
-              <div className="grid grid-cols-3 gap-2">{([['dark', 'Dark', Moon], ['light', 'Light', Sun], ['system', 'System', Smartphone]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={appearance === value} onClick={() => void applyAppearance(value)} className={`lifeos-panel flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[11px] font-semibold ${appearance === value ? 'lifeos-tint lifeos-accent-text' : 'text-secondary'}`}><Icon size={14} />{label}</button>)}</div>
-
-              </section>
-              <div className="preference-group"><ProfileSettingRow title="Themes" value={THEME_CATALOG[visualThemeId].label} onClick={() => navigateProfileSection('themes')} />
-                <ProfileSettingRow title="Accent color" value={customAccent ? 'Custom' : 'Theme default'} onClick={() => navigateProfileSection('accent')} />
-                <ProfileSettingRow title="Motion" onClick={() => navigateProfileSection('motion')} /></div>
+              <AppearanceStudio theme={visualThemeId} mode={appearance} accent={customAccent} motion={interfaceMotion.preset} onOpen={navigateProfileSection} />
             </ProfileSubpage>}
             {profileSection === 'themes' && <ProfileSubpage embedded title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
-              <section className="lifeos-panel rounded-2xl border p-4 space-y-3" aria-label="Theme previews">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {(Object.entries(THEME_CATALOG) as Array<[ThemeId, typeof THEME_CATALOG[ThemeId]]>).map(([id, option]) => {
-                  const previewTokens = option[theme];
-                  const selected = (themePreviewId || visualThemeId) === id;
-                  return <button key={id} type="button" aria-pressed={selected} aria-label={`Preview ${option.label}`} onClick={() => previewVisualTheme(id)} className={`profile-theme-option lifeos-panel min-h-14 gap-2 rounded-xl border p-2 text-left text-xs ${selected ? 'ring-2 ring-offset-2 ring-offset-[var(--page)]' : ''}`} style={selected ? { outlineColor: previewTokens.focus, ['--tw-ring-color' as string]: previewTokens.focus } as React.CSSProperties : undefined}>
-                    <span aria-hidden="true">{[previewTokens.background, previewTokens.accent, ...previewTokens.chartSeries.slice(1, 3)].map(color => <span key={color} className="rounded-full border" style={{ backgroundColor: color, borderColor: previewTokens.border }} />)}</span>
-                    <span className="font-medium">{option.label}</span>
-                  </button>;
-                })}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => previewVisualTheme(DEFAULT_THEME_ID)} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm">Restore default</button>
-                <button type="button" disabled={!themePreviewId} onClick={cancelVisualThemePreview} className="lifeos-panel min-h-11 rounded-xl border px-3 text-sm disabled:opacity-50">Cancel</button>
-                <button type="button" disabled={!themePreviewId} onClick={() => void applyVisualTheme()} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">Apply theme</button>
-              </div>
-
-              </section>
+              <ThemeStudio current={visualThemeId} preview={themePreviewId} appearance={appearance} resolved={theme} saving={savingVisualTheme}
+                onAppearance={value => void applyAppearance(value)} onPreview={previewVisualTheme} onApply={() => void applyVisualTheme()} onCancel={cancelVisualThemePreview} />
             </ProfileSubpage>}
             {profileSection === 'motion' && <ProfileSubpage embedded title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
-              <MotionPreferences value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
+              <MotionPreferences active={profileOpen} value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
             </ProfileSubpage>}
             {profileSection === 'accent' && <ProfileSubpage embedded title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
