@@ -71,9 +71,10 @@ const listeners = new Map(), cleanups = [], styles = new Map();
 const documentValue = { activeElement: null, documentElement: { style: { setProperty: (key, value) => styles.set(key, value), removeProperty: key => styles.delete(key) } },
   addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name), getElementById: id => id === 'today-customization' ? sheet : null };
 class Element {
-  constructor(name) { this.name = name; this.isConnected = true; this.style = documentValue.documentElement.style; }
+  constructor(name) { this.name = name; this.tabIndex = 0; this.isConnected = true; this.style = documentValue.documentElement.style; }
   focus() { documentValue.activeElement = this; }
   getClientRects() { return [{}]; }
+  closest() { return null; }
   scrollIntoView() {}
 }
 const opener = new Element('Customize'), first = new Element('First toggle'), last = new Element('Done'), outside = new Element('Nested confirmation');
