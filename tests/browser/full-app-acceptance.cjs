@@ -1277,7 +1277,7 @@ async function main() {
       await capture('savings-projection-390');
       await clickButton('Reset');
       assert.equal(await projection.getByLabel('Starting savings').inputValue(), '0');
-      await page.getByRole('button', { name: 'Savings', exact: true }).first().click();
+      await page.getByRole('button', { name: 'Scheduled', exact: true }).first().click();
       await page.getByTestId('money-planning').waitFor();
     });
 

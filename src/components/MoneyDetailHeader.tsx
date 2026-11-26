@@ -12,7 +12,7 @@ export default function MoneyDetailHeader({ section, month, onMonthChange, onBac
 }) {
   const title = titles[section];
   return <header className="money-detail-heading">
-    <button type="button" className="money-back-button" onClick={onBack}><ChevronLeft size={18} aria-hidden="true" />{section === 'projection' ? 'Savings' : 'Money overview'}</button>
+    <button type="button" className="money-back-button" onClick={onBack}><ChevronLeft size={18} aria-hidden="true" />{section === 'projection' ? 'Scheduled' : 'Money overview'}</button>
     <div className="money-detail-title"><h2 tabIndex={-1}>{title}</h2>
       {['monthly', 'transactions', 'budgets', 'planning', 'analytics'].includes(section) && <MoneyPeriod label={section === 'analytics' ? 'Trends through' : title} month={month} onChange={onMonthChange} />}
     </div>
