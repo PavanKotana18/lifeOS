@@ -52,7 +52,13 @@ assert.match(source, /baseCurrencyCode: rate\.base, quoteCurrencyCode: rate\.quo
 console.log('DIRECTED MONEY PLANNING: externally controlled drafts, saving guards, retained payload semantics, and rendered dirty drafts passed.');
 
 const appSource = fs.readFileSync('src/App.tsx', 'utf8');
-assert.ok(appSource.indexOf('<MoneyPlanning draftState=') < appSource.indexOf("navigateFinanceSubtab('projection')"), 'Bills and explicit rates appear before optional scenarios');
+const savings = appSource.indexOf("financeSubtab === 'savings' &&");
+const planning = appSource.indexOf("financeSubtab === 'planning' && <div", savings);
+const projection = appSource.indexOf("financeSubtab === 'projection' && <Suspense", planning);
+assert.ok(savings >= 0 && planning > savings && projection > planning);
+assert.match(appSource.slice(savings, planning), /navigateFinanceSubtab\('projection'\)/, 'Savings opens the projection');
+assert.match(appSource.slice(planning, projection), /<MoneyPlanning draftState=/, 'Schedule owns bills and explicit rates');
+assert.doesNotMatch(appSource.slice(planning, projection), /navigateFinanceSubtab\('projection'\)/);
 assert.match(appSource, /financeSubtab === 'projection' && <Suspense/, 'Projection loads only on its own Money destination');
 
 for(const [currency,min] of [['JPY','1'],['USD','0.01'],['KWD','0.001']]) {

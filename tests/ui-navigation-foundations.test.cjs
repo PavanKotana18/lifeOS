@@ -41,10 +41,10 @@ assert.match(app, /retainInactive prepare=\{primaryPrepared\} id="screen-setting
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
   'Money retains local account and planning form drafts while another tab is briefly visited');
 assert.match(app, /useInterfaceMotion\(\)/);
-assert.match(track, /if \(reduced\) return/);
 assert.match(app, /navigateTo\('planner'\)/, 'Today routes into the task destination');
 assert.match(app, /resolveBackAction/);
 const track = fs.readFileSync(path.join(__dirname, '..', 'src', 'hooks', 'useAliveNavigation.ts'), 'utf8');
+assert.match(track, /if \(reduced\) return/);
 assert.match(track, /useLayoutEffect\(\(\) => \{\s*if \(!tabTransition\) return;/,
   'the track animates during the incoming route commit before paint');
 assert.match(track, /Promise\.all\(animations\.map\(animation => animation\.finished\)\)\.then\(finish, finish\)/,

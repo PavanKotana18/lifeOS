@@ -108,14 +108,14 @@ check(
 
 // F-04: Transaction category options must be filtered by transaction type.
 check(
-  app.includes('categories.filter(category => category.type === createDraft.type).map(category => [category.name, category.name]') &&
-  app.includes("options={[[ '', 'Select category']"),
+  /categories\.filter\(category => category\.type === createDraft\.type\)\.map\(category => \(\s*\[String\(category\.name\), category\.name\]/.test(app) &&
+  app.includes('options={[["", "Select category"]'),
   'Transaction category dropdown displays only categories matching its type'
 );
 
 // F-04: Switching transaction type must select a category of the new type.
 check(
-  app.includes("const type = value as 'income' | 'expense';") &&
+  app.includes("const type = e as 'income' | 'expense';") &&
   app.includes('const category = categories.find(item => item.type === type)?.name || \'\';'),
   'Changing transaction type resets the category to a valid matching category'
 );
