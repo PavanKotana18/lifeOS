@@ -27,7 +27,7 @@ const legacyDraft = buildDuplicateTransactionDraft(defaults, legacy);
 assert.equal(legacyDraft.dateTime, defaults.dateTime, 'date-only legacy transaction does not synthesize its historic time');
 assert.equal(legacyDraft.title, '', 'blank description remains blank');
 assert.match(app, /openDuplicateTransaction/);
-assert.match(app, /openDuplicateTransaction\(transactionDetail\); \}\}>Duplicate<\/button>/);
+assert.match(app, /onDuplicate=\{\(\) => openDuplicateTransaction\(transactionDetail\)\}/);
 assert.match(app, /Delete transaction/);
 assert.match(app, /if \(!\(await confirmAction\(\{ title: 'Delete this transaction\?'/,
   'transaction deletion uses the shared accessible confirmation before mutating storage');

@@ -1,5 +1,7 @@
 import { AnimatePresence } from 'motion/react';
 import ComposerShell from './components/ComposerShell';
+import Snackbar from './components/Snackbar';
+import TransactionDetail from './components/TransactionDetail';
 import TaskComposerOptions from './components/TaskComposerOptions';
 import { AliveDisclosure } from './components/AliveDisclosure';
 import { PreferenceChoice as ComposerChoice } from './components/PreferenceChoice';
@@ -15,12 +17,11 @@ import MoneyDetailHeader from './components/MoneyDetailHeader';
 import InfoTip from './components/InfoTip';
 import { estimateDragVelocity } from './services/interfaceMotion';
 import { useAliveNavigation } from './hooks/useAliveNavigation';
-import LifeHub from './components/LifeHub';
 import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, HeartPulse } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -177,6 +178,7 @@ export default function App() {
     }).catch(() => {
       if (profileAdmission.current !== request) return;
       cancelProfileAdmission();
+      navigationMotion.endDrag(true);
       showToast('Could not protect Profile. Try again.', 'danger');
     });
   };
@@ -428,7 +430,7 @@ export default function App() {
 
   const [smartImportOpen, setSmartImportOpen] = useState(false);
   const [protectedImportComposer, setProtectedImportComposer] = useState(false);
-  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || isSensitiveScreenshotState({
+  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === 'settings' || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -482,17 +484,14 @@ export default function App() {
 
   // Subtab & Filter States
   const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics' | 'projection'>('overview');
+  const [transferDetailId, setTransferDetailId] = useState<string | null>(null);
+  const transferDetail = activeTab === 'finance' ? accountTransfers.find(row => row.id === transferDetailId) : undefined;
   const [transactionDetailId, setTransactionDetailId] = useState<string | null>(null);
-  const transactionDetailDialog = useRef<HTMLDialogElement>(null);
   const transactionDetail = activeTab === 'finance' ? transactions.find(row => row.id === transactionDetailId) : undefined;
-  useEffect(() => {
-    const dialog = transactionDetailDialog.current;
-    if (transactionDetail && dialog && !dialog.open) dialog.showModal();
-  }, [transactionDetail]);
   const [openMoneyTransferOnAccounts, setOpenMoneyTransferOnAccounts] = useState(false);
   const financeSubtabHistory = useRef<Array<typeof financeSubtab>>([]);
   const [financeMonth, setFinanceMonth] = useState<string>(formatLocalDate(new Date()).substring(0, 7));
-  const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [financeTypeFilter, setFinanceTypeFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [financeCategoryFilter, setFinanceCategoryFilter] = useState<string>('all');
   const [financeAccountFilter, setFinanceAccountFilter] = useState<string>('all');
   const [financeCurrencyFilter, setFinanceCurrencyFilter] = useState<string>('all');
@@ -569,10 +568,10 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handlePath);
   }, [appReady, onboardingComplete, isLocked]);
 
-  const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals') => (
+  const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals' | 'insights') => (
     <header className="plan-destination-header">
       <nav aria-label="Plan destinations" className="plan-destinations">
-        {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }] as const).map(({ tab, label }) =>
+        {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }, { tab: 'insights', label: 'Insights' }] as const).map(({ tab, label }) =>
           <button key={tab} type="button" aria-current={selected === tab ? 'page' : undefined} onClick={() => {
             if (tab === selected) return;
             setLifeDetail(null);
@@ -696,7 +695,8 @@ export default function App() {
     const context = {
       enabled: userPrefs.swipeNavigationEnabled,
       pointerType: event.pointerType,
-      settingsScreen: !PRIMARY_NAVIGATION.some(({ tab }) => tab === activeTab) || (activeTab === 'finance' && financeSubtab !== 'overview'),
+      settingsScreen: !PRIMARY_NAVIGATION.some(({ tab }) => tab === activeTab) || (activeTab === 'finance' && financeSubtab !== 'overview') ||
+        (profileOpen && (profileSection !== 'home' || Boolean(document.querySelector('#screen-settings form[data-no-tab-swipe]')))),
       modalOpen: Boolean(createKind || modalContent || confirmation || firstRecordSecurityOpen || secureSetup || showExitConfirmation
         || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || (activeTab === 'finance' && financeSubtab !== 'overview')
         || document.querySelector('dialog[open]') || keyboardOwnsViewport()),
@@ -867,7 +867,7 @@ export default function App() {
     if (cancelProfileAdmission()) return;
     navigationMotion.cancelPending();
     if (typeof document !== 'undefined') {
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-preference-choice][open],dialog[data-smart-import][open]');
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-transaction-actions][open]') ?? document.querySelector<HTMLDialogElement>('dialog[data-money-period][open],dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-preference-choice][open],dialog[data-smart-import][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
@@ -1096,7 +1096,7 @@ export default function App() {
   const screenKeyForTab = (tab: MainTab) => screenScrollKey({
     tab,
     financeSubtab,
-    profileSection,
+    profileSection: tab === activeTab ? profileSection : 'home',
     goalsSubtab,
     habitsSubtab,
     detailKey: tab === 'planner' ? plannerDetailTaskId ?? undefined
@@ -1134,8 +1134,13 @@ export default function App() {
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3200);
   };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   const confirmAction = (options: ConfirmationOptions): Promise<boolean> => new Promise(resolve => {
     confirmationResolver.current?.(false);
@@ -2692,6 +2697,22 @@ export default function App() {
       && (!query || haystack.includes(query));
   }), financeSort as 'date-asc' | 'date-desc' | 'amount-desc'),
   [transactions, financeMonth, financeTypeFilter, financeCategoryFilter, financeAccountFilter, financeCurrencyFilter, userPrefs.currency, financeSearch, financeSort]);
+  const filteredTransfers = financeTypeFilter === 'all' || financeTypeFilter === 'transfer'
+    ? accountTransfers.filter(row => {
+      const query = financeSearch.trim().toLowerCase();
+      const names = financialAccounts.filter(account => account.id === row.fromAccountId || account.id === row.toAccountId).map(account => account.name);
+      return row.date.startsWith(financeMonth) && financeCategoryFilter === 'all'
+        && (financeAccountFilter === 'all' || financeAccountFilter === row.fromAccountId || financeAccountFilter === row.toAccountId)
+        && (financeCurrencyFilter === 'all' || financeCurrencyFilter === row.fromCurrencyCode || financeCurrencyFilter === row.toCurrencyCode)
+        && (!query || [row.notes, ...names, 'transfer'].some(value => value?.toLowerCase().includes(query)));
+    }) : [];
+  const transactionDateGroups = financeSort === 'amount-desc' && (filteredTransactions.length || filteredTransfers.length)
+    ? [null]
+    : [...new Set([...filteredTransactions, ...filteredTransfers].map(row => row.date))]
+    .sort((a, b) => financeSort === 'date-asc' ? a.localeCompare(b) : b.localeCompare(a));
+  const hasTransactionFilters = Boolean(financeSearch.trim()) || financeTypeFilter !== 'all' || financeCategoryFilter !== 'all'
+    || financeAccountFilter !== 'all' || financeCurrencyFilter !== 'all' || financeSort !== 'date-desc';
+
   const financeOverviewTransactions = useMemo(
     () => sortTransactions(transactions.filter(tx => tx.date?.startsWith(financeMonth)), 'date-desc').slice(0, 4),
     [transactions, financeMonth]
@@ -2788,8 +2809,7 @@ export default function App() {
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       {/* Top Mobile Header */}
-      {!profileOpen && <header className="app-header app-header-shell sticky top-0 z-40 flex items-center gap-3 px-4 py-3 sm:px-5">
-        <button type="button" data-no-tab-swipe onClick={() => navigateTo('settings')} aria-label="Open profile and settings" className="app-profile-button flex h-11 w-11 items-center justify-center rounded-full profile-entry-button text-sm font-semibold transition active:scale-95"><ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} /></button>
+      {(!profileOpen || profileSection === 'home') && <header className="app-header app-header-shell sticky top-0 z-40 flex items-center gap-3 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
             <BrandMark className="h-8 w-8" />
@@ -2816,7 +2836,7 @@ export default function App() {
         </div>}
 
       {/* Main Container */}
-      <main className={profileOpen ? "app-main profile-main" : "app-main"}>
+      <main className={profileOpen && profileSection !== 'home' ? "app-main profile-main" : "app-main"}>
         <div className="ui-tab-viewport"><div className="ui-tab-screen-stack" ref={navigationMotion.attachStage}>
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
@@ -2970,7 +2990,7 @@ export default function App() {
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
           /></div></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><InsightsHub
+        <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><div className="space-y-4">{renderPlanNavigation('insights')}<InsightsHub
           month={financeMonth}
           income={financeMetrics.totalIncome}
           expenses={financeMetrics.totalExpenses}
@@ -2986,7 +3006,7 @@ export default function App() {
           onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
           onHabits={() => { setLifeDetail(null); setHabitsSubtab('weekly'); navigateTo('habits'); }}
           onGoals={() => { setLifeDetail(null); setGoalsSubtab('active'); navigateTo('goals'); }}
-        /></Suspense>} />
+        /></div></Suspense>} />
 
         <RetainedScreen active={activeTab === 'finance'} retainInactive prepare={primaryPrepared} id="screen-finance" {...transitionPropsFor('finance')} render={() => (
           <div className="money-page space-y-5" data-detail={financeSubtab}>
@@ -3045,7 +3065,7 @@ export default function App() {
                     onChange={(e) => setFinanceSearch(e.target.value)}
                     className="lifeos-input min-h-11 flex-1 rounded-xl px-3 py-2.5 text-xs"
                   />
-                  <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">+ Add</button>
+                  <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">Add transaction</button>
                 </div>
                 <button type="button" className="smart-import-secondary" onClick={async () => {
                   try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
@@ -3055,7 +3075,7 @@ export default function App() {
 
                 {/* Filters */}
                 <div role="group" aria-label="Filter transactions by type" className="flex flex-wrap gap-2 text-xs pb-1">
-                  {(['all', 'income', 'expense'] as const).map(t => (
+                  {(['all', 'income', 'expense', 'transfer'] as const).map(t => (
                     <button
                       key={t}
                       onClick={() => setFinanceTypeFilter(t)}
@@ -3069,13 +3089,15 @@ export default function App() {
                 <label className="flex items-center justify-between text-[10px] text-secondary">Sort<select value={financeSort} onChange={e => setFinanceSort(e.target.value)} className="lifeos-input min-h-11 rounded-lg px-2 py-2 text-xs"><option value="date-desc">Newest first</option><option value="date-asc">Oldest first</option><option value="amount-desc">Largest amount</option></select></label>
 
                 </details>
-                <div className="money-detail-results"><span role="status">{filteredTransactions.length} posted transaction{filteredTransactions.length === 1 ? '' : 's'}</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); }}>Clear filters</button></div>
+                <div className="money-detail-results" hidden={!hasTransactionFilters}><span role="status">{filteredTransactions.length + filteredTransfers.length} results</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); }}>Clear filters</button></div>
                 {/* Transactions List */}
                 <div className="space-y-2">
-                  {filteredTransactions.length === 0 ? (
+                  {!transactionDateGroups.length ? (
                     <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
                   ) : (
-                    filteredTransactions.map(t => (
+                    transactionDateGroups.map(date => <section className="space-y-2" key={date ?? "all"} aria-label={date ? formatDate(date) : "Sorted transactions"}>
+                      {date && <h3 className="text-sm font-semibold text-secondary">{formatDate(date)}</h3>}
+                      {filteredTransactions.filter(row => !date || row.date === date).map(t => (
                       <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border px-3 py-1">
                         <div className="transaction-history-main">
                           <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={`View transaction ${t.description || t.category}`} className="transaction-history-copy">
@@ -3087,7 +3109,17 @@ export default function App() {
                           </span>
                         </div>
                       </article>
-                    ))
+                      ))}
+                      {filteredTransfers.filter(row => !date || row.date === date).map(row => (
+                        <article className="transaction-history-item lifeos-panel rounded-xl border px-3 py-2" key={row.id}>
+                          <button type="button" className="transaction-history-copy" onClick={() => setTransferDetailId(row.id)}>
+                            <strong>{row.reversalOfId ? 'Transfer reversal' : 'Transfer'}</strong>
+                            <span>{financialAccounts.find(account => account.id === row.fromAccountId)?.name || 'Archived account'} → {financialAccounts.find(account => account.id === row.toAccountId)?.name || 'Archived account'}</span>
+                            <span>{formatMinorUnits(BigInt(row.fromAmountMinor), row.fromCurrencyCode)}</span>
+                          </button>
+                        </article>
+                      ))}
+                    </section>)
                   )}
                 </div>
               </div>
@@ -3356,41 +3388,12 @@ export default function App() {
           </>
         )} />
 
-        <RetainedScreen active={activeTab === 'life'} retainInactive prepare={primaryPrepared} id="screen-life" {...transitionPropsFor('life')} render={() => (
-          <LifeHub
-            habits={habits.slice(0, 4).map(habit => {
-              const log = habitLogs.find(row => row.habitId === habit.id && row.date === todayKey && row.quantity !== undefined);
-              return {
-                ...getHabitStreaks(habit.id, todayKey), id: habit.id, name: habit.name,
-                targetPerDay: habit.trackingMode === 'quantity' ? habit.targetPerDay : undefined,
-                quantityUnit: habit.quantityUnit, quantity: log?.quantity, recordedQuantityUnit: log ? log.quantityUnit || '' : undefined,
-              };
-            })}
-            goals={goals.filter(goal => goal.status === 'In Progress').slice(0, 3).map(goal => ({
-              id: goal.id, title: goal.title, progress: goalProgress(goal),
-              current: displayGoalMeasure(goal.currentValue, goal.unit), target: displayGoalMeasure(goal.targetValue, goal.unit), targetDate: goal.targetDate ? formatDate(goal.targetDate) : '',
-              completedMilestones: milestones.filter(row => row.goalId === goal.id && row.completed).length,
-              milestoneCount: milestones.filter(row => row.goalId === goal.id).length,
-            }))}
-            routinesDue={todayOverview.routinesDue} completedRoutines={todayOverview.routinesCompleted}
-            weeklyCompleted={todayOverview.weeklyRoutinesCompleted} weeklyTotal={todayOverview.weeklyRoutinesTotal}
-            onCheckIn={item => {
-              const habit = habits.find(row => row.id === item.id);
-              if (!habit) return;
-              if (habit.trackingMode === 'quantity') void handleHabitQuantity(habit, todayKey, 1);
-              else void handleHabitCompletion(habit.id, habit.name, todayKey, item.completedToday);
-            }}
-            onCreateHabit={() => openCreateForm('habit')} onCreateGoal={() => openCreateForm('goal')}
-            onHabits={() => { setHabitsSubtab('checklist'); navigateTo('habits'); }}
-            onGoals={() => { setGoalsSubtab('active'); navigateTo('goals'); }}
-            onInsights={() => navigateTo('insights')}
-          />
-        )} />
-
         {/* VIEW 6: SETTINGS */}
-        <RetainedScreen active={activeTab === 'settings'} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
+        <RetainedScreen active={activeTab === 'settings'} retainInactive prepare={primaryPrepared} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
+          <>
+          <div className="profile-track-preview" aria-hidden="true"><p>Appearance</p><p>Preferences</p><p>Notifications</p><p>Privacy &amp; security</p></div>
           <div ref={profilePage} className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome onBack={navigateBack} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome embedded onBack={navigateBack} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
@@ -3584,25 +3587,48 @@ export default function App() {
               <div className="preference-group"><a href="./licenses/capacitor-local-notifications.txt" target="_blank" rel="noreferrer" className="preference-row lifeos-accent-text">Capacitor Local Notifications</a></div>
             </ProfileSubpage>}
           </div>
+          </>
         )} />
         </div></div>
       </main>
 
-      {transactionDetail && <dialog ref={transactionDetailDialog} data-transaction-details className="transaction-detail-sheet lifeos-page" aria-labelledby="transaction-detail-title" onClose={() => setTransactionDetailId(null)} onClick={event => { if (event.currentTarget === event.target) event.currentTarget.close(); }}>
-        <section>
-          <header className="flex items-center justify-between gap-3"><h2 id="transaction-detail-title" className="text-xl font-semibold">{transactionDetail.description || transactionDetail.category}</h2><button type="button" className="min-h-11 px-3" onClick={() => transactionDetailDialog.current?.close()}>Close</button></header>
-          <strong className="type-display-amount tabular-nums">{transactionDetail.type === 'income' ? '+' : '-'}{transactionDetail.amountMinor != null && transactionDetail.currencyCode ? formatMinorUnits(BigInt(transactionDetail.amountMinor), transactionDetail.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : formatMoney(transactionDetail.amount, transactionDetail.currencyCode)}</strong>
-          <dl className="grid grid-cols-2 gap-3"><div><dt className="text-xs text-secondary">Date</dt><dd>{formatDate(transactionDetail.date)}</dd></div><div><dt className="text-xs text-secondary">Category</dt><dd>{transactionDetail.category}</dd></div><div><dt className="text-xs text-secondary">Payment</dt><dd>{transactionDetail.paymentMethod || 'Other'}</dd></div>{transactionDetail.accountId && <div><dt className="text-xs text-secondary">Account</dt><dd>{financialAccounts.find(account => account.id === transactionDetail.accountId)?.name || 'Archived account'}</dd></div>}</dl>
-          {transactionDetail.notes && <p className="whitespace-pre-wrap break-words text-sm">{transactionDetail.notes}</p>}
-          <div className="flex flex-wrap gap-3"><button type="button" className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 font-semibold" onClick={() => { transactionDetailDialog.current?.close(); openEditTransaction(transactionDetail); }}>Edit transaction</button><details className="lifeos-input rounded-xl px-3"><summary className="min-h-11 content-center cursor-pointer">More actions</summary><button type="button" className="block min-h-11 w-full text-left" onClick={() => { transactionDetailDialog.current?.close(); openDuplicateTransaction(transactionDetail); }}>Duplicate</button><button type="button" className="block min-h-11 w-full text-left text-[var(--danger)]" onClick={async () => {
-            const id = transactionDetail.id;
-            transactionDetailDialog.current?.close();
-            if (!await confirmAction({ title: 'Delete this transaction?', message: 'It will be removed from your history.', confirmLabel: 'Delete transaction', destructive: true })) return;
-            try { await StorageService.transactions.delete(id); await reloadAllData(); showToast('Transaction deleted', 'info'); }
-            catch { showToast('Could not finish deleting the transaction. Refresh before retrying.', 'danger'); }
-          }}>Delete transaction</button></details></div>
-        </section>
-      </dialog>}
+      {transactionDetail && <TransactionDetail key={transactionDetail.id}
+        kind={transactionDetail.type} title={transactionDetail.description || transactionDetail.category}
+        amount={(transactionDetail.type === 'income' ? '+' : '−') + (transactionDetail.amountMinor != null && transactionDetail.currencyCode
+          ? formatMinorUnits(BigInt(transactionDetail.amountMinor), transactionDetail.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale)
+          : formatMoney(transactionDetail.amount, transactionDetail.currencyCode))}
+        currency={transactionDetail.currencyCode || userPrefs.currency}
+        context={[
+          ['Date', formatDate(transactionDetail.date)],
+          ['Time', transactionDetail.occurredAt ? formatTime(new Date(transactionDetail.occurredAt)) : 'Time not recorded'],
+          ['Category', transactionDetail.category],
+          ['Payment', transactionDetail.paymentMethod || 'Other'],
+          ['Account', transactionDetail.accountId ? financialAccounts.find(account => account.id === transactionDetail.accountId)?.name || 'Archived account' : 'Unassigned'],
+        ]}
+        notes={transactionDetail.notes}
+        onClose={() => setTransactionDetailId(null)}
+        primaryLabel="Edit transaction" onPrimary={() => openEditTransaction(transactionDetail)}
+        onDuplicate={() => openDuplicateTransaction(transactionDetail)}
+        onDelete={async () => {
+          const id = transactionDetail.id;
+          if (!await confirmAction({ title: 'Delete this transaction?', message: 'It will be removed from your history.', confirmLabel: 'Delete transaction', destructive: true })) return;
+          try { await StorageService.transactions.delete(id); await reloadAllData(); showToast('Transaction deleted', 'info'); }
+          catch { showToast('Could not finish deleting the transaction. Refresh before retrying.', 'danger'); }
+        }}
+      />}
+      {transferDetail && <TransactionDetail key={transferDetail.id} kind="transfer"
+        title={transferDetail.reversalOfId ? 'Transfer reversal' : 'Transfer'}
+        amount={formatMinorUnits(BigInt(transferDetail.fromAmountMinor), transferDetail.fromCurrencyCode)}
+        currency={transferDetail.fromCurrencyCode}
+        context={[
+          ['Date', formatDate(transferDetail.date)],
+          ['From', financialAccounts.find(account => account.id === transferDetail.fromAccountId)?.name || 'Archived account'],
+          ['To', financialAccounts.find(account => account.id === transferDetail.toAccountId)?.name || 'Archived account'],
+          ['Received', formatMinorUnits(BigInt(transferDetail.toAmountMinor), transferDetail.toCurrencyCode)],
+        ]}
+        notes={transferDetail.reversalOfId ? undefined : transferDetail.notes}
+        onClose={() => setTransferDetailId(null)} primaryLabel="Manage transfers" onPrimary={() => navigateFinanceSubtab('accounts')}
+      />}
       {smartImportOpen && <SmartImportDialog initialText={sharedAlert.draft?.text} onTextConsumed={sharedAlert.releaseText} onDismiss={() => {
         setSmartImportOpen(false); sharedAlert.finish();
       }}
@@ -3735,12 +3761,12 @@ export default function App() {
       </AnimatePresence>
 
       {/* Floating Bottom Nav */}
-      <nav data-no-tab-swipe hidden={profileOpen} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
+      <nav data-no-tab-swipe ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
         <div className="app-nav-items">
         <span ref={navigationMotion.indicator} className="alive-nav-indicator" aria-hidden="true"
           style={{ transform: 'var(--track-indicator, translate3d(' + Math.max(0, PRIMARY_NAVIGATION.findIndex(({ tab }) => tab === primaryDestinationForTab(activeTab))) * 100 + '%,0,0))' }} />
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
-          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, life: HeartPulse })[icon];
+          const Icon = ({ home: Home, wallet: WalletCards, calendar: CalendarDays, profile: UserRound })[icon];
           const isSelected = primaryDestinationForTab(activeTab) === tab;
           return (
           <button
@@ -3751,6 +3777,7 @@ export default function App() {
                 navigationMotion.cancelPending();
                 if (activeTab !== tab) { navigateTo(tab); return; }
                 if (tab === 'finance' && financeSubtab !== 'overview') { rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }
+                if (tab === 'settings' && profileSection !== 'home') navigateProfileSection('home');
                 return;
               }
               navigateTo(tab);
@@ -3759,7 +3786,8 @@ export default function App() {
             aria-current={isSelected ? 'page' : undefined}
             className="nav-item ui-control-feedback flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] leading-none font-medium"
           >
-            <Icon size={18} strokeWidth={isSelected ? 2.4 : 1.8} aria-hidden="true" />
+            {tab === 'settings' && profilePhoto ? <span className="nav-profile-avatar" aria-hidden="true"><ProfileAvatar photo={profilePhoto} initial={profileInitial(displayName)} /></span>
+              : <Icon size={18} strokeWidth={isSelected ? 2.4 : 1.8} aria-hidden="true" />}
             <span>{label}</span>
           </button>
           );
@@ -3771,12 +3799,7 @@ export default function App() {
 
       {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 
-      {/* In-app Toast Notification */}
-      {toast && (
-        <div role="status" aria-live="polite" className={`ui-toast lifeos-raised lifeos-border fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold shadow-2xl ${toast.type === 'success' ? 'ui-success-feedback' : ''}`}>
-          <span>{toast.message}</span>
-        </div>
-      )}
+      {toast && <Snackbar notice={toast} onDismiss={() => setToast(null)} reduced={interfaceMotion.reducedMotion} />}
     </div>
   );
 }
