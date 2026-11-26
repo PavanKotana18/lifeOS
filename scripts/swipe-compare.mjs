@@ -1,4 +1,4 @@
-﻿
+
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -31,14 +31,13 @@ async function until(fn, label, timeout=35_000) {
 }
 async function connect() {
   const socketName = await until(() => {
-    const pid=adb('shell','pidof',pkg).split(' ')[0];
+    const pid=spawnSync('adb',['-s',serial,'shell','pidof',pkg],{encoding:'utf8',timeout:4000}).stdout?.trim().split(' ')[0];
     if (!pid) return null;
-    const sockets=adb('shell','cat','/proc/net/unix');
-    return sockets.includes('webview_devtools_remote_'+pid) && 'webview_devtools_remote_'+pid;
+    return 'webview_devtools_remote_'+pid;
   },'debug WebView socket');
   adb('forward','tcp:9222','localabstract:'+socketName);
   const target=await until(async () => {
-    try { return (await (await fetch('http://127.0.0.1:9222/json/list')).json()).find(x=>x.type==='page' && x.url.startsWith('https://localhost')); }
+    try { return (await (await fetch('http://127.0.0.1:9222/json/list')).json()).find(x=>x.type==='page' && /^https?:\/\/localhost(?:[/:]|$)/.test(x.url)); }
     catch { return null; }
   },'application WebView');
   const ws=new WebSocket(target.webSocketDebuggerUrl);
@@ -177,7 +176,9 @@ for (const variant of ['main','navigation','combined']) {
     if (!packageLine?.includes("name='"+pkg+"'")) throw Error('Unexpected APK package: '+packageLine);
     adb('shell','cmd','uimode','night','no');
     adb('install',folder+'/'+apk);
-    adb('shell','am','start','-n',pkg+'/com.lifeos.personal.MainActivity');
+    const launch=adb('shell','am','start','-W','-n',pkg+'/com.lifeos.personal.MainActivity');
+    put(variant+'-launch.txt',launch);
+    if (/Error|Exception/.test(launch)) throw Error(launch);
     dev=await connect();
     const {js,send}=dev;
     await send('Page.addScriptToEvaluateOnNewDocument',{source:probe});
@@ -261,6 +262,7 @@ for (const variant of ['main','navigation','combined']) {
     failures.push({variant,error:String(err)});
     put('failures.json',failures);
     console.error(variant,err);
+    try { put(variant+'-startup-errors.txt',adb('logcat','-d','-t','300','ActivityTaskManager:W','chromium:W','AndroidRuntime:E','*:S')); } catch {}
   } finally {
     dev?.close();
     try { adb('forward','--remove','tcp:9222'); } catch {}
