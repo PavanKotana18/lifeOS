@@ -717,6 +717,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'description', 'goals', i);
     optionalString(r, 'unit', 'goals', i);
     optionalInstant(r, 'updatedAt', 'goals', i);
+    optionalBoolean(r, 'archived', 'goals', i);
     if (r.progressHistory !== undefined && (!Array.isArray(r.progressHistory) ||
       r.progressHistory.some((entry: any) => !obj(entry) || !instant(entry.at) || !num(entry.value) ||
         (entry.unit !== undefined && !str(entry.unit))))) fail('goals', i, 'progressHistory');

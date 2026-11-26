@@ -176,6 +176,7 @@ export interface GoalProgressEntry {
 }
 
 export interface Goal {
+  archived?: boolean;
   progressHistory?: GoalProgressEntry[];
   id: string;
   title: string;
