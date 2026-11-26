@@ -64,7 +64,7 @@ async function connect() {
   });
   const js=async (expression)=>{
     const reply=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});
-    if(reply.exceptionDetails) throw Error(reply.exceptionDetails.text);
+    if(reply.exceptionDetails) throw Error((reply.exceptionDetails.exception?.description || reply.exceptionDetails.text) + ' evaluating ' + expression.slice(0,120));
     return reply.result.value;
   };
   return { js, send, events, close:()=>ws.close() };
@@ -75,7 +75,7 @@ const probe = `(() => {
   if (!window.__REACT_DEVTOOLS_GLOBAL_HOOK__) {
     let id = 0;
     window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
-      supportsFiber:true, inject:()=>++id,
+      supportsFiber:true, renderers:new Map(), checkDCE:()=>{}, inject(renderer){this.renderers.set(++id,renderer);return id;},
       onCommitFiberRoot:()=>bench.commits.push(performance.now()),
       onCommitFiberUnmount:()=>{},
     };
@@ -86,7 +86,7 @@ const probe = `(() => {
     const listeners=['pointerdown','pointermove','pointerup','pointercancel'];
     const touch=e=>{if (e.pointerType==='touch') pointers.push([e.type,e.timeStamp,performance.now(),e.clientX]);};
     const long = new PerformanceObserver(list=>{for(const e of list.getEntries())tasks.push([e.startTime,e.duration]);});
-    long.observe({type:'longtask'});
+    if (PerformanceObserver.supportedEntryTypes.includes('longtask')) long.observe({type:'longtask'});
     const stage=document.querySelector('.ui-tab-screen-stack');
     const observer=new MutationObserver(records=>{
       const t=performance.now();
@@ -95,6 +95,7 @@ const probe = `(() => {
         if (n===stage || n.id?.startsWith('screen-')) moves.push([t,n.id || 'track',n.style.transform || n.style.getPropertyValue('--gesture-x')]);
       }
     });
+    if (!stage) throw Error('Swipe track DOM missing');
     observer.observe(stage,{subtree:true,attributes:true,attributeFilter:['style']});
     for(const type of listeners) addEventListener(type,touch,true);
     return new Promise(resolve=>{
@@ -181,9 +182,13 @@ for (const variant of ['main','navigation','combined']) {
     if (/Error|Exception/.test(launch)) throw Error(launch);
     dev=await connect();
     const {js,send}=dev;
+    await send('Page.enable');
     await send('Page.addScriptToEvaluateOnNewDocument',{source:probe});
     await send('Page.reload');
     await onboard(js);
+    const injectedBeforeApp = await js('!!window.__swipeBench?.renderers || !!window.__swipeBench && !!window.__REACT_DEVTOOLS_GLOBAL_HOOK__?.renderers?.size');
+    await js(probe);
+    put(variant+'-probe-readiness.json',{injectedBeforeApp});
     const tabs=await js("[...document.querySelectorAll('[data-tab]')].map(e=>e.dataset.tab)");
     const expected=variant==='main'?['dashboard','finance','plan']:['dashboard','finance','plan','life'];
     if (JSON.stringify(tabs)!==JSON.stringify(expected)) throw Error('Unexpected route list: '+tabs);
@@ -193,7 +198,7 @@ for (const variant of ['main','navigation','combined']) {
       await sleep(450);
     };
     const size=adb('shell','wm','size').match(/(\d+)x(\d+)/g).at(-1).split('x').map(Number);
-    const [w,h]=size, y=Math.round(h*.29);
+    const [w,h]=size, y=Math.round(h*.22);
     const pair=(left)=>[Math.round(w*(left?.76:.24)),y,Math.round(w*(left?.24:.76)),y,380].map(String);
     const sequence=[...expected.slice(1).map(to=>[true,to]),...expected.slice(0,-1).reverse().map(to=>[false,to])];
     // Warm every route and lazy chunk; run the same number of common transitions for all candidates.
@@ -209,6 +214,7 @@ for (const variant of ['main','navigation','combined']) {
         adb('shell','dumpsys','gfxinfo',pkg,'reset');
         if(mode==='idle') {
           samples.push({theme,mode,data:await js('window.__swipeBench.start(1250)')});
+          put(variant+'-samples.json',{tabs,samples});
         } else {
           for(let round=0;round<2;round++) for(const [left,to] of sequence) {
             const from=await js("document.querySelector('[data-tab][aria-current=page]')?.dataset.tab");
