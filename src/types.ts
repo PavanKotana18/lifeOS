@@ -35,6 +35,7 @@ export interface Category {
 }
 
 export interface Budget {
+  carryover?: boolean;
   id: string;
   categoryId?: string; // Optional: category-specific or overall monthly budget
   monthlyAmount: number;

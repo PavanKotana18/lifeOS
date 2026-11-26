@@ -8,13 +8,13 @@ const fromMinorUnits = (amount: bigint, currencyCode: string) => Number(minorUni
 
 export function buildFinanceAnalytics(
   transactions: Array<{ date: string; amount: number; amountMinor?: string; currencyCode?: string; type: string; category?: string }>,
-  budgets: Array<{ monthYear?: string; categoryId?: string; monthlyAmount: number; amountMinor?: string; currencyCode?: string }>,
+  budgets: Array<{ id?: string; carryover?: boolean; monthYear?: string; categoryId?: string; monthlyAmount: number; amountMinor?: string; currencyCode?: string }>,
   month: string,
   range = 6,
   categoryRecords: Array<{ id: string; name: string }> = [],
   currencyCode = 'INR'
 ) {
-  const compatibleTransaction = (tx: { currencyCode?: string }) => !tx.currencyCode || tx.currencyCode === currencyCode;
+  const compatibleTransaction = (tx: { currencyCode?: string }) => tx.currencyCode === currencyCode;
   const minorForTransaction = (tx: { amount: number; amountMinor?: string; currencyCode?: string }) =>
     tx.amountMinor !== undefined && tx.currencyCode === currencyCode && /^(0|[1-9]\d*)$/.test(tx.amountMinor)
       ? BigInt(tx.amountMinor)
@@ -61,17 +61,33 @@ export function buildFinanceAnalytics(
     name, amountMinor: amountMinor.toString(), amount: categoryExpenses[name],
     percentage: totalExpensesMinor > 0n ? Number(amountMinor * 10_000n / totalExpensesMinor) / 100 : 0,
   }));
-  const monthBudgets = budgets.filter(budget => (!budget.monthYear || budget.monthYear === month) && (!budget.currencyCode || budget.currencyCode === currencyCode));
+  const priorMonth = periods[periods.length - 2];
+  const priorKey = `${priorMonth.getFullYear()}-${String(priorMonth.getMonth() + 1).padStart(2, '0')}`;
+  const budgetLimitMinor = (budget: typeof budgets[number]) => budget.amountMinor !== undefined && /^(0|[1-9]\d*)$/.test(budget.amountMinor)
+    ? BigInt(budget.amountMinor) : toMinorUnits(budget.monthlyAmount, currencyCode);
+  const monthBudgets = budgets.filter(budget => (!budget.monthYear || budget.monthYear === month) && (budget.currencyCode === currencyCode));
   const budgetRows = monthBudgets.map(budget => {
     const categoryName = budget.categoryId
       ? categoryRecords.find(category => category.id === budget.categoryId)?.name
       : undefined;
-    const allocatedMinor = budget.amountMinor && budget.currencyCode === currencyCode && /^(0|[1-9]\d*)$/.test(budget.amountMinor)
-      ? BigInt(budget.amountMinor) : toMinorUnits(budget.monthlyAmount, currencyCode);
+    // Carry only the previous month's unused base limit, with no chaining or conversion.
+    const previousBudget = budget.carryover && budget.monthYear === month && (!budget.categoryId || categoryName)
+      ? budgets.find(row => row.monthYear === priorKey && row.categoryId === budget.categoryId && row.currencyCode === currencyCode)
+      : undefined;
+    const priorExpenses = previousBudget ? transactions.filter(row => row.type === 'expense' && row.date?.startsWith(priorKey)
+      && (!budget.categoryId || row.category === categoryName)) : [];
+    const carryoverUnavailable = Boolean(budget.carryover && (
+      priorExpenses.some(row => !row.currencyCode) || (!previousBudget && budgets.some(row => row.monthYear === priorKey && row.categoryId === budget.categoryId && !row.currencyCode))
+    ));
+    const unused = previousBudget && !carryoverUnavailable
+      ? budgetLimitMinor(previousBudget) - sumMinorUnits(priorExpenses.filter(compatibleTransaction).map(minorForTransaction)) : 0n;
+    const carryoverMinor = unused > 0n ? unused : 0n;
+    const allocatedMinor = budgetLimitMinor(budget) + carryoverMinor;
     const spentMinor = budget.categoryId
       ? (categoryName ? categoryExpenseMinor[categoryName] || 0n : 0n)
       : totalExpensesMinor;
     return {
+      id: budget.id, carryoverMinor: carryoverMinor.toString(), carryoverUnavailable,
       category: budget.categoryId ? (categoryName || 'Unknown category') : 'Overall',
       allocatedMinor: allocatedMinor.toString(),
       spentMinor: spentMinor.toString(),
@@ -90,7 +106,7 @@ export function buildFinanceAnalytics(
   const netSavingsMinor = totalIncomeMinor - totalExpensesMinor;
   return {
     periodRows, categories, budgetRows, totalIncome, totalExpenses,
-    currencyCode,
+    currencyCode, transactionCount: currentTransactions.length,
     totalIncomeMinor: totalIncomeMinor.toString(),
     totalExpensesMinor: totalExpensesMinor.toString(),
     netSavingsMinor: netSavingsMinor.toString(),
@@ -98,6 +114,6 @@ export function buildFinanceAnalytics(
     savingsRate: totalIncomeMinor > 0n ? Number(netSavingsMinor * 1_000_000n / totalIncomeMinor) / 10_000 : null,
     expenseChange, previousMonthHasRecords: previous.hasRecords,
     largestCategory: categories[0] || null,
-    excludedCurrencyCount: allCurrentTransactions.length - currentTransactions.length + budgets.filter(b => (!b.monthYear || b.monthYear === month) && b.currencyCode && b.currencyCode !== currencyCode).length,
+    excludedCurrencyCount: allCurrentTransactions.length - currentTransactions.length + budgets.filter(b => (!b.monthYear || b.monthYear === month) && b.currencyCode !== currencyCode).length,
   };
 }

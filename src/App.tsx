@@ -2168,7 +2168,7 @@ export default function App() {
   const openEditBudget = (budget: Budget) => {
     setCreateFormDirty(false);
     setEditingBudgetId(budget.id);
-    setCreateDraft({ categoryId: budget.categoryId || '', amount: budget.amountMinor && budget.currencyCode ? minorUnitsToDecimal(BigInt(budget.amountMinor), budget.currencyCode) : String(budget.monthlyAmount), month: budget.monthYear, currencyCode: budget.currencyCode || userPrefs.currency });
+    setCreateDraft({ categoryId: budget.categoryId || '', amount: budget.amountMinor && budget.currencyCode ? minorUnitsToDecimal(BigInt(budget.amountMinor), budget.currencyCode) : String(budget.monthlyAmount), month: budget.monthYear, currencyCode: budget.currencyCode || '', carryover: budget.carryover ? 'yes' : '' });
     setCreateKind('budget');
   };
 
@@ -2424,9 +2424,10 @@ export default function App() {
         if (editingHabitId) await StorageService.habits.update(editingHabitId, habit);
         else await StorageService.habits.add({ ...habit, name: habit.name!, frequency: habit.frequency!, color: habit.color! });
       } else if (createKind === 'budget') {
-        const code = editingBudgetId ? budgets.find(row => row.id === editingBudgetId)?.currencyCode || userPrefs.currency : userPrefs.currency;
+        const code = editingBudgetId ? budgets.find(row => row.id === editingBudgetId)?.currencyCode : userPrefs.currency;
+        if (!code) throw new Error('This budget has no saved currency and cannot be edited safely.');
         const money = createMoneyRecordAmount(value('amount'), code);
-        await StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month') });
+        await StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month'), carryover: value('carryover') === 'yes' });
       } else if (createKind === 'savings') {
         const target = createMoneyRecordAmount(value('target'), editingSavingsGoalId ? savingsGoals.find(goal => goal.id === editingSavingsGoalId)?.currencyCode || userPrefs.currency : userPrefs.currency);
         if (editingSavingsGoalId) {
@@ -2576,62 +2577,6 @@ export default function App() {
   };
 
   // Financial Metrics Calculation
-  const financeMetrics = useMemo(() => {
-    const monthlyAllTxs = transactions.filter(t => t.date && t.date.startsWith(financeMonth));
-    const monthlyTxs = monthlyAllTxs.filter(t => !t.currencyCode || t.currencyCode === userPrefs.currency);
-    let totalIncomeMinor = 0n;
-    let totalExpensesMinor = 0n;
-    const categoryExpenseMinor: Record<string, bigint> = Object.create(null);
-    const minorOf = (tx: Transaction) => tx.amountMinor && tx.currencyCode === userPrefs.currency && /^(0|[1-9]\d*)$/.test(tx.amountMinor)
-      ? BigInt(tx.amountMinor) : decimalToMinorUnits(tx.amount, userPrefs.currency);
-
-    for (const tx of monthlyTxs) {
-      const amt = minorOf(tx);
-      if (tx.type === 'income') {
-        totalIncomeMinor += amt;
-      } else if (tx.type === 'expense') {
-        totalExpensesMinor += amt;
-        categoryExpenseMinor[tx.category] = (categoryExpenseMinor[tx.category] || 0n) + amt;
-      }
-    }
-
-    const totalIncome = Number(minorUnitsToDecimal(totalIncomeMinor, userPrefs.currency));
-    const totalExpenses = Number(minorUnitsToDecimal(totalExpensesMinor, userPrefs.currency));
-    const categoryExpenses: Record<string, number> = Object.create(null);
-    for (const [category, amount] of Object.entries(categoryExpenseMinor)) {
-      categoryExpenses[category] = Number(minorUnitsToDecimal(amount, userPrefs.currency));
-    }
-
-    const remainingBalance = totalIncome - totalExpenses;
-    const savingsRate = totalIncome > 0 ? Math.max(0, ((totalIncome - totalExpenses) / totalIncome) * 100) : 0;
-
-    const totalBudgetMinor = budgets.filter(b => !b.categoryId && (!b.monthYear || b.monthYear === financeMonth) && (!b.currencyCode || b.currencyCode === userPrefs.currency))
-      .reduce((total, budget) => total + (budget.amountMinor && budget.currencyCode === userPrefs.currency && /^(0|[1-9]\d*)$/.test(budget.amountMinor)
-        ? BigInt(budget.amountMinor) : decimalToMinorUnits(budget.monthlyAmount, userPrefs.currency)), 0n);
-    const totalBudget = Number(minorUnitsToDecimal(totalBudgetMinor, userPrefs.currency));
-
-    const budgetUtilisation = totalBudget > 0 ? (totalExpenses / totalBudget) * 100 : 0;
-    const remainingBudget = totalBudget - totalExpenses;
-    const previousMonthRows = transactions.filter(t => t.date?.startsWith(previousMonthKey(financeMonth)) && (!t.currencyCode || t.currencyCode === userPrefs.currency));
-    const previousMonthTotal = (type: 'income' | 'expense') => Number(minorUnitsToDecimal(
-      previousMonthRows.filter(t => t.type === type).reduce((sum, tx) => sum + minorOf(tx), 0n), userPrefs.currency));
-
-    return {
-      totalIncome,
-      totalExpenses,
-      remainingBalance,
-      savingsRate: Number(savingsRate.toFixed(1)),
-      excludedCurrencyCount: monthlyAllTxs.length - monthlyTxs.length,
-      totalBudget,
-      budgetUtilisation: Number(budgetUtilisation.toFixed(1)),
-      remainingBudget,
-      categoryExpenses,
-      previousMonthIncome: previousMonthTotal('income'),
-      previousMonthExpenses: previousMonthTotal('expense'),
-      count: monthlyTxs.length
-    };
-  }, [transactions, budgets, financeMonth, userPrefs.currency]);
-
   const financeAnalytics = useMemo(() => buildFinanceAnalytics(transactions, budgets, financeMonth, financeAnalyticsRange, categories, userPrefs.currency), [transactions, budgets, financeMonth, financeAnalyticsRange, categories, userPrefs.currency]);
   const hasFinanceChartData = financeAnalytics.periodRows.some(row => row.hasRecords) || financeAnalytics.categories.length > 0;
 
@@ -3033,10 +2978,10 @@ export default function App() {
 
         <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><div className="space-y-4">{renderPlanNavigation('insights')}<InsightsHub
           month={financeMonth}
-          income={financeMetrics.totalIncome}
-          expenses={financeMetrics.totalExpenses}
-          balance={financeMetrics.remainingBalance}
-          transactionCount={financeMetrics.count}
+          income={financeAnalytics.totalIncome}
+          expenses={financeAnalytics.totalExpenses}
+          balance={financeAnalytics.netSavings}
+          transactionCount={financeAnalytics.transactionCount}
           completedRoutines={todayOverview.routinesCompleted}
           routinesDue={todayOverview.routinesDue}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
@@ -3059,7 +3004,7 @@ export default function App() {
                 month={financeMonth}
                 monthly={financeSubtab === 'monthly'}
                 onMonthly={() => navigateFinanceSubtab('monthly')}
-                monthSavings={financeSubtab === 'monthly' ? formatMinorUnits(savingsContributions.filter(row => row.date.startsWith(financeMonth) && (row.currencyCode || userPrefs.currency) === userPrefs.currency).reduce((total, row) => total + (row.amountMinor ? BigInt(row.amountMinor) : decimalToMinorUnits(row.amount, userPrefs.currency)), 0n), userPrefs.currency, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : undefined}
+                monthSavings={financeSubtab === 'monthly' ? formatMinorUnits(savingsContributions.filter(row => row.date.startsWith(financeMonth) && row.currencyCode === userPrefs.currency).reduce((total, row) => total + (row.amountMinor ? BigInt(row.amountMinor) : decimalToMinorUnits(row.amount, userPrefs.currency)), 0n), userPrefs.currency, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : undefined}
                 income={financeAnalytics.totalIncome}
                 expenses={financeAnalytics.totalExpenses}
                 netCashFlow={financeAnalytics.netSavings}
@@ -3177,15 +3122,17 @@ export default function App() {
 
             {financeSubtab === 'budgets' && <div className="space-y-3">
               <div className="flex justify-end"><button onClick={() => openCreateForm('budget')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Add budget</button></div>
+              {budgets.some(b => (!b.monthYear || b.monthYear === financeMonth) && !b.currencyCode) && <p role="status" className="rounded-xl border p-3 text-xs text-secondary">Historical budgets without a saved currency are preserved and excluded from totals.</p>}
               {budgets.some(b => (!b.monthYear || b.monthYear === financeMonth) && b.currencyCode && b.currencyCode !== userPrefs.currency) && <p role="status" className="rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary">Budgets in another currency are hidden until a dated exchange rate is available.</p>}
-              {budgets.filter(b => (!b.monthYear || b.monthYear === financeMonth) && (!b.currencyCode || b.currencyCode === userPrefs.currency)).length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No budget set for {financeMonth}.</div> : budgets.filter(b => (!b.monthYear || b.monthYear === financeMonth) && (!b.currencyCode || b.currencyCode === userPrefs.currency)).map(b => {
+              {budgets.filter(b => (!b.monthYear || b.monthYear === financeMonth) && b.currencyCode === userPrefs.currency).length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No budget set for {financeMonth}.</div> : budgets.filter(b => (!b.monthYear || b.monthYear === financeMonth) && b.currencyCode === userPrefs.currency).map(b => {
                 const budgetCategoryName = b.categoryId ? categories.find(category => category.id === b.categoryId)?.name : undefined;
                 const budgetName = b.categoryId ? (budgetCategoryName || 'Unavailable category') : 'Overall budget';
                 const categoryMissing = Boolean(b.categoryId && !budgetCategoryName);
                 const budgetCurrency = b.currencyCode || userPrefs.currency;
-                const allocatedMinor = b.amountMinor && /^(0|[1-9]\d*)$/.test(b.amountMinor) ? BigInt(b.amountMinor) : decimalToMinorUnits(String(b.monthlyAmount), budgetCurrency);
-                const spentTransactions = transactions.filter(tx => tx.type === 'expense' && tx.date?.startsWith(financeMonth) && (!tx.currencyCode || tx.currencyCode === budgetCurrency) && (!b.categoryId || tx.category === budgetCategoryName));
-                const spentMinor = spentTransactions.reduce((total, tx) => total + (tx.amountMinor && tx.currencyCode === budgetCurrency && /^(0|[1-9]\d*)$/.test(tx.amountMinor) ? BigInt(tx.amountMinor) : decimalToMinorUnits(String(tx.amount), budgetCurrency)), 0n);
+                const totals = financeAnalytics.budgetRows.find(row => row.id === b.id);
+                if (!totals) return null;
+                const allocatedMinor = BigInt(totals.allocatedMinor);
+                const spentMinor = BigInt(totals.spentMinor);
                 const budgetStatus = getExactBudgetDisplayStatus(categoryMissing ? undefined : spentMinor, allocatedMinor);
                 const budgetLabel = categoryMissing ? 'Usage unavailable' : budgetStatus.percentUsed === null ? 'No monthly limit set' : `${budgetStatus.percentUsed.toFixed(0)}% used`;
                 const overByLabel = formatMinorUnits(budgetStatus.overByMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
@@ -3195,7 +3142,10 @@ export default function App() {
                 const amountLabel = categoryMissing ? 'Unavailable' : formatMinorUnits(spentMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
                 const allocationLabel = formatMinorUnits(allocatedMinor, budgetCurrency, userPrefs.locale === 'system' ? undefined : userPrefs.locale);
                 const remainingLabel = categoryMissing ? 'Restore category to track this plan' : budgetStatus.isOver ? 'Above plan' : budgetStatus.percentUsed === null ? 'Set a limit to track remaining' : `${remainingAmountLabel} remaining in plan`;
-                return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{budgetName}</strong><span>{amountLabel} / {allocationLabel}</span></div><div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetName} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetStatus.barPercent)} aria-valuetext={budgetStatus.isOver ? overAccessibleLabel : budgetLabel}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${budgetStatus.barPercent}%`, backgroundColor: budgetStatus.isOver ? 'var(--warning)' : undefined }} /></div><div className="mt-2 flex flex-wrap justify-between gap-1 text-xs text-secondary"><span>{budgetStatus.isOver ? overLabel : budgetLabel}</span><span>{remainingLabel}</span></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => openEditBudget(b)} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text">Edit budget</button><button aria-label={`Delete ${budgetName}`} onClick={async () => {
+                return <div key={b.id} className="rounded-2xl border border-[var(--stroke)] lifeos-panel p-4"><div className="flex justify-between text-sm"><strong>{budgetName}</strong><span>{amountLabel} / {allocationLabel}</span></div>
+                  {totals.carryoverUnavailable && <p className="text-xs text-secondary">Carryover unavailable because last month has records without a saved currency.</p>}
+                  {totals.carryoverMinor !== '0' && <p className="text-xs text-secondary">{formatMinorUnits(BigInt(totals.carryoverMinor), budgetCurrency)} carried from last month</p>}
+                  <div className="lifeos-progress-track mt-3 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${budgetName} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(budgetStatus.barPercent)} aria-valuetext={budgetStatus.isOver ? overAccessibleLabel : budgetLabel}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${budgetStatus.barPercent}%`, backgroundColor: budgetStatus.isOver ? 'var(--warning)' : undefined }} /></div><div className="mt-2 flex flex-wrap justify-between gap-1 text-xs text-secondary"><span>{budgetStatus.isOver ? overLabel : budgetLabel}</span><span>{remainingLabel}</span></div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => openEditBudget(b)} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text">Edit budget</button><button aria-label={`Delete ${budgetName}`} onClick={async () => {
                   if (!(await confirmAction({ title: 'Delete this budget?', message: `${budgetName} will be removed. Saved transactions will remain unchanged.`, confirmLabel: 'Delete budget', destructive: true }))) return;
                   try { await StorageService.budgets.delete(b.id); }
                   catch { showToast('Budget deletion could not be confirmed. Refresh before retrying.', 'danger'); return; }
@@ -3839,6 +3789,8 @@ export default function App() {
               <label className="mb-3 block text-xs text-secondary">Budget category (optional)<select disabled={Boolean(editingBudgetId)} value={createDraft.categoryId || ''} onChange={e => setCreateDraft({ ...createDraft, categoryId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="">Overall budget</option>{categories.filter(category => category.type === 'expense').map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
               {(() => { const code = editingBudgetId ? budgets.find(row => row.id === editingBudgetId)?.currencyCode || userPrefs.currency : userPrefs.currency; const digits = getCurrencyMetadata(code).fractionDigits; return <label className="mb-3 block text-xs text-secondary">Monthly limit · {code}<input required type="number" min={10 ** -digits} step={10 ** -digits} inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>; })()}
               <label className="mb-4 block text-xs text-secondary">Month<input disabled={Boolean(editingBudgetId)} required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={createDraft.carryover === 'yes'}
+                onChange={event => setCreateDraft(current => ({ ...current, carryover: event.target.checked ? 'yes' : '' }))} />Carry over unused budget from last month</label>
             </>}
             {createKind === 'savings' && <>
               <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target amount · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>{!editingSavingsGoalId && <label className="text-xs text-secondary">Already saved<input type="number" min="0" step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}</div>

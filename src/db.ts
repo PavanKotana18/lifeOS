@@ -645,6 +645,7 @@ export function validateBackupTables(tablesData: any): string[] {
 
   check('budgets', (r, i) => {
     requiredNumber(r, 'monthlyAmount', 'budgets', i);
+    optionalBoolean(r, 'carryover', 'budgets', i);
     if (!month(r.monthYear)) fail('budgets', i, 'monthYear');
     requiredString(r, 'createdAt', 'budgets', i);
     try { validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.amountMinor, amount: r.monthlyAmount }); } catch { fail('budgets', i, 'currency/amountMinor'); }
@@ -969,6 +970,7 @@ const rawStorageService: IDataStorage = {
             throw new Error('A budget cannot change currency without explicit reconciliation.');
           }
           const updates = { monthlyAmount: budget.monthlyAmount,
+            ...(budget.carryover !== undefined ? { carryover: budget.carryover } : {}),
             ...(budget.amountMinor !== undefined ? { amountMinor: budget.amountMinor } : {}),
             ...(budget.currencyCode !== undefined ? { currencyCode: budget.currencyCode } : {}) };
           await db.budgets.update(existing.id, updates);
