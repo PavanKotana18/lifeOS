@@ -11,11 +11,11 @@ const ts = require('typescript');
 const dbFilename = path.resolve('src/db.ts');
 const dbSource = ts.createSourceFile(dbFilename, fs.readFileSync(dbFilename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 assert.equal(dbSource.parseDiagnostics.length, 0, 'Production database source must parse');
-const scheduleDeclarations = dbSource.statements.filter(node => ts.isFunctionDeclaration(node) && node.name?.text === 'normalizeTaskSchedule');
-assert.equal(scheduleDeclarations.length, 1, 'Expected one production task schedule validator');
+const scheduleDeclarations = dbSource.statements.filter(node => ts.isFunctionDeclaration(node) && ['normalizeTaskSchedule', 'shiftRecurringTaskReminder'].includes(node.name?.text));
+assert.equal(scheduleDeclarations.length, 2, 'Expected the production validator and recurring reminder helper');
 const scheduleModule = new Module(dbFilename, module);
-scheduleModule._compile(esbuild.transformSync(scheduleDeclarations[0].getText(dbSource), { loader: 'ts', format: 'cjs', target: 'node22' }).code, dbFilename);
-const { normalizeTaskSchedule } = scheduleModule.exports;
+scheduleModule._compile(esbuild.transformSync(scheduleDeclarations.map(node => node.getText(dbSource)).join('\n'), { loader: 'ts', format: 'cjs', target: 'node22' }).code, dbFilename);
+const { normalizeTaskSchedule, shiftRecurringTaskReminder } = scheduleModule.exports;
 assert.equal(typeof normalizeTaskSchedule, 'function');
 
 const TABLES = [
@@ -136,6 +136,7 @@ function makeEnvironment() {
       date.setUTCDate(date.getUTCDate() + 1);
       return date.toISOString().slice(0, 10);
     },
+    shiftRecurringTaskReminder,
     getRecurrenceRootId(task) {
       return task.recurrenceRootId || task.id;
     },
@@ -195,6 +196,8 @@ async function rejects(fn, pattern) {
     );
     assert.equal(categories.find(row => row.id === 'cat_food').color, '#f59e0b');
   });
+
+
 
   await test('transaction rejects a category with the wrong type', async () => {
     await rejects(
@@ -479,6 +482,20 @@ async function rejects(fn, pattern) {
     assert.equal((await storage.transactions.getAll()).length, 0);
     await storage.backup.seedDemoData();
     assert.equal((await storage.transactions.getAll()).length, transactions.length);
+  });
+
+  await test('encrypted completion shifts a recurring reminder exactly once', async () => {
+    storage = makeEnvironment();
+    const task = await storage.tasks.add({
+      title: 'Daily reminder', dueDate: '2026-11-03', dueTime: '09:00',
+      reminderAt: '2026-11-03T08:00:00.000Z', recurring: 'Daily', priority: 'Medium', completed: false,
+    });
+    await storage.tasks.toggleCompleted(task.id, true);
+    await storage.tasks.toggleCompleted(task.id, true);
+    const occurrences = (await storage.tasks.getAll()).filter(row => row.id !== task.id);
+    assert.equal(occurrences.length, 1);
+    assert.equal(occurrences[0].dueDate, '2026-11-04');
+    assert.equal(occurrences[0].reminderAt, '2026-11-04T08:00:00.000Z');
   });
 
   console.log('\n========================================');

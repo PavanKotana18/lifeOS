@@ -75,6 +75,7 @@ export interface EncryptedStorageHelpers {
     fromDate?: string
   ): string | null;
   getRecurrenceRootId(task: Task): string;
+  shiftRecurringTaskReminder(task: Task, nextDate: string): string | undefined;
 }
 
 const TABLES: EncryptedTable[] = [
@@ -923,6 +924,7 @@ export function createEncryptedStorageFacade(
                   ...task,
                   id: nextId,
                   dueDate: nextDate,
+                  reminderAt: helpers.shiftRecurringTaskReminder(task, nextDate),
                   recurrenceRootId: rootId,
                   completed: false,
                   completedAt: undefined,

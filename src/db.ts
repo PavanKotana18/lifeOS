@@ -172,6 +172,15 @@ export function normalizeTaskSchedule<T extends Pick<Task, 'dueDate' | 'dueTime'
   return { ...task, dueDate, dueTime, reminderAt, recurring };
 }
 
+export function shiftRecurringTaskReminder(task: Pick<Task, 'reminderAt' | 'dueDate'>, nextDate: string): string | undefined {
+  if (!task.reminderAt || !task.dueDate) return undefined;
+  const reminder = new Date(task.reminderAt);
+  const days = (Date.parse(nextDate) - Date.parse(task.dueDate)) / 86_400_000;
+  if (!Number.isFinite(reminder.getTime()) || !Number.isInteger(days)) return undefined;
+  reminder.setDate(reminder.getDate() + days);
+  return reminder.toISOString();
+}
+
 export function getNextRecurringTaskDate(
   dueDate: string | undefined,
   recurring: Task['recurring'],
@@ -690,7 +699,7 @@ export function validateBackupTables(tablesData: any): string[] {
     requiredNumber(r, 'targetValue', 'goals', i);
     requiredNumber(r, 'currentValue', 'goals', i);
     requiredDate(r, 'startDate', 'goals', i);
-    requiredDate(r, 'targetDate', 'goals', i);
+    if (r.targetDate !== '') requiredDate(r, 'targetDate', 'goals', i);
     if (!enumValue(r.priority, ['Low', 'Medium', 'High', 'Urgent'])) fail('goals', i, 'priority');
     if (!enumValue(r.status, ['In Progress', 'Completed', 'Paused'])) fail('goals', i, 'status');
     requiredString(r, 'createdAt', 'goals', i);
@@ -1483,7 +1492,7 @@ const rawStorageService: IDataStorage = {
               description: task.description,
               dueDate: nextDueDate,
               dueTime: task.dueTime,
-              reminderAt: task.reminderAt,
+              reminderAt: shiftRecurringTaskReminder(task, nextDueDate),
               reminderLeadMinutes: task.reminderLeadMinutes,
               dueAlertDisabled: task.dueAlertDisabled,
               priority: task.priority,
@@ -1667,6 +1676,7 @@ export const encryptedStorageRuntime = createLifeOSEncryptedRuntime(
     getNextRecurringTaskDate: (task, fromDate) =>
       task.dueDate ? getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate) : null,
     getRecurrenceRootId,
+    shiftRecurringTaskReminder,
   }
 );
 
