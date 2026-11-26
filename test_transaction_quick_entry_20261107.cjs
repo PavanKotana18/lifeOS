@@ -10,7 +10,8 @@ assert.match(app, /Merchant or description \(optional\)\s*<input maxLength=\{120
 assert.doesNotMatch(transactionForm.match(/Merchant or description \(optional\)\s*(<input[^>]+)/)[1], /\brequired\b/, 'transaction description stays optional');
 assert.match(app, /Task title'[^\n]*\n\s*<input autoFocus required/, 'other record titles stay required');
 assert.match(transactionForm, /autoFocus=\{!editingTransactionId\} required type="number" min=\{10 \*\* -getCurrencyMetadata\(createDraft\.currencyCode \|\| userPrefs\.currency\)\.fractionDigits\} step=\{10 \*\* -getCurrencyMetadata\(createDraft\.currencyCode \|\| userPrefs\.currency\)\.fractionDigits\} inputMode="decimal"/, 'new quick entry focuses an amount field with the selected currency minor unit');
-assert.match(transactionForm, /<ComposerChoice variant="field" label="Currency" value=\{createDraft\.currencyCode \|\| userPrefs\.currency\}/, 'each new transaction can use an explicit currency');
+assert.match(transactionForm, /<ComposerChoice variant="field" label="Currency" value=\{createDraft\.currencyCode \|\| \(editingTransactionId \? '' : userPrefs\.currency\)\}/, 'new rows default to their selected currency and historical unknown currency stays unselected');
+assert.match(app, /Choose the original currency for this historical transaction/, 'historical edits require an explicit currency before a write');
 assert.match(transactionForm, /label="Account \(optional\)"[\s\S]*?Unassigned/, 'account assignment remains optional');
 assert.match(transactionForm, /aria-expanded=\{transactionDetailsOpen\} aria-controls="transaction-optional-details"/);
 assert.match(transactionForm, /transactionDetailsOpen && <div id="transaction-optional-details"/, 'optional fields are collapsed for quick entry and expanded for edits');
