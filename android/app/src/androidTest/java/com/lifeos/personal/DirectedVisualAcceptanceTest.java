@@ -339,18 +339,32 @@ public class DirectedVisualAcceptanceTest {
         try (ActivityScenario<MainActivity> launched = ActivityScenario.launch(MainActivity.class)) {
             scenario = launched;
             WebViewTestSupport.awaitReactRoot(scenario);
-            if ("true".equals(js("!!document.querySelector('input[autocomplete=nickname]')"))) {
+            String today = "!!document.querySelector('#screen-dashboard')";
+            String nickname = "!!document.querySelector('input[autocomplete=nickname]')";
+            String notifications = "document.querySelector('.initial-setup h1')?.textContent==='Notifications'";
+            String protection = "document.querySelector('.initial-setup h1')?.textContent==='Biometric setup'";
+            String recovery = "document.querySelector('.initial-setup h1')?.textContent==='Recovery setup'";
+            // The React root can be present before native startup has selected
+            // a screen. Wait for an actionable public stage after recreation.
+            until(today + " || " + nickname + " || " + notifications + " || " + protection + " || " + recovery);
+            if ("true".equals(js(nickname))) {
                 js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Synthetic navigation');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
                 click("Continue");
-                until("document.querySelector('.initial-setup h1')?.textContent==='Notifications'");
+                until(notifications);
+            }
+            if ("true".equals(js(notifications))) {
                 click("Not now");
                 click("Continue");
-                until("document.querySelector('.initial-setup h1')?.textContent==='Biometric setup'");
-                click("Not now");
+                until(protection);
             }
-            if ("true".equals(js("document.querySelector('.initial-setup h1')?.textContent==='Recovery setup'"))) {
+            if ("true".equals(js(protection))) {
+                click("Not now");
+                until(recovery);
+            }
+            if ("true".equals(js(recovery))) {
                 click("Review deferral");
                 click("Do this later");
+                until(today);
             }
             until("!!document.querySelector('#screen-life')");
             assertFalse(new JSONObject(WebViewTestSupport.evaluateAsync(scenario,
