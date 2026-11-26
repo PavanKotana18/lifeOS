@@ -2,7 +2,7 @@ import { CURRENCY_CATALOG, createMoneyRecordAmount, getCurrencyMetadata, minorUn
 
 type AlertDetails = {
   amount: string; currency: string; description?: string; date?: string;
-  time?: string; accountHint?: string; reference?: string;
+  time?: string; accountHint?: string; reference?: string; bankHint?: string;
 };
 
 export type SmartImportSuggestion =
@@ -28,7 +28,7 @@ const number = String.raw`\d+(?:,\d+)*(?:\.\d+)?`;
 const amountPattern = new RegExp(String.raw`(?:\b(` + currencyCodes +
   String.raw`)\b[ \t]*|\b(Rs)\.?[ \t]*|([₹€£]|US\$)[ \t]*)(` + number +
   String.raw`)(?![\d,]|\.\d)|(?<![\d.,-])\b(` + number + String.raw`)[ \t]+(` + currencyCodes + String.raw`)\b`, 'gi');
-const moneyContext = /\b(?:bank|acct|account|a\/c|card|upi|neft|imps|ach|atm|rtgs|vpa)\b/i;
+const moneyContext = /\b(?:bank|acct|account|a\/c|card|upi|neft|imps|ach|atm|rtgs|vpa|NACH)\b/i;
 const excluded = /\b(?:otp|one[- ]time(?: password| code)?|verification code|never share this code|promo(?:tion)?|cashback offer|offer expires|pre[- ]?approved loan|loan offer|apply (?:today|now|for a loan)|claim your reward)\b/i;
 const unsafe = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]|[\uD800-\uDFFF]/u;
 const balance = /\b(?:avail(?:able)?\.?\s*(?:bal(?:ance)?|limit)|avl\.?\s*bal(?:ance)?|(?:closing|current|account)\s+balance|balance\s+(?:available|remaining))\b/i;
@@ -85,10 +85,13 @@ export const pastedBankAlert: TransactionAlertProvider = {
     const amounts = extractAmounts(input);
     const explicitAmount = amounts.length === 1 ? amounts[0] : null;
     const merchant = /\b(?:at|merchant\s*:|paid to|sent to|received from|credited by|to vpa|from vpa|from(?=\s+[a-z0-9._-]+@))\s*([a-z][a-z0-9@._ &'-]{1,59}?)(?=\s+(?:on|ref(?:erence)?|rrn|utr|using|via|at \d)\b|[;,\r\n]|\.\s|\.?$)/i.exec(input)?.[1]?.trim();
-    const description = merchant && !/^(?:a\/c|account|acct|card)\b/i.test(merchant) ? merchant : undefined;
+    const explicitPurpose = /\b(?:payroll|salary)\b/i.test(input) && /\b(?:credited|deposited)\b/i.test(input) ? 'Salary' :
+      /\b(?:bank|maintenance|service|SMS|annual|ATM)\s+(?:fee|charge)s?\b/i.exec(input)?.[0];
+    const description = merchant && !/^(?:a\/c|account|acct|card)\b/i.test(merchant) ? merchant : explicitPurpose;
     const accountHint = /\b(?:a\/c|account|acct|card)\s*(?:(?:ending(?: in)?|no\.?)\s*|[*x•-]+|\s)*(\d{4})\b/i.exec(input)?.[1];
     const reference = /\b(?:upi\s*(?:ref|id)|(?:txn|transaction)\s*(?:ref|id)|ref(?:erence)?|rrn|utr)\s*(?:no\.?|number)?\s*[:#-]?\s*([a-z0-9][a-z0-9-]{5,29})\b/i.exec(input)?.[1];
-    const details = explicitAmount ? { ...explicitAmount, ...suppliedDateTime(input, explicitAmount.currency), description, accountHint, reference } : undefined;
+    const bankHint = /^(?:\s*\[([A-Z]{2}-[A-Z0-9]{5,12})\]|\s*((?:[A-Z][A-Za-z]+[ \t]+){1,3}Bank)\s*:)/.exec(input);
+    const details = explicitAmount ? { ...explicitAmount, ...suppliedDateTime(input, explicitAmount.currency), description, accountHint, reference, bankHint: bankHint?.[1] || bankHint?.[2]?.trim() } : undefined;
     if (/\b(?:reversal|reversed|rolled back)\b/i.test(input)) return { kind: 'reversal', details };
     if (/\brefund(?:ed)?\b/i.test(input)) return { kind: 'refund', details };
     if (/\b(?:failed|declined|unsuccessful|cancelled)\b|\bnot (?:paid|debited|credited|completed|successful|transferred)\b/i.test(input)) return { kind: 'failed', details };
@@ -96,8 +99,8 @@ export const pastedBankAlert: TransactionAlertProvider = {
         (/\bauthori[sz](?:ed|ation)\b/i.test(input) && !/\b(?:debited|credited|posted|settled)\b/i.test(input))) return { kind: 'pending', details };
     if (/\b(?:transfer between|own account transfer|internal transfer|funds? transfer|transferred)\b/i.test(input)) return { kind: 'transfer', details };
 
-    const expense = /\b(?:debited|spent|withdrawn|withdrawal|purchase(?:d)?|paid(?: to| via| using)?|sent to)\b/i.test(input);
-    const income = /\b(?:credited|deposited|received)\b/i.test(input);
+    const expense = /\b(?:debited|spent|withdrawn|withdrawal|purchase(?:d)?|paid(?: to| via| using)?|sent to|charged)\b|\bUPI\s+(?:Debit|DR)\b/i.test(input);
+    const income = /\b(?:credited|deposited|received)\b|\bUPI\s+(?:Credit|CR)\b/i.test(input);
     if (!expense && !income) return { kind: 'unrecognized' };
     if ((expense && income) || amounts.length > 1) return { kind: 'ambiguous' };
     if (!details) return { kind: 'unrecognized' };

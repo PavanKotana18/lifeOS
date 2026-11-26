@@ -1,4 +1,4 @@
-﻿import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 
 export type ChoiceOption = readonly [value: string, label: string, disabled?: boolean];
@@ -66,7 +66,7 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
         </header>
         {open && searchable && <input aria-label={label === 'Currency' ? 'Search currencies' : 'Search ' + label.toLocaleLowerCase()}
           className="lifeos-input min-h-11 w-full rounded-xl px-3" type="search" autoComplete="off" aria-controls={id + "-options"}
-          placeholder="Search options" value={search} onChange={event => { event.stopPropagation(); setSearch(event.target.value); }}
+          placeholder={label === 'Currency' ? 'Search by name or code' : 'Search options'} value={search} onChange={event => { event.stopPropagation(); setSearch(event.target.value); }}
           onKeyDown={event => {
             if (event.key === 'Enter') event.preventDefault();
             if (event.key === 'ArrowDown') { event.preventDefault(); list.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(); }

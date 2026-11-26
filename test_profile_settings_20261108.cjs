@@ -43,8 +43,10 @@ const subpageMarkup = renderToStaticMarkup(React.createElement(ProfileSubpage, {
 assert.ok(subpageMarkup.includes('Appearance') && subpageMarkup.includes('Preview') && subpageMarkup.includes('Profile'));
 const preferenceMarkup = renderToStaticMarkup(React.createElement(ProfilePreferences, { preferences: DEFAULT_USER_PREFERENCES, hasFinancialRecords: true, onChange: () => {} }));
 assert.match(preferenceMarkup, /Currency and locale/);
-assert.match(preferenceMarkup, /Search currencies/);
-assert.match(preferenceMarkup, /Search by name or code/);
+const choiceSource = fs.readFileSync('src/components/PreferenceChoice.tsx', 'utf8');
+assert.match(choiceSource, /open && searchable[\s\S]*Search currencies/);
+assert.match(choiceSource, /Search by name or code/);
+assert.doesNotMatch(preferenceMarkup, /type="search"/, 'closed choice sheet does not mount its search input');
 assert.match(preferenceMarkup, /disabled=""/);
 assert.match(preferenceMarkup, /locked for existing financial records/);
 assert.match(preferenceMarkup, /Swipe between tabs/);

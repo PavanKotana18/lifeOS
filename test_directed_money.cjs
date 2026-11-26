@@ -25,7 +25,7 @@ const homeProps = {
   transactions: [{ id: 'synthetic-1', type: 'expense', amount: 12, amountMinor: '1200', currencyCode: 'USD', category: 'Food', description: 'Food', date: '2026-11-05', paymentMethod: 'Cash' }],
   formatMoney, formatDate: date => date, formatTime: date => date.toISOString().slice(11, 16),
   onMonthChange: noop, onAddExpense: noop, onAddIncome: noop, onTransfer: noop,
-  onMoveToSavings: noop, onTransactions: noop, onBudgets: noop, onSavings: noop,
+  onMoveToSavings: noop, onMonthly: noop, onTransactions: noop, onBudgets: noop, onSavings: noop,
   onAnalytics: noop, onPlanning: noop, onAccounts: noop,
   accountSummaries: [
     { id: 'a', name: 'Wallet', type: 'cash', currencyCode: 'USD', balanceMinor: '8000' },
@@ -36,8 +36,8 @@ const homeProps = {
   savingsGoals: [], legacyCurrency: 'USD', onEditTransaction: noop,
 };
 const home = renderToStaticMarkup(React.createElement(MoneyHome, homeProps));
-assert.equal((home.match(/data-testid="money-add-transaction"/g) || []).length, 1, 'Money has one clear primary transaction entry point');
-assert.match(home, /Add transaction/, 'the primary transaction entry point names its available records');
+assert.doesNotMatch(home, /Add transaction/, 'Money opens Transactions to add a record');
+assert.match(home, />Transactions</);
 assert.match(home, /Net cash flow/);
 assert.match(home, /aria-label="About Net cash flow" aria-haspopup="dialog" aria-expanded="false"/,
   'the cash-flow explanation stays hidden behind its contextual info control');
@@ -45,13 +45,13 @@ assert.match(home, /Recorded cash flow: income \$500\.00; expenses \$120\.00/);
 assert.doesNotMatch(home, /Showing 3 of 4 accounts/, "Balances appear on the monthly page");
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="View Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
-assert.match(home, />This month/);
-assert.match(home, />Scheduled</);
+assert.match(home, />View monthly summary/);
+assert.match(home, />Schedule</);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],
 }));
-assert.match(emptyHome, /No transactions this month/);
+assert.match(emptyHome, /No activity this month/);
 assert.doesNotMatch(emptyHome, /money-account-nudge/, 'optional accounts do not look required before a first transaction');
 
 const accounts = [

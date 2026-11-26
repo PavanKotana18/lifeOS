@@ -9,7 +9,7 @@ export interface ThemeTokens {
 }
 
 const pair = (light: ThemeTokens, dark: ThemeTokens) => Object.freeze({ light: Object.freeze(light), dark: Object.freeze(dark) });
-export const DEFAULT_THEME_ID: ThemeId = 'busydoo';
+export const DEFAULT_THEME_ID: ThemeId = 'soft-ivory-sage';
 
 /** Local, versioned design palette; it stores no user content and makes no network request. */
 export const THEME_CATALOG: Readonly<Record<ThemeId, { label: string; light: ThemeTokens; dark: ThemeTokens }>> = Object.freeze({

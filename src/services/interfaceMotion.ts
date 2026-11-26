@@ -30,10 +30,12 @@ export function getMotionPreset(value: unknown = 'silky'): MotionPreset {
 export function getMotionCssVariables(value: unknown = 'silky', reducedMotion = false): Record<string, string> {
   const preset = getMotionPreset(value);
   const duration = reducedMotion ? 0 : preset.duration;
+  const tabDuration = reducedMotion ? 0 : { silky: 220, snappy: 180, oil: 255 }[preset.id];
   return {
     '--interface-motion-duration': `${duration}ms`,
     '--interface-motion-easing': preset.easing,
-    '--motion-tab': `${duration}ms`,
+    '--motion-tab': `${tabDuration}ms`,
+    '--motion-ease-tab': preset.easing,
     '--motion-panel': `${reducedMotion ? 0 : Math.round(duration * 0.75)}ms`,
     '--motion-feedback': `${reducedMotion ? 0 : Math.round(duration * 0.35)}ms`,
   };

@@ -84,7 +84,7 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
         </label>}
       </div>
     </AliveReveal>
-    <AliveDisclosure label="More task details" defaultOpen={editing && Boolean(draft.description || draft.category)}>
+    <AliveDisclosure label={editing ? "Task notes" : "Notes and subtasks"} defaultOpen={editing && Boolean(draft.description)}>
       <div className="task-option-panel space-y-3">
         <label className="block text-xs text-secondary">Description (optional)
           <textarea rows={2} maxLength={500} value={draft.description || ''} onChange={event => set('description', event.target.value)} className={field} />
@@ -92,7 +92,11 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
         {!editing && <label className="block text-xs text-secondary">Subtasks (one per line)
           <textarea rows={3} value={draft.subtasks || ''} onChange={event => set('subtasks', event.target.value)} className={field} />
         </label>}
-        {goals.length > 0 && <PreferenceChoice variant="field" label="Linked goal" value={draft.goalId || ''}
+      </div>
+    </AliveDisclosure>
+    <AliveDisclosure label={goals.length ? "Category and related goal" : "Task category"} defaultOpen={editing && Boolean(draft.category)}>
+      <div className="task-option-panel space-y-3">
+        {goals.length > 0 && <PreferenceChoice variant="field" searchable={goals.length > 8} label="Linked goal" value={draft.goalId || ''}
           options={[[ '', 'No linked goal' ], ...goals.map(goal => [goal.id, goal.title] as const)]} onSelect={value => choose('goalId', value)} />}
         <label className="block text-xs text-secondary">Category (optional)
           <input maxLength={50} value={draft.category || ''} onChange={event => set('category', event.target.value)} className={field} />

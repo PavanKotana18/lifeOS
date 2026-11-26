@@ -1,7 +1,7 @@
 import LifeDoodle from './LifeDoodle';
 import { PreferenceChoice } from './PreferenceChoice';
 import { useRef, useState } from 'react';
-import { Bell, ChevronRight, CircleCheck, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
+import { Bell, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
 import type { Task } from '../types';
 import { getTaskStatus, sortTasksBySchedule } from '../services/domainUtils';
 
@@ -124,16 +124,22 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
       </dialog>
     </div>
     <section className="plan-task-workspace" aria-labelledby="plan-tasks-title">
-      <div className="plan-list-heading"><h3 id="plan-tasks-title">{views.find(item => item.id === view)?.label} tasks</h3><span role="status" className="type-caption text-secondary">{visible.length} shown</span></div>
-      {visible.length ? [...groups].map(([label, rows]) => rows.length > 0 &&
-        <section key={label} className="plan-task-group" aria-label={label}>
-          <h4 className="type-caption text-secondary">{label}</h4>
-          <ul className="plan-hub-list" aria-label={label + ' tasks'}>{rows.map(({ task, taskStatus }) => {
+      <h3 id="plan-tasks-title" className="sr-only">Tasks in selected view</h3>
+      {tasks.length > 0 && tasks.every(task => task.completed) && !narrowed &&
+        <div className="plan-done lifeos-tint"><LifeDoodle kind="tasks-done" /><div><strong>All tasks complete</strong><p>{tasks.length} {tasks.length === 1 ? 'task' : 'tasks'} checked off</p></div></div>}
+      {visible.length ? [
+        ['Overdue', visible.filter(task => getTaskStatus(task, now) === 'Overdue')],
+        ['Today', visible.filter(task => !task.completed && task.dueDate === today && getTaskStatus(task, now) !== 'Overdue')],
+        ['Upcoming', visible.filter(task => !task.completed && task.dueDate && task.dueDate > today)],
+        ['Unscheduled', visible.filter(task => !task.completed && !task.dueDate)],
+        ['Completed', visible.filter(task => task.completed)],
+      ].map(([label, rows]) => (rows as Task[]).length > 0 && <section key={label as string} aria-label={label as string} className="space-y-2"><h4 className="type-caption text-secondary">{label as string}</h4><ul className="plan-hub-list">{(rows as Task[]).map(task => {
+        const taskStatus = getTaskStatus(task, now);
         return <li key={task.id} className={`plan-hub-task ui-interactive-row${taskStatus === 'Overdue' ? ' is-overdue' : ''}${task.completed ? ' is-complete' : ''}`}>
-          <label className="plan-hub-task-check"><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(task)} aria-label={`Mark ${task.title} ${task.completed ? 'incomplete' : 'complete'}`} /></label>
-          <button type="button" onClick={event => onOpenTask(task, event.currentTarget)} className="plan-hub-task-open"><span className="plan-hub-row-title">{task.title}</span><span className="plan-hub-row-meta">{taskStatus === 'Overdue' ? 'Overdue \u00b7 ' : task.completed ? 'Completed \u00b7 ' : ''}{formatTaskDate(task.dueDate, today)}{task.dueTime ? ` \u00b7 ${task.dueTime}` : task.dueDate ? ' \u00b7 end of day' : ''}<span className="plan-schedule-indicators">{task.recurring && task.recurring !== 'None' && <span><Repeat2 size={12} aria-hidden="true" />Repeats {task.recurring.toLocaleLowerCase()}</span>}{(task.reminderAt || task.reminderLeadMinutes) && <span><Bell size={12} aria-hidden="true" />Reminder set</span>}</span></span><ChevronRight size={17} aria-hidden="true" /></button>
+          <label className="plan-hub-task-check"><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(task)} aria-label={`Mark ${task.title} ${task.completed ? 'incomplete' : 'complete'}`} /><svg className="alive-task-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9" pathLength="1" /></svg></label>
+          <button type="button" onClick={event => onOpenTask(task, event.currentTarget)} className="plan-hub-task-open"><span className="plan-hub-row-title" data-priority={task.priority} title={`${task.priority} priority`}>{task.title}</span><span className="plan-hub-row-meta">{taskStatus === 'Overdue' ? 'Overdue \u00b7 ' : task.completed ? 'Completed \u00b7 ' : ''}{formatTaskDate(task.dueDate, today)}{task.dueTime ? ` \u00b7 ${task.dueTime}` : task.dueDate ? ' \u00b7 end of day' : ''}<span className="plan-schedule-indicators">{task.recurring && task.recurring !== 'None' && <span><Repeat2 size={12} aria-hidden="true" />Repeats {task.recurring.toLocaleLowerCase()}</span>}{(task.reminderAt || task.reminderLeadMinutes) && <span><Bell size={12} aria-hidden="true" />Reminder set</span>}</span></span></button>
         </li>;
-      })}</ul></section>) : <div className="plan-hub-empty">{tasks.length ? <CircleCheck size={21} aria-hidden="true" /> : <LifeDoodle kind="empty-tasks" compact />}<div><strong>{!tasks.length ? 'No tasks yet' : narrowed ? 'No tasks match this view' : 'You are all caught up'}</strong><span>{!tasks.length ? 'Start with one thing you want to remember.' : narrowed ? 'Try another view or status, or clear your search.' : 'Your completed tasks are available under All statuses.'}</span>{narrowed && tasks.length > 0 && <button type="button" onClick={() => { setView('all'); setStatus('all'); setFilters(emptyPlanFilters); setQuery(''); }}>Show every task</button>}</div></div>}
+      })}</ul></section>) : <div className="plan-hub-empty"><LifeDoodle kind={tasks.length && tasks.every(task => task.completed) ? "tasks-done" : "empty-tasks"} /><div><strong>{!tasks.length ? 'No tasks yet' : narrowed ? 'No tasks match this view' : 'You are all caught up'}</strong><span>{!tasks.length ? 'Start with one thing you want to remember.' : narrowed ? 'Try another view or status, or clear your search.' : 'Your completed tasks are available under All statuses.'}</span>{narrowed && tasks.length > 0 && <button type="button" onClick={() => { setView('all'); setStatus('all'); setFilters(emptyPlanFilters); setQuery(''); }}>Show every task</button>}</div></div>}
     </section>
   </section>;
 }

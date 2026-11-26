@@ -151,10 +151,10 @@ public class MainActivity extends BridgeActivity {
         webView.setVisibility(android.view.View.GONE);
         TextView message = new TextView(this);
         message.setTag(WebViewCompatibility.UPDATE_REQUIRED_TAG);
-        message.setText("Update your Android web component\n\nLifeOS needs a newer Android System WebView or Chrome. Update it from your device's app store, then reopen BusyDoo.");
+        message.setText("Update your Android web component\n\nBusyDoo needs a newer Android System WebView or Chrome. Update it from your device's app store, then reopen BusyDoo.");
         message.setTextSize(18);
         message.setTextColor(Color.WHITE);
-        message.setBackgroundColor(Color.rgb(20, 20, 20));
+        message.setBackgroundColor(Color.rgb(9, 13, 22));
         message.setGravity(Gravity.CENTER);
         int padding = (int) (24 * getResources().getDisplayMetrics().density);
         message.setPadding(padding, padding, padding, padding);

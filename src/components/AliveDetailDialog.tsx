@@ -3,7 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import { animateRoute, readRoutePose } from '../services/aliveMotion';
 import { normalizeMotionPreset } from '../services/interfaceMotion';
 
-export default function ScheduledDetailDialog({ title, eyebrow, onClose, children }: {
+export default function AliveDetailDialog({ title, eyebrow, onClose, children }: {
   title: string;
   eyebrow: string;
   onClose: () => void;

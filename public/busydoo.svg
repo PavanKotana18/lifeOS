@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
-  <title>BusyDoo</title>
-  <rect width="108" height="108" rx="24" fill="#141414" />
-  <g transform="translate(-253.5 -1.6) scale(1.04)" fill="#C8FA78" fill-rule="evenodd">
-    <path d="M271 30c12 0 21 8 21 22s-8 23-21 23c-13 0-21-8-21-22 0-13 8-23 21-23zm1 10c-6 0-10 5-10 13 0 7 3 12 9 12s9-5 9-13c0-7-3-12-8-12z" /><path d="M318 30c13 0 21 9 21 23 0 13-8 22-21 22-12 0-21-8-21-22 0-13 8-23 21-23zm0 10c-6 0-9 5-9 13 0 7 3 12 9 12s10-5 10-12c0-8-4-13-10-13z" />
-  </g>
-</svg>

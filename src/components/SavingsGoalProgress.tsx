@@ -1,6 +1,6 @@
 import LifeDoodle from './LifeDoodle';
 import { useState } from 'react';
-import { ArrowRight, Check, Pencil, Trash2 } from 'lucide-react';
+import { Check, Pencil, Trash2 } from 'lucide-react';
 import type { SavingsContribution, SavingsGoal } from '../types';
 import { decimalToMinorUnits, formatMinorUnits } from '../services/financeCore';
 import InfoTip from './InfoTip';
@@ -17,8 +17,6 @@ type Props = {
   onEditContribution: (contribution: SavingsContribution) => void;
   onDeleteContribution: (contribution: SavingsContribution) => void;
 };
-
-const circumference = 2 * Math.PI * 39;
 
 export default function SavingsGoalProgress({ goal, formatMoney, locale, formatDate, contributions = [], onContribute, onDelete, onEditGoal, onEditContribution, onDeleteContribution }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -44,7 +42,7 @@ export default function SavingsGoalProgress({ goal, formatMoney, locale, formatD
       <svg viewBox="0 0 100 100" aria-hidden="true">
         <circle className="savings-goal-track" cx="50" cy="50" r="39" />
         <circle className="savings-goal-fill" cx="50" cy="50" r="39"
-          strokeDasharray={`${(circumference * visualProgress).toFixed(2)} ${circumference.toFixed(2)}`} transform="rotate(-90 50 50)" />
+          pathLength="1" strokeDasharray="1" strokeDashoffset={1 - visualProgress} transform="rotate(-90 50 50)" />
       </svg>
       <span className="savings-goal-percent tabular-nums">{percentLabel}</span>
     </div>
@@ -54,7 +52,7 @@ export default function SavingsGoalProgress({ goal, formatMoney, locale, formatD
       <p className="savings-goal-target">Target · {targetLabel}</p>
       <div className="savings-goal-actions">
         <button type="button" onClick={onEditGoal} className="savings-goal-delete" aria-label={`Edit ${goal.title}`}><Pencil size={16} aria-hidden="true" /><span>Edit</span></button>
-        <button type="button" onClick={onContribute} className="savings-goal-contribute">Add contribution <ArrowRight size={15} aria-hidden="true" /></button>
+        <button type="button" onClick={onContribute} className="savings-goal-contribute">Add contribution</button>
         <button type="button" onClick={onDelete} className="savings-goal-delete" aria-label={`Delete ${goal.title}`}><Trash2 size={16} aria-hidden="true" /><span>Delete</span></button>
       </div>
       {contributions.length > 0 && <div className="mt-3 border-t border-[var(--stroke)] pt-2">

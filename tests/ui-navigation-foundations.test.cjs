@@ -40,10 +40,11 @@ assert.match(app, /<RetainedScreen active=\{activeTab === 'plan'\} retainInactiv
 assert.match(app, /retainInactive prepare=\{primaryPrepared\} id="screen-settings"/, "Profile is retained and prewarmed for the swipe track");
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
   'Money retains local account and planning form drafts while another tab is briefly visited');
-assert.match(app, /prefers-reduced-motion/);
+assert.match(app, /useInterfaceMotion\(\)/);
 assert.match(app, /navigateTo\('planner'\)/, 'Today routes into the task destination');
 assert.match(app, /resolveBackAction/);
 const track = fs.readFileSync(path.join(__dirname, '..', 'src', 'hooks', 'useAliveNavigation.ts'), 'utf8');
+assert.match(track, /if \(reduced\) return/);
 assert.match(track, /useLayoutEffect\(\(\) => \{\s*if \(!tabTransition\) return;/,
   'the track animates during the incoming route commit before paint');
 assert.match(track, /Promise\.all\(animations\.map\(animation => animation\.finished\)\)\.then\(finish, finish\)/,
@@ -51,7 +52,7 @@ assert.match(track, /Promise\.all\(animations\.map\(animation => animation\.fini
 assert.match(track, /if \(!animations\.length\) \{ cancel\(\); return; \}/, 'unsupported animation falls back to an immediate route');
 assert.match(track, /transition\.current\?\.id !== flight\.id/, 'obsolete transitions cannot settle newer navigation');
 assert.match(app, /transitionToTab\(tab, direction, velocity,/, 'tap and swipe destinations share one transition path');
-assert.match(track, /clearDrag\(\);\s*cancel\(\);[\s\S]*?if \(reduced \|\| !primaryTravel/, 'reduced-motion navigation clears the outgoing drag state');
+assert.match(track, /clearDrag\(\);\s*cancel\(\);[\s\S]*?if \(reduced \|\| !old/, 'reduced-motion navigation clears the outgoing drag state');
 assert.match(app, /axis === 'horizontal'.*setPointerCapture\(event\.pointerId\)/s,
   'pointer capture starts only after horizontal intent so an ordinary tap keeps its native click');
 assert.match(app, /updatePrimaryGesture\(start, event\.pointerId/);
@@ -87,13 +88,14 @@ assert.match(retained, /data-transition-state=\{outgoing \? "outgoing" : transit
 assert.doesNotMatch(retained, /exiting|exit-prepare|onExitTransitionEnd/);
 
 const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.css'), 'utf8');
+const feather = fs.readFileSync(path.join(__dirname, '..', 'src', 'styles', 'feather-expressive.css'), 'utf8');
 assert.match(css, /--motion-tab: 190ms/);
 assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/);
 assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
-assert.match(css, /\.ui-tab-viewport[^}]*overflow-x: clip; overflow-y: visible/);
-assert.match(css, /\.ui-tab-screen-stack\[data-track-dragging\][^}]*will-change: transform/);
-assert.match(css, /\[data-gesture-preview\]\[hidden\][^}]*pointer-events: none/);
+assert.match(feather, /\.ui-tab-viewport[^}]*overflow-x: clip; overflow-y: clip/);
+assert.match(feather, /\.ui-tab-screen-stack\[data-track-dragging\][^}]*will-change: transform/);
+assert.match(feather, /\[data-gesture-preview\]\[hidden\][^}]*pointer-events: none/);
 assert.doesNotMatch(css, /\.ui-tab-screen[^}]*enter-prepare[^}]*opacity: \.92/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 assert.match(css, /\.app-bottom-nav[^\n]*safe-area-inset-bottom/);

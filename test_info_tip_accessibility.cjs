@@ -2,16 +2,16 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const component = fs.readFileSync('src/components/InfoTip.tsx', 'utf8');
+const component = fs.readFileSync('src/components/InfoSheet.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const styles = fs.readFileSync('src/index.css', 'utf8');
-assert.match(component, /type="button"[\s\S]*?aria-label=\{`About \$\{label\}`\}[\s\S]*?aria-haspopup="dialog"/,
+assert.match(component, /type="button"[\s\S]*?aria-label=\{'About ' \+ label\}[\s\S]*?aria-haspopup="dialog"/,
   'the visible information control is a named keyboard-operable button');
-assert.match(component, /dialog\.showModal\(\)/, 'opening the tip uses native modal dialog focus handling');
-assert.match(component, /onCancel=\{event => \{ event\.preventDefault\(\); dismiss\(\); \}\}/,
+assert.match(component, /sheet\.showModal\(\)/, 'opening the tip uses native modal dialog focus handling');
+assert.match(component, /onClose=\{\(\) => \{ setOpen\(false\)/,
   'Escape dismisses the explanation and restores focus');
-assert.match(component, /triggerRef\.current\?\.focus\(\)/, 'dismissal returns focus to the information button');
-assert.match(component, /aria-labelledby=\{titleId\}[\s\S]*?aria-describedby=\{descriptionId\}/,
+assert.match(component, /trigger\.current\?\.focus\(\{ preventScroll: true \}\)/, 'dismissal returns focus to the information button');
+assert.match(component, /aria-labelledby=\{id \+ '-title'\} aria-describedby=\{id \+ '-definition'\}/,
   'the dialog description is available to screen readers');
 assert.match(app, /dialog\[data-contextual-info="true"\]\[open\][\s\S]*?contextualInfo\.close\(\)/,
   'Android Back closes an open contextual explanation first');

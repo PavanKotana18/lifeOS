@@ -1,4 +1,4 @@
-type Doodle =
+﻿type Doodle =
   | 'empty-tasks' | 'tasks-done'
   | 'first-habit' | 'habit-streak'
   | 'first-goal' | 'goal-milestone'

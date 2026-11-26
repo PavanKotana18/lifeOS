@@ -4,8 +4,8 @@ require('./scripts/register-ts-test-loader.cjs');
 const { THEME_CATALOG, DEFAULT_THEME_ID, getThemeTokens, contrastRatio, applyThemeTokens } = require('./src/services/themeCatalog.ts');
 const { resolveInitialVisualTheme } = require('./src/services/systemAppearance.ts');
 
-assert.equal(DEFAULT_THEME_ID, 'busydoo');
-assert.equal(THEME_CATALOG[DEFAULT_THEME_ID].label, 'BusyDoo');
+assert.equal(DEFAULT_THEME_ID, 'soft-ivory-sage');
+assert.equal(THEME_CATALOG.busydoo.label, 'BusyDoo');
 assert.equal(THEME_CATALOG['soft-ivory-sage'].label, 'Soft Ivory + Sage Feather');
 for (const [id, theme] of Object.entries(THEME_CATALOG)) {
   assert.equal(theme.light.chartSeries.length, 5, `${id} light chart palette`);

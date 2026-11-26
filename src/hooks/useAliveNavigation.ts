@@ -2,7 +2,7 @@ import { playPrimaryTransition } from '../services/primaryTransition';
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { readRoutePose, type RoutePose } from '../services/aliveMotion';
 import { resistDrag, type MotionPresetId } from '../services/interfaceMotion';
-import { PRIMARY_NAVIGATION, type MainTab } from '../services/navigationCatalog';
+import { PRIMARY_NAVIGATION, primaryDestinationForTab, type MainTab } from '../services/navigationCatalog';
 
 type Direction = 'left' | 'right';
 type Bounds = { top: number; left: number; width: number };
@@ -31,7 +31,7 @@ interface FlightStats {
 
 const routeElement = (tab: MainTab) => document.getElementById(`screen-${tab}`);
 const order = PRIMARY_NAVIGATION.map(item => item.tab);
-const tabIndex = (tab: MainTab) => order.findIndex(item => item === tab);
+const tabIndex = (tab: MainTab) => order.indexOf(primaryDestinationForTab(tab) ?? 'dashboard');
 
 export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
@@ -74,7 +74,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     removePreview(drag.current?.preview ?? null);
     drag.current = null;
     element?.removeAttribute('data-gesture-dragging');
-    track.current?.style.removeProperty('transform');
+    track.current?.style.removeProperty('--gesture-x');
     track.current?.removeAttribute('data-track-dragging');
     indicator.current?.style.removeProperty('--track-indicator');
     settle.current?.();
@@ -99,8 +99,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     const old = routeElement(from);
     const next = routeElement(to);
     const previous = transition.current;
-    const primaryTravel = tabIndex(from) >= 0 && tabIndex(to) >= 0;
-    if (previous && previous.from !== to && primaryTravel) {
+    if (previous && previous.from !== to && tabIndex(from) !== tabIndex(to)) {
       pending.current = () => jumpTo(to, direction, velocity, targetScroll, onCommit);
       return;
     }
@@ -122,7 +121,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     onCommit?.(from, scrollBefore);
     activeTabRef.current = to;
     setActiveTab(to);
-    if (reduced || !primaryTravel || !old || !next || !width) {
+    if (reduced || !old || !next || !width || tabIndex(from) === tabIndex(to)) {
       if (focusIncoming) queueMicrotask(() => focusRoute(routeElement(to)));
       return;
     }
@@ -200,7 +199,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   }, [reduced, clearDrag, cancel]);
 
   const beginDrag = (scrollOffset: (tab: MainTab) => number) => {
-    if (reduced || tabIndex(activeTabRef.current) < 0) return;
+    if (reduced) return;
     const element = routeElement(activeTabRef.current);
     if (!element) return;
     const width = stageWidth.current || element.clientWidth;
@@ -210,7 +209,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     if (transition.current) cancel();
     clearDrag();
     drag.current = { element, origin, width, position: origin, scrollTop, scrollOffset, preview: null, previewTab: null };
-    if (track.current) track.current.style.transform = `translate3d(${origin}px, 0, 0)`;
+    track.current?.style.setProperty('--gesture-x', `${origin}px`);
     track.current?.setAttribute('data-track-dragging', 'true');
     element.setAttribute('data-gesture-dragging', 'true');
   };
@@ -239,7 +238,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
       : resistDrag(offset, width, preset) * .5;
     if (position === current.position) return;
     current.position = position;
-    if (track.current) track.current.style.transform = `translate3d(${current.position}px, 0, 0)`;
+    track.current?.style.setProperty('--gesture-x', `${current.position}px`);
     indicator.current?.style.setProperty('--track-indicator', `translate3d(${dragIndicator(current)}%,0,0)`);
   };
 
@@ -265,7 +264,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     const cleanup = () => {
       removePreview(preview);
       element.removeAttribute('data-gesture-dragging');
-      stage.style.removeProperty('transform');
+      stage.style.removeProperty('--gesture-x');
       stage.removeAttribute('data-track-dragging');
       indicator.current?.style.removeProperty('--track-indicator');
       for (const animation of animations) animation.cancel();
@@ -282,7 +281,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
   const alignOutgoingScroll = () => {
     const flight = transition.current;
     const outgoing = flight && routeElement(flight.from);
-    if (!flight || !outgoing) return;
+    if (!flight || !outgoing || (flight.scrollBefore === 0 && flight.outgoing.top === 0)) return;
     const top = `${window.scrollY - flight.scrollBefore}px`;
     outgoing.style.top = top;
     outgoing.style.setProperty('--outgoing-top', top);

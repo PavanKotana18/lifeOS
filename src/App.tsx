@@ -1,11 +1,10 @@
 import { goalProgressPercent, isGoalComplete, validateGoalMeasure } from './services/goalModes';
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, LazyMotion, domAnimation } from 'motion/react';
 import ComposerShell from './components/ComposerShell';
-import Snackbar from './components/Snackbar';
+import Snackbar, { type SnackbarNotice } from './components/Snackbar';
 import TransactionDetail from './components/TransactionDetail';
 import TaskComposerOptions from './components/TaskComposerOptions';
 import { AliveDisclosure } from './components/AliveDisclosure';
-import { PreferenceChoice as ComposerChoice } from './components/PreferenceChoice';
 import { flushSync } from 'react-dom';
 import { getMotionPreset } from './services/interfaceMotion';
 import { AppearanceStudio, ThemeStudio } from './components/AppearanceStudio';
@@ -22,7 +21,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
+import { Activity, Flag, Target, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Tag, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -59,13 +58,17 @@ import MoneyAccounts, { buildTransferDraft, type AccountDraft, type TransferDraf
 import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
-import { BusyDooBrandMoment, BusyDooWordmark, LifeOSMark as BrandMark } from './components/LifeOSBrand';
+import { APP_NAME } from './config/appBrand';
+import AppHeader from './components/AppHeader';
+import TransactionSummary from './components/TransactionSummary';
+import MoneyPeriod from './components/MoneyPeriod';
+import { animateRoute } from './services/aliveMotion';
 import LicenseText from './components/LicenseText';
 import LifeDoodle from './components/LifeDoodle';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
 import { pickProfilePhoto, prepareProfilePhoto, PROFILE_PHOTO_SETTING, readProfilePhoto } from './services/profilePhoto';
-import { ProfileAvatar, ProfileHome, ProfileSettingRow, ProfileSubpage, profileParent, type ProfileSection } from './components/ProfileSettings';
+import { ProfileAvatar, ProfileHome, ProfileSettingRow, ProfileSubpage, PROFILE_TITLES, profileParent, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences, { PreferenceChoice } from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
@@ -243,8 +246,6 @@ export default function App() {
   const profilePhotoVersion = useRef(0);
   const [clockNow, setClockNow] = useState(() => new Date());
   const [isOnline, setIsOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
-  const [logoPhase, setLogoPhase] = useState<'brand' | 'rest'>('brand');
-  const logoIntroPlayed = useRef(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(DEFAULT_NOTIFICATION_PREFERENCES);
   const [notificationPermissionRequested, setNotificationPermissionRequested] = useState(false);
   const [notificationTone, setNotificationTone] = useState<NotificationTone>('warm');
@@ -486,6 +487,8 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
 
   // Subtab & Filter States
+  const moneyPageRef = useRef<HTMLDivElement>(null);
+  const moneyRoute = useRef({ depth: 0, section: 'overview' });
   const [financeSubtab, setFinanceSubtab] = useState<'overview' | 'monthly' | 'transactions' | 'accounts' | 'budgets' | 'savings' | 'planning' | 'analytics' | 'projection'>('overview');
   const [transferDetailId, setTransferDetailId] = useState<string | null>(null);
   const transferDetail = activeTab === 'finance' ? accountTransfers.find(row => row.id === transferDetailId) : undefined;
@@ -521,7 +524,7 @@ export default function App() {
   const [plannerPriority, setPlannerPriority] = useState('all');
 
   // UI Toast & Modal State
-  const [toast, setToast] = useState<{ message: string; type: 'info' | 'success' | 'danger' } | null>(null);
+  const [toast, setToast] = useState<SnackbarNotice | null>(null);
   const [modalContent, setModalContent] = useState<React.ReactNode | null>(null);
   const [confirmation, setConfirmation] = useState<ConfirmationOptions | null>(null);
   const confirmationResolver = useRef<((confirmed: boolean) => void) | null>(null);
@@ -529,7 +532,6 @@ export default function App() {
   const [recordSaving, setRecordSaving] = useState(false);
   const [createKind, setCreateKind] = useState<'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress' | null>(null);
   const [createDraft, setCreateDraft] = useState<Record<string, string>>({});
-  const [transactionDetailsOpen, setTransactionDetailsOpen] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null);
@@ -578,8 +580,8 @@ export default function App() {
 
   const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals' | 'insights') => (
     <header className="plan-destination-header">
-      <nav aria-label="Plan destinations" className="plan-destinations">
-        {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }, { tab: 'insights', label: 'Insights' }] as const).map(({ tab, label }) =>
+      <nav aria-label="Plan destinations" className="plan-destinations feather-segments">
+        {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }] as const).map(({ tab, label }) =>
           <button key={tab} type="button" aria-current={selected === tab ? 'page' : undefined} onClick={() => {
             if (tab === selected) return;
             setLifeDetail(null);
@@ -703,10 +705,11 @@ export default function App() {
     const context = {
       enabled: userPrefs.swipeNavigationEnabled,
       pointerType: event.pointerType,
-      settingsScreen: !PRIMARY_NAVIGATION.some(({ tab }) => tab === activeTab) || (activeTab === 'finance' && financeSubtab !== 'overview') ||
+      settingsScreen: primaryDestinationForTab(activeTab) === null ||
+        Boolean((activeTab === 'planner' && plannerDetailTaskId) || ((activeTab === 'habits' || activeTab === 'goals') && lifeDetail)) ||
         (profileOpen && (profileSection !== 'home' || Boolean(document.querySelector('#screen-settings form[data-no-tab-swipe]')))),
       modalOpen: Boolean(createKind || modalContent || confirmation || firstRecordSecurityOpen || secureSetup || showExitConfirmation
-        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || (activeTab === 'finance' && financeSubtab !== 'overview')
+        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || financeDialogOpen
         || document.querySelector('dialog[open]') || keyboardOwnsViewport()),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
@@ -875,7 +878,13 @@ export default function App() {
     if (cancelProfileAdmission()) return;
     navigationMotion.cancelPending();
     if (typeof document !== 'undefined') {
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-transaction-actions][open],dialog[data-preference-choice][open]') ?? document.querySelector<HTMLDialogElement>('dialog[data-money-period][open],dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-scheduled-details][open],dialog[data-activity-filters][open],dialog[data-smart-import][open]');
+      const choices = document.querySelectorAll<HTMLDialogElement>('dialog[data-preference-choice][open]');
+      if (choices.length) { choices[choices.length - 1].close(); return; }
+      const transactionOptions = document.querySelector<HTMLDialogElement>('dialog[data-transaction-actions][open]');
+      if (transactionOptions) { transactionOptions.close(); return; }
+      const scheduledDetail = document.querySelector<HTMLElement>('dialog[data-scheduled-details][open] [data-motion-back]');
+      if (scheduledDetail) { scheduledDetail.click(); return; }
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-money-period][open],dialog[data-smart-import][open],dialog[data-scheduled-details][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
@@ -1093,13 +1102,6 @@ export default function App() {
     return () => animation?.cancel();
   }, [profileOpen, profileSection, interfaceMotion.reducedMotion, interfaceMotion.preset]);
 
-  useEffect(() => {
-    if (!appReady || isLocked || (onboardingRequired && !onboardingComplete) || logoIntroPlayed.current) return;
-    logoIntroPlayed.current = true;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setLogoPhase('rest'); return; }
-    const toRest = window.setTimeout(() => setLogoPhase('rest'), 240);
-    return () => window.clearTimeout(toRest);
-  }, [appReady, isLocked, onboardingRequired, onboardingComplete]);
 
   const screenKeyForTab = (tab: MainTab) => screenScrollKey({
     tab,
@@ -1120,6 +1122,22 @@ export default function App() {
     rememberActiveScroll();
     setProfileSection(section);
   };
+  const backFromProfile = () => navigateBack();
+  const profileBackHandler = useRef(backFromProfile);
+  profileBackHandler.current = backFromProfile;
+  useEffect(() => {
+    if (!profileOpen) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"]')) return;
+      event.preventDefault();
+      profileBackHandler.current();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [profileOpen]);
+  useLayoutEffect(() => {
+    if (profileOpen) document.getElementById("primary-route-title")?.focus({ preventScroll: true });
+  }, [profileOpen, profileSection]);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -1129,6 +1147,17 @@ export default function App() {
     root.style.scrollBehavior = previous;
     navigationMotion.alignOutgoingScroll();
   }, [activeScreenKey]);
+
+  useLayoutEffect(() => {
+    const depth = financeSubtabHistory.current.length;
+    const previous = moneyRoute.current;
+    moneyRoute.current = { depth, section: financeSubtab };
+    const page = moneyPageRef.current;
+    if (activeTab !== 'finance' || tabTransition || previous.section === financeSubtab || !page?.animate || interfaceMotion.reducedMotion) return;
+    const direction = depth < previous.depth || financeSubtab === 'overview' ? -1 : 1;
+    const flight = animateRoute(page, { x: direction * 46, opacity: .68 }, { x: 0, opacity: 1 }, interfaceMotion.preset);
+    return () => flight.cancel();
+  }, [activeTab, financeSubtab, interfaceMotion.reducedMotion]);
 
   useEffect(() => {
     if (!isLocked) return;
@@ -1141,12 +1170,12 @@ export default function App() {
   }, [isLocked, cancelTrack]);
 
   const showToast = (message: string, type: 'info' | 'success' | 'danger' = 'info') => {
-    setToast({ message, type });
+    setToast(current => current?.message === message && current.type === type ? current : { message, type });
   };
 
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(null), 4000);
+    const timeout = window.setTimeout(() => setToast(null), toast.type === 'danger' ? 10000 : 4200);
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
@@ -1187,7 +1216,7 @@ export default function App() {
 
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
     order: todayLayout.order.indexOf(id) + 2,
-    display: todayLayout.hidden.includes(id) || (id === 'habits' && !habits.length) || (id === 'goals' && !goals.some(goal => goal.status === 'In Progress')) || (id === 'upcoming' && !tasks.some(task => !task.completed && task.dueDate && task.dueDate > formatLocalDate(clockNow))) || (id === 'agenda' && !tasks.some(task => task.dueDate === formatLocalDate(clockNow) || getTaskStatus(task, clockNow) === 'Overdue')) || (id === 'money' && !transactions.length) ? 'none' : undefined,
+    display: todayLayout.hidden.includes(id) || (id === 'goals' && !goals.some(goal => goal.status === 'In Progress' && !goal.archived)) || (id === 'upcoming' && !tasks.some(task => !task.completed && task.dueDate && task.dueDate > formatLocalDate(clockNow))) || (id === 'agenda' && !tasks.some(task => task.dueDate === formatLocalDate(clockNow) || getTaskStatus(task, clockNow) === 'Overdue')) || (id === 'money' && !transactions.length) ? 'none' : undefined,
   });
 
   const requestCloseForm = () => {
@@ -1255,7 +1284,9 @@ export default function App() {
   const initApp = async () => {
     // Bootstrap-safe preferences only.
     const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'system');
-    const savedVisualTheme = await resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', visualThemeId));
+    // The previous default was cached even when no palette was chosen.
+    const paletteFallback = visualThemeId === 'busydoo' ? DEFAULT_THEME_ID : visualThemeId;
+    const savedVisualTheme = await resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', paletteFallback));
     let cachedAccent: string | undefined;
     try { cachedAccent = normalizeCustomAccent(localStorage.getItem('lifeos-custom-accent')); } catch { /* Cosmetic cache is optional. */ }
     let accentTimer: ReturnType<typeof setTimeout> | number | undefined;
@@ -2162,7 +2193,6 @@ export default function App() {
     setEditingContributionId(null);
     setEditingSavingsGoalId(null);
     setEditingBudgetId(null);
-    setTransactionDetailsOpen(false);
     setCreateKind(kind);
   };
 
@@ -2179,10 +2209,10 @@ export default function App() {
       title: transaction.description || '', amount: transaction.amountMinor !== undefined && transaction.currencyCode ? minorUnitsToDecimal(BigInt(transaction.amountMinor), transaction.currencyCode) : String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
       currencyCode: transaction.currencyCode || '', accountId: transaction.accountId || '',
+      date: transaction.date,
       dateTime: transaction.occurredAt ? formatLocalDateTime(new Date(transaction.occurredAt)) : '',
       notes: transaction.notes || '', isRecurring: transaction.isRecurring ? 'yes' : '',
     });
-    setTransactionDetailsOpen(true);
     setEditingTransactionId(transaction.id); setEditingTaskId(null); setEditingHabitId(null); setEditingGoalId(null); setCreateKind('transaction');
   };
 
@@ -2365,11 +2395,15 @@ export default function App() {
   const saveNewRecord = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!createKind || createOperation.current) return;
+    const errorField = event.currentTarget?.querySelector?.('[data-record-validation]');
+    if (errorField) errorField.textContent = '';
     createOperation.current = true;
     setRecordSaving(true);
     let committed = false;
     const value = (key: string) => (createDraft[key] || '').trim();
     try {
+      if (createKind === 'goal' && !value('title')) throw new Error('Enter a goal name.');
+      if (createKind === 'task' && !value('title')) throw new Error('Enter a task title.');
       if (createKind === 'task' && !value('date') && (value('time') || value('reminderLead') || value('reminderAt') || (value('recurring') && value('recurring') !== 'None'))) throw new Error('Add a due date before setting a time, reminder or repeat.');
       await ensurePrivateStorageBeforeWrite();
       // A fresh user may begin with Money. Categories are private and are only
@@ -2383,8 +2417,11 @@ export default function App() {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
         if (existingTransaction && !existingTransaction.currencyCode && !value('currencyCode')) throw new Error('Choose the original currency for this historical transaction.');
         const preserveUnknownTime = !value('dateTime') && Boolean(createDraft.importFingerprint || (existingTransaction && !existingTransaction.occurredAt));
-        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: createDraft.importFingerprint ? value('date') : existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
+        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: preserveUnknownTime ? value('date') || existingTransaction?.date : existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
         const accountId = values.accountId;
+        if (existingTransaction?.occurredAt && value('dateTime') === formatLocalDateTime(new Date(existingTransaction.occurredAt))) {
+          values.occurredAt = existingTransaction.occurredAt;
+        }
         if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
         else if (createDraft.importFingerprint) {
@@ -2532,6 +2569,7 @@ export default function App() {
       const reminderSyncFailed = createKind === 'task' && Boolean(value('date')) && notificationsEnabled && notificationPreferences.taskReminders && !schedulesUpdated;
       showToast(reminderSyncFailed ? 'Task saved, but its reminder was not confirmed in Android. Open task details and check reminder status.' : wasEditingTask ? 'Task updated' : wasEditingHabit ? 'Habit updated' : wasEditingTransaction ? 'Transaction updated' : wasEditingGoal ? 'Goal updated' : wasEditingContribution ? 'Contribution updated and savings total reconciled' : createKind === 'milestone' ? 'Milestone added' : createKind === 'goal-progress' ? 'Goal progress updated' : `${createKind[0].toUpperCase()}${createKind.slice(1)} added`, reminderSyncFailed ? 'danger' : 'success');
     } catch (error) {
+      if (!committed && errorField) errorField.textContent = error instanceof Error ? error.message : 'Could not save this item.';
       showToast(committed ? 'Saved, but the view or reminders could not refresh. Reopen the list to refresh; do not submit this item again.' : error instanceof Error ? error.message : 'Could not save this item', 'danger');
     } finally { createOperation.current = false; setRecordSaving(false); }
   };
@@ -2708,6 +2746,7 @@ export default function App() {
           && matchesActivityAmount(row.toAmountMinor, 0, row.toCurrencyCode)))
         && (!query || [row.notes, ...names, 'transfer'].some(value => value?.toLowerCase().includes(query)));
     }) : [];
+  const transactionResultCount = filteredTransactions.length + filteredTransfers.length;
   const transactionDateGroups = financeSort === 'amount-desc' && (filteredTransactions.length || filteredTransfers.length)
     ? [null]
     : [...new Set([...filteredTransactions, ...filteredTransfers].map(row => row.date))]
@@ -2807,21 +2846,19 @@ export default function App() {
     );
   }
 
+  const primarySection = primaryDestinationForTab(activeTab);
+  const sectionTitle = profileOpen ? PROFILE_TITLES[profileSection] : PRIMARY_NAVIGATION.find(item => item.tab === primarySection)?.label;
+
   return (
-    <div ref={gestureSurfaceElement} className="lifeos-page app-shell" onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
+    <LazyMotion features={domAnimation} strict>
+    <div ref={gestureSurfaceElement} className="lifeos-page app-shell feather-expressive" data-reduced={interfaceMotion.reducedMotion} onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
-      {/* Top Mobile Header */}
-      {(!profileOpen || profileSection === 'home') && <header className="app-header app-header-shell sticky top-0 z-40 flex items-center gap-3 px-4 py-3 sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          {activeTab !== 'dashboard' && <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
-            <BrandMark className="h-8 w-8" />
-          </div>}
-          <h1 id="primary-route-title" tabIndex={-1} className="app-brand-name">{activeTab === 'dashboard' ? <BusyDooWordmark /> : PRIMARY_NAVIGATION.find(({ tab }) => tab === primaryDestinationForTab(activeTab))?.label ?? 'BusyDoo'}</h1>
-        </div>
-      </header>}
+      <AppHeader profile={profileOpen} title={primarySection === 'dashboard' ? APP_NAME : sectionTitle || APP_NAME} brand={primarySection === 'dashboard'}
+        back={profileOpen && profileSection !== "home" ? backFromProfile : undefined} backLabel={profileSection === 'home' ? 'Back from profile' : 'Back to ' + PROFILE_TITLES[profileParent(profileSection)]}
+        action={activeTab === 'finance' && financeSubtab === 'overview' && <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />} />
 
       {!isOnline && (
-        <div role="status" aria-live="polite" className="app-content-width px-4 pt-2">
+        <div data-profile-background role="status" aria-live="polite" className="app-content-width px-4 pt-2">
           <div className="lifeos-warning lifeos-panel rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'var(--warning)' }}>
             Offline — BusyDoo records remain stored on this device. Internet-dependent services may be unavailable.
           </div>
@@ -2830,20 +2867,20 @@ export default function App() {
 
       {sharedReviewAvailable && sharedAlert.needsStorage && !smartImportOpen &&
         <div className="app-content-width px-4 pt-2">
-          <button type="button" className="smart-import-secondary" onClick={async () => {
+          <button type="button" className="feather-secondary" onClick={async () => {
             try { await ensurePrivateStorageBeforeWrite(); sharedAlert.recheck(); }
             catch { showToast('Shared alert review is paused. Unlock BusyDoo to continue.', 'info'); }
           }}>Review shared alert</button>
-          <button type="button" className="smart-import-secondary" onClick={sharedAlert.discard}>Dismiss shared alert</button>
+          <button type="button" className="feather-secondary" onClick={sharedAlert.discard}>Dismiss shared alert</button>
         </div>}
 
       {/* Main Container */}
-      <main className={profileOpen && profileSection !== 'home' ? "app-main profile-main" : "app-main"}>
+      <main data-record-background className={profileOpen && profileSection !== 'home' ? 'app-main profile-main' : 'app-main'}>
         <div className="ui-tab-viewport"><div className="ui-tab-screen-stack" ref={navigationMotion.attachStage}>
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
           <div className="today-sections command-centre" data-testid="today-dashboard">
-            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><h2 className="text-xl font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</h2></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><p className="today-greeting font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</p></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold lifeos-accent-text">Customize</button></div>
 
             {todayCustomizationOpen && createPortal(<div className="ui-sheet-backdrop" onMouseDown={dismissTodayCustomizationBackdrop}>
             <section id="today-customization" role="dialog" aria-modal="true" aria-labelledby="today-customization-title" aria-describedby="today-customization-description" className="today-customization ui-sheet-motion ui-bottom-sheet lifeos-panel max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border p-4">
@@ -2859,24 +2896,23 @@ export default function App() {
             <section className="today-focus lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">YOUR DAY</p>
                   <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s priorities</h3>
                   {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><span className="font-medium">Tasks due today</span> · <strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> complete</p>
-                    : <p className="mt-1 text-sm text-secondary">Choose one thing to make time for today.</p>}
+                    : <p className="mt-1 text-sm text-secondary">What matters most today?</p>}
                 </div>
                 <div className="today-quick-actions" aria-label="Quick add">
                   <button type="button" onClick={() => openCreateForm('task')} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">+ Task</button>
                 </div>
               </div>
               {todayOverview.tasksDue > 0 && <div className="today-focus-progress mt-3" role="progressbar" aria-label="Today’s tasks complete" aria-valuemin={0} aria-valuemax={todayOverview.tasksDue} aria-valuenow={todayOverview.tasksCompleted}><span style={{ width: `${Math.min(100, (todayOverview.tasksCompleted / todayOverview.tasksDue) * 100)}%` }} /></div>}
-              {tasks.some(task => getTaskStatus(task, clockNow) === 'Overdue') && <button type="button" className="today-attention-link" onClick={() => { setPlannerFilter('overdue'); navigateTo('planner'); }}>Review overdue tasks <ChevronRight size={16} aria-hidden="true" /></button>}
+              {tasks.some(task => getTaskStatus(task, clockNow) === 'Overdue') && <button type="button" className="today-attention-link" onClick={() => { setPlannerFilter('overdue'); navigateTo('planner'); }}>Review overdue tasks </button>}
             </section>
 
             {/* Active Goals Summary */}
             <section className="today-section-goals lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('goals')}>
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-[10px] font-bold uppercase tracking-wider lifeos-accent-text">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress' && !goal.archived).length} active goals</h3></div>
-                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all →</button>
+                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all</button>
               </div>
               {goals.filter(goal => goal.status === 'In Progress' && !goal.archived).length === 0 ? (
                 <div className="today-inline-empty"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
@@ -2893,8 +2929,8 @@ export default function App() {
             {/* Financial Overview Card */}
             <div className="today-money-summary today-section-money lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('money')}>
               <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold">Money this month</h3>
-                <button onClick={() => navigateTo('finance')} className="min-h-11 text-xs lifeos-accent-text font-semibold">Details &rarr;</button>
+                <h3 className="type-section-title">Money this month</h3>
+                <button onClick={() => { navigateTo('finance'); navigateFinanceSubtab('monthly'); }} className="min-h-11 text-xs lifeos-accent-text font-semibold">See breakdown</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
                 <div className="p-3 rounded-xl lifeos-raised">
@@ -2908,16 +2944,18 @@ export default function App() {
               </div>
               <div className="flex justify-between gap-3 text-xs text-secondary">
                 <span>Net cash flow: <strong className="text-primary tabular-nums">{formatMinorUnits(BigInt(financeAnalytics.netSavingsMinor), userPrefs.currency, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</strong></span>
-                <span>Savings rate: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
+                <div className="inline-flex items-center gap-1">Cash-flow margin <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong><InfoTip label="Cash-flow margin" /></div>
               </div>
             </div>
 
             <section className="today-habit-summary" style={todaySectionStyle("habits")} aria-labelledby="today-routines-title">
               <header className="today-section-heading">
-                <div className="today-routines-heading"><h3 id="today-routines-title" className="type-section-title">Daily routines</h3>
-                  {todayOverview.routinesDue > 0 && <p className="type-caption text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} checked</p>}</div>
-                <button type="button" className="min-h-11 px-2 text-xs font-semibold lifeos-accent-text" onClick={() => habits.length ? navigateTo("habits") : openCreateForm("habit")}>{habits.length ? "All habits" : "Add habit"}</button>
-                {habits.length > 0 && <button type="button" className="min-h-11 px-2 text-xs font-semibold lifeos-accent-text" onClick={() => openCreateForm('habit')}>Add habit</button>}
+              <div className="today-routines-heading"><h3 id="today-routines-title" className="type-section-title">Daily routines</h3>
+                {todayOverview.routinesDue > 0 && <p className="type-caption text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>}
+                <button type="button" className="feather-secondary" onClick={() => openCreateForm('habit')}>Add habit</button>
+                <button type="button" className="feather-secondary" onClick={() => navigateTo('habits')}>View habits</button>
+              </div>
+                <button type="button" className="money-text-action" onClick={() => habits.length ? navigateTo("habits") : openCreateForm("habit")}>{habits.length ? "View habits" : "Add habit"}</button>
               </header>
               {habits.length === 0 ? <p className="today-routines-empty">Your habits will appear here.</p> :
                 <ul className="today-routine-list">{habits.filter(habit => routineDueToday(habit)).slice(0, 3).map(habit => {
@@ -2930,16 +2968,15 @@ export default function App() {
                     : completed ? "Checked in" : "Ready to check in";
                   return <li key={habit.id} className="today-routine-row">
                     <div><strong>{habit.name}</strong><small>{status}</small></div>
-                    {quantity ? <button type="button" className="lifeos-input today-routine-action" aria-label={"Add one " + habit.quantityUnit + " to " + habit.name}
+                    {quantity ? <button type="button" className="feather-secondary" aria-label={"Add one " + habit.quantityUnit + " to " + habit.name}
                       onClick={() => void handleHabitQuantity(habit, todayKey, 1)}>+1</button>
-                      : <button type="button" className="lifeos-input today-routine-action alive-habit-check" aria-pressed={completed}
-                        aria-label={completed ? "Mark " + habit.name + " incomplete" : "Complete " + habit.name + " for today"}
+                      : <button type="button" className="feather-secondary alive-habit-check" aria-pressed={completed}
+                        aria-label={completed ? "Undo check-in for " + habit.name : "Check in for " + habit.name}
                         onClick={() => void handleHabitCompletion(habit.id, habit.name, todayKey, completed)}>{completed ? "Done" : "Check in"}</button>}
                   </li>;
                 })}</ul>}
               {habits.length > 0 && !habits.some(habit => routineDueToday(habit)) && <p className="today-routines-empty">No routines scheduled for today.</p>}
             </section>
-            {/* Future dated tasks are separate from today's agenda. */}
             <section className="today-upcoming-section lifeos-panel rounded-2xl border p-4" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
               {dashboardUpcomingTasks.length === 0 ? <p className="today-inline-empty">No upcoming tasks. Add a date to a task to plan ahead.</p> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
@@ -3011,13 +3048,14 @@ export default function App() {
           onGoals={() => { setLifeDetail(null); setGoalsSubtab('active'); navigateTo('goals'); }}
         /></div></Suspense>} />
 
-        <RetainedScreen active={activeTab === 'finance'} retainInactive prepare={primaryPrepared} id="screen-finance" {...transitionPropsFor('finance')} render={() => (
-          <div className="money-page space-y-5" data-detail={financeSubtab}>
+        <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" prepare={primaryPrepared} {...transitionPropsFor('finance')} render={() => (
+          <div ref={moneyPageRef} className="money-page space-y-5" data-detail={financeSubtab}>
             {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => { if (financeSubtab === 'projection') { navigateBack(); return; } rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }} />}
 
             {/* Money home: recorded cash flow, never an inferred account balance. */}
             {(financeSubtab === 'overview' || financeSubtab === 'monthly') && (
               <MoneyHome
+                showHeader={false}
                 month={financeMonth}
                 monthly={financeSubtab === 'monthly'}
                 onMonthly={() => navigateFinanceSubtab('monthly')}
@@ -3034,7 +3072,6 @@ export default function App() {
                 formatDate={formatDate}
                 formatTime={formatTime}
                 onMonthChange={setFinanceMonth}
-                onAddTransaction={() => openCreateForm('transaction')}
                 onTransactions={() => navigateFinanceSubtab('transactions')}
                 onBudgets={() => navigateFinanceSubtab('budgets')}
                 onSavings={() => navigateFinanceSubtab('savings')}
@@ -3060,28 +3097,33 @@ export default function App() {
 
             {/* Transactions Subtab */}
             {financeSubtab === 'transactions' && (
-              <div className="space-y-3">
-                <div className="flex gap-2">
+              <div className="transaction-workspace">
+                <TransactionSummary transactions={transactions} month={financeMonth} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} />
+                <div className="transaction-actions">
+                  <button type="button" onClick={() => openCreateForm("transaction")} className="feather-primary transaction-add" data-testid="money-add-transaction">Add transaction</button>
+                </div>
+                <div className="transaction-import-actions" role="group" aria-label="Import transactions">
+                  <button type="button" onClick={async () => {
+                    try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
+                    catch { showToast("Could not open Smart Import securely.", "danger"); }
+                  }}>Import alert</button>
+                </div>
+                <div className="transaction-toolbar">
                   <input
-                    type="text"
-                    aria-label="Search transactions" placeholder="Search description, category..."
+                    type="search"
+                    aria-label="Search transactions" placeholder="Search transactions"
                     value={financeSearch}
                     onChange={(e) => setFinanceSearch(e.target.value)}
                     className="lifeos-input min-h-11 flex-1 rounded-xl px-3 py-2.5 text-xs"
                   />
-                  <button onClick={() => openCreateForm('transaction')} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">Add transaction</button>
+                  <button type="button" ref={activityFilterTrigger} aria-haspopup="dialog" className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold" onClick={() => activityFilterDialog.current?.showModal()}>Filters</button>
                 </div>
-                <button type="button" className="smart-import-secondary" onClick={async () => {
-                  try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
-                  catch { showToast('Could not open Smart Import securely.', 'danger'); }
-                }}>Import alert</button>
-                <button ref={activityFilterTrigger} type="button" aria-haspopup="dialog" className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold" onClick={() => activityFilterDialog.current?.showModal()}>Filters</button>
                 <dialog ref={activityFilterDialog} data-activity-filters aria-label="Transaction filters" className="plan-filter-sheet lifeos-page" onClose={() => activityFilterTrigger.current?.focus()} onClick={event => { if (event.target === event.currentTarget) activityFilterDialog.current?.close(); }}>
                 <form onSubmit={event => { event.preventDefault(); activityFilterDialog.current?.close(); }}>
                 <header className="flex items-center justify-between"><h3 className="type-section-title">Transaction filters</h3><button type="button" className="min-h-11 px-3" onClick={() => activityFilterDialog.current?.close()}>Close</button></header>
-                <div className="plan-filter-fields">{(['from', 'through', 'min', 'max'] as const).map((key, index) => <label key={key}>{['From date', 'Through date', 'Minimum amount', 'Maximum amount'][index]}<input type={index < 2 ? 'date' : 'number'} min={key === 'through' ? activityRange.from || undefined : index >= 2 ? key === 'max' ? activityRange.min || '0' : '0' : undefined} max={key === 'from' ? activityRange.through || undefined : key === 'min' ? activityRange.max || undefined : undefined} step={index >= 2 ? 'any' : undefined} value={activityRange[key]} onChange={event => setActivityRange(current => ({ ...current, [key]: event.target.value }))} /></label>)}</div><div className="grid grid-cols-2 gap-2"><div className="text-[10px] text-secondary"><ComposerChoice variant="field" label="Category" value={financeCategoryFilter} searchable
-                options={[["all", "All categories"], ...(categories.map(category => [String(category.name), category.name] as const))]} onSelect={e => setFinanceCategoryFilter(e)} /></div><div className="text-[10px] text-secondary"><ComposerChoice variant="field" label="Filter transactions by account" value={financeAccountFilter} searchable
-                options={[["all", "All accounts"], ["unassigned", "Unassigned"], ...(financialAccounts.map(account => [String(account.id), String(account.name) + String(account.isActive ? "" : " · Archived")] as const))]} onSelect={e => setFinanceAccountFilter(e)} /></div><div className="text-[10px] text-secondary"><ComposerChoice variant="field" label="Filter transactions by currency" value={financeCurrencyFilter} searchable
+                <div className="plan-filter-fields">{(['from', 'through', 'min', 'max'] as const).map((key, index) => <label key={key}>{['From date', 'Through date', 'Minimum amount', 'Maximum amount'][index]}<input type={index < 2 ? 'date' : 'number'} min={key === 'through' ? activityRange.from || undefined : index >= 2 ? key === 'max' ? activityRange.min || '0' : '0' : undefined} max={key === 'from' ? activityRange.through || undefined : key === 'min' ? activityRange.max || undefined : undefined} step={index >= 2 ? 'any' : undefined} value={activityRange[key]} onChange={event => setActivityRange(current => ({ ...current, [key]: event.target.value }))} /></label>)}</div><div className="grid grid-cols-2 gap-2"><div className="text-[10px] text-secondary"><PreferenceChoice variant="field" label="Category" value={financeCategoryFilter} searchable
+                options={[["all", "All categories"], ...(categories.map(category => [String(category.name), category.name] as const))]} onSelect={e => setFinanceCategoryFilter(e)} /></div><div className="text-[10px] text-secondary"><PreferenceChoice variant="field" label="Filter transactions by account" value={financeAccountFilter} searchable
+                options={[["all", "All accounts"], ["unassigned", "Unassigned"], ...(financialAccounts.map(account => [String(account.id), String(account.name) + String(account.isActive ? "" : " · Archived")] as const))]} onSelect={e => setFinanceAccountFilter(e)} /></div><div className="text-[10px] text-secondary"><PreferenceChoice variant="field" label="Filter transactions by currency" value={financeCurrencyFilter} searchable
                 options={[["all", "All currencies"], ...(CURRENCY_CODES.map(code => [String(code), formatCurrencyChoice(code, userPrefs.locale === "system" ? undefined : userPrefs.locale)] as const))]} onSelect={e => setFinanceCurrencyFilter(e)} /></div></div>
 
                 {/* Filters */}
@@ -3098,37 +3140,36 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-secondary"><ComposerChoice variant="field" label="Sort" value={financeSort}
-                options={[["date-desc", "Newest first"], ["date-asc", "Oldest first"], ["amount-desc", "Largest amount"]]} onSelect={e => setFinanceSort(e)} /></div>
+                <div className="flex items-center justify-between text-[10px] text-secondary"><PreferenceChoice variant="field" label="Sort" value={financeSort}
+                options={[["date-desc", "Newest first"], ["date-asc", "Oldest first"], ["amount-desc", "Largest first"]]} onSelect={e => setFinanceSort(e)} /></div>
 
                 <button type="submit" className="lifeos-accent-button min-h-11 rounded-xl px-4">Show transactions</button></form></dialog>
-                <div className="money-detail-results" hidden={!hasTransactionFilters}><span role="status">{filteredTransactions.length + filteredTransfers.length} results</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button></div>
+                <div className="money-detail-results" hidden={!hasTransactionFilters}><span role="status">{transactionResultCount} {transactionResultCount === 1 ? "result" : "results"}</span>{hasTransactionFilters && <button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button>}</div>
                 {/* Transactions List */}
-                <div className="space-y-2">
+                <div className="transaction-timeline">
                   {!transactionDateGroups.length ? (
-                    <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
+                    <p className="money-empty-action">{transactions.length || accountTransfers.length ? 'No transactions match these filters.' : 'No transactions this month.'}</p>
                   ) : (
-                    transactionDateGroups.map(date => <section className="space-y-2" key={date ?? "all"} aria-label={date ? formatDate(date) : "Sorted transactions"}>
-                      {date && <h3 className="text-sm font-semibold text-secondary">{formatDate(date)}</h3>}
-                      {filteredTransactions.filter(row => !date || row.date === date).map(t => (
-                      <article key={t.id} className="transaction-history-item lifeos-panel rounded-xl border px-3 py-1">
-                        <div className="transaction-history-main">
-                          <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={`View transaction ${t.description || t.category}`} className="transaction-history-copy">
-                            <strong>{t.description || t.category}</strong>
-                            <span>{formatDate(t.date)}{t.occurredAt ? ` · ${formatTime(new Date(t.occurredAt))}` : ' · time not recorded'} &bull; {t.category} ({t.paymentMethod || 'Other'}){t.accountId ? ` · ${financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'}` : ''}</span>
+                    transactionDateGroups.map(date => <section className="transaction-day" key={date ?? "all"} aria-label={date ? formatDate(date) : "Sorted transactions"}>
+                      {date && <h3 className="transaction-day-heading">{formatDate(date)}</h3>}
+                      {filteredTransfers.filter(row => !date || row.date === date).map(row => {
+                        const locale = userPrefs.locale === 'system' ? undefined : userPrefs.locale;
+                        const from = financialAccounts.find(account => account.id === row.fromAccountId)?.name || 'Archived account';
+                        const to = financialAccounts.find(account => account.id === row.toAccountId)?.name || 'Archived account';
+                        return <article className="transaction-history-item" key={row.id}>
+                          <button type="button" onClick={() => setTransferDetailId(row.id)} className="transaction-entry">
+                            <span className="transaction-icon" aria-hidden="true"><ArrowLeftRight size={18} /></span>
+                            <span className="transaction-copy"><strong>{row.reversalOfId ? 'Transfer reversal' : 'Transfer'}</strong><small>{from} to {to}</small></span>
+                            <span className="transaction-value"><strong>{formatMinorUnits(BigInt(row.fromAmountMinor), row.fromCurrencyCode, locale)}</strong><small>{row.fromCurrencyCode === row.toCurrencyCode ? row.fromCurrencyCode : 'To ' + formatMinorUnits(BigInt(row.toAmountMinor), row.toCurrencyCode, locale)}</small></span>
                           </button>
-                          <span className={`transaction-history-amount ${t.type === 'income' ? 'is-income' : 'is-expense'}`}>
-                            {t.type === 'income' ? '+' : '−'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : t.currencyCode ? formatMoney(t.amount, t.currencyCode) : `${t.amount} (currency unknown)`}
-                          </span>
-                        </div>
-                      </article>
-                      ))}
-                      {filteredTransfers.filter(row => !date || row.date === date).map(row => (
-                        <article className="transaction-history-item lifeos-panel rounded-xl border px-3 py-2" key={row.id}>
-                          <button type="button" className="transaction-history-copy" onClick={() => setTransferDetailId(row.id)}>
-                            <strong>{row.reversalOfId ? 'Transfer reversal' : 'Transfer'}</strong>
-                            <span>{financialAccounts.find(account => account.id === row.fromAccountId)?.name || 'Archived account'} → {financialAccounts.find(account => account.id === row.toAccountId)?.name || 'Archived account'}</span>
-                            <span>{formatMinorUnits(BigInt(row.fromAmountMinor), row.fromCurrencyCode)}</span>
+                        </article>;
+                      })}
+                      {filteredTransactions.filter(row => !date || row.date === date).map(t => (
+                        <article key={t.id} className="transaction-history-item">
+                          <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={'View transaction ' + (t.description || t.category)} className="transaction-entry">
+                            <span className={'transaction-icon is-' + t.type} aria-hidden="true">{t.type === 'income' ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}</span>
+                            <span className="transaction-copy"><strong>{t.description || t.category}</strong><small>{[!date && formatDate(t.date), t.category !== t.description && t.category, t.accountId && (financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'), t.occurredAt && formatTime(new Date(t.occurredAt))].filter(Boolean).join(' ? ')}</small></span>
+                            <span className={'transaction-value is-' + t.type}><strong>{t.type === 'income' ? '+' : '?'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : t.currencyCode ? formatMoney(t.amount, t.currencyCode) : t.amount}</strong><small>{t.type === 'income' ? 'Income' : 'Expense'} &middot; {t.currencyCode || 'Currency unknown'}</small></span>
                           </button>
                         </article>
                       ))}
@@ -3175,7 +3216,8 @@ export default function App() {
             </div>}
 
             {financeSubtab === 'savings' && <div className="space-y-3">
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
+              <button type="button" onClick={() => navigateFinanceSubtab('projection')} className="money-month-link lifeos-panel">View savings projection</button>
+              <div className="flex items-center justify-between"><div><div className="flex items-center gap-1"><h3 className="font-semibold">Savings goals</h3><InfoTip label="Savings contributions" /></div><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
                   if (!(await confirmAction({ title: 'Delete this contribution?', message: `${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} will be removed and the saved goal total will be adjusted.`, confirmLabel: 'Delete contribution', destructive: true }))) return;
                   try { await StorageService.savings.deleteContribution(contribution.id); await reloadAllData(); showToast('Contribution deleted and savings total updated', 'success'); }
@@ -3199,7 +3241,7 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5"><PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} transactions={transactions} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+            {financeSubtab === 'planning' && <div className="feather-scheduled-layout"><MoneyPlanning draftState={planningDrafts} reduced={interfaceMotion.reducedMotion} transactions={transactions} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
               onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
               onRecordOccurrence={async row => { await runPreparedFinanceWrite(() => StorageService.commitments.postOccurrence(row.id, row)); }}
@@ -3207,7 +3249,8 @@ export default function App() {
               onAddRate={async input => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.add(input)); }}
               onUpdateRate={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.exchangeRates.update(id, input)); }}
               onDeleteRate={async id => { await StorageService.exchangeRates.delete(id); await reloadAllData(); }} />
-              <button type="button" onClick={() => navigateFinanceSubtab('projection')} className="money-month-link lifeos-panel">Savings projection <ChevronRight size={16} aria-hidden="true" /></button>
+              <div className="feather-scheduled-summary"><PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></div>
+
             </div>}
             {financeSubtab === 'projection' && <Suspense fallback={<ScreenLoading label="Loading savings projection" />}><FinanceProjection currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /></Suspense>}
 
@@ -3229,10 +3272,10 @@ export default function App() {
           <div className="space-y-4">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
             {!lifeDetail && <div className="life-section-heading">
               <div>
-                <h2 className="text-lg font-bold">Habits</h2>
+                <div className="flex items-center gap-2"><h2 className="text-lg font-bold">Habits</h2><InfoTip label="Habit consistency" /></div>
                 <p className="text-xs text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>
               </div>
-              <button onClick={() => openCreateForm('habit')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add habit</button>
+              <button onClick={() => openCreateForm('habit')} className="feather-primary">+ Add habit</button>
             </div>}
             {lifeDetail?.kind === 'habit' && <label className="life-history block text-sm text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => { setHabitsSelectedDate(e.target.value); setHistoricalQuantityUnit(''); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>}
 
@@ -3269,7 +3312,7 @@ export default function App() {
 
             <div className="space-y-2">
               {habits.length === 0 ? (
-                <div className="lifeos-panel rounded-2xl border py-10 text-center text-sm text-secondary"><LifeDoodle kind="first-habit" /><p>No habits yet.</p></div>
+                <div className="alive-workspace-empty lifeos-panel"><LifeDoodle kind="first-habit" /><p>No habits yet.</p></div>
               ) : (
                 habits.filter(h => lifeDetail?.kind !== 'habit').map(h => {
                   const todayStr = todayKey;
@@ -3287,12 +3330,12 @@ export default function App() {
                               logged && !logged.quantityUnit ? formatHabitQuantity(logged.quantity || 0) :
                               formatHabitQuantity(logged?.quantity || 0, h.quantityUnit) + ' / ' + formatHabitQuantity(h.targetPerDay || 0, h.quantityUnit))
                             : stats.completedToday ? 'Checked in today' : 'Ready to check in'}</span>
-                          {stats.currentStreak > 0 && <span className="block text-xs text-secondary">{stats.currentStreak} day streak</span>}
+                          {stats.currentStreak > 0 && <span className="flex items-center gap-1 text-xs text-secondary">{stats.currentStreak} day streak{stats.currentStreak >= 7 && <LifeDoodle key={Math.floor(stats.currentStreak / 7)} kind="habit-streak" compact />}</span>}
                         </button>
                         {h.trackingMode === 'quantity' ? <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-label={`Add one ${h.quantityUnit} to ${h.name}`} onClick={() => void handleHabitQuantity(h, todayStr, 1)}>+1</button>
                           : <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? 'Done' : 'Check in'}</button>}
                       </div>
-                      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
+                      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" data-checked={done} className="alive-habit-day h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
                     </div>
                   );
                 })
@@ -3304,7 +3347,7 @@ export default function App() {
         {/* VIEW 4: GOALS */}
         <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
           <div className="space-y-4">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
-            <div className="flex justify-between items-center"><h2 className="type-section-title">Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
+            <div className="flex justify-between items-center"><div className="flex items-center gap-1"><h2 className="type-section-title">Goals</h2><InfoTip label="Goal progress" /></div><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
             {!lifeDetail && goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(['active', 'paused', 'completed', 'archived'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
@@ -3332,13 +3375,13 @@ export default function App() {
               if (!visibleGoals.length) return <p className="goal-empty-state text-sm text-secondary">{goalsCategoryFilter !== 'all' ? 'No goals in this category.' : goalsSubtab === 'completed' ? 'No completed goals yet.' : goalsSubtab === 'paused' ? 'No paused goals.' : goalsSubtab === 'archived' ? 'No archived goals.' : 'No active goals yet.'}</p>;
               return <div className="goal-list">{visibleGoals.map(g => {
                 const pct = goalProgress(g);
-                return <article key={g.id} className="lifeos-panel goal-journey-card">
+                return <article key={g.id} className="lifeos-panel goal-journey-card" data-complete={g.status === 'Completed'}>
                   <button type="button" onClick={() => showLifeDetail({ kind: 'goal', id: g.id })} className="goal-card-open">
                     <span className="min-w-0 safe-wrap"><strong>{g.title}</strong><small>{g.category}{g.targetDate && <> &middot; {formatDate(g.targetDate)}</>}</small></span>
                     <span className="goal-percent tabular-nums">{pct}%</span>
                   </button>
                   <div className="lifeos-progress-track h-2 overflow-hidden rounded-full" role="progressbar" aria-label={g.title + ' progress'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: pct + '%' }} /></div>
-                  <p className="text-sm text-secondary safe-wrap">{goalProgressLabel(g)}</p>
+                  <p className="text-sm text-secondary safe-wrap">{goalProgressLabel(g)} {g.status === 'Completed' && <strong className="goal-completed-label">Completed</strong>}</p>
                 </article>;
               })}</div>;
             })()}
@@ -3348,7 +3391,7 @@ export default function App() {
         {/* VIEW 5: PLANNER */}
         <RetainedScreen active={activeTab === 'planner'} id="screen-planner" {...transitionPropsFor('planner')} render={() => (
           <>
-            {plannerDetailTask && <TaskDetailScreen task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={[!plannerDetailTask.dueAlertDisabled && plannerDetailTask.dueDate && (plannerDetailTask.dueTime || dateOnlyAlertTime) ? 'At due time' : '', plannerDetailTask.reminderLeadMinutes ? plannerDetailTask.reminderLeadMinutes + ' min before' : plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : ''].filter(Boolean).join(' / ') || 'No alert'} onBack={closeTaskDetail} onEdit={() => openEditTask(plannerDetailTask)} onDelete={async () => {
+            <AnimatePresence>{plannerDetailTask && <TaskDetailScreen key={plannerDetailTask.id} reducedMotion={interfaceMotion.reducedMotion} task={plannerDetailTask} status={getTaskStatus(plannerDetailTask, clockNow)} dueLabel={plannerDetailTask.dueDate ? `${formatDate(plannerDetailTask.dueDate)}${plannerDetailTask.dueTime ? ` · ${formatClockTime(plannerDetailTask.dueTime)}` : ' · end of day'}` : 'No due date'} reminderLabel={[!plannerDetailTask.dueAlertDisabled && plannerDetailTask.dueDate && (plannerDetailTask.dueTime || dateOnlyAlertTime) ? 'At due time' : '', plannerDetailTask.reminderLeadMinutes ? plannerDetailTask.reminderLeadMinutes + ' min before' : plannerDetailTask.reminderAt ? formatDateTime(new Date(plannerDetailTask.reminderAt)) : ''].filter(Boolean).join(' / ') || 'No alert'} onBack={closeTaskDetail} onEdit={() => openEditTask(plannerDetailTask)} onDelete={async () => {
               if (!await confirmAction({ title: 'Delete this task?', message: 'This will remove the task and its alerts.', confirmLabel: 'Delete task', destructive: true })) return;
               try {
                 await StorageService.tasks.delete(plannerDetailTask.id);
@@ -3357,7 +3400,7 @@ export default function App() {
                 await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
                 showToast('Task removed', 'info');
               } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
-            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. BusyDoo will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
+            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. BusyDoo will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}</AnimatePresence>
           <div className="space-y-4">
 
             <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
@@ -3394,7 +3437,9 @@ export default function App() {
               <details className="planner-filters">
                 <summary><Search size={15} aria-hidden="true" />Search and filters</summary>
                 <div className="planner-filter-fields"><input aria-label="Search planner tasks" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} placeholder="Search tasks" className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" />
-                  <div className="grid grid-cols-2 gap-2"><select aria-label="Task date or status filter" value={plannerFilter} onChange={e => setPlannerFilter(e.target.value as typeof plannerFilter)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs">{['all', 'today', 'tomorrow', 'upcoming', 'unscheduled', 'pending', 'overdue', 'completed'].map(filter => <option key={filter} value={filter}>{filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)}</option>)}</select><select aria-label="Task priority filter" value={plannerPriority} onChange={e => setPlannerPriority(e.target.value)} className="lifeos-input min-h-11 rounded-xl px-3 py-2.5 text-xs"><option value="all">All priorities</option>{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></div>
+                  <div className="grid grid-cols-2 gap-2"><PreferenceChoice variant="field" label="Task date or status filter" value={plannerFilter}
+                options={[...(['all', 'today', 'tomorrow', 'upcoming', 'unscheduled', 'pending', 'overdue', 'completed'].map(filter => [String(filter), filter === 'all' ? 'Selected day · all' : filter[0].toUpperCase() + filter.slice(1)] as const))]} onSelect={e => setPlannerFilter(e as typeof plannerFilter)} /><PreferenceChoice variant="field" label="Task priority filter" value={plannerPriority}
+                options={[["all", "All priorities"], ...(['Low', 'Medium', 'High', 'Urgent'].map(priority => [String(priority), priority] as const))]} onSelect={e => setPlannerPriority(e)} /></div>
                 </div>
               </details>
 
@@ -3439,24 +3484,25 @@ export default function App() {
         )} />
 
         {/* VIEW 6: SETTINGS */}
-        <RetainedScreen active={activeTab === 'settings'} retainInactive prepare={primaryPrepared} id="screen-settings" {...transitionPropsFor('settings')} render={() => (
-          <>
-          <div className="profile-track-preview" aria-hidden="true"><p>Appearance</p><p>Preferences</p><p>Notifications</p><p>Privacy &amp; security</p></div>
-          <div ref={profilePage} className="profile-page space-y-5">
-            {profileSection === 'home' && <ProfileHome embedded onBack={navigateBack} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
+        <RetainedScreen active={profileOpen} retainInactive prepare={primaryPrepared} id="screen-settings" {...transitionPropsFor("settings")} render={() => (
+          <div className="profile-track-page" role="region" aria-label="Profile and settings" data-android-profile={Capacitor.getPlatform() === "android" || undefined}>
+            <div className="profile-track-preview" aria-hidden="true"><p>Appearance</p><p>Preferences</p><p>Notifications</p><p>Money &amp; Imports</p><p>Privacy &amp; security</p></div>
+          <div ref={profilePage} className="profile-page" data-profile-section={profileSection}>
+            {profileSection === 'home' && <ProfileHome sharedHeader onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
-            {profileSection === 'privacy' && <ProfileSubpage title="Privacy & security" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'privacy' && <ProfileSubpage embedded title="Privacy & security" onBack={() => navigateProfileSection('home')}>
+              <div className="flex items-center gap-2">Device protection <InfoTip label="Device protection" /></div>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
                 <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} /></div>
             </ProfileSubpage>}
-            {profileSection === 'app-lock' && <ProfileSubpage title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
-              <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. BusyDoo does not store your fingerprint.</InfoTip></div>
+            {profileSection === 'app-lock' && <ProfileSubpage embedded title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+              <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. LifeOS does not store your fingerprint.</InfoTip></div>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
 
               </div>
             </ProfileSubpage>}
-            {profileSection === 'recovery' && <ProfileSubpage title="Recovery" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+            {profileSection === 'recovery' && <ProfileSubpage embedded title="Recovery" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
               <div className="preference-group py-3">
               {onboardingJourney.recoveryName && <p className="text-xs text-secondary">Recovery name: <strong>{onboardingJourney.recoveryName}</strong>. This label cannot restore data without your separate recovery kit.</p>}
               {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
@@ -3465,23 +3511,24 @@ export default function App() {
               </div>
             </ProfileSubpage>}
 
-            {profileSection === 'appearance' && <ProfileSubpage title="Appearance" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'appearance' && <ProfileSubpage embedded title="Appearance" onBack={() => navigateProfileSection('home')}>
               <AppearanceStudio theme={visualThemeId} mode={appearance} accent={customAccent}
                 motion={interfaceMotion.preset} onOpen={navigateProfileSection} />
             </ProfileSubpage>}
-            {profileSection === 'themes' && <ProfileSubpage title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'themes' && <ProfileSubpage embedded title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <ThemeStudio current={visualThemeId} preview={themePreviewId} appearance={appearance} resolved={theme}
                 saving={savingVisualTheme} onAppearance={value => void applyAppearance(value)} onPreview={previewVisualTheme}
                 onApply={() => void applyVisualTheme()} onCancel={cancelVisualThemePreview} />
             </ProfileSubpage>}
-            {profileSection === 'motion' && <ProfileSubpage title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'motion' && <ProfileSubpage embedded title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <MotionPreferences value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
             </ProfileSubpage>}
-            {profileSection === 'accent' && <ProfileSubpage title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
-              <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={visualThemeId} mode={theme} />
+            {profileSection === 'accent' && <ProfileSubpage embedded title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+              <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
             </ProfileSubpage>}
 
-            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how BusyDoo displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
+            {profileSection === 'preferences' && <ProfileSubpage embedded title="Preferences" description="Choose how BusyDoo displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}>
+              <div className="flex items-center gap-2">Profile preferences <InfoTip label="Profile preferences" /></div><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
               try {
                 await StorageService.settings.set('dateOnlyAlertTime', time);
                 setDateOnlyAlertTime(time);
@@ -3489,7 +3536,7 @@ export default function App() {
               } catch { showToast('Could not save alert time.', 'danger'); }
             }} preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
 
-            {profileSection === 'notifications' && <ProfileSubpage title="Notifications" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'notifications' && <ProfileSubpage embedded title="Notifications" onBack={() => navigateProfileSection('home')}>
               <section className="preference-group">
                 <button type="button" className="preference-row" role="switch" aria-label="All notifications" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)}><span>All notifications</span><span className="preference-toggle" aria-hidden="true" /></button>
                 {(notificationDiagnostics.permission === 'denied' || notificationDiagnostics.appNotifications === 'disabled' || notificationDiagnostics.channel.startsWith('blocked')) ?
@@ -3515,7 +3562,7 @@ export default function App() {
               </section>
             </ProfileSubpage>}
 
-            {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
+            {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage embedded title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
               <section className="lifeos-panel rounded-xl border p-4 space-y-3"><h2 className="text-sm font-semibold">Notification diagnostics</h2>
                 <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary"><p>Capability: {notificationDiagnostics.capability} · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Exact alarms: {notificationDiagnostics.exactAlarm} · Channel: {notificationDiagnostics.channel}</p><p>Pending records: {notificationDiagnostics.pendingCount} · Visible: {notificationDiagnostics.visibleNotificationCount} · IDs {notificationDiagnostics.visibleNotificationIds.join(', ') || 'none'}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation: {notificationDiagnostics.lastCancellationReason || 'none'} · Last action: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: {notificationDiagnostics.lastError || 'none'}</p></div>
                 {developerToolsEnabled && notificationDiagnostics.reminderLifecycle.length > 0 && <details className="rounded-xl border border-[var(--stroke)] p-3"><summary className="min-h-11 cursor-pointer text-xs font-semibold">Reminder timeline · no task titles</summary><ol className="mt-2 space-y-2">{notificationDiagnostics.reminderLifecycle.map(item => <li key={item.notificationId} className="border-t border-[var(--stroke)] pt-2 text-[10px] leading-5 text-secondary"><strong>Reminder {item.notificationId}</strong> · {item.deliveryState}<br />Scheduled: {item.reminderAt}<br />Accepted: {item.nativeAcceptedAt || 'not observed'} · Pending: {item.pendingObservedAt || 'not observed'}<br />Android posted: {item.androidPostedAt || 'not observed'} · Receiver event: {item.receiverEventAt || 'not observed'} · Tapped: {item.tappedAt || 'not observed'}</li>)}</ol></details>}
@@ -3539,7 +3586,8 @@ export default function App() {
               </section>
             </ProfileSubpage>}
 
-            {profileSection === 'data' && <ProfileSubpage title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'data' && <ProfileSubpage embedded title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
+              <div className="flex items-center gap-2">Encrypted backups <InfoTip label="Encrypted backups" /></div>
             {/* Backup & Restore */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold">Backup & Restore</h3>
@@ -3629,17 +3677,23 @@ export default function App() {
               </button>
             </div>
             </ProfileSubpage>}
-            {profileSection === 'about' && <ProfileSubpage title="About BusyDoo" onBack={() => navigateProfileSection('home')}>
-              <BusyDooBrandMoment />
+            {profileSection === 'money-imports' && <ProfileSubpage embedded title="Money &amp; Imports" onBack={() => navigateProfileSection('home')}>
+              <p className="text-sm text-secondary">Paste a bank alert or share it from another Android app to review the transaction before saving it.</p>
+              <button type="button" className="feather-primary" onClick={async () => {
+                try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
+                catch { showToast('Could not open Smart Import securely.', 'danger'); }
+              }}>Import alert</button>
+            </ProfileSubpage>}
+            {profileSection === 'about' && <ProfileSubpage embedded title="About BusyDoo" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><div className="preference-row"><span>Version</span><span className="text-secondary">{packageInfo.version}</span></div>
                 <ProfileSettingRow title="Open-source licenses" onClick={() => navigateProfileSection('licenses')} /></div>
             </ProfileSubpage>}
-            {profileSection === 'licenses' && <ProfileSubpage title="Open-source licenses" backLabel="About BusyDoo" onBack={() => navigateProfileSection('about')}>
+            {profileSection === 'licenses' && <ProfileSubpage embedded title="Open-source licenses" backLabel="About BusyDoo" onBack={() => navigateProfileSection('about')}>
               <LicenseText />
               <LicenseText title="Motion" source="./licenses/motion.txt" />
             </ProfileSubpage>}
           </div>
-          </>
+          </div>
         )} />
         </div></div>
       </main>
@@ -3707,79 +3761,73 @@ export default function App() {
           title={editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}
           submitLabel={editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : editingBudgetId ? 'Save budget' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}
           mode={['contribution', 'milestone', 'goal-progress'].includes(createKind) ? 'sheet' : 'page'}
-          saving={recordSaving} reduced={interfaceMotion.reducedMotion} dismiss={requestCloseForm}
+          saving={recordSaving} reduced={interfaceMotion.reducedMotion} dismiss={requestCloseForm} footerDismissOnly={createKind === 'transaction'}
           onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} onChoiceChange={() => setCreateFormDirty(true)}>
             <p id="record-form-description" className="sr-only">Enter the record details and save your changes.</p>
             {!['budget', 'contribution', 'goal-progress', 'transaction'].includes(createKind) && <label className="feather-composer-lead">
               {createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
-              <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
+              <input placeholder={createKind === 'task' ? 'What needs to be done?' : createKind === 'habit' ? 'What would you like to build?' : createKind === 'goal' ? 'What would you like to achieve?' : undefined} required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {createKind === 'transaction' && <>
-              <label className="feather-composer-lead">Amount · {createDraft.currencyCode || 'Choose currency'}<input autoFocus={!editingTransactionId} required type="number" min={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Merchant or description (optional)
-                <input maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
-              </label>
-              {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
-                if (createOperation.current || (createFormDirty && !await confirmAction({ title: 'Discard this transaction draft?', message: 'Transfers use a separate form.', confirmLabel: 'Open transfer', cancelLabel: 'Keep editing' }))) return;
-                setCreateKind(null); setCreateFormDirty(false);
-                navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
-              }}>Transfer between accounts</button>}
-              <ComposerChoice variant="field" label="Type" value={createDraft.type || 'expense'}
-                options={[['expense', 'Expense'], ['income', 'Income']]} onSelect={value => {
-                  const type = value as 'income' | 'expense';
-                  const category = categories.find(item => item.type === type)?.name || '';
-                  setCreateDraft(draft => ({ ...draft, type, category }));
-                }} />
-              <ComposerChoice variant="field" label="Category" value={createDraft.category || ''} required={isEncryptedStorageActivated()}
-                options={[[ '', 'Select category'],
-                  ...(createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type)
-                    ? [[createDraft.category, 'Legacy category: ' + createDraft.category] as const] : []),
-                  ...categories.filter(category => category.type === createDraft.type).map(category => [category.name, category.name] as const)]}
-                onSelect={category => setCreateDraft(draft => ({ ...draft, category }))} />
+              <label className="feather-composer-lead">Amount · {createDraft.currencyCode || userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <div className="task-quick-actions" role="group" aria-label="Transaction options">
+              <PreferenceChoice variant="quick" icon={<ArrowLeftRight size={18} aria-hidden="true" />} label="Type" value={createDraft.type}
+                options={[["expense", "Expense"], ["income", "Income"]]} onSelect={e => {
+                const type = e as 'income' | 'expense';
+                const category = categories.find(item => item.type === type)?.name || '';
+                setCreateDraft({ ...createDraft, type, category });
+              }} />
+              <PreferenceChoice variant="quick" icon={<Tag size={18} aria-hidden="true" />} label="Category" required={isEncryptedStorageActivated()} value={createDraft.category || ''} searchable
+                options={[["", "Select category"], ...(createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type)
+                  ? [[createDraft.category, 'Legacy category: ' + createDraft.category] as const] : []), ...(categories.filter(category => category.type === createDraft.type).map(category => (
+                  [String(category.name), category.name] as const
+                )))]} onSelect={e => setCreateDraft({ ...createDraft, category: e })} />
+              </div>
+                <div className="transaction-composer-account"><PreferenceChoice variant="field" label="Account (optional)" value={createDraft.accountId || ''} searchable
+                  options={[["", "Unassigned"], ...(financialAccounts.filter(account => account.isActive || account.id === createDraft.accountId).map(account => [
+                    account.id, account.name + ' · ' + account.currencyCode + (account.isActive ? '' : ' · Archived'),
+                  ] as const))]} onSelect={e => { const account = financialAccounts.find(row => row.id === e); setCreateDraft({ ...createDraft, accountId: e, ...(account ? { currencyCode: account.currencyCode } : {}) }); }} /></div>
+              <label className="block text-xs text-secondary">Merchant or description<input maxLength={120} value={createDraft.title || ''} onChange={event => setCreateDraft({ ...createDraft, title: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
               {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
-              {createDraft.importFingerprint && <label className="mb-3 block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => {
+              {(createDraft.importFingerprint || editingLegacyDateOnly) && <label className="block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => {
                 const date = event.target.value;
                 setCreateDraft({ ...createDraft, date, dateTime: date && createDraft.importTime ? date + 'T' + createDraft.importTime : '' });
               }} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
-              <button type="button" className="mb-3 min-h-11 rounded-lg px-2 text-left text-xs font-semibold lifeos-accent-text" aria-expanded={transactionDetailsOpen} aria-controls="transaction-optional-details" onClick={() => setTransactionDetailsOpen(open => !open)}>{transactionDetailsOpen ? 'Hide optional details' : 'Add optional details'}</button>
-              {transactionDetailsOpen && <div id="transaction-optional-details" className="transaction-optional-details rounded-xl p-3">
-                <ComposerChoice variant="field" label="Currency" value={createDraft.currencyCode || (editingTransactionId ? '' : userPrefs.currency)}
-                  options={CURRENCY_CODES.map(code => [code, formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)])}
-                  onSelect={currencyCode => setCreateDraft(draft => ({
-                    ...draft, currencyCode, accountId: financialAccounts.some(account => account.id === draft.accountId && account.currencyCode === currencyCode) ? draft.accountId : '',
-                  }))} />
-                <p className="mb-3 text-xs text-secondary">This labels the transaction. Changing the reporting currency does not convert saved records.</p>
-                <ComposerChoice variant="field" label="Account (optional)" value={createDraft.accountId || ''}
-                  options={[[ '', 'Unassigned'], ...financialAccounts.filter(account => account.isActive).map(account => [account.id, account.name + ' · ' + account.currencyCode] as const)]}
-                  onSelect={accountId => {
-                    const account = financialAccounts.find(row => row.id === accountId);
-                    setCreateDraft(draft => ({ ...draft, accountId, ...(account ? { currencyCode: account.currencyCode } : {}) }));
-                  }} />
-                <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-xs text-secondary">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
-                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-[var(--warning)]">This older record has no saved time. Leave this empty to preserve its date-only history.</span>}<input required={!editingLegacyDateOnly && !createDraft.importFingerprint} type="datetime-local" value={createDraft.dateTime || ''} onChange={event => {
+                <label className="mb-1 block text-xs text-secondary">Transaction date and time{editingLegacyDateOnly && <span className="mt-1 block text-secondary">Time is optional.</span>}<input required={!editingLegacyDateOnly && !createDraft.importFingerprint} type="datetime-local" value={createDraft.dateTime || ''} onChange={event => {
                   const dateTime = event.target.value;
-                  setCreateDraft({ ...createDraft, dateTime, ...(createDraft.importFingerprint && {
+                  setCreateDraft({ ...createDraft, dateTime, ...((createDraft.importFingerprint || editingLegacyDateOnly) && {
                     date: dateTime.slice(0, 10) || createDraft.date, importTime: dateTime.slice(11),
                   }) });
                 }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              </div>}
+              <AliveDisclosure label="Payment, currency & notes" defaultOpen={Boolean(editingTransactionId && !createDraft.currencyCode)}>
+                <p className="mb-3 text-xs text-secondary">Changing the reporting currency does not convert saved records.</p>
+                <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Currency" value={createDraft.currencyCode || (editingTransactionId ? '' : userPrefs.currency)} searchable
+                options={[...(CURRENCY_CODES.map(code => [String(code), formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)] as const))]} onSelect={e => setCreateDraft({ ...createDraft, currencyCode: e, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e) ? createDraft.accountId : '' })} /></div>
+                <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 block text-xs text-secondary">Notes<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
+              {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
+                if (createOperation.current || (createFormDirty && !await confirmAction({ title: 'Discard this transaction draft?', message: 'Transfers use a separate form.', confirmLabel: 'Open transfer', cancelLabel: 'Keep editing' }))) return;
+                setCreateKind(null); setCreateFormDirty(false);
+                navigateTo('finance'); navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
+              }}>Transfer between accounts</button>}
+              </AliveDisclosure>
             </>}
             {createKind === 'habit' && <>
-              <ComposerChoice variant="field" label="How often?" value={createDraft.frequency || 'daily'}
+              <div className="task-quick-actions" role="group" aria-label="Habit options">
+              <PreferenceChoice variant="quick" icon={<CalendarDays size={18} aria-hidden="true" />} label="How often?" value={createDraft.frequency || 'daily'}
                 options={[['daily', 'Every day'], ['weekdays', 'Weekdays'], ['weekends', 'Weekends'], ['weekly', 'Weekly']]}
                 onSelect={frequency => setCreateDraft(draft => ({ ...draft, frequency }))} />
-              <ComposerChoice variant="field" label="Progress tracking" value={createDraft.trackingMode || 'binary'}
+              <PreferenceChoice variant="quick" icon={<Activity size={18} aria-hidden="true" />} label="Progress tracking" value={createDraft.trackingMode || 'binary'}
                 disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))}
                 disabledHint="Tracking mode is kept for saved check-ins"
                 options={[['binary', 'Completed / not completed'], ['quantity', 'Count a daily quantity']]}
                 onSelect={trackingMode => setCreateDraft(draft => ({ ...draft, trackingMode }))} />
+              </div>
               <label className="mb-3 block text-xs text-secondary">{createDraft.trackingMode === 'quantity' ? 'Daily quantity target' : 'Daily target (optional)'}<input required={createDraft.trackingMode === 'quantity'} type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.trackingMode === 'quantity' && <label className="mb-3 block text-xs text-secondary">Unit<input required maxLength={24} value={createDraft.quantityUnit || ''} onChange={e => setCreateDraft({ ...createDraft, quantityUnit: e.target.value })} placeholder="glasses, minutes, pages" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
-              <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <AliveDisclosure label="Custom schedule">
-                <fieldset><legend className="text-sm font-semibold">Scheduled weekdays</legend>
+              <AliveDisclosure label="Schedule options">
+                <fieldset className="task-composer-section"><legend className="text-sm font-semibold">Scheduled weekdays</legend>
                   <div className="flex flex-wrap gap-2">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => {
                     const selected = (createDraft.weekdays || '').split(',').filter(Boolean);
                     return <label key={day} className="flex min-h-11 items-center gap-1 px-2 text-sm"><input type="checkbox" checked={selected.includes(String(index))}
@@ -3787,50 +3835,84 @@ export default function App() {
                   })}</div>
                   <label className="block text-sm">Effective date<input type="date" min={todayKey} value={createDraft.habitScheduleFrom || ''} onChange={event => setCreateDraft(current => ({ ...current, habitScheduleFrom: event.target.value }))} className="lifeos-input block min-h-11" /></label>
                   <label className="block text-sm">Sessions per week (optional)<input type="number" min="1" max="7" value={createDraft.weeklySessions || ''} onChange={event => setCreateDraft(current => ({ ...current, weeklySessions: event.target.value }))} className="lifeos-input block min-h-11" /></label>
+                  <button type="button" className="lifeos-raised mt-2 min-h-11 rounded-xl px-3 text-xs"
+                    disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))}
+                    onClick={() => { setCreateFormDirty(true); setCreateDraft(current => ({ ...current, trackingMode: 'quantity', quantityUnit: 'minute' })); }}>Track duration in minutes</button>
                 </fieldset>
               </AliveDisclosure>
-              {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
-              {goals.length > 0 && <ComposerChoice variant="field" label="Linked goal" value={goals.some(goal => goal.id === createDraft.goalId) ? createDraft.goalId : ''}
+              <AliveDisclosure label="Reminders">
+              <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                {createDraft.frequency === 'weekly' && <PreferenceChoice variant="field" label="Reminder weekday" value={createDraft.reminderWeekday || '2'}
+                  options={['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => [String(index + 1), day])}
+                  onSelect={reminderWeekday => setCreateDraft(current => ({ ...current, reminderWeekday }))} />}
+              </AliveDisclosure>
+              <AliveDisclosure label="Habit notes">
+              {goals.length > 0 && <PreferenceChoice variant="field" label="Linked goal" value={goals.some(goal => goal.id === createDraft.goalId) ? createDraft.goalId : ''}
                 options={[[ '', 'No linked goal' ], ...goals.map(goal => [goal.id, goal.title] as const)]}
                 onSelect={goalId => setCreateDraft(current => ({ ...current, goalId }))} />}
-              <AliveDisclosure label="Notes"><label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></AliveDisclosure>
+              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              </AliveDisclosure>
             </>}
             {createKind === 'goal' && <>
-              <ComposerChoice variant="field" label="Category" value={createDraft.category || 'Other'}
-                options={['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(value => [value, value])}
-                onSelect={category => setCreateDraft(draft => ({ ...draft, category }))} />
-              <ComposerChoice variant="field" label="Goal completion" value={createDraft.goalMode || 'accumulate'}
-                disabled={Boolean(editingGoalId)} options={[['accumulate', 'Reach a target'], ['reduce', 'Reduce a value'], ['milestone', 'Finish milestones'], ['frequency', 'Count sessions']]}
-                onSelect={goalMode => setCreateDraft(current => ({ ...current, goalMode, ...(goalMode === 'frequency' ? { unit: '' } : {}) }))} />
+              <div className="task-quick-actions" role="group" aria-label="Goal options">
+                <PreferenceChoice variant="quick" icon={<Target size={18} aria-hidden="true" />} label="Progress type" value={createDraft.goalMode || 'accumulate'}
+                  disabled={Boolean(editingGoalId)} disabledHint="Progress type is kept for existing goals"
+                  options={[['accumulate', 'Build toward a target'], ['reduce', 'Reduce a value'], ['milestone', 'Complete milestones'], ['frequency', 'Count sessions']]}
+                  onSelect={goalMode => setCreateDraft(current => ({ ...current, goalMode, ...(goalMode === 'frequency' ? { unit: '' } : {}) }))} />
+                <PreferenceChoice variant="quick" icon={<Flag size={18} aria-hidden="true" />} label="Priority" value={createDraft.priority || 'Medium'}
+                  options={['Low', 'Medium', 'High', 'Urgent'].map(priority => [priority, priority])}
+                  onSelect={priority => setCreateDraft(current => ({ ...current, priority }))} />
+              </div>
               {createDraft.goalMode === 'reduce' && <label className="block text-sm">Starting value
                 <input required type="number" min="0" step="any" value={createDraft.baselineValue || ''} onChange={event => setCreateDraft(current => ({ ...current, baselineValue: event.target.value }))} className="lifeos-input block min-h-11 w-full rounded-xl px-3" />
               </label>}
               {createDraft.goalMode !== 'milestone' && <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target<input required type="number" min={createDraft.goalMode === 'reduce' ? '0' : createDraft.goalMode === 'frequency' ? '1' : '0.01'} step={createDraft.goalMode === 'frequency' ? '1' : 'any'} inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>}
               <label className="mb-3 block text-xs text-secondary">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority || 'Medium'} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              {editingGoalId && <label className="mb-3 block text-xs text-secondary">Status<select value={createDraft.status || 'In Progress'} onChange={e => setCreateDraft({ ...createDraft, status: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['In Progress', 'Paused', 'Completed'].map(status => <option key={status}>{status}</option>)}</select></label>}
-              <AliveDisclosure label="Notes"><label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></AliveDisclosure>
+              <AliveDisclosure label={editingGoalId ? 'Category and status' : 'Goal category'}>
+                <PreferenceChoice variant="field" label="Category" value={createDraft.category || 'Other'} searchable
+                  options={['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => [category, category])}
+                  onSelect={category => setCreateDraft(current => ({ ...current, category }))} />
+                {editingGoalId && <PreferenceChoice variant="field" label="Status" value={createDraft.status || 'In Progress'}
+                  options={['In Progress', 'Paused', 'Completed'].map(status => [status, status])}
+                  onSelect={status => setCreateDraft(current => ({ ...current, status }))} />}
+              </AliveDisclosure>
+              <AliveDisclosure label="Target date and notes">
+                <label className="block text-xs text-secondary">Target date<input type="date" value={createDraft.date || ''} onChange={event => setCreateDraft(current => ({ ...current, date: event.target.value }))} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
+                <label className="mb-3 block text-xs text-secondary">Description<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={event => setCreateDraft(current => ({ ...current, description: event.target.value }))} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              </AliveDisclosure>
             </>}
             {createKind === 'budget' && <>
               {editingBudgetId && <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs text-secondary">Editing keeps this plan’s category, month and currency. Create a separate plan to change those details.</p>}
-              <label className="mb-3 block text-xs text-secondary">Budget category (optional)<select disabled={Boolean(editingBudgetId)} value={createDraft.categoryId || ''} onChange={e => setCreateDraft({ ...createDraft, categoryId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="">Overall budget</option>{categories.filter(category => category.type === 'expense').map(category => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+              <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Budget category (optional)" disabled={Boolean(editingBudgetId)} value={createDraft.categoryId || ''} searchable
+                options={[["", "Overall budget"], ...(categories.filter(category => category.type === 'expense').map(category => [String(category.id), category.name] as const))]} onSelect={e => setCreateDraft({ ...createDraft, categoryId: e })} /></div>
               {(() => { const code = editingBudgetId ? budgets.find(row => row.id === editingBudgetId)?.currencyCode || userPrefs.currency : userPrefs.currency; const digits = getCurrencyMetadata(code).fractionDigits; return <label className="mb-3 block text-xs text-secondary">Monthly limit · {code}<input required type="number" min={10 ** -digits} step={10 ** -digits} inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>; })()}
               <label className="mb-4 block text-xs text-secondary">Month<input disabled={Boolean(editingBudgetId)} required type="month" value={createDraft.month || financeMonth} onChange={e => setCreateDraft({ ...createDraft, month: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={createDraft.carryover === 'yes'}
                 onChange={event => setCreateDraft(current => ({ ...current, carryover: event.target.checked ? 'yes' : '' }))} />Carry over unused budget from last month</label>
             </>}
             {createKind === 'savings' && <>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target amount · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>{!editingSavingsGoalId && <label className="text-xs text-secondary">Already saved<input type="number" min="0" step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}</div>
+              <div className="composer-field-grid">
+                <label className="text-xs text-secondary">Target amount · {userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.target || ''} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                <label className="block text-xs text-secondary">Target date
+                <input type="date" required value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
+                </label>
+              </div>
+              <AliveDisclosure label="Savings options">
+                {!editingSavingsGoalId && <label className="text-xs text-secondary">Already saved<input type="number" min="0" step={10 ** -getCurrencyMetadata(userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
               <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={40} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              </AliveDisclosure>
             </>}
             {createKind === 'contribution' && <>
-              {editingContributionId ? <p className="mb-3 text-xs text-secondary">Savings goal · {savingsGoals.find(goal => goal.id === createDraft.goalId)?.title || 'Unavailable'}</p> : <label className="mb-3 block text-xs text-secondary">Savings goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{savingsGoals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
+              {editingContributionId ? <p className="mb-3 text-xs text-secondary">Savings goal · {savingsGoals.find(goal => goal.id === createDraft.goalId)?.title || 'Unavailable'}</p> : <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Savings goal" required value={createDraft.goalId || ''} searchable
+                options={[...(savingsGoals.map(goal => [String(goal.id), goal.title] as const))]} onSelect={e => setCreateDraft({ ...createDraft, goalId: e })} /></div>}
               {(() => { const contributionCurrency = savingsContributions.find(item => item.id === editingContributionId)?.currencyCode || savingsGoals.find(goal => goal.id === createDraft.goalId)?.currencyCode || userPrefs.currency; const digits = getCurrencyMetadata(contributionCurrency).fractionDigits; return <label className="mb-3 block text-xs text-secondary">Amount · {contributionCurrency}<input required type="number" min={10 ** -digits} step={10 ** -digits} inputMode="decimal" value={createDraft.amount || ''} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>; })()}
               <label className="mb-3 block text-xs text-secondary">Note (optional)<input maxLength={100} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs leading-relaxed text-secondary">A contribution updates this savings goal only; it does not record a cash movement or reduce expense and budget totals. If money moves between tracked accounts, record that separately as a transfer.</p>
             </>}
-            {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
-            {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
+            {createKind === 'milestone' && <div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Goal" required value={createDraft.goalId || ''} searchable
+                options={[...(goals.map(goal => [String(goal.id), goal.title] as const))]} onSelect={e => setCreateDraft({ ...createDraft, goalId: e })} /></div>}
+            {createKind === 'goal-progress' && <><div className="mb-3 block text-xs text-secondary"><PreferenceChoice variant="field" label="Goal" required value={createDraft.goalId || ''} searchable
+                options={[...(goals.map(goal => [String(goal.id), goal.title] as const))]} onSelect={e => setCreateDraft({ ...createDraft, goalId: e })} /></div><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
             {createKind === 'task' && <TaskComposerOptions draft={createDraft} update={setCreateDraft}
               dateOnlyAlertTime={dateOnlyAlertTime} goals={goals} editing={Boolean(editingTaskId)} dirty={() => setCreateFormDirty(true)} />}
             {(createKind === 'goal' || createKind === 'savings' || createKind === 'milestone' || createKind === 'contribution') && <label className="mb-4 block text-xs text-secondary">{createKind === 'savings' ? 'Target date' : createKind === 'contribution' ? 'Date' : 'Target date (optional)'}<input type="date" required={createKind === 'savings' || createKind === 'contribution'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
@@ -3841,8 +3923,8 @@ export default function App() {
       </AnimatePresence>
 
       {/* Floating Bottom Nav */}
-      <nav data-no-tab-swipe ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">
-        <div className="app-nav-items">
+      <nav data-no-tab-swipe data-record-background data-reduced={interfaceMotion.reducedMotion} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2">
+        <div className="app-nav-items alive-nav">
         <span ref={navigationMotion.indicator} className="alive-nav-indicator" aria-hidden="true"
           style={{ transform: 'var(--track-indicator, translate3d(' + Math.max(0, PRIMARY_NAVIGATION.findIndex(({ tab }) => tab === primaryDestinationForTab(activeTab))) * 100 + '%,0,0))' }} />
         {PRIMARY_NAVIGATION.map(({ tab, label, icon }) => {
@@ -3852,6 +3934,7 @@ export default function App() {
           <button
             key={tab}
             data-tab={tab}
+            id={tab === "settings" ? "profile-opener" : undefined}
             onClick={() => {
               if (isSelected) {
                 navigationMotion.cancelPending();
@@ -3875,11 +3958,12 @@ export default function App() {
         </div>
       </nav>
 
-      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave BusyDoo?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
+      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave LifeOS?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
 
       {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 
-      {toast && <Snackbar notice={toast} onDismiss={() => setToast(null)} reduced={interfaceMotion.reducedMotion} />}
+      <AnimatePresence>{toast && <Snackbar notice={toast} key="app-snackbar" onDismiss={() => setToast(null)} reduced={interfaceMotion.reducedMotion} />}</AnimatePresence>
     </div>
+    </LazyMotion>
   );
 }

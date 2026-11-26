@@ -1,4 +1,4 @@
-import { animate } from 'motion';
+﻿import { animate } from 'motion';
 import { getMotionPreset, type MotionPresetId } from './interfaceMotion';
 import { buildSpringSettle, readTranslateX } from './springMotion';
 
