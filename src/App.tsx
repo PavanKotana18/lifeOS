@@ -3249,6 +3249,8 @@ export default function App() {
                 {!isHabitEligible(habit, habitsSelectedDate) && <p role="status" className="text-sm text-secondary">No session scheduled for this date.</p>}
                 {habit.schedule?.filter(revision => revision.from > todayKey).map(revision =>
                   <p key={revision.from} className="text-sm text-secondary">Schedule changes on {formatDate(revision.from)}</p>)}
+                {habit.reminderTime && habit.schedule?.some(revision => revision.from > todayKey) &&
+                  <p className="text-xs text-secondary">LifeOS refreshes the next 35 days of reminders when you reopen the app.</p>}
                 <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm" onClick={async () => {
                   const pauses = habit.pauses || [];
                   const active = pauses.find(pause => !pause.through && pause.from <= todayKey);

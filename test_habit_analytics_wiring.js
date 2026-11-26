@@ -217,5 +217,5 @@ check(
   'Habits tab uses the shared deletion handler'
 );
 
-console.log(`HABIT ANALYTICS AND UI WIRING: ${passed}/34 checks PASSED`);
-if (passed !== 34) process.exitCode = 1;
+console.log(`HABIT ANALYTICS AND UI WIRING: ${passed}/38 checks PASSED`);
+if (passed !== 38) process.exitCode = 1;
