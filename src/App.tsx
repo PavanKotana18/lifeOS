@@ -5,7 +5,6 @@ import Snackbar, { type SnackbarNotice } from './components/Snackbar';
 import TransactionDetail from './components/TransactionDetail';
 import TaskComposerOptions from './components/TaskComposerOptions';
 import { AliveDisclosure } from './components/AliveDisclosure';
-import { PreferenceChoice as ComposerChoice } from './components/PreferenceChoice';
 import { flushSync } from 'react-dom';
 import { getMotionPreset } from './services/interfaceMotion';
 import { AppearanceStudio, ThemeStudio } from './components/AppearanceStudio';
@@ -22,7 +21,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Tag, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
+import { Activity, Flag, Target, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Tag, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -2207,6 +2206,7 @@ export default function App() {
       title: transaction.description || '', amount: transaction.amountMinor !== undefined && transaction.currencyCode ? minorUnitsToDecimal(BigInt(transaction.amountMinor), transaction.currencyCode) : String(transaction.amount), category: transaction.category,
       type: transaction.type, paymentMethod: transaction.paymentMethod || 'Other',
       currencyCode: transaction.currencyCode || '', accountId: transaction.accountId || '',
+      date: transaction.date,
       dateTime: transaction.occurredAt ? formatLocalDateTime(new Date(transaction.occurredAt)) : '',
       notes: transaction.notes || '', isRecurring: transaction.isRecurring ? 'yes' : '',
     });
@@ -2414,8 +2414,11 @@ export default function App() {
         const existingTransaction = editingTransactionId ? transactions.find(tx => tx.id === editingTransactionId) : undefined;
         if (existingTransaction && !existingTransaction.currencyCode && !value('currencyCode')) throw new Error('Choose the original currency for this historical transaction.');
         const preserveUnknownTime = !value('dateTime') && Boolean(createDraft.importFingerprint || (existingTransaction && !existingTransaction.occurredAt));
-        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: createDraft.importFingerprint ? value('date') : existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
+        const values = { ...buildTransactionUpdate({ type: value('type') as 'income' | 'expense', amount: value('amount'), currencyCode: (value('currencyCode') || existingTransaction?.currencyCode || (!editingTransactionId ? userPrefs.currency : undefined)) as typeof CURRENCY_CODES[number] | undefined, category: value('category'), description: value('title'), dateTime: value('dateTime'), date: preserveUnknownTime ? value('date') || existingTransaction?.date : existingTransaction?.date, preserveUnknownTime, paymentMethod: value('paymentMethod'), notes: value('notes'), isRecurring: value('isRecurring') === 'yes' }), accountId: Object.prototype.hasOwnProperty.call(createDraft, 'accountId') ? value('accountId') || undefined : existingTransaction?.accountId };
         const accountId = values.accountId;
+        if (existingTransaction?.occurredAt && value('dateTime') === formatLocalDateTime(new Date(existingTransaction.occurredAt))) {
+          values.occurredAt = existingTransaction.occurredAt;
+        }
         if (accountId && !financialAccounts.some(account => account.id === accountId && account.isActive && account.currencyCode === (values.currencyCode || existingTransaction?.currencyCode || userPrefs.currency))) throw new Error('Choose an active account with the same currency as this transaction.')
         if (editingTransactionId) await StorageService.transactions.update(editingTransactionId, values);
         else if (createDraft.importFingerprint) {
@@ -3066,7 +3069,6 @@ export default function App() {
                 formatDate={formatDate}
                 formatTime={formatTime}
                 onMonthChange={setFinanceMonth}
-                onAddTransaction={() => openCreateForm('transaction')}
                 onTransactions={() => navigateFinanceSubtab('transactions')}
                 onBudgets={() => navigateFinanceSubtab('budgets')}
                 onSavings={() => navigateFinanceSubtab('savings')}
@@ -3095,7 +3097,7 @@ export default function App() {
               <div className="transaction-workspace">
                 <TransactionSummary transactions={transactions} month={financeMonth} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} />
                 <div className="transaction-actions">
-                  <button type="button" onClick={() => openCreateForm("transaction")} className="feather-primary transaction-add">Add transaction</button>
+                  <button type="button" onClick={() => openCreateForm("transaction")} className="feather-primary transaction-add" data-testid="money-add-transaction">Add transaction</button>
                 </div>
                 <div className="transaction-import-actions" role="group" aria-label="Import transactions">
                   <button type="button" onClick={async () => {
@@ -3809,18 +3811,19 @@ export default function App() {
               </AliveDisclosure>
             </>}
             {createKind === 'habit' && <>
-              <ComposerChoice variant="field" label="How often?" value={createDraft.frequency || 'daily'}
+              <div className="task-quick-actions" role="group" aria-label="Habit options">
+              <PreferenceChoice variant="quick" icon={<CalendarDays size={18} aria-hidden="true" />} label="How often?" value={createDraft.frequency || 'daily'}
                 options={[['daily', 'Every day'], ['weekdays', 'Weekdays'], ['weekends', 'Weekends'], ['weekly', 'Weekly']]}
                 onSelect={frequency => setCreateDraft(draft => ({ ...draft, frequency }))} />
-              <ComposerChoice variant="field" label="Progress tracking" value={createDraft.trackingMode || 'binary'}
+              <PreferenceChoice variant="quick" icon={<Activity size={18} aria-hidden="true" />} label="Progress tracking" value={createDraft.trackingMode || 'binary'}
                 disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))}
                 disabledHint="Tracking mode is kept for saved check-ins"
                 options={[['binary', 'Completed / not completed'], ['quantity', 'Count a daily quantity']]}
                 onSelect={trackingMode => setCreateDraft(draft => ({ ...draft, trackingMode }))} />
+              </div>
               <label className="mb-3 block text-xs text-secondary">{createDraft.trackingMode === 'quantity' ? 'Daily quantity target' : 'Daily target (optional)'}<input required={createDraft.trackingMode === 'quantity'} type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.trackingMode === 'quantity' && <label className="mb-3 block text-xs text-secondary">Unit<input required maxLength={24} value={createDraft.quantityUnit || ''} onChange={e => setCreateDraft({ ...createDraft, quantityUnit: e.target.value })} placeholder="glasses, minutes, pages" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
-              <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <AliveDisclosure label="Custom schedule">
+              <AliveDisclosure label="Schedule options">
                 <fieldset className="task-composer-section"><legend className="text-sm font-semibold">Scheduled weekdays</legend>
                   <div className="flex flex-wrap gap-2">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => {
                     const selected = (createDraft.weekdays || '').split(',').filter(Boolean);
@@ -3829,29 +3832,51 @@ export default function App() {
                   })}</div>
                   <label className="block text-sm">Effective date<input type="date" min={todayKey} value={createDraft.habitScheduleFrom || ''} onChange={event => setCreateDraft(current => ({ ...current, habitScheduleFrom: event.target.value }))} className="lifeos-input block min-h-11" /></label>
                   <label className="block text-sm">Sessions per week (optional)<input type="number" min="1" max="7" value={createDraft.weeklySessions || ''} onChange={event => setCreateDraft(current => ({ ...current, weeklySessions: event.target.value }))} className="lifeos-input block min-h-11" /></label>
+                  <button type="button" className="lifeos-raised mt-2 min-h-11 rounded-xl px-3 text-xs"
+                    disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))}
+                    onClick={() => { setCreateFormDirty(true); setCreateDraft(current => ({ ...current, trackingMode: 'quantity', quantityUnit: 'minute' })); }}>Track duration in minutes</button>
                 </fieldset>
               </AliveDisclosure>
-              {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
-              {goals.length > 0 && <ComposerChoice variant="field" label="Linked goal" value={goals.some(goal => goal.id === createDraft.goalId) ? createDraft.goalId : ''}
+              <AliveDisclosure label="Reminders">
+              <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+                {createDraft.frequency === 'weekly' && <PreferenceChoice variant="field" label="Reminder weekday" value={createDraft.reminderWeekday || '2'}
+                  options={['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => [String(index + 1), day])}
+                  onSelect={reminderWeekday => setCreateDraft(current => ({ ...current, reminderWeekday }))} />}
+              </AliveDisclosure>
+              <AliveDisclosure label="Habit notes">
+              {goals.length > 0 && <PreferenceChoice variant="field" label="Linked goal" value={goals.some(goal => goal.id === createDraft.goalId) ? createDraft.goalId : ''}
                 options={[[ '', 'No linked goal' ], ...goals.map(goal => [goal.id, goal.title] as const)]}
                 onSelect={goalId => setCreateDraft(current => ({ ...current, goalId }))} />}
-              <AliveDisclosure label="Notes"><label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></AliveDisclosure>
+              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              </AliveDisclosure>
             </>}
             {createKind === 'goal' && <>
-              <ComposerChoice variant="field" label="Category" value={createDraft.category || 'Other'}
-                options={['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(value => [value, value])}
-                onSelect={category => setCreateDraft(draft => ({ ...draft, category }))} />
-              <ComposerChoice variant="field" label="Goal completion" value={createDraft.goalMode || 'accumulate'}
-                disabled={Boolean(editingGoalId)} options={[['accumulate', 'Reach a target'], ['reduce', 'Reduce a value'], ['milestone', 'Finish milestones'], ['frequency', 'Count sessions']]}
-                onSelect={goalMode => setCreateDraft(current => ({ ...current, goalMode, ...(goalMode === 'frequency' ? { unit: '' } : {}) }))} />
+              <div className="task-quick-actions" role="group" aria-label="Goal options">
+                <PreferenceChoice variant="quick" icon={<Target size={18} aria-hidden="true" />} label="Progress type" value={createDraft.goalMode || 'accumulate'}
+                  disabled={Boolean(editingGoalId)} disabledHint="Progress type is kept for existing goals"
+                  options={[['accumulate', 'Build toward a target'], ['reduce', 'Reduce a value'], ['milestone', 'Complete milestones'], ['frequency', 'Count sessions']]}
+                  onSelect={goalMode => setCreateDraft(current => ({ ...current, goalMode, ...(goalMode === 'frequency' ? { unit: '' } : {}) }))} />
+                <PreferenceChoice variant="quick" icon={<Flag size={18} aria-hidden="true" />} label="Priority" value={createDraft.priority || 'Medium'}
+                  options={['Low', 'Medium', 'High', 'Urgent'].map(priority => [priority, priority])}
+                  onSelect={priority => setCreateDraft(current => ({ ...current, priority }))} />
+              </div>
               {createDraft.goalMode === 'reduce' && <label className="block text-sm">Starting value
                 <input required type="number" min="0" step="any" value={createDraft.baselineValue || ''} onChange={event => setCreateDraft(current => ({ ...current, baselineValue: event.target.value }))} className="lifeos-input block min-h-11 w-full rounded-xl px-3" />
               </label>}
               {createDraft.goalMode !== 'milestone' && <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target<input required type="number" min={createDraft.goalMode === 'reduce' ? '0' : createDraft.goalMode === 'frequency' ? '1' : '0.01'} step={createDraft.goalMode === 'frequency' ? '1' : 'any'} inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>}
               <label className="mb-3 block text-xs text-secondary">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority || 'Medium'} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-              {editingGoalId && <label className="mb-3 block text-xs text-secondary">Status<select value={createDraft.status || 'In Progress'} onChange={e => setCreateDraft({ ...createDraft, status: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['In Progress', 'Paused', 'Completed'].map(status => <option key={status}>{status}</option>)}</select></label>}
-              <AliveDisclosure label="Notes"><label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></AliveDisclosure>
+              <AliveDisclosure label={editingGoalId ? 'Category and status' : 'Goal category'}>
+                <PreferenceChoice variant="field" label="Category" value={createDraft.category || 'Other'} searchable
+                  options={['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => [category, category])}
+                  onSelect={category => setCreateDraft(current => ({ ...current, category }))} />
+                {editingGoalId && <PreferenceChoice variant="field" label="Status" value={createDraft.status || 'In Progress'}
+                  options={['In Progress', 'Paused', 'Completed'].map(status => [status, status])}
+                  onSelect={status => setCreateDraft(current => ({ ...current, status }))} />}
+              </AliveDisclosure>
+              <AliveDisclosure label="Target date and notes">
+                <label className="block text-xs text-secondary">Target date<input type="date" value={createDraft.date || ''} onChange={event => setCreateDraft(current => ({ ...current, date: event.target.value }))} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
+                <label className="mb-3 block text-xs text-secondary">Description<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={event => setCreateDraft(current => ({ ...current, description: event.target.value }))} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              </AliveDisclosure>
             </>}
             {createKind === 'budget' && <>
               {editingBudgetId && <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs text-secondary">Editing keeps this plan’s category, month and currency. Create a separate plan to change those details.</p>}

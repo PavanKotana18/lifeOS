@@ -65,10 +65,10 @@ assert.match(markup, /<strong>Savings<\/strong>/, 'savings remains available thr
 assert.match(markup, />Accounts</);
 assert.match(markup, /<nav class="money-destinations" aria-label="Money destinations">/);
 assert.match(markup, /Insights/);
-assert.match(markup, />Scheduled</);
+assert.match(markup, />Schedule</);
 assert.doesNotMatch(markup, /Track account balances \(optional\)/, 'optional account tracking does not compete with recording a transaction');
-assert.match(markup, /data-testid="money-add-transaction"/);
-assert.match(markup, /Add transaction/);
+assert.match(app, /data-testid="money-add-transaction">Add transaction/);
+assert.doesNotMatch(markup, /data-testid="money-add-transaction"/);
 assert.doesNotMatch(markup, /Quick money actions/, 'one primary action opens transaction type options');
 assert.match(app, /openMoneyTransferOnAccounts/);
 assert.match(app, /autoOpenTransfer=\{openMoneyTransferOnAccounts\}/);
@@ -87,6 +87,6 @@ const emptyMarkup = renderToStaticMarkup(React.createElement(MoneyHome, {
   onSavings() {}, onAnalytics() {}, onPlanning() {}, onAccounts() {}, accountSummaries: [],
   savingsGoals: [], legacyCurrency: 'INR', onEditTransaction() {},
 }));
-assert.match(emptyMarkup, /No transactions this month/, 'empty Money history uses a brief status');
+assert.match(emptyMarkup, /No activity this month/, 'empty Money history uses a brief status');
 assert.equal((emptyMarkup.match(/money-account-nudge/g) || []).length, 0, 'empty Money does not present an optional account prompt as a required first step');
 console.log('LIFEOS 2 TYPOGRAPHY + MONEY: bundled Inter/OFL, five script fallbacks, zoom support, token scale, currency formatting and Money navigation checks passed.');

@@ -88,13 +88,14 @@ assert.match(retained, /data-transition-state=\{outgoing \? "outgoing" : transit
 assert.doesNotMatch(retained, /exiting|exit-prepare|onExitTransitionEnd/);
 
 const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.css'), 'utf8');
+const feather = fs.readFileSync(path.join(__dirname, '..', 'src', 'styles', 'feather-expressive.css'), 'utf8');
 assert.match(css, /--motion-tab: 190ms/);
 assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/);
 assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
-assert.match(css, /\.ui-tab-viewport[^}]*overflow-x: clip; overflow-y: visible/);
-assert.match(css, /\.ui-tab-screen-stack\[data-track-dragging\][^}]*will-change: transform/);
-assert.match(css, /\[data-gesture-preview\]\[hidden\][^}]*pointer-events: none/);
+assert.match(feather, /\.ui-tab-viewport[^}]*overflow-x: clip; overflow-y: clip/);
+assert.match(feather, /\.ui-tab-screen-stack\[data-track-dragging\][^}]*will-change: transform/);
+assert.match(feather, /\[data-gesture-preview\]\[hidden\][^}]*pointer-events: none/);
 assert.doesNotMatch(css, /\.ui-tab-screen[^}]*enter-prepare[^}]*opacity: \.92/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 assert.match(css, /\.app-bottom-nav[^\n]*safe-area-inset-bottom/);

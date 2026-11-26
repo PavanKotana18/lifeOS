@@ -265,7 +265,7 @@
 
 /* The viewport clips both panels as a single opaque track. */
 .ui-tab-viewport { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; overflow-x: clip; overflow-y: clip; isolation: isolate; min-width: 0; }
-.ui-tab-screen-stack[data-track-dragging] { transform: translate3d(var(--gesture-x, 0px), 0, 0); }
+.ui-tab-screen-stack[data-track-dragging] { transform: translate3d(var(--gesture-x, 0px), 0, 0); will-change: transform; }
 .ui-tab-screen-stack > .ui-tab-screen[data-gesture-preview][hidden] {
   display: block !important;
   position: absolute;
