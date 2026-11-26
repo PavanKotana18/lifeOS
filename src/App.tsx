@@ -79,7 +79,7 @@ import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCE
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
 import { INITIAL_ONBOARDING_JOURNEY, ONBOARDING_NOTIFICATIONS_STEP, normalizeOnboardingJourney, resumeOnboardingStep, type OnboardingJourney } from './services/onboardingJourney';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, isHabitScheduledOnDate, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, habitScheduleOnDate, isHabitEligible, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
@@ -2236,7 +2236,7 @@ export default function App() {
 
   const openEditHabit = (habit: Habit) => {
     setCreateFormDirty(false);
-    setCreateDraft({ title: habit.name, goalId: habit.goalId && goals.some(goal => goal.id === habit.goalId) ? habit.goalId : '', description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), trackingMode: habit.trackingMode || 'binary', quantityUnit: habit.quantityUnit || '', frequency: habit.frequency, reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
+    setCreateDraft({ title: habit.name, goalId: habit.goalId && goals.some(goal => goal.id === habit.goalId) ? habit.goalId : '', description: habit.description || '', targetPerDay: habit.targetPerDay === undefined ? '' : String(habit.targetPerDay), trackingMode: habit.trackingMode || 'binary', quantityUnit: habit.quantityUnit || '', frequency: habit.frequency, weekdays: habitScheduleOnDate(habit, formatLocalDate(new Date()))?.weekdays.join(',') || '', weeklySessions: String(habitScheduleOnDate(habit, formatLocalDate(new Date()))?.sessionsPerWeek || ''), reminderTime: habit.reminderTime || '', reminderWeekday: String(habit.reminderWeekday || 2) });
     setEditingHabitId(habit.id);
     setEditingTaskId(null);
     setCreateKind('habit');
@@ -2409,7 +2409,18 @@ export default function App() {
         if (trackingMode === 'quantity' && (!targetPerDay || !value('quantityUnit').trim())) throw new Error('Quantity tracking needs a daily target and unit.');
         const goalId = value('goalId');
         if (goalId && !goals.some(goal => goal.id === goalId)) throw new Error('Choose an available goal.');
-        const habit: Partial<Habit> = { goalId: goalId || undefined, name: value('title'), description: value('description') || undefined, frequency: value('frequency') as Habit['frequency'], color: existingHabit?.color || '#6366f1', targetPerDay, trackingMode, quantityUnit: trackingMode === 'quantity' ? normalizeHabitUnit(value('quantityUnit')) : undefined, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
+        const weekdays = value('weekdays').split(',').filter(Boolean).map(Number).sort((a, b) => a - b);
+        const sessionsPerWeek = value('weeklySessions') ? Number(value('weeklySessions')) : undefined;
+        const today = formatLocalDate(new Date());
+        const effectiveDate = value('habitScheduleFrom') || today;
+        const effective = existingHabit && habitScheduleOnDate(existingHabit, effectiveDate);
+        if ((sessionsPerWeek !== undefined && (!Number.isInteger(sessionsPerWeek) || sessionsPerWeek < 1 || sessionsPerWeek > weekdays.length))
+          || weekdays.some(day => !Number.isInteger(day) || day < 0 || day > 6)) throw new Error('Choose enough scheduled weekdays for the weekly target.');
+        const revised = weekdays.length > 0 && (effectiveDate !== today || effective?.weekdays.join(',') !== weekdays.join(',') || effective?.sessionsPerWeek !== sessionsPerWeek);
+        if (revised && effectiveDate < today) throw new Error('Choose today or a future date for the schedule revision.');
+        const schedule = revised ? [...(existingHabit?.schedule || []).filter(row => row.from !== effectiveDate), { from: effectiveDate, weekdays, sessionsPerWeek }]
+          .sort((left, right) => left.from.localeCompare(right.from)) : existingHabit?.schedule;
+        const habit: Partial<Habit> = { goalId: goalId || undefined, name: value('title'), description: value('description') || undefined, frequency: existingHabit?.schedule?.length ? existingHabit.frequency : value('frequency') as Habit['frequency'], ...(schedule ? { schedule } : {}), color: existingHabit?.color || '#6366f1', targetPerDay, trackingMode, quantityUnit: trackingMode === 'quantity' ? normalizeHabitUnit(value('quantityUnit')) : undefined, reminderTime: value('reminderTime') || undefined, reminderWeekday: value('frequency') === 'weekly' ? Number(value('reminderWeekday')) : undefined };
         if (editingHabitId) await StorageService.habits.update(editingHabitId, habit);
         else await StorageService.habits.add({ ...habit, name: habit.name!, frequency: habit.frequency!, color: habit.color! });
       } else if (createKind === 'budget') {
@@ -2626,7 +2637,8 @@ export default function App() {
 
   // Habit Streak Calculation Helper
   const getHabitStreaks = (habitId: string, targetDate: string) => {
-    const stats = calculateStreaks(habitLogs, habitId, targetDate, habits.find(h => h.id === habitId)?.frequency || 'daily');
+    const habit = habits.find(row => row.id === habitId);
+    const stats = calculateStreaks(habitLogs, habitId, targetDate, habit?.frequency || 'daily', habit);
     return { ...stats, totalCount: new Set(habitLogs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)).size };
   };
 
@@ -2635,7 +2647,7 @@ export default function App() {
     () => getTodayOverview(tasks, habits, habitLogs, todayKey),
     [tasks, habits, habitLogs, todayKey]
   );
-  const routineDueToday = (habit: Habit) => habit.frequency !== 'weekly' && isHabitScheduledOnDate(habit.frequency, todayKey);
+  const routineDueToday = (habit: Habit) => (habit.frequency !== 'weekly' || Boolean(habitScheduleOnDate(habit, todayKey))) && isHabitEligible(habit, todayKey);
   const tomorrowDate = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() + 1);
   const tomorrowKey = formatLocalDate(tomorrowDate);
   const calendarDays = useMemo(() => getMonthCalendarDays(plannerDisplayedMonth.getFullYear(), plannerDisplayedMonth.getMonth(), userPrefs.firstDayOfWeek === 'monday'), [plannerDisplayedMonth, userPrefs.firstDayOfWeek]);
@@ -3259,13 +3271,27 @@ export default function App() {
             {lifeDetail?.kind === 'habit' && habits.find(item => item.id === lifeDetail.id) && (() => {
               const habit = habits.find(item => item.id === lifeDetail.id)!;
               const stats = getHabitStreaks(habit.id, habitsSelectedDate);
-              const weekly = calculateWeeklyHabitRate(habitLogs, habit.id, clockNow, habit.frequency);
+              const weekly = calculateWeeklyHabitRate(habitLogs, habit.id, clockNow, habit.frequency, habit);
               const quantityLog = habitLogs.find(log => log.habitId === habit.id && log.date === habitsSelectedDate && log.quantity !== undefined);
               const quantity = quantityLog?.quantity ?? 0;
               return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="habit-detail-title">
                 <div><h3 id="habit-detail-title" className="type-page-title safe-wrap">{habit.name}</h3>{habit.description && <p className="mt-1 text-sm text-secondary">{habit.description}</p>}</div>
                 <div className="grid grid-cols-2 gap-3"><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">Current streak</p><p className="mt-1 text-xl font-semibold">{stats.currentStreak} days</p></div><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">This week</p><p className="mt-1 text-xl font-semibold">{weekly.completed}/{weekly.scheduled} · {weekly.rate}%</p></div></div>
                 {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{quantityLog?.quantityUnit ? `${formatHabitQuantity(quantity, quantityLog.quantityUnit)}${quantityLog.quantityUnit === habit.quantityUnit ? ' / ' : ' - target '}${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : quantityLog ? `${formatHabitQuantity(quantity)} · target ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : `0 / ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}`}</p>{quantityLog && !quantityLog.quantityUnit && <div className="mt-3 rounded-xl border border-[var(--stroke)] p-3"><p className="text-xs text-secondary">This older entry has no saved unit. Choose the unit it used before displaying it with a unit.</p><div className="mt-2 flex gap-2"><select aria-label="Historical quantity unit" value={historicalQuantityUnit} onChange={event => setHistoricalQuantityUnit(event.target.value)} className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm"><option value="">Choose unit…</option>{[...new Set([habit.quantityUnit, 'glass', 'litre', 'minute', 'page', 'item'].filter(Boolean) as string[])].map(unit => <option key={unit} value={unit}>{unit}</option>)}</select><button type="button" disabled={!historicalQuantityUnit} onClick={async () => { try { await StorageService.habits.setQuantityLogUnit(quantityLog.id, historicalQuantityUnit); setHistoricalQuantityUnit(''); await reloadAllData(); showToast('Historical unit saved', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Could not update this entry.', 'danger'); } }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Save unit</button></div></div>}<div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
+                {!isHabitEligible(habit, habitsSelectedDate) && <p role="status" className="text-sm text-secondary">No session scheduled for this date.</p>}
+                {habit.schedule?.filter(revision => revision.from > todayKey).map(revision =>
+                  <p key={revision.from} className="text-sm text-secondary">Schedule changes on {formatDate(revision.from)}</p>)}
+                <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm" onClick={async () => {
+                  const pauses = habit.pauses || [];
+                  const active = pauses.find(pause => !pause.through && pause.from <= todayKey);
+                  const yesterday = new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 1);
+                  const next = active ? pauses.flatMap(pause => pause !== active ? [pause] : pause.from < todayKey ? [{ ...pause, through: formatLocalDate(yesterday) }] : []) : [...pauses, { from: todayKey }];
+                  try {
+                    await StorageService.habits.update(habit.id, { pauses: next });
+                    const records = await reloadAllData();
+                    await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
+                  } catch { showToast('Could not confirm the habit schedule change.', 'danger'); }
+                }}>{habit.pauses?.some(pause => !pause.through && pause.from <= todayKey) ? 'Resume habit' : 'Pause habit'}</button>
                 <HabitHistory habit={habit} logs={habitLogs} date={habitsSelectedDate} today={todayKey} onSelect={date => { setHabitsSelectedDate(date); setHistoricalQuantityUnit(''); }} formatDate={formatDate} />
                 <p className="text-xs text-secondary">Best streak: {stats.longestStreak} days{habit.reminderTime ? ` · Reminder ${habit.reminderTime} local` : ' · No reminder set'}</p><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditHabit(habit)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit habit</button><button type="button" onClick={() => void confirmAction({ title: 'Delete this habit?', message: `“${habit.name}” and its completion history will be removed.`, confirmLabel: 'Delete habit', destructive: true }).then(confirmed => { if (confirmed) void handleHabitDeletion(habit); })} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm text-[var(--danger)]">Delete habit</button></div>
               </section>;
@@ -3279,7 +3305,7 @@ export default function App() {
                   const todayStr = todayKey;
                   const logged = h.trackingMode === 'quantity' ? habitLogs.find(log => log.habitId === h.id && log.date === todayStr && log.quantity !== undefined) : undefined;
                   const stats = getHabitStreaks(h.id, todayStr);
-                  const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency);
+                  const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency, h);
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
@@ -3781,6 +3807,17 @@ export default function App() {
               <label className="mb-3 block text-xs text-secondary">{createDraft.trackingMode === 'quantity' ? 'Daily quantity target' : 'Daily target (optional)'}<input required={createDraft.trackingMode === 'quantity'} type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.trackingMode === 'quantity' && <label className="mb-3 block text-xs text-secondary">Unit<input required maxLength={24} value={createDraft.quantityUnit || ''} onChange={e => setCreateDraft({ ...createDraft, quantityUnit: e.target.value })} placeholder="glasses, minutes, pages" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
               <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <AliveDisclosure label="Custom schedule">
+                <fieldset><legend className="text-sm font-semibold">Scheduled weekdays</legend>
+                  <div className="flex flex-wrap gap-2">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => {
+                    const selected = (createDraft.weekdays || '').split(',').filter(Boolean);
+                    return <label key={day} className="flex min-h-11 items-center gap-1 px-2 text-sm"><input type="checkbox" checked={selected.includes(String(index))}
+                      onChange={event => setCreateDraft(current => ({ ...current, weekdays: (event.target.checked ? [...selected, String(index)] : selected.filter(value => value !== String(index))).sort().join(',') }))} />{day}</label>;
+                  })}</div>
+                  <label className="block text-sm">Effective date<input type="date" min={todayKey} value={createDraft.habitScheduleFrom || ''} onChange={event => setCreateDraft(current => ({ ...current, habitScheduleFrom: event.target.value }))} className="lifeos-input block min-h-11" /></label>
+                  <label className="block text-sm">Sessions per week (optional)<input type="number" min="1" max="7" value={createDraft.weeklySessions || ''} onChange={event => setCreateDraft(current => ({ ...current, weeklySessions: event.target.value }))} className="lifeos-input block min-h-11" /></label>
+                </fieldset>
+              </AliveDisclosure>
               {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
               {goals.length > 0 && <ComposerChoice variant="field" label="Linked goal" value={goals.some(goal => goal.id === createDraft.goalId) ? createDraft.goalId : ''}
                 options={[[ '', 'No linked goal' ], ...goals.map(goal => [goal.id, goal.title] as const)]}

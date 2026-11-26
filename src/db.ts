@@ -684,6 +684,12 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'description', 'habits', i);
     optionalString(r, 'icon', 'habits', i);
     optionalBoolean(r, 'archived', 'habits', i);
+    if (r.schedule !== undefined && (!Array.isArray(r.schedule) || new Set(r.schedule.map((item: any) => item?.from)).size !== r.schedule.length ||
+      r.schedule.some((item: any) => !obj(item) || !date(item.from) || !Array.isArray(item.weekdays) || !item.weekdays.length ||
+        new Set(item.weekdays).size !== item.weekdays.length || item.weekdays.some((day: number) => !Number.isInteger(day) || day < 0 || day > 6) ||
+        (item.sessionsPerWeek !== undefined && (!Number.isInteger(item.sessionsPerWeek) || item.sessionsPerWeek < 1 || item.sessionsPerWeek > item.weekdays.length))))) fail('habits', i, 'schedule');
+    if (r.pauses !== undefined && (!Array.isArray(r.pauses) || r.pauses.some((item: any) =>
+      !obj(item) || !date(item.from) || (item.through !== undefined && (!date(item.through) || item.through < item.from))))) fail('habits', i, 'pauses');
     optionalString(r, 'goalId', 'habits', i);
     if (r.targetPerDay !== undefined && (!num(r.targetPerDay) || r.targetPerDay <= 0)) fail('habits', i, 'targetPerDay');
     if (r.reminderTime !== undefined && !time(r.reminderTime)) fail('habits', i, 'reminderTime');

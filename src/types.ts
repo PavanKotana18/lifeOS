@@ -138,6 +138,8 @@ export interface PlannedCommitment {
 export type HabitFrequency = 'daily' | 'weekdays' | 'weekends' | 'weekly';
 
 export interface Habit {
+  schedule?: { from: string; weekdays: number[]; sessionsPerWeek?: number }[];
+  pauses?: { from: string; through?: string }[];
   goalId?: string;
   id: string;
   name: string;

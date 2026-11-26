@@ -136,17 +136,31 @@ export function isHabitScheduledOnDate(
   return frequency === 'weekdays' ? day >= 1 && day <= 5 : day === 0 || day === 6;
 }
 
+type HabitSchedule = Pick<Habit, 'frequency' | 'schedule' | 'pauses'>;
+
+export function habitScheduleOnDate(habit: HabitSchedule, date: string) {
+  return habit.schedule?.reduce<NonNullable<Habit['schedule']>[number] | undefined>((latest, row) =>
+    row.from <= date && (!latest || row.from >= latest.from) ? row : latest, undefined);
+}
+
+export function isHabitEligible(habit: HabitSchedule, date: string): boolean {
+  if (habit.pauses?.some(pause => pause.from <= date && (!pause.through || date <= pause.through))) return false;
+  const revision = habitScheduleOnDate(habit, date);
+  return revision ? revision.weekdays.includes(new Date(date + 'T00:00:00Z').getUTCDay()) : isHabitScheduledOnDate(habit.frequency, date);
+}
+
 export function calculateWeeklyHabitRate(
   logs: { habitId: string; date: string; completed: boolean }[],
   habitId: string,
   today = new Date(),
-  frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly' = 'daily'
+  frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly' = 'daily',
+  habit?: HabitSchedule
 ) {
   const completedDates = new Set(
     logs.filter(log => log.habitId === habitId && log.completed).map(log => log.date)
   );
 
-  if (frequency === 'weekly') {
+  if (frequency === 'weekly' && (!habit || (!habitScheduleOnDate(habit, formatLocalDate(today)) && !habit.pauses?.some(pause => pause.from <= formatLocalDate(today))))) {
     // Weekly habits follow Monday-to-Sunday calendar weeks,
     // matching calculateStreaks rather than using a rolling window.
     const todayStart = new Date(
@@ -173,19 +187,26 @@ export function calculateWeeklyHabitRate(
     return { completed, scheduled: 1, rate: completed ? 100 : 0 };
   }
 
-  const eligibleDates: string[] = [];
+  const groups = new Map<string, { eligible: number; completed: number; target?: number }>();
   for (let offset = 0; offset < 7; offset++) {
     const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
     const key = formatLocalDate(day);
-    if (isHabitScheduledOnDate(frequency, key)) eligibleDates.push(key);
+    if (!(habit ? isHabitEligible(habit, key) : isHabitScheduledOnDate(frequency, key))) continue;
+    const revision = habit && habitScheduleOnDate(habit, key);
+    const bucket = revision?.from || '';
+    const group = groups.get(bucket) || { eligible: 0, completed: 0, target: revision?.sessionsPerWeek ?? (!revision && frequency === 'weekly' ? 1 : undefined) };
+    group.eligible++;
+    if (completedDates.has(key)) group.completed++;
+    groups.set(bucket, group);
   }
-
-  const completed = eligibleDates.filter(date => completedDates.has(date)).length;
-  return {
-    completed,
-    scheduled: eligibleDates.length,
-    rate: eligibleDates.length ? Math.round(completed / eligibleDates.length * 100) : 0
-  };
+  let scheduled = 0;
+  let completed = 0;
+  for (const group of groups.values()) {
+    const target = Math.min(group.eligible, group.target ?? group.eligible);
+    scheduled += target;
+    completed += Math.min(group.completed, target);
+  }
+  return { completed, scheduled, rate: scheduled ? Math.round(completed / scheduled * 100) : 0 };
 }
 
 export interface TodayOverview {
@@ -200,7 +221,7 @@ export interface TodayOverview {
 /** Counts actual work by domain; it deliberately avoids an opaque combined score. */
 export function getTodayOverview(
   tasks: Pick<Task, 'dueDate' | 'completed'>[],
-  habits: Pick<Habit, 'id' | 'frequency'>[],
+  habits: (Pick<Habit, 'id'> & HabitSchedule)[],
   logs: Pick<HabitLog, 'habitId' | 'date' | 'completed'>[],
   date: string
 ): TodayOverview {
@@ -210,14 +231,14 @@ export function getTodayOverview(
     throw new TypeError('Today overview requires a valid local calendar date.');
   }
   const dueTasks = tasks.filter(task => task.dueDate === date);
-  const routines = habits.filter(habit => habit.frequency !== 'weekly' && isHabitScheduledOnDate(habit.frequency, date));
-  const weeklyRoutines = habits.filter(habit => habit.frequency === 'weekly');
+  const routines = habits.filter(habit => (habit.frequency !== 'weekly' || Boolean(habitScheduleOnDate(habit, date))) && isHabitEligible(habit, date));
+  const weeklyRoutines = habits.filter(habit => habit.frequency === 'weekly' && !habitScheduleOnDate(habit, date) && isHabitEligible(habit, date));
   return {
     tasksCompleted: dueTasks.filter(task => task.completed).length,
     tasksDue: dueTasks.length,
     routinesCompleted: routines.filter(habit => logs.some(log => log.habitId === habit.id && log.date === date && log.completed)).length,
     routinesDue: routines.length,
-    weeklyRoutinesCompleted: weeklyRoutines.filter(habit => calculateWeeklyHabitRate(logs, habit.id, today, habit.frequency).completed > 0).length,
+    weeklyRoutinesCompleted: weeklyRoutines.filter(habit => calculateWeeklyHabitRate(logs, habit.id, today, habit.frequency, habit).completed > 0).length,
     weeklyRoutinesTotal: weeklyRoutines.length,
   };
 }
@@ -226,7 +247,8 @@ export function calculateStreaks(
   logs: { habitId: string; date: string; completed: boolean }[],
   habitId: string,
   today: string,
-  frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly' = 'daily'
+  frequency: 'daily' | 'weekdays' | 'weekends' | 'weekly' = 'daily',
+  habit?: HabitSchedule
 ) {
   const isValidCalendarDate = (date: string) => {
     if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -255,7 +277,7 @@ export function calculateStreaks(
     new Date(value * 86400000).toISOString().slice(0, 10);
   const completedToday = completedDates.has(today);
 
-  if (frequency === 'weekly') {
+  if (frequency === 'weekly' && (!habit || (!habitScheduleOnDate(habit, today) && !habit.pauses?.some(pause => pause.from <= today)))) {
     const weekStart = (date: string) => {
       const day = new Date(`${date}T00:00:00Z`).getUTCDay();
       return ordinal(date) - ((day + 6) % 7);
@@ -283,7 +305,8 @@ export function calculateStreaks(
     return { currentStreak, longestStreak, completedToday };
   }
 
-  const scheduled = (date: string) => isHabitScheduledOnDate(frequency, date);
+  const scheduled = (date: string) => habit ? isHabitEligible(habit, date) : isHabitScheduledOnDate(frequency, date);
+  const floor = [...completedDates].reduce((earliest, date) => Math.min(earliest, ordinal(date)), ordinal(today));
   const dates = [...completedDates].filter(scheduled).sort();
   if (!dates.length) return { currentStreak: 0, longestStreak: 0, completedToday };
 
@@ -292,7 +315,7 @@ export function calculateStreaks(
   let previous: string | null = null;
   for (const date of dates) {
     let previousScheduled = ordinal(date) - 1;
-    while (!scheduled(dateFromOrdinal(previousScheduled))) previousScheduled--;
+    while (previousScheduled >= floor && !scheduled(dateFromOrdinal(previousScheduled))) previousScheduled--;
     run = previous !== null && ordinal(previous) === previousScheduled ? run + 1 : 1;
     longestStreak = Math.max(longestStreak, run);
     previous = date;
@@ -301,14 +324,14 @@ export function calculateStreaks(
   let check = ordinal(today);
   if (!completedDates.has(today) || !scheduled(today)) {
     check--;
-    while (!scheduled(dateFromOrdinal(check))) check--;
+    while (check >= floor && !scheduled(dateFromOrdinal(check))) check--;
   }
 
   let currentStreak = 0;
   while (completedDates.has(dateFromOrdinal(check)) && scheduled(dateFromOrdinal(check))) {
     currentStreak++;
     check--;
-    while (!scheduled(dateFromOrdinal(check))) check--;
+    while (check >= floor && !scheduled(dateFromOrdinal(check))) check--;
   }
   return { currentStreak, longestStreak, completedToday };
 }

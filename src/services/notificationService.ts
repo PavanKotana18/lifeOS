@@ -2,7 +2,7 @@ import { reminderCopy, type NotificationTone } from './notificationCopy';
 import { isSampleRecord } from './sampleData';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalNotifications, Weekday, type LocalNotificationSchema } from '@capacitor/local-notifications';
-import { buildTaskNotificationPlan, stableNotificationId } from './domainUtils';
+import { buildTaskNotificationPlan, formatLocalDate, habitScheduleOnDate, isHabitEligible, stableNotificationId } from './domainUtils';
 import { LIFEOS_BUILD_INFO } from './buildInfo';
 import type { Goal, Habit, Milestone, NotificationPreferences, Task } from '../types';
 
@@ -683,29 +683,48 @@ export const NotificationService = {
     try {
     await this.ensureChannel();
     const weekdays = [Weekday.Sunday, Weekday.Monday, Weekday.Tuesday, Weekday.Wednesday, Weekday.Thursday, Weekday.Friday, Weekday.Saturday];
+    const now = new Date();
+    const date = formatLocalDate(now);
     const entries = habits.filter(habit => !isSampleRecord(habit.id) && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(habit.reminderTime || '')).flatMap(habit => {
       const [hour, minute] = (habit.reminderTime || '').split(':').map(Number);
-      const days = habit.frequency === 'weekdays' ? weekdays.slice(1, 6)
+      const baseDays = habit.frequency === 'weekdays' ? weekdays.slice(1, 6)
         : habit.frequency === 'weekends' ? [Weekday.Saturday, Weekday.Sunday]
           : habit.frequency === 'weekly' ? [habit.reminderWeekday || Weekday.Monday] : weekdays;
-      return days.map(weekday => ({ habit, hour, minute, weekday }));
+      const futureBoundary = habit.schedule?.some(row => row.from > date) ||
+        habit.pauses?.some(row => row.from > date || (row.through && row.through >= date));
+      const reminder = (key: string, schedule: LocalNotificationSchema['schedule']): LocalNotificationSchema => {
+        const id = notificationId(`habit:${habit.id}:${key}`);
+        return { id, ...reminderCopy('habitReminder', tone, id), schedule,
+          channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
+          extra: { kind: 'habitReminder', habitId: habit.id } };
+      };
+      if (!futureBoundary) {
+        if (habit.pauses?.some(row => !row.through && row.from <= date)) return [];
+        const active = habitScheduleOnDate(habit, date);
+        return (active ? active.weekdays.map(day => weekdays[day]) : baseDays)
+          .map(weekday => reminder(String(weekday), { on: { weekday, hour, minute }, allowWhileIdle: false }));
+      }
+      // Date-specific alarms preserve both sides of the effective boundary. Resume refreshes the rolling window.
+      return Array.from({ length: 35 }, (_, offset) => {
+        const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, hour, minute);
+        const day = formatLocalDate(at);
+        return at > now && isHabitEligible(habit, day) && (habitScheduleOnDate(habit, day) || baseDays.includes(weekdays[at.getDay()]))
+          ? reminder(day, { at, allowWhileIdle: false }) : null;
+      }).filter((row): row is LocalNotificationSchema => row !== null);
     });
     await cancelPendingKinds(['habitReminder']);
     await cancelIds(habits.flatMap(habit => [1, 2, 3, 4, 5, 6, 7].map(day => notificationId(`habit:${habit.id}:${day}`))));
     if (!preferences.habitReminders || !(await this.canScheduleNotifications())) { if (preferences.habitReminders) writeLastError('permission-denied-or-revoked'); return; }
-    await schedule(entries.map(({ habit, hour, minute, weekday }) => ({
-      id: notificationId(`habit:${habit.id}:${weekday}`),
-      ...reminderCopy('habitReminder', tone, notificationId(`habit:${habit.id}:${weekday}`)),
-      schedule: { on: { weekday, hour, minute }, allowWhileIdle: false },
-      channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
-      extra: { kind: 'habitReminder', habitId: habit.id },
-    })));
+    await schedule(entries);
     } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS habit notification scheduling failed.'); throw error; }
   },
 
   async cancelHabit(habit: Habit) {
     const ids = [1, 2, 3, 4, 5, 6, 7].map(day => notificationId(`habit:${habit.id}:${day}`));
-    try { await cancelIds(ids); }
+    try {
+      const pending = await LocalNotifications.getPending();
+      await cancelIds([...ids, ...pending.notifications.filter(row => row.extra?.kind === 'habitReminder' && row.extra?.habitId === habit.id).map(row => row.id)]);
+    }
     catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS habit notification cancellation failed.'); throw error; }
   },
 
