@@ -1,3 +1,4 @@
+import { goalProgressPercent, isGoalComplete, validateGoalMeasure } from './services/goalModes';
 import { AnimatePresence } from 'motion/react';
 import ComposerShell from './components/ComposerShell';
 import Snackbar from './components/Snackbar';
@@ -79,7 +80,7 @@ import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCE
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
 import { INITIAL_ONBOARDING_JOURNEY, ONBOARDING_NOTIFICATIONS_STEP, normalizeOnboardingJourney, resumeOnboardingStep, type OnboardingJourney } from './services/onboardingJourney';
-import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getGoalProgress, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, habitScheduleOnDate, isHabitEligible, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
+import { buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, habitScheduleOnDate, isHabitEligible, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
@@ -2212,7 +2213,7 @@ export default function App() {
         : ['km/h', 'm/s', 'mph'].includes(oldUnit) ? userPrefs.speed : oldUnit;
     const target = oldUnit && selectedUnit !== oldUnit ? convertMeasurement(goal.targetValue, oldUnit, selectedUnit) : goal.targetValue;
     const current = oldUnit && selectedUnit !== oldUnit ? convertMeasurement(goal.currentValue, oldUnit, selectedUnit) : goal.currentValue;
-    setCreateDraft({ title: goal.title, category: goal.category, target: String(target), current: String(current), unit: selectedUnit, date: goal.targetDate, startDate: goal.startDate, priority: goal.priority, status: goal.status, description: goal.description || '' });
+    setCreateDraft({ title: goal.title, category: goal.category, target: String(target), current: String(current), unit: selectedUnit, goalMode: goal.mode || 'accumulate', baselineValue: goal.baselineValue === undefined ? '' : String(oldUnit && selectedUnit !== oldUnit ? convertMeasurement(goal.baselineValue, oldUnit, selectedUnit) : goal.baselineValue), date: goal.targetDate, startDate: goal.startDate, priority: goal.priority, status: goal.status, description: goal.description || '' });
     setEditingGoalId(goal.id); setEditingTaskId(null); setEditingHabitId(null); setEditingTransactionId(null); setCreateKind('goal');
   };
 
@@ -2462,26 +2463,31 @@ export default function App() {
         const currentValue = Number(value('current'));
         const goal = goals.find(item => item.id === value('goalId'));
         if (!goal || !Number.isFinite(currentValue) || currentValue < 0) throw new Error('Choose a goal and enter valid progress.');
+        if (goal.mode === 'milestone') throw new Error('Update milestones to record progress for this goal.');
+        validateGoalMeasure({ ...goal, currentValue });
         await StorageService.goals.update(goal.id, { currentValue });
       } else if (createKind === 'goal') {
-        let targetValue = Number(value('target'));
-        let currentValue = Number(value('current'));
-        if (!Number.isFinite(targetValue) || targetValue <= 0 || !Number.isFinite(currentValue) || currentValue < 0) {
-          throw new Error('Enter a positive target and a valid current progress value.');
-        }
-        let goalUnit = value('unit');
+        const mode = (value('goalMode') || 'accumulate') as NonNullable<Goal['mode']>;
+        let targetValue = mode === 'milestone' ? 0 : Number(value('target'));
+        let currentValue = mode === 'milestone' ? 0 : Number(value('current'));
+        let baselineValue = mode === 'reduce' ? Number(value('baselineValue')) : undefined;
+        if (!Number.isFinite(targetValue) || targetValue < 0 || (targetValue === 0 && mode !== 'reduce' && mode !== 'milestone') ||
+          !Number.isFinite(currentValue) || currentValue < 0) throw new Error('Enter a valid goal target and progress.');
+        let goalUnit = mode === 'frequency' ? 'sessions' : mode === 'milestone' ? '' : value('unit');
         if (canonicalUnit(goalUnit) !== goalUnit) {
           const canonical = canonicalUnit(goalUnit);
           targetValue = convertMeasurement(targetValue, goalUnit, canonical);
           currentValue = convertMeasurement(currentValue, goalUnit, canonical);
+          if (baselineValue !== undefined) baselineValue = convertMeasurement(baselineValue, goalUnit, canonical);
           goalUnit = canonical;
         }
         const goalFields = {
           title: value('title'), description: value('description') || undefined,
-          category: value('category') as Goal['category'], targetValue, currentValue,
+          category: value('category') as Goal['category'], targetValue, currentValue, mode, baselineValue,
           unit: goalUnit || undefined, startDate: value('startDate') || value('date') || formatLocalDate(new Date()), targetDate: value('date'),
           priority: value('priority') as Goal['priority'], status: (value('status') || 'In Progress') as Goal['status'],
         };
+        validateGoalMeasure(goalFields);
         if (editingGoalId) await StorageService.goals.update(editingGoalId, goalFields);
         else await StorageService.goals.add(goalFields);
       } else {
@@ -2631,7 +2637,7 @@ export default function App() {
 
   const changeGoalStatus = async (goal: Goal, status: Goal['status']) => {
     try {
-      if (status === 'Completed' && (goal.currentValue < goal.targetValue || milestones.some(item => item.goalId === goal.id && !item.completed))) {
+      if (status === 'Completed' && !isGoalComplete(goal, milestones.filter(item => item.goalId === goal.id))) {
         showToast('Reach the target and finish its milestones to complete this goal.', 'info');
         return;
       }
@@ -2655,7 +2661,7 @@ export default function App() {
     } catch { showToast('Could not delete the goal.', 'danger'); }
   };
 
-  const goalProgress = (goal: Goal) => getGoalProgress(goal.currentValue, goal.targetValue);
+  const goalProgress = (goal: Goal) => goalProgressPercent(goal, milestones.filter(row => row.goalId === goal.id));
   const editingLegacyDateOnly = Boolean(createKind === 'transaction' && editingTransactionId
     && !transactions.find(tx => tx.id === editingTransactionId)?.occurredAt);
   const matchesActivityDate = (date: string) => Boolean(date) && (activityRange.from || activityRange.through
@@ -2986,7 +2992,7 @@ export default function App() {
           routinesDue={todayOverview.routinesDue}
           weeklyCompleted={todayOverview.weeklyRoutinesCompleted}
           weeklyTotal={todayOverview.weeklyRoutinesTotal}
-          goals={goals.filter(goal => goal.status === 'In Progress' && !goal.archived)}
+          goals={goals.filter(goal => goal.status === 'In Progress' && !goal.archived)} progressForGoal={goalProgress}
           hasHistory={transactions.length > 0 || habits.length > 0 || goals.length > 0}
           formatMoney={formatMoney}
           onFinance={() => { setFinanceSubtab('analytics'); navigateTo('finance'); }}
@@ -3288,7 +3294,7 @@ export default function App() {
             {!lifeDetail && goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(['active', 'paused', 'completed', 'archived'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
-            {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-secondary">{goal.category} &middot; {goal.status}</p><h3 id="goal-detail-title" className="type-page-title safe-wrap">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div><p className="text-sm font-medium">{displayGoalMeasure(goal.currentValue, goal.unit)} of {displayGoalMeasure(goal.targetValue, goal.unit)}</p><div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{goal.targetDate ? formatDate(goal.targetDate) : 'Open-ended'}</p><p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p></div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button><button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button><button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">+ Milestone</button>              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, goal.status === 'Paused' ? 'In Progress' : 'Paused')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Paused' ? 'Resume goal' : 'Pause goal'}</button>}
+            {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-secondary">{goal.category} &middot; {goal.status}</p><h3 id="goal-detail-title" className="type-page-title safe-wrap">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div><p className="text-sm font-medium">{goal.mode === 'milestone' ? `${rows.filter(row => row.completed).length} of ${rows.length} milestones complete` : goal.mode === 'reduce' ? `${displayGoalMeasure(goal.currentValue, goal.unit)} now ? target ${displayGoalMeasure(goal.targetValue, goal.unit)}` : `${displayGoalMeasure(goal.currentValue, goal.unit)} of ${displayGoalMeasure(goal.targetValue, goal.unit)}`}</p><div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{goal.targetDate ? formatDate(goal.targetDate) : 'Open-ended'}</p><p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p></div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button>{goal.mode !== 'milestone' && <button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button>}<button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">+ Milestone</button>              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, goal.status === 'Paused' ? 'In Progress' : 'Paused')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Paused' ? 'Resume goal' : 'Pause goal'}</button>}
               {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, 'Completed')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">Complete goal</button>}
               <button type="button" className="lifeos-raised min-h-11 rounded-xl px-4 text-sm" onClick={async () => {
                 try {
@@ -3300,7 +3306,7 @@ export default function App() {
                 }
               }}>{goal.archived ? 'Restore goal' : 'Archive goal'}</button>
               <button type="button" className="lifeos-danger min-h-11 rounded-xl px-4 text-sm" onClick={() => void deleteGoalFromDetails(goal)}>Delete goal</button></div><div><h4 className="text-sm font-semibold">Milestones</h4>{rows.length === 0 ? <p className="mt-2 text-xs text-secondary">No milestones yet.</p> : <ul className="mt-2 divide-y divide-[var(--stroke)]">{rows.map(row => <li key={row.id}><label className="flex min-h-12 cursor-pointer items-center gap-3 py-2"><input type="checkbox" checked={row.completed} onChange={async () => { await StorageService.goals.toggleMilestone(row.id, !row.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} className="h-5 w-5" style={{ accentColor: 'var(--accent)' }} /><span className="min-w-0 flex-1"><span className={`block text-sm ${row.completed ? 'line-through text-secondary' : ''}`}>{row.title}</span>{row.targetDate && <span className="text-xs text-secondary">{formatDate(row.targetDate)} · {getDaysRemainingText(row.targetDate)}</span>}</span></label></li>)}</ul>}</div>{(tasks.some(task => task.goalId === goal.id) || habits.some(habit => habit.goalId === goal.id)) && <section aria-label="Linked activity" className="space-y-2">
-              <h4 className="type-section-title">Linked activity</h4><ul className="text-sm text-secondary">
+              <h4 className="type-section-title">Linked activity</h4><p className="text-sm text-secondary">Record goal progress separately.</p><ul> className="text-sm text-secondary">
                 {tasks.filter(task => task.goalId === goal.id).map(task => <li key={'task:' + task.id}>{task.title}</li>)}
                 {habits.filter(habit => habit.goalId === goal.id).map(habit => <li key={'habit:' + habit.id}>{habit.name}</li>)}
               </ul></section>}<details className="border-t border-[var(--stroke)]"><summary className="min-h-11 content-center cursor-pointer text-sm font-semibold">History</summary><ul className="space-y-2 text-sm text-secondary"><li>Created {formatDate(goal.createdAt.slice(0, 10))}</li>{[...(goal.progressHistory || [])].reverse().map((entry, index) => <li key={entry.at + ':' + index}>{formatDate(entry.at.slice(0, 10))} &middot; {displayGoalMeasure(entry.value, entry.unit)}</li>)}{goal.updatedAt && <li>Updated {formatDate(goal.updatedAt.slice(0, 10))}</li>}{rows.filter(row => row.completed && row.completedAt).sort((a, b) => (b.completedAt || '').localeCompare(a.completedAt || '')).map(row =><li key={row.id}>{formatDate((row.completedAt || '').slice(0, 10))} &middot; {row.title}</li>)}</ul></details></section>; })()}
@@ -3778,7 +3784,13 @@ export default function App() {
               <ComposerChoice variant="field" label="Category" value={createDraft.category || 'Other'}
                 options={['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(value => [value, value])}
                 onSelect={category => setCreateDraft(draft => ({ ...draft, category }))} />
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target<input required type="number" min="0.01" step="any" inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>
+              <ComposerChoice variant="field" label="Goal completion" value={createDraft.goalMode || 'accumulate'}
+                disabled={Boolean(editingGoalId)} options={[['accumulate', 'Reach a target'], ['reduce', 'Reduce a value'], ['milestone', 'Finish milestones'], ['frequency', 'Count sessions']]}
+                onSelect={goalMode => setCreateDraft(current => ({ ...current, goalMode, ...(goalMode === 'frequency' ? { unit: '' } : {}) }))} />
+              {createDraft.goalMode === 'reduce' && <label className="block text-sm">Starting value
+                <input required type="number" min="0" step="any" value={createDraft.baselineValue || ''} onChange={event => setCreateDraft(current => ({ ...current, baselineValue: event.target.value }))} className="lifeos-input block min-h-11 w-full rounded-xl px-3" />
+              </label>}
+              {createDraft.goalMode !== 'milestone' && <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target<input required type="number" min={createDraft.goalMode === 'reduce' ? '0' : createDraft.goalMode === 'frequency' ? '1' : '0.01'} step={createDraft.goalMode === 'frequency' ? '1' : 'any'} inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>}
               <label className="mb-3 block text-xs text-secondary">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority || 'Medium'} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
               {editingGoalId && <label className="mb-3 block text-xs text-secondary">Status<select value={createDraft.status || 'In Progress'} onChange={e => setCreateDraft({ ...createDraft, status: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['In Progress', 'Paused', 'Completed'].map(status => <option key={status}>{status}</option>)}</select></label>}

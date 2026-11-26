@@ -178,7 +178,11 @@ export interface GoalProgressEntry {
   unit?: string;
 }
 
+export type GoalMode = 'accumulate' | 'reduce' | 'milestone' | 'frequency';
+
 export interface Goal {
+  mode?: GoalMode;
+  baselineValue?: number;
   archived?: boolean;
   progressHistory?: GoalProgressEntry[];
   id: string;

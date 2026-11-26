@@ -448,15 +448,15 @@ async function runTestSuite() {
   const exactTransaction = userPreferenceUtils.buildTransactionUpdate({ type: 'expense', amount: '1.005', currencyCode: 'USD', category: 'Food', description: 'Coffee', dateTime: '2026-10-31T12:15', paymentMethod: 'Cash' });
   assert(exactTransaction.amount === 1.01 && exactTransaction.amountMinor === '101' && exactTransaction.currencyCode === 'USD', 'New transactions persist exact minor units and their explicit currency');
   const analyticsRows = buildFinanceAnalytics([
-    { date: '2026-09-03', amount: 120, type: 'expense', category: 'Rent' },
-    { date: '2026-10-01', amount: 1000, type: 'income', category: 'Salary' },
-    { date: '2026-10-02', amount: 100, type: 'expense', category: 'Food' },
-    { date: '2026-10-03', amount: 50, type: 'expense', category: 'Rent' },
+    { date: '2026-09-03', amount: 120, currencyCode: 'INR', type: 'expense', category: 'Rent' },
+    { date: '2026-10-01', amount: 1000, currencyCode: 'INR', type: 'income', category: 'Salary' },
+    { date: '2026-10-02', amount: 100, currencyCode: 'INR', type: 'expense', category: 'Food' },
+    { date: '2026-10-03', amount: 50, currencyCode: 'INR', type: 'expense', category: 'Rent' },
   ], [
-    { monthYear: '2026-10', categoryId: 'cat-food', monthlyAmount: 150 },
-    { monthYear: '2026-10', categoryId: 'cat-rent', monthlyAmount: 100 },
-    { monthYear: '2026-10', categoryId: 'cat-missing', monthlyAmount: 75 },
-    { monthYear: '2026-10', monthlyAmount: 200 },
+    { monthYear: '2026-10', categoryId: 'cat-food', monthlyAmount: 150, currencyCode: 'INR' },
+    { monthYear: '2026-10', categoryId: 'cat-rent', monthlyAmount: 100, currencyCode: 'INR' },
+    { monthYear: '2026-10', categoryId: 'cat-missing', monthlyAmount: 75, currencyCode: 'INR' },
+    { monthYear: '2026-10', monthlyAmount: 200, currencyCode: 'INR' },
   ], '2026-10', 6, [
     { id: 'cat-food', name: 'Food' },
     { id: 'cat-rent', name: 'Rent' },
@@ -466,10 +466,10 @@ async function runTestSuite() {
   assert(analyticsRows.budgetRows[1].category === 'Rent' && analyticsRows.budgetRows[1].spent === 50 && analyticsRows.budgetRows[1].remaining === 50, 'A second category budget resolves and calculates independently');
   assert(analyticsRows.budgetRows[2].category === 'Unknown category' && analyticsRows.budgetRows[2].spent === 0 && analyticsRows.budgetRows[2].remaining === 75, 'Missing category references fail safely without misattributing spending');
   assert(analyticsRows.budgetRows[3].category === 'Overall' && analyticsRows.budgetRows[3].spent === 150, 'Overall budgets continue to use total expenses');
-  const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
-  const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, type: 'income' }, { date: '2026-10-03', amount: 20, type: 'expense', category: 'Other' }], [], '2026-10');
+  const noBaseline = buildFinanceAnalytics([{ date: '2026-10-03', amount: 20, currencyCode: 'INR', type: 'expense', category: 'Other' }], [], '2026-10');
+  const zeroBaseline = buildFinanceAnalytics([{ date: '2026-09-03', amount: 100, currencyCode: 'INR', type: 'income' }, { date: '2026-10-03', amount: 20, currencyCode: 'INR', type: 'expense', category: 'Other' }], [], '2026-10');
   assert(noBaseline.expenseChange === null && !noBaseline.previousMonthHasRecords && zeroBaseline.expenseChange === null && zeroBaseline.previousMonthHasRecords, 'Analytics distinguish missing prior data from a recorded month with zero expenses');
-  const overspendRate = buildFinanceAnalytics([{ date: '2026-10-01', amount: 100, type: 'income' }, { date: '2026-10-02', amount: 130, type: 'expense' }], [], '2026-10');
+  const overspendRate = buildFinanceAnalytics([{ date: '2026-10-01', amount: 100, currencyCode: 'INR', type: 'income' }, { date: '2026-10-02', amount: 130, currencyCode: 'INR', type: 'expense' }], [], '2026-10');
   assert(overspendRate.savingsRate === -30 && overspendRate.netSavings === -30, 'Savings rate accurately shows a negative result when saved expenses exceed income');
   assert(noBaseline.savingsRate === null, 'Savings rate is unavailable when there is no income baseline');
   let financeHistory = [];

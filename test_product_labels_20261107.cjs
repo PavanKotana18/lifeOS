@@ -15,7 +15,7 @@ test('Finance charts and category budgets retain arbitrary imported category nam
   const budgets = categoryRecords.map(category => ({
     categoryId: category.id, monthlyAmount: 1, monthYear: '2026-11',
   }));
-  const result = buildFinanceAnalytics(rows, budgets, '2026-11', 3, categoryRecords);
+  const result = buildFinanceAnalytics(rows.map(row => ({ currencyCode: 'INR', ...row })), budgets.map(row => ({ currencyCode: 'INR', ...row })), '2026-11', 3, categoryRecords);
   assert.equal(result.totalExpenses, 1.5);
   assert.equal(result.categories.length, labels.length);
   for (const label of labels) {
@@ -32,7 +32,7 @@ test('Finance charts and category budgets retain arbitrary imported category nam
 
 test('A category budget with no expenses reports zero even for inherited property names', () => {
   for (const name of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
-    const result = buildFinanceAnalytics([], [{ categoryId: 'custom', monthlyAmount: 12 }],
+    const result = buildFinanceAnalytics([], [{ categoryId: 'custom', monthlyAmount: 12, currencyCode: 'INR' }],
       '2026-11', 3, [{ id: 'custom', name }]);
     assert.equal(result.budgetRows[0].spent, 0);
     assert.equal(result.budgetRows[0].remaining, 12);

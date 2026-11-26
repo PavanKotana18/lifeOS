@@ -12,6 +12,7 @@ type Props = {
   weeklyCompleted: number;
   weeklyTotal: number;
   goals: Goal[];
+  progressForGoal?: (goal: Goal) => number;
   hasHistory: boolean;
   formatMoney: (amount: number) => string;
   onFinance: () => void;
@@ -54,11 +55,13 @@ export default function InsightsHub(props: Props) {
       {hasGoalRecords && <section className="insights-section insight-goals lifeos-panel" aria-labelledby="insights-goal-title">
         <div className="flex items-center justify-between gap-2"><div><p className="type-eyebrow">LONGER-TERM</p><h3 id="insights-goal-title" className="font-semibold">Goal progress</h3><p className="text-xs text-secondary">Current progress against each saved target</p></div><button type="button" onClick={onGoals} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[var(--accent)]">View goals</button></div>
         <ul className="mt-3 space-y-4">{goals.slice(0, 3).map(goal => {
-          const progress = getGoalProgress(goal.currentValue, goal.targetValue);
+          const progress = props.progressForGoal?.(goal) ?? getGoalProgress(goal.currentValue, goal.targetValue);
           return <li key={goal.id}>
             <div className="flex justify-between gap-3 text-sm"><span className="min-w-0 truncate font-medium">{goal.title}</span><span className="shrink-0 tabular-nums text-secondary">{progress}%</span></div>
             <div className="lifeos-progress-track mt-2 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${progress}%` }} /></div>
-            <p className="mt-1 text-xs text-secondary">{goal.currentValue.toLocaleString()} of {goal.targetValue.toLocaleString()}{goal.unit ? ` ${goal.unit}` : ''}</p>
+            <p className="mt-1 text-xs text-secondary">{goal.mode === 'milestone' ? 'Milestones' :
+              goal.mode === 'reduce' ? `${goal.currentValue.toLocaleString()} now ? target ${goal.targetValue.toLocaleString()}${goal.unit ? ` ${goal.unit}` : ''}` :
+              `${goal.currentValue.toLocaleString()} of ${goal.targetValue.toLocaleString()}${goal.unit ? ` ${goal.unit}` : ''}`}</p>
           </li>;
         })}</ul>
       </section>}

@@ -1,3 +1,4 @@
+import { isGoalComplete, validateGoalMeasure } from './goalModes';
 import { PossibleImportDuplicateError, type ImportDuplicateOptions } from './smartImport';
 import { createSampleData, isSampleRecord } from './sampleData';
 import { withCommitmentWriteLock } from './commitmentWriteLock';
@@ -124,9 +125,7 @@ function identity(table: EncryptedTable, row: any): string {
 
 function reconcileGoal(goal: Goal, milestones: Milestone[]): Goal {
   if (goal.status === 'Paused') return goal;
-  const eligible = Number(goal.targetValue) > 0 &&
-    Number(goal.currentValue) >= Number(goal.targetValue) &&
-    milestones.every(item => item.completed);
+  const eligible = isGoalComplete(goal, milestones);
   return { ...goal, status: eligible ? 'Completed' :
     (goal.status === 'Completed' ? 'In Progress' : goal.status) };
 }
@@ -821,12 +820,10 @@ export function createEncryptedStorageFacade(
       getAll: () => readAll<Goal>('goals'),
       getAllMilestones: () => readAll<Milestone>('milestones'),
 
-      add: async (input: Omit<Goal, 'id' | 'createdAt'>) =>
-        add('goals', {
-          ...input,
-          id: helpers.createRecordId('goal'),
-          createdAt: new Date().toISOString(),
-        }),
+      add: async (input: Omit<Goal, 'id' | 'createdAt'>) => {
+        validateGoalMeasure(input);
+        return add('goals', { ...input, id: helpers.createRecordId('goal'), createdAt: new Date().toISOString() });
+      },
 
       update: (id: string, changes: Partial<Goal>) => coordinator.run(async ctx => {
         const existing = await ctx.get<Goal>('goals', id);
@@ -834,6 +831,7 @@ export function createEncryptedStorageFacade(
         const milestones = (await ctx.getAll<Milestone>('milestones')).filter(m => m.goalId === id);
         const updatedAt = new Date().toISOString();
         const next = { ...existing, ...changes, id, createdAt: existing.createdAt, updatedAt };
+        validateGoalMeasure(next);
         const progressHistory = existing.currentValue !== next.currentValue || existing.unit !== next.unit
           ? [...(existing.progressHistory || []), { at: updatedAt, value: next.currentValue, ...(next.unit ? { unit: next.unit } : {}) }]
           : existing.progressHistory;

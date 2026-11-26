@@ -22,8 +22,16 @@ assert.match(app, /aria-pressed=\{goalsSubtab === tab\}/);
 
 console.log("GOAL STATUS UI REGRESSION TESTS: 15/15 passed (source-level presentation checks)");
 
-assert.match(db, /Number\(next\.currentValue\) >= Number\(next\.targetValue\)/);
-assert.match(db, /milestones\.every\(item => item\.completed\)/);
+assert.match(db, /isGoalComplete\(next, milestones\)/);
+require('./scripts/register-ts-test-loader.cjs');
+const { isGoalComplete, goalProgressPercent, validateGoalMeasure } = require('./src/services/goalModes.ts');
+const reduction = { mode: 'reduce', baselineValue: 100, currentValue: 75, targetValue: 50 };
+assert.equal(goalProgressPercent(reduction, []), 50);
+assert.equal(isGoalComplete({ ...reduction, currentValue: 50 }, [{ completed: false }]), false);
+assert.equal(isGoalComplete({ ...reduction, currentValue: 50 }, [{ completed: true }]), true);
+assert.equal(isGoalComplete({ mode: 'milestone', currentValue: 0, targetValue: 0 }, []), false);
+assert.equal(isGoalComplete({ mode: 'milestone', currentValue: 0, targetValue: 0 }, [{ completed: true }]), true);
+assert.throws(() => validateGoalMeasure({ mode: 'frequency', currentValue: 1.5, targetValue: 3 }), /whole numbers/);
 assert.match(db, /goal\.status !== 'Paused'/);
 assert.match(db, /nextStatus === 'Completed'|eligible \? 'Completed'/);
 assert.match(db, /db\.transaction\('rw', db\.goals, db\.milestones/);

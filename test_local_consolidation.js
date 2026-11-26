@@ -9,7 +9,7 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const { buildFinanceAnalytics } = f.load('src/services/financeAnalytics.ts');
   const rows = [0.1, 0.2].map(amount => ({ date:'2026-11-01', amount, type:'expense', category:'Food' }));
   rows.push({date:'2026-11-02',amount:0.4,type:'income'});
-  const a = buildFinanceAnalytics(rows,[{categoryId:'food',monthlyAmount:0.4}], '2026-11', 2, [{id:'food',name:'Food'}]);
+  const a = buildFinanceAnalytics(rows.map(row => ({ currencyCode:'INR', ...row })),[{categoryId:'food',monthlyAmount:0.4,currencyCode:'INR'}], '2026-11', 2, [{id:'food',name:'Food'}]);
   assert.equal(a.totalExpenses,0.3); assert.equal(a.categories[0].amount,0.3);
   assert.equal(a.netSavings,0.1); assert.equal(a.budgetRows[0].remaining,0.1);
   assert.equal(a.periodRows.at(-1).expenses,0.3); assert.equal(a.periodRows[0].expenses,null);

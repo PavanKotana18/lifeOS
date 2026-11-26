@@ -1,3 +1,4 @@
+import { isGoalComplete, validateGoalMeasure } from './services/goalModes';
 import type { ImportDuplicateOptions } from './services/smartImport';
 import Dexie, { Table } from 'dexie';
 import { createSessionManager } from './services/sessionManager';
@@ -725,6 +726,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'unit', 'goals', i);
     optionalInstant(r, 'updatedAt', 'goals', i);
     optionalBoolean(r, 'archived', 'goals', i);
+    try { validateGoalMeasure(r); } catch { fail('goals', i, 'mode or goal measure'); }
     if (r.progressHistory !== undefined && (!Array.isArray(r.progressHistory) ||
       r.progressHistory.some((entry: any) => !obj(entry) || !instant(entry.at) || !num(entry.value) ||
         (entry.unit !== undefined && !str(entry.unit))))) fail('goals', i, 'progressHistory');
@@ -1371,6 +1373,7 @@ const rawStorageService: IDataStorage = {
       return db.milestones.toArray();
     },
     async add(goal) {
+      validateGoalMeasure(goal);
       const id = createRecordId('g');
       const record: Goal = { ...goal, id, createdAt: new Date().toISOString() };
       await db.goals.add(record);
@@ -1391,10 +1394,8 @@ const rawStorageService: IDataStorage = {
           updatedAt: new Date().toISOString()
         };
         const milestones = await db.milestones.where('goalId').equals(id).toArray();
-        const eligible =
-          Number(next.targetValue) > 0 &&
-          Number(next.currentValue) >= Number(next.targetValue) &&
-          milestones.every(item => item.completed);
+        validateGoalMeasure(next);
+        const eligible = isGoalComplete(next, milestones);
 
         if (next.status !== 'Paused') {
           next.status = eligible ? 'Completed' :
@@ -1441,10 +1442,7 @@ const rawStorageService: IDataStorage = {
         const milestones = await db.milestones
           .where('goalId').equals(milestone.goalId).toArray();
 
-        const eligible =
-          Number(goal.targetValue) > 0 &&
-          Number(goal.currentValue) >= Number(goal.targetValue) &&
-          milestones.every(item => item.completed);
+        const eligible = isGoalComplete(goal, milestones);
 
         if (goal.status !== 'Paused') {
           const nextStatus = eligible ? 'Completed' :
