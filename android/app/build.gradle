@@ -1,7 +1,6 @@
 apply plugin: 'com.android.application'
 
-// package.json is the authoritative app version. An optional build number can
-// distinguish automated artifacts; ordinary local builds remain reproducible.
+// package.json supplies the version name and the existing Release code mapping.
 def lifeosPackage = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
 def lifeosVersion = lifeosPackage.version
 def lifeosVersionMatch = (lifeosVersion =~ /^(\d+)\.(\d+)\.(\d+)$/)
@@ -19,6 +18,16 @@ def lifeosVersionCode = lifeosMajor * 1000000 + lifeosMinor * 1000 + lifeosPatch
 if (lifeosVersionCode <= 0 || lifeosVersionCode > 2100000000) {
     throw new GradleException("Calculated Android versionCode is out of range: ${lifeosVersionCode}")
 }
+
+// Build LifeOS Android APK owns the distributable Debug sequence. Local
+// owner builds reuse the run number reserved for that exact source commit.
+// Ordinary local and emulator builds use the fixed QA floor.
+def debugFloor = rootProject.file('debug-version-floor.txt').text.trim().toLong()
+def debugBuildNumber = providers.environmentVariable('LIFEOS_ANDROID_DEBUG_BUILD_NUMBER').orElse('0').get().toLong()
+if (debugFloor < 1000241 || debugBuildNumber < 0 || debugBuildNumber > 2100000000L - debugFloor) {
+    throw new GradleException('Invalid Standard Debug version allocation.')
+}
+def debugVersionCode = (debugFloor + debugBuildNumber).toInteger()
 
 def lifeosReleaseSigningReady =
     ['ANDROID_KEYSTORE_PATH', 'ANDROID_KEYSTORE_PASSWORD',
@@ -59,6 +68,12 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType('debug')) { variant ->
+        variant.outputs.each { output -> output.versionCode.set(debugVersionCode) }
     }
 }
 
