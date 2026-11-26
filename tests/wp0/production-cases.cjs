@@ -37,6 +37,12 @@ async function goalOutcomes(s) {
   const a = await s.goals.add(goal);
   await s.goals.update(a.id, { currentValue: 10 });
   const targetReached = await read(a.id);
+  await s.goals.update(a.id, { archived: true });
+  const archived = (await s.goals.getAll()).find(row => row.id === a.id);
+  assert.equal(archived.archived, true);
+  assert.equal(archived.status, 'Completed');
+  assert.deepEqual(archived.progressHistory.map(({ value, unit }) => ({ value, unit })), [{ value: 10, unit: 'km' }]);
+  await s.goals.update(a.id, { archived: false });
   const b = await s.goals.add(goal);
   await s.goals.update(b.id, { status: 'Completed' });
   const prematureCompletion = await read(b.id);

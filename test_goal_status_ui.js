@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const app = fs.readFileSync("src/App.tsx", "utf8");
 const db = fs.readFileSync("src/db.ts", "utf8");
 
-assert.match(app, /useState<'active' \| 'paused' \| 'completed'>\('active'\)/);
+assert.match(app, /useState<'active' \| 'paused' \| 'completed' \| 'archived'>\('active'\)/);
 for (const status of ["active", "paused", "completed"]) {
   assert.match(app, new RegExp(`'${status}'`));
 }
