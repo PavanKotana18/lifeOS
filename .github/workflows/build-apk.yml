@@ -86,6 +86,8 @@ jobs:
   android-build:
     name: Android debug build
     needs: checks
+    env:
+      LIFEOS_ANDROID_DEBUG_BUILD_NUMBER: ${{ github.run_number }}
     if: >-
       (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/testing' || github.ref == 'refs/heads/integration/lifeos-local-consolidation-20261106' || github.ref == 'refs/heads/integration/lifeos-ui2-candidate-20261108' || startsWith(github.ref, 'refs/heads/feature/') || startsWith(github.ref, 'refs/heads/bugfix/') || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/hotfix/') || startsWith(github.ref, 'refs/heads/fix/'))) ||
       (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'develop' || github.base_ref == 'testing' || github.base_ref == 'fix/lifeos-security-data-sprint1-20261106' || github.base_ref == 'integration/lifeos-local-consolidation-20261106')) ||
@@ -157,13 +159,21 @@ jobs:
           grep -q "package: name='com.lifeos.personal.debug'" <<< "$BADGING" || { echo "::error::Unexpected LifeOS applicationId in debug APK."; exit 1; }
           VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
           VERSION_NAME="$(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
-          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]] || { echo "::error::Debug APK has an invalid versionCode."; exit 1; }
+          FLOOR="$(cat android/debug-version-floor.txt)"
+          EXPECTED_VERSION_CODE=$((FLOOR + LIFEOS_ANDROID_DEBUG_BUILD_NUMBER))
+          [[ "$VERSION_CODE" == "$EXPECTED_VERSION_CODE" ]] || { echo "::error::Debug APK does not match its reserved versionCode."; exit 1; }
+          PERMISSIONS="$("$AAPT" dump permissions "$APK")"
+          if grep -Eq 'android\.permission\.[A-Z_]*SMS[A-Z_]*' <<< "$PERMISSIONS"; then
+            echo "::error::Standard Debug APK declares an SMS permission."
+            exit 1
+          fi
           {
             echo "### Debug APK identity"
             echo "- SHA-256 signer: $ACTUAL (standard Android debug key)"
             echo "- applicationId: com.lifeos.personal.debug"
             echo "- versionCode: $VERSION_CODE"
             echo "- versionName: $VERSION_NAME"
+            echo "- Debug version reservation: workflow run number $LIFEOS_ANDROID_DEBUG_BUILD_NUMBER"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Debug APK Artifact

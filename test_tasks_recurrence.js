@@ -172,8 +172,8 @@ async function main() {
       await db.tasks.get('rec_reminder-source_2026-11-03');
 
     check(
-      firstReminderOccurrence?.reminderAt === reminderAt,
-      'Recurring occurrence preserves the original reminder timestamp'
+      firstReminderOccurrence?.reminderAt === '2026-11-03T08:00:00.000Z',
+      'Recurring occurrence moves the reminder with the due date'
     );
 
     await StorageService.tasks.toggleCompleted(
@@ -184,9 +184,9 @@ async function main() {
       await db.tasks.get('rec_reminder-source_2026-11-04');
 
     check(
-      secondReminderOccurrence?.reminderAt === reminderAt &&
+      secondReminderOccurrence?.reminderAt === '2026-11-04T08:00:00.000Z' &&
       secondReminderOccurrence?.recurrenceRootId === 'reminder-source',
-      'Second recurrence keeps the stable root ID and reminder timestamp'
+      'Second recurrence keeps the stable root ID and moves the reminder again'
     );
 
     await add('parallel', '2026-11-03', 'Daily');
@@ -195,6 +195,7 @@ async function main() {
       StorageService.tasks.toggleCompleted('parallel', true),
       StorageService.tasks.toggleCompleted('parallel', true)
     ]);
+
     check(
       await db.tasks.where('id').equals('rec_parallel_2026-11-04').count() === 1,
       'Concurrent completion creates exactly one occurrence'
@@ -213,6 +214,9 @@ async function main() {
       (await db.tasks.get('rec_month-end_2027-02-28'))?.dueDate === '2027-02-28',
       'Monthly recurrence clamps January 31 to February 28'
     );
+    await StorageService.tasks.toggleCompleted('rec_month-end_2027-02-28', true);
+    check((await db.tasks.get('rec_month-end_2027-03-31'))?.recurrenceAnchorDay === 31,
+      'Monthly recurrence keeps the original day after a shorter month');
 
     await add('weekly', '2026-11-01', 'Weekly');
     await StorageService.tasks.toggleCompleted('weekly', true);
@@ -274,7 +278,7 @@ async function main() {
       'Undo removes an untouched generated child and clears its parent reference'
     );
 
-    console.log(`RECURRENCE TESTS: ${passed}/14 PASSED`);
+    console.log(`RECURRENCE TESTS: ${passed}/15 PASSED`);
   } finally {
     await db.delete();
   }

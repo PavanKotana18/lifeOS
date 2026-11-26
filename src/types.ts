@@ -221,6 +221,8 @@ export interface Task {
   createdAt: string;
   updatedAt?: string;
   recurrenceRootId?: string;
+  recurrenceAnchorDay?: number;
+  recurrenceScheduledDate?: string;
   spawnedTaskId?: string;
   /** Optional child checklist stored inside the same encrypted task record. */
   subtasks?: TaskSubtask[];

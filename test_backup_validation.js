@@ -189,6 +189,14 @@ test('Rejects missing table arrays', () => {
   rejects(d, /habits must be an array/);
 });
 
+test('Backups accept open-ended goals and still reject malformed goal dates', () => {
+  const data = sample();
+  data.goals[0].targetDate = '';
+  assert.equal(validate(data).length, 15);
+  data.goals[0].targetDate = '2026-02-30';
+  rejects(data, /goals.*targetDate/);
+});
+
 test('Rejects duplicate record IDs', () => {
   const d = sample(); d.tasks.push({ ...d.tasks[0] });
   rejects(d, /duplicate id/);
