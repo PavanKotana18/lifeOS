@@ -58,7 +58,7 @@ function financeRows(rows, sort = 'date-desc', filters = {}) {
     }).map(row => row.id), ['december'], 'date ranges span months and exact amount bounds are inclusive');
     assert.deepEqual(financeRows(rows, 'date-desc', { financeAccountFilter: 'bank-a' }).map(row => row.id), ['a-usd']);
     assert.deepEqual(financeRows(rows, 'date-desc', { financeCurrencyFilter: 'USD' }).map(row => row.id), ['a-usd']);
-    assert.deepEqual(financeRows(rows, 'date-desc', { financeCurrencyFilter: 'INR' }).map(row => row.id), ['b-inr', 'legacy'], 'untagged history keeps the locked reporting-currency interpretation');
+    assert.deepEqual(financeRows(rows, 'date-desc', { financeCurrencyFilter: 'INR' }).map(row => row.id), ['b-inr'], 'currency filters do not assign a currency to untagged history');
   });
 
   await test('Finance create, edit, reload and delete preserve entered local date-time without inventing legacy time', () => fixture(async f => {

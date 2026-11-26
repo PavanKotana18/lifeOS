@@ -9,10 +9,11 @@ type Props = {
   monthly?: boolean;
   onMonthly?: () => void;
   monthSavings?: string;
+  exactCashFlow?: [string, string, string];
   income: number;
   expenses: number;
   netCashFlow: number;
-  budgetRows: Array<{ category: string; allocated: number; spent: number; remaining: number }>;
+  budgetRows: Array<{ category: string; allocated: number; spent: number; remaining: number; allocatedMinor?: string; spentMinor?: string; remainingMinor?: string }>;
   expenseChange: number | null;
   excludedCurrencyCount?: number;
   transactions: Transaction[];
@@ -41,8 +42,12 @@ const moneyDestinations = [
   { id: 'planning', label: 'Scheduled', icon: CalendarDays },
 ] as const;
 
-export default function MoneyHome({ month, monthly = false, onMonthly, monthSavings, expenseChange, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
+export default function MoneyHome({ month, monthly = false, onMonthly, monthSavings, expenseChange, exactCashFlow, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
   onAddTransaction, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, legacyCurrency, locale, onEditTransaction }: Props) {
+  const exact = (value: string | undefined, fallback: number) => value === undefined ? formatMoney(fallback) : formatMinorUnits(BigInt(value), legacyCurrency, locale);
+  const cashIncome = exact(exactCashFlow?.[0], income);
+  const cashExpenses = exact(exactCashFlow?.[1], expenses);
+  const cashNet = exact(exactCashFlow?.[2], netCashFlow);
   const destinationActions = { transactions: onTransactions, accounts: onAccounts, budgets: onBudgets, savings: onSavings, analytics: onAnalytics, planning: onPlanning };
 
   return <div className="money-home" data-testid="money-home">
@@ -54,12 +59,12 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
 
     <section className="money-cashflow" aria-labelledby="money-cashflow-title">
       <div className="money-cashflow-top justify-start"><h3 id="money-cashflow-title" className="type-section-title">Net cash flow</h3><InfoTip label="Net cash flow">Income received minus spending recorded in this period. Planned bills, transfers and savings contributions are separate.</InfoTip></div>
-      <p className="type-display-amount" data-testid="money-net-cashflow">{formatMoney(netCashFlow)}</p>
-      <div className="money-flow-split" role="group" aria-label={`Recorded cash flow: income ${formatMoney(income)}; expenses ${formatMoney(expenses)}`}>
-        <div><span>Income</span><strong>{formatMoney(income)}</strong></div>
-        <div><span>Spent</span><strong>{formatMoney(expenses)}</strong></div>
+      <p className="type-display-amount" data-testid="money-net-cashflow">{cashNet}</p>
+      <div className="money-flow-split" role="group" aria-label={`Recorded cash flow: income ${cashIncome}; expenses ${cashExpenses}`}>
+        <div><span>Income</span><strong>{cashIncome}</strong></div>
+        <div><span>Spent</span><strong>{cashExpenses}</strong></div>
       </div>
-      {excludedCurrencyCount > 0 && <p className="money-empty-note" role="status">{excludedCurrencyCount} financial item{excludedCurrencyCount === 1 ? '' : 's'} in another currency are left out of these totals. Comparing them requires a dated exchange rate.</p>}
+      {excludedCurrencyCount > 0 && <p className="money-empty-note" role="status">{excludedCurrencyCount} financial item{excludedCurrencyCount === 1 ? '' : 's'} with another currency or no saved currency are excluded from these totals.</p>}
     </section>
 
     {!monthly && <nav className="money-destinations" aria-label="Money destinations">{moneyDestinations.map(item => {
@@ -73,7 +78,7 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
     {expenseChange != null && <section className="money-context"><h3 className="type-section-title">Spending trend</h3><p className="mt-2 text-sm">{expenseChange === 0 ? 'Unchanged from the previous month' : Math.abs(expenseChange).toFixed(1) + '% ' + (expenseChange > 0 ? 'higher' : 'lower') + ' than the previous month'}</p></section>}
     <section className="money-context" aria-label="Budget progress">
       <div className="money-context-heading"><div><h3 className="type-section-title">Budget progress</h3></div><div className="flex items-center gap-2"><InfoTip label="Budget remaining">Remaining is the plan limit minus posted spending in that category for this month. A negative amount means spending is above the limit.</InfoTip><button type="button" onClick={onBudgets} className="money-text-action">Budgets <ArrowRight size={15} aria-hidden="true" /></button></div></div>
-      {budgetRows.length ? <ul className="money-budget-list">{budgetRows.slice(0, 2).map((row, index) => <li key={`${row.category}-${index}`}><div><strong>{row.category === 'Overall' ? 'Overall plan' : `${row.category} plan`}</strong><span>{formatMoney(row.spent)} recorded of {formatMoney(row.allocated)}</span></div><span className={row.remaining < 0 ? 'money-budget-over' : 'money-budget-remaining'}>{row.remaining < 0 ? `${formatMoney(Math.abs(row.remaining))} over` : `${formatMoney(row.remaining)} left`}</span></li>)}</ul> : <button type="button" className="money-context-empty" onClick={onBudgets}>No budget added for this month <span>Create a plan <ArrowRight size={14} aria-hidden="true" /></span></button>}
+      {budgetRows.length ? <ul className="money-budget-list">{budgetRows.slice(0, 2).map((row, index) => <li key={`${row.category}-${index}`}><div><strong>{row.category === 'Overall' ? 'Overall plan' : `${row.category} plan`}</strong><span>{exact(row.spentMinor, row.spent)} recorded of {exact(row.allocatedMinor, row.allocated)}</span></div><span className={row.remaining < 0 ? 'money-budget-over' : 'money-budget-remaining'}>{row.remaining < 0 ? `${exact(row.remainingMinor?.replace(/^-/, ''), Math.abs(row.remaining))} over` : `${exact(row.remainingMinor, row.remaining)} left`}</span></li>)}</ul> : <button type="button" className="money-context-empty" onClick={onBudgets}>No budget added for this month <span>Create a plan <ArrowRight size={14} aria-hidden="true" /></span></button>}
     </section>
 
 
@@ -83,8 +88,8 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
       <div className="money-section-heading"><div><h3 id="money-activity-title" className="type-section-title">Activity</h3></div><button type="button" onClick={onTransactions} className="money-text-action">All transactions <ArrowRight size={15} aria-hidden="true" /></button></div>
       {!transactions.length ? <p className="money-empty-action" role="status">No transactions this month.</p> : <ul className="money-transaction-list">{transactions.slice(0, 4).map(transaction => {
         const title = transaction.description?.trim() || transaction.category || (transaction.type === 'income' ? 'Income' : 'Expense');
-        const amount = transaction.amountMinor !== undefined && transaction.amountMinor !== null
-          ? formatMinorUnits(BigInt(transaction.amountMinor), transaction.currencyCode || legacyCurrency, locale)
+        const amount = transaction.amountMinor != null && transaction.currencyCode
+          ? formatMinorUnits(BigInt(transaction.amountMinor), transaction.currencyCode ?? legacyCurrency, locale)
           : formatMoney(transaction.amount, transaction.currencyCode);
         const details = [formatDate(transaction.date), transaction.occurredAt ? formatTime(new Date(transaction.occurredAt)) : '', transaction.category && transaction.category !== title ? transaction.category : ''].filter(Boolean).join(' · ');
         return <li key={transaction.id}>
