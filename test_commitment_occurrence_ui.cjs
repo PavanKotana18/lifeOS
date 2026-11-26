@@ -32,8 +32,8 @@ const markup = renderToStaticMarkup(React.createElement(MoneyPlanning, {
 assert.match(markup, /aria-label="Record occurrence for Synthetic income"/);
 assert.match(markup, /disabled=""[^>]*aria-label="Record occurrence for Paused plan"/);
 assert.match(markup, /disabled=""[^>]*aria-label="Record occurrence for Future plan"/);
-assert.match(markup, /income - monthly/);
-assert.match(markup, /Nothing is posted until you confirm an occurrence/);
+assert.match(markup, /Incoming . Monthly/);
+assert.match(markup, /When due, review and confirm one occurrence to record it and advance the plan/);
 assert.match(markup, /aria-label="About Recurring Money confirmation"/);
 assert.match(markup, /A plan creates no transaction automatically/);
 (async () => {

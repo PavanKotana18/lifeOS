@@ -867,7 +867,7 @@ export default function App() {
     if (cancelProfileAdmission()) return;
     navigationMotion.cancelPending();
     if (typeof document !== 'undefined') {
-      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-transaction-actions][open]') ?? document.querySelector<HTMLDialogElement>('dialog[data-money-period][open],dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-preference-choice][open],dialog[data-smart-import][open]');
+      const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-transaction-actions][open]') ?? document.querySelector<HTMLDialogElement>('dialog[data-money-period][open],dialog[data-plan-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-scheduled-details][open],dialog[data-preference-choice][open],dialog[data-smart-import][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { contextualInfo.close(); return; }
@@ -3181,7 +3181,7 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="space-y-5"><PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+            {financeSubtab === 'planning' && <div className="space-y-5"><PlannedCashFlow commitments={plannedCommitments} month={financeMonth} currencyCode={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} /><MoneyPlanning draftState={planningDrafts} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} transactions={transactions} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
               onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
               onRecordOccurrence={async row => { await runPreparedFinanceWrite(() => StorageService.commitments.postOccurrence(row.id, row)); }}
