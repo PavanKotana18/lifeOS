@@ -179,7 +179,7 @@ jobs:
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LifeOS-debug-apk
+          name: BusyDoo-Standard-Debug-APK
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
@@ -187,7 +187,7 @@ jobs:
       - name: Upload Android instrumentation APK (not execution evidence)
         uses: actions/upload-artifact@v4
         with:
-          name: LifeOS-AndroidTest-APK
+          name: BusyDoo-AndroidTest-APK
           path: android/app/build/outputs/apk/androidTest/debug/*.apk
           if-no-files-found: error
           retention-days: 30
@@ -255,7 +255,7 @@ jobs:
         if: steps.signing.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: LifeOS-signed-release-apk
+          name: BusyDoo-Standard-Release-APK
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30

@@ -1,5 +1,5 @@
 /**
- * LifeOS Cryptographic Service (CJS / Browser compatible)
+ * BusyDoo Cryptographic Service (CJS / Browser compatible)
  * Production-grade AES-256-GCM, PBKDF2 key derivation with domain separation,
  * HMAC-SHA256 integrity verification, verified recovery, transactional rotation,
  * and key lifecycle state management (UNINITIALIZED, ACTIVE, QUARANTINED, ROTATED, DESTROYED).

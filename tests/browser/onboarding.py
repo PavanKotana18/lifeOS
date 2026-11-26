@@ -65,12 +65,12 @@ def complete_recovery(label='Synthetic recovery'):
  assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
  confirm.clear(); confirm.send_keys(copied[:14]+' '+copied[14:])
  w.until(lambda _: d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').is_enabled())
- click('Continue to LifeOS')
+ click('Continue to BusyDoo')
 
 try:
  # Save name and restart before continuing. The temporary draft is bootstrap-only.
- fresh(); shot('welcome'); find('input[autocomplete=nickname]').send_keys('Synthetic owner'); click('Continue'); find('[aria-label="Protect your LifeOS space"]')
- assert store('onboardingNameDraft')=='Synthetic owner'; d.refresh(); find('[aria-label="Protect your LifeOS space"]'); assert store('onboardingJourney')['stage']=='protection'; passed('Name persists and setup resumes after restart at App Protection')
+ fresh(); shot('welcome'); find('input[autocomplete=nickname]').send_keys('Synthetic owner'); click('Continue'); find('[aria-label="Protect your BusyDoo space"]')
+ assert store('onboardingNameDraft')=='Synthetic owner'; d.refresh(); find('[aria-label="Protect your BusyDoo space"]'); assert store('onboardingJourney')['stage']=='protection'; passed('Name persists and setup resumes after restart at App Protection')
 
  # A cancelled or unavailable native prompt cannot advance or enable storage.
  fresh('cancel'); find('input[autocomplete=nickname]').send_keys('Synthetic retry'); click('Continue'); shot('app-protection'); click('Continue with secure unlock'); find('[role="alert"]')
@@ -98,7 +98,7 @@ try:
 
  # Older optional choices never satisfy the new mandatory journey on an empty installation.
  fresh(); d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>{await m.StorageService.settings.set('onboardingJourney',{version:1,stage:'recovery',protection:'skipped',recovery:'skipped'});done(true);});")
- d.refresh(); find('[aria-label="Protect your LifeOS space"]'); j=store('onboardingJourney'); assert j['protection']=='pending' and j['recovery']=='pending'
+ d.refresh(); find('[aria-label="Protect your BusyDoo space"]'); j=store('onboardingJourney'); assert j['protection']=='pending' and j['recovery']=='pending'
  assert not d.find_elements(By.CSS_SELECTOR,'[data-testid=today-dashboard]'); passed('Legacy optional skips cannot bypass mandatory steps for a fresh empty installation')
 
  # Existing completed installations are grandfathered and not forced through the new flow.

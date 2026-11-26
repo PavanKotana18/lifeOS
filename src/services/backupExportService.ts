@@ -50,7 +50,7 @@ export async function exportBackupFile(options: {
 
   if (Capacitor.getPlatform() === 'android') {
     if (!Capacitor.isPluginAvailable('LifeOSBackup')) {
-      throw new Error('Native LifeOS backup export is unavailable.');
+      throw new Error('Native BusyDoo backup export is unavailable.');
     }
 
     const preservePendingRecovery = options.preservePendingRecovery === true

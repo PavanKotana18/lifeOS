@@ -25,7 +25,7 @@ export function createRecoveryController(crypto: RecoveryCrypto, session: {
         try { kit = JSON.parse(kitText); } catch { throw new Error('Invalid recovery kit JSON.'); }
         if (kitText.length > 8192 || kit?.product !== 'LifeOS' || kit?.format !== 'lifeos-recovery-kit' ||
             kit.version !== 1 || typeof kit.recoveryCode !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(kit.recoveryCode) || !kit.envelope) {
-          throw new Error('Select the complete supported LifeOS recovery kit.');
+          throw new Error('Select the complete supported BusyDoo recovery kit.');
         }
         const generation = session.lock();
         const current = () => {

@@ -1,0 +1,15 @@
+export const BUSYDOO = Object.freeze({
+  name: 'BusyDoo',
+  tagline: 'Life, in one place.',
+  black: '#141414',
+  lime: '#C8FA78',
+  white: '#FFFFFF',
+  raised: '#1E1E1E',
+  graphite: '#2C2C2C',
+  grey: '#B3B3B3',
+  light: '#FAFAF7',
+  darkAccentText: '#C8FA78',
+  lightAccentText: '#365516',
+  cinematicMs: 660,
+  quickMs: 170,
+});

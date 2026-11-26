@@ -1038,7 +1038,7 @@ async function main() {
       await capture('profile-390');
       for (const name of ['Appearance', 'Preferences', 'Notifications', 'Privacy & Security', 'Backup & Restore', 'About', 'Developer tools']) {
         await clickButton(new RegExp('^' + name));
-        await page.getByRole('heading', { name: name === 'About' ? 'About LifeOS' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true, level: 1 }).waitFor();
+        await page.getByRole('heading', { name: name === 'About' ? 'About BusyDoo' : name === 'Privacy & Security' ? 'Privacy & security' : name, exact: true, level: 1 }).waitFor();
         await inspectVisiblePage(name);
         await capture(name.toLowerCase().replaceAll(' ', '-') + '-390');
         if (name === 'Developer tools') {
@@ -1290,7 +1290,7 @@ async function main() {
       for (const [parent, back, children] of [
         ['Appearance', 'Appearance', ['Themes', 'Accent color', 'Motion']],
         ['Privacy & Security', 'Privacy & security', ['App lock', 'Recovery']],
-        ['About', 'About LifeOS', ['Open-source licenses']],
+        ['About', 'About BusyDoo', ['Open-source licenses']],
       ]) {
         await clickButton(new RegExp('^' + parent));
         for (const name of children) {

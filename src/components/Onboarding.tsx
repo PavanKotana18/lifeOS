@@ -56,7 +56,7 @@ export default function Onboarding(props: Props) {
     });
   };
 
-  return <main className="onboarding-root lifeos-page initial-setup" aria-label="LifeOS setup">
+  return <main className="onboarding-root lifeos-page initial-setup" aria-label="BusyDoo setup">
     <div className="initial-setup-inner">
       <header className="initial-setup-header" data-launch-destination={step === 0 ? true : undefined}><LifeOSBrand className="lifeos-onboarding-brand" markClassName="lifeos-onboarding-mark" /></header>
       <section className="initial-setup-content" aria-busy={busy}>

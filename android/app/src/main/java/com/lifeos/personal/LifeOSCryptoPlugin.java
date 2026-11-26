@@ -342,7 +342,7 @@ public class LifeOSCryptoPlugin extends Plugin {
                             }
                         });
                     BiometricPrompt.PromptInfo.Builder promptBuilder = new BiometricPrompt.PromptInfo.Builder()
-                        .setTitle("Unlock LifeOS")
+                        .setTitle("Unlock BusyDoo")
                         .setSubtitle("Authenticate to protect your personal data")
                         .setAllowedAuthenticators(allowedAuthenticators);
                     if (!credentialPolicy) promptBuilder.setNegativeButtonText("Cancel");
@@ -427,7 +427,7 @@ public class LifeOSCryptoPlugin extends Plugin {
     public void prepareRecovery(PluginCall call) {
         byte[] key = getDataKey();
         if (key == null) {
-            call.reject("Unlock LifeOS before creating a recovery code");
+            call.reject("Unlock BusyDoo before creating a recovery code");
             return;
         }
 
@@ -528,7 +528,7 @@ public class LifeOSCryptoPlugin extends Plugin {
         cryptoLock.readLock().lock();
         try {
             if (dataKey == null) {
-                call.reject("LifeOS is locked");
+                call.reject("BusyDoo is locked");
                 return;
             }
 
@@ -1013,7 +1013,7 @@ public class LifeOSCryptoPlugin extends Plugin {
             String ivText = prefs.getString("wrapped_iv", null);
 
             if (wrappedText == null || ivText == null) {
-                call.reject("LifeOS encryption has not been initialized");
+                call.reject("BusyDoo encryption has not been initialized");
                 return;
             }
 
@@ -1105,7 +1105,7 @@ public class LifeOSCryptoPlugin extends Plugin {
     public void encrypt(PluginCall call) {
         byte[] key = getDataKey();
         if (key == null) {
-            call.reject("LifeOS is locked");
+            call.reject("BusyDoo is locked");
             return;
         }
 
@@ -1164,7 +1164,7 @@ public class LifeOSCryptoPlugin extends Plugin {
     public void decrypt(PluginCall call) {
         byte[] key = getDataKey();
         if (key == null) {
-            call.reject("LifeOS is locked");
+            call.reject("BusyDoo is locked");
             return;
         }
 

@@ -1,5 +1,5 @@
 /**
- * LifeOS in-memory authorization session.
+ * BusyDoo in-memory authorization session.
  *
  * Sessions start locked. Authentication integrations must explicitly unlock.
  * Locking closes admission immediately; admitted operations may finish, and
@@ -9,7 +9,7 @@ export class SessionLockedError extends Error {
   readonly code = 'LIFEOS_SESSION_LOCKED';
 
   constructor() {
-    super('LifeOS session is locked. Authenticate before accessing private data.');
+    super('BusyDoo session is locked. Authenticate before accessing private data.');
     this.name = 'SessionLockedError';
   }
 }

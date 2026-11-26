@@ -1,3 +1,4 @@
+import { BUSYDOO } from './services/busydooBrand';
 import { goalProgressPercent, isGoalComplete, validateGoalMeasure } from './services/goalModes';
 import { AnimatePresence } from 'motion/react';
 import ComposerShell from './components/ComposerShell';
@@ -59,7 +60,7 @@ import MoneyAccounts, { buildTransferDraft, type AccountDraft, type TransferDraf
 import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
-import { LifeOSMark as BrandMark } from './components/LifeOSBrand';
+import { BusyDooBrandMoment, BusyDooWordmark, LifeOSMark as BrandMark } from './components/LifeOSBrand';
 import LicenseText from './components/LicenseText';
 import LifeDoodle from './components/LifeDoodle';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
@@ -106,7 +107,7 @@ const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME
     document.documentElement.style.setProperty(name, value);
   }
   document.documentElement.style.colorScheme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#101712' : '#FAFAF7');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? BUSYDOO.black : BUSYDOO.light);
 };
 
 const notificationLabels: Record<keyof NotificationPreferences, string> = {
@@ -397,14 +398,14 @@ export default function App() {
       const before = await CryptoService.getKeyState();
       if (!before.metadataConsistent || !before.keyProvisioned || !before.keystoreAliasPresent ||
           before.recoveryNeedsRebind || before.recoveryProvisioned || !before.recoveryDeferred) {
-        throw new Error('Recovery setup state changed while LifeOS was backgrounded. Encrypted data remains protected; restart this step to retry.');
+        throw new Error('Recovery setup state changed while BusyDoo was backgrounded. Encrypted data remains protected; restart this step to retry.');
       }
       await unlockEncryptedSession(CryptoService, sessionManager);
       const after = await CryptoService.getKeyState();
       if (!after.metadataConsistent || !after.keyProvisioned || !after.keystoreAliasPresent ||
           after.recoveryNeedsRebind || !after.unlocked || !(await CryptoService.isUnlocked()) ||
           !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
-        throw new Error('LifeOS could not verify secure access after returning from the save picker. Your data remains locked.');
+        throw new Error('BusyDoo could not verify secure access after returning from the save picker. Your data remains locked.');
       }
       setBiometricMessage('');
       setBiometricVerified(true);
@@ -456,7 +457,7 @@ export default function App() {
     return () => window.removeEventListener('lifeos:activity-resumed', protectUntilRevalidated);
   }, [sensitiveScreenshot]);
   const authCoordinator = useRef(createAuthCoordinator(async () => {
-    const result = await BiometricService.authenticate('Unlock LifeOS', 'Confirm your identity to access your personal data');
+    const result = await BiometricService.authenticate('Unlock BusyDoo', 'Confirm your identity to access your personal data');
     if (!result.success) setBiometricMessage(result.message || 'Authentication was not completed. Retry when you are ready.');
     return result.success;
   })).current;
@@ -923,7 +924,7 @@ export default function App() {
     setShowExitConfirmation(true);
   };
 
-  // Connectivity is informational only; LifeOS records remain in local IndexedDB.
+  // Connectivity is informational only; BusyDoo records remain in local IndexedDB.
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -939,8 +940,8 @@ export default function App() {
   // Load Initial Settings & Data
   useEffect(() => {
     void initApp().catch(error => {
-      console.error('LifeOS startup failed.', error);
-      setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.');
+      console.error('BusyDoo startup failed.', error);
+      setStartupError(error instanceof Error ? error.message : 'BusyDoo could not open local data.');
     });
     const timer = window.setInterval(() => setClockNow(new Date()), 60_000);
     let disposed = false;
@@ -1021,7 +1022,7 @@ export default function App() {
           setIsLocked(true);
           setBiometricMessage(error instanceof Error ? error.message : 'The encryption key remains locked.');
         }
-        console.error('LifeOS resume recovery failed.', error);
+        console.error('BusyDoo resume recovery failed.', error);
       } finally {
         resumeInProgress = false;
         setBiometricAuthActive(false);
@@ -1030,13 +1031,13 @@ export default function App() {
       if (disposed) await listener.remove();
       else appStateListener = listener;
     }).catch(error => {
-      if (!disposed) console.error('LifeOS app-state listener registration failed.', error);
+      if (!disposed) console.error('BusyDoo app-state listener registration failed.', error);
     });
 
     return () => {
       disposed = true;
       window.clearInterval(timer);
-      if (appStateListener) void appStateListener.remove().catch(error => console.error('LifeOS app-state listener cleanup failed.', error));
+      if (appStateListener) void appStateListener.remove().catch(error => console.error('BusyDoo app-state listener cleanup failed.', error));
     };
   }, []);
 
@@ -1051,11 +1052,11 @@ export default function App() {
       if (disposed) await value.remove();
       else listener = value;
     }).catch(error => {
-      if (!disposed) console.error('LifeOS back-button listener registration failed.', error);
+      if (!disposed) console.error('BusyDoo back-button listener registration failed.', error);
     });
     return () => {
       disposed = true;
-      if (listener) void listener.remove().catch(error => console.error('LifeOS back-button listener cleanup failed.', error));
+      if (listener) void listener.remove().catch(error => console.error('BusyDoo back-button listener cleanup failed.', error));
     };
   }, []);
 
@@ -1665,7 +1666,7 @@ export default function App() {
         try { await encryptedSession.open(); result = { success: true }; }
         catch (error) { return { success: false, message: error instanceof Error ? error.message : 'Encryption authentication failed.' }; }
       } else {
-        result = await BiometricService.authenticate('Secure LifeOS', 'Confirm to enable the app lock');
+        result = await BiometricService.authenticate('Secure BusyDoo', 'Confirm to enable the app lock');
       }
       if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
       if (!isEncryptedStorageActivated()) sessionManager.unlock();
@@ -1692,7 +1693,7 @@ export default function App() {
     try {
       const before = await CryptoService.getKeyState();
       if (!before.metadataConsistent || before.recoveryNeedsRebind) {
-        throw new Error('LifeOS found an existing key that needs recovery. No key was replaced. Open recovery or retry after restoring access.');
+        throw new Error('BusyDoo found an existing key that needs recovery. No key was replaced. Open recovery or retry after restoring access.');
       }
       await setSensitiveScreenshotState(true);
       onboardingSetupAuthorized.current = true;
@@ -1701,7 +1702,7 @@ export default function App() {
       if (!state.metadataConsistent || !state.keyProvisioned || !state.keystoreAliasPresent ||
           !state.unlocked || !state.recoveryDeferred || state.recoveryProvisioned ||
           !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) {
-        throw new Error('LifeOS could not verify encrypted storage. Your records remain locked; please retry.');
+        throw new Error('BusyDoo could not verify encrypted storage. Your records remain locked; please retry.');
       }
 
       const draftName = await StorageService.settings.get<string>('onboardingNameDraft', '');
@@ -1773,7 +1774,7 @@ export default function App() {
 
   const setupRecoveryFromSettings = async () => {
     if (!isEncryptedStorageActivated() || !sessionManager.isUnlocked()) {
-      showToast('Unlock LifeOS before setting up a recovery kit.', 'danger');
+      showToast('Unlock BusyDoo before setting up a recovery kit.', 'danger');
       return;
     }
     try {
@@ -1824,7 +1825,7 @@ export default function App() {
       : '';
     const identityName = nameDraft.trim() || savedName.trim();
     if ((!safeToBrowse && !secureWorkspaceOpen) || !identityName)
-      throw new Error('LifeOS could not verify the workspace state. No protected records were opened.');
+      throw new Error('BusyDoo could not verify the workspace state. No protected records were opened.');
     if (secureWorkspaceOpen && nameDraft.trim()) {
       await StorageService.settings.set('displayName', identityName);
       await StorageService.settings.delete('onboardingNameDraft');
@@ -1972,12 +1973,12 @@ export default function App() {
       if (file.size > MAX_BACKUP_FILE_BYTES) throw new Error('Backup file exceeds the supported size.');
       const text = await decodeBackupForRestore(await file.text(), {
         requestPassphrase: () => requestBackupPassphrase('import'),
-        confirmLegacy: () => confirmAction({ title: 'Import a legacy backup?', message: 'This older backup is not encrypted. LifeOS will validate it before restoring. New exports are encrypted.', confirmLabel: 'Validate and continue', cancelLabel: 'Cancel' }),
+        confirmLegacy: () => confirmAction({ title: 'Import a legacy backup?', message: 'This older backup is not encrypted. BusyDoo will validate it before restoring. New exports are encrypted.', confirmLabel: 'Validate and continue', cancelLabel: 'Cancel' }),
         validateTables: validateBackupTables,
       });
       if (text === null) return;
       const hasRecords = await StorageService.backup.hasData();
-      if (hasRecords && !(await confirmAction({ title: 'Replace existing LifeOS data?', message: 'Restoring this backup replaces the records currently on this device. Export a backup first if you may need a copy.', confirmLabel: 'Replace and restore', cancelLabel: 'Keep current data', destructive: true }))) return;
+      if (hasRecords && !(await confirmAction({ title: 'Replace existing BusyDoo data?', message: 'Restoring this backup replaces the records currently on this device. Export a backup first if you may need a copy.', confirmLabel: 'Replace and restore', cancelLabel: 'Keep current data', destructive: true }))) return;
       await StorageService.backup.importData(text, { replaceExisting: hasRecords });
       restored = true;
       const records = await reloadAllData();
@@ -1988,7 +1989,7 @@ export default function App() {
       await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(prefs, master));
       showToast('Backup restored successfully', 'success');
     } catch (error) {
-      showToast(restored ? 'Backup restored, but the screen could not refresh. Reopen LifeOS to verify.' : error instanceof Error ? error.message : 'Could not restore this backup', 'danger');
+      showToast(restored ? 'Backup restored, but the screen could not refresh. Reopen BusyDoo to verify.' : error instanceof Error ? error.message : 'Could not restore this backup', 'danger');
     } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
   };
 
@@ -2000,7 +2001,7 @@ export default function App() {
         await setSensitiveScreenshotState(true);
         if (safeFirstRunBrowse.current && !isEncryptedStorageActivated()) {
           // Optional app protection never provisions or admits private storage.
-          const result = await BiometricService.authenticate('Unlock LifeOS', 'Use your phone’s secure unlock');
+          const result = await BiometricService.authenticate('Unlock BusyDoo', 'Use your phone’s secure unlock');
           if (!result.success) throw new Error(result.message || 'Authentication was not completed.');
           biometricAuthenticated.current = true;
           setBiometricVerified(true); setIsLocked(false); setBiometricMessage('');
@@ -2080,7 +2081,7 @@ export default function App() {
     try {
       await StorageService.habits.logCompletion(habitId, date, !currentlyCompleted);
     } catch (error) {
-      console.error('LifeOS could not save habit completion.', error);
+      console.error('BusyDoo could not save habit completion.', error);
       showToast(error instanceof Error ? error.message : 'Could not update habit completion', 'danger');
       return;
     }
@@ -2089,7 +2090,7 @@ export default function App() {
     try {
       records = await reloadAllData();
     } catch (error) {
-      console.error('Habit was saved, but LifeOS could not refresh its data.', error);
+      console.error('Habit was saved, but BusyDoo could not refresh its data.', error);
       showToast(`${habitName} was saved, but the screen could not refresh. Reopen Habits to verify.`, 'danger');
       return;
     }
@@ -2119,7 +2120,7 @@ export default function App() {
     try {
       await StorageService.habits.delete(habit.id);
     } catch (error) {
-      console.error('LifeOS could not delete habit.', error);
+      console.error('BusyDoo could not delete habit.', error);
       showToast(error instanceof Error ? error.message : 'Could not delete habit', 'danger');
       return;
     }
@@ -2128,7 +2129,7 @@ export default function App() {
     try {
       records = await reloadAllData();
     } catch (error) {
-      console.error('Habit was deleted, but LifeOS could not refresh its data.', error);
+      console.error('Habit was deleted, but BusyDoo could not refresh its data.', error);
       showToast(`${habit.name} was deleted, but the screen could not refresh. Reopen Habits to verify.`, 'danger');
       return;
     }
@@ -2287,7 +2288,7 @@ export default function App() {
     let selected = false;
     try {
       if (remove) {
-        if (!isEncryptedStorageActivated() || !sessionManager.isUnlocked()) throw new Error('Unlock LifeOS before removing your photo.');
+        if (!isEncryptedStorageActivated() || !sessionManager.isUnlocked()) throw new Error('Unlock BusyDoo before removing your photo.');
         await StorageService.settings.delete(PROFILE_PHOTO_SETTING);
         profilePhotoVersion.current++;
         setProfilePhoto(null);
@@ -2308,7 +2309,7 @@ export default function App() {
       try {
         const photo = await prepareProfilePhoto(pendingProfilePhoto);
         await ensurePrivateStorageBeforeWrite();
-        if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Unlock LifeOS and choose your photo again.');
+        if (!sessionManager.isUnlocked() || !isEncryptedStorageActivated()) throw new Error('Unlock BusyDoo and choose your photo again.');
         await StorageService.settings.set(PROFILE_PHOTO_SETTING, photo);
         profilePhotoVersion.current++;
         setProfilePhoto(photo);
@@ -2743,7 +2744,7 @@ export default function App() {
 
   if (backupPrompt) return <BackupPassphraseDialog purpose={backupPrompt} onComplete={value => backupPassphraseResolver.current?.(value)} />;
 
-  if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'LifeOS could not start' : 'Loading LifeOS'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">LifeOS could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'LifeOS could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 lifeos-border" style={{ borderTopColor: 'var(--accent)' }} aria-hidden="true" />}</div>;
+  if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'BusyDoo could not start' : 'Loading BusyDoo'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">BusyDoo could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'BusyDoo could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button></div> : <div className="h-8 w-8 animate-spin rounded-full border-2 lifeos-border" style={{ borderTopColor: 'var(--accent)' }} aria-hidden="true" />}</div>;
 
   if (firstRecordSecurityOpen) return <FirstRecordSecurityDialog onDecision={choice => {
     void setSensitiveScreenshotState(profileAdmissionPending || profileOpen).catch(() => {});
@@ -2793,7 +2794,7 @@ export default function App() {
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
         </div>
-        <h2 className="text-2xl font-bold mb-2">LifeOS is Locked</h2>
+        <h2 className="text-2xl font-bold mb-2">BusyDoo is Locked</h2>
         <p className="text-sm text-secondary mb-8 max-w-xs">Biometric authentication is required to protect your personal data.</p>
         <button
           onClick={triggerBiometricAuth}
@@ -2813,17 +2814,17 @@ export default function App() {
       {/* Top Mobile Header */}
       {(!profileOpen || profileSection === 'home') && <header className="app-header app-header-shell sticky top-0 z-40 flex items-center gap-3 px-4 py-3 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
-          <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
+          {activeTab !== 'dashboard' && <div className={`lifeos-mark flex h-10 w-10 shrink-0 items-center justify-center rounded-xl logo-${logoPhase}`} aria-hidden="true">
             <BrandMark className="h-8 w-8" />
-          </div>
-          <h1 id="primary-route-title" tabIndex={-1} className="app-brand-name">{activeTab === 'dashboard' ? 'LifeOS' : PRIMARY_NAVIGATION.find(({ tab }) => tab === primaryDestinationForTab(activeTab))?.label ?? 'LifeOS'}</h1>
+          </div>}
+          <h1 id="primary-route-title" tabIndex={-1} className="app-brand-name">{activeTab === 'dashboard' ? <BusyDooWordmark /> : PRIMARY_NAVIGATION.find(({ tab }) => tab === primaryDestinationForTab(activeTab))?.label ?? 'BusyDoo'}</h1>
         </div>
       </header>}
 
       {!isOnline && (
         <div role="status" aria-live="polite" className="app-content-width px-4 pt-2">
           <div className="lifeos-warning lifeos-panel rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'var(--warning)' }}>
-            Offline — LifeOS records remain stored on this device. Internet-dependent services may be unavailable.
+            Offline — BusyDoo records remain stored on this device. Internet-dependent services may be unavailable.
           </div>
         </div>
       )}
@@ -2832,7 +2833,7 @@ export default function App() {
         <div className="app-content-width px-4 pt-2">
           <button type="button" className="smart-import-secondary" onClick={async () => {
             try { await ensurePrivateStorageBeforeWrite(); sharedAlert.recheck(); }
-            catch { showToast('Shared alert review is paused. Unlock LifeOS to continue.', 'info'); }
+            catch { showToast('Shared alert review is paused. Unlock BusyDoo to continue.', 'info'); }
           }}>Review shared alert</button>
           <button type="button" className="smart-import-secondary" onClick={sharedAlert.discard}>Dismiss shared alert</button>
         </div>}
@@ -3192,7 +3193,7 @@ export default function App() {
                 }} onDelete={async () => {
                   if (!(await confirmAction({ title: 'Delete this savings goal?', message: `“${goal.title}” and its recorded contributions will be removed.`, confirmLabel: 'Delete savings goal', destructive: true }))) return;
                   try { await StorageService.savings.deleteGoal(goal.id); }
-                  catch { showToast('LifeOS could not confirm the deletion. Refresh Savings before retrying.', 'danger'); return; }
+                  catch { showToast('BusyDoo could not confirm the deletion. Refresh Savings before retrying.', 'danger'); return; }
                   setSavingsGoals(current => current.filter(item => item.id !== goal.id));
                   try { await reloadAllData(); showToast('Savings goal deleted', 'success'); }
                   catch { showToast('Goal deleted. Reopen Savings to refresh the latest data.', 'info'); }
@@ -3250,7 +3251,7 @@ export default function App() {
                 {habit.schedule?.filter(revision => revision.from > todayKey).map(revision =>
                   <p key={revision.from} className="text-sm text-secondary">Schedule changes on {formatDate(revision.from)}</p>)}
                 {habit.reminderTime && habit.schedule?.some(revision => revision.from > todayKey) &&
-                  <p className="text-xs text-secondary">LifeOS refreshes the next 35 days of reminders when you reopen the app.</p>}
+                  <p className="text-xs text-secondary">BusyDoo refreshes the next 35 days of reminders when you reopen the app.</p>}
                 <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm" onClick={async () => {
                   const pauses = habit.pauses || [];
                   const active = pauses.find(pause => !pause.through && pause.from <= todayKey);
@@ -3357,7 +3358,7 @@ export default function App() {
                 await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
                 showToast('Task removed', 'info');
               } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
-            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. LifeOS will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
+            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. BusyDoo will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}
           <div className="space-y-4">
 
             <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">+ Add task</button></div>
@@ -3450,7 +3451,7 @@ export default function App() {
                 <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} /></div>
             </ProfileSubpage>}
             {profileSection === 'app-lock' && <ProfileSubpage title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
-              <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. LifeOS does not store your fingerprint.</InfoTip></div>
+              <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. BusyDoo does not store your fingerprint.</InfoTip></div>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
 
@@ -3481,7 +3482,7 @@ export default function App() {
               <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={visualThemeId} mode={theme} />
             </ProfileSubpage>}
 
-            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how LifeOS displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
+            {profileSection === 'preferences' && <ProfileSubpage title="Preferences" description="Choose how BusyDoo displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
               try {
                 await StorageService.settings.set('dateOnlyAlertTime', time);
                 setDateOnlyAlertTime(time);
@@ -3525,7 +3526,7 @@ export default function App() {
 <button onClick={async () => { if (!(await confirmAction({ title: 'Reset onboarding for testing?', message: 'Your records will remain untouched. Choices made during onboarding may update your name, appearance, security, and notification preferences.', confirmLabel: 'Restart tour' }))) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Reset onboarding for testing</button>
               <section className="lifeos-panel rounded-xl p-4 space-y-3">
                 <h2 className="text-sm font-semibold">Sample data</h2>
-                <p className="text-xs text-secondary">Six months of activity for exploring LifeOS. Sample task reminders are silent.</p>
+                <p className="text-xs text-secondary">Six months of activity for exploring BusyDoo. Sample task reminders are silent.</p>
                 <button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => {
                   if (!await confirmAction({ title: 'Add six months of sample data?', message: 'Sample records will appear alongside records in this Debug workspace. You can remove them here.', confirmLabel: 'Add sample data' })) return;
                   try { await StorageService.backup.seedDemoData(); await reloadAllData(); showToast('Sample data is ready', 'success'); }
@@ -3559,7 +3560,7 @@ export default function App() {
                       sessionManager.assertCurrent(token);
                       const result = await exportBackupFile({
                         contents: json,
-                        fileName: `lifeos-backup-${formatLocalDate(new Date())}.json`,
+                        fileName: `busydoo-backup-${formatLocalDate(new Date())}.json`,
                         mimeType: 'application/json'
                       });
 
@@ -3571,7 +3572,7 @@ export default function App() {
                         showToast('Backup download started. Check your browser downloads.', 'success');
                       }
                     } catch (error) {
-                      console.error('LifeOS backup export failed:', error);
+                      console.error('BusyDoo backup export failed:', error);
                       showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
                     } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
                   }}
@@ -3590,7 +3591,7 @@ export default function App() {
 
                   const result = await exportBackupFile({
                     contents: csv,
-                    fileName: `lifeos-transactions-${formatLocalDate(new Date())}.csv`,
+                    fileName: `busydoo-transactions-${formatLocalDate(new Date())}.csv`,
                     mimeType: 'text/csv'
                   });
 
@@ -3613,7 +3614,7 @@ export default function App() {
               <p className="text-xs text-secondary">Permanently erase all personal database records.</p>
               <button
                 onClick={async () => {
-                  if (!(await confirmAction({ title: 'Erase all LifeOS data?', message: 'This permanently removes all personal records stored on this device. This cannot be undone.', confirmLabel: 'Erase all data', cancelLabel: 'Keep my data', destructive: true }))) return;
+                  if (!(await confirmAction({ title: 'Erase all BusyDoo data?', message: 'This permanently removes all personal records stored on this device. This cannot be undone.', confirmLabel: 'Erase all data', cancelLabel: 'Keep my data', destructive: true }))) return;
                   try {
                     await NotificationService.cancelAllRecordReminders();
                     await StorageService.backup.clearAll();
@@ -3629,11 +3630,12 @@ export default function App() {
               </button>
             </div>
             </ProfileSubpage>}
-            {profileSection === 'about' && <ProfileSubpage title="About LifeOS" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'about' && <ProfileSubpage title="About BusyDoo" onBack={() => navigateProfileSection('home')}>
+              <BusyDooBrandMoment />
               <div className="preference-group"><div className="preference-row"><span>Version</span><span className="text-secondary">{packageInfo.version}</span></div>
                 <ProfileSettingRow title="Open-source licenses" onClick={() => navigateProfileSection('licenses')} /></div>
             </ProfileSubpage>}
-            {profileSection === 'licenses' && <ProfileSubpage title="Open-source licenses" backLabel="About LifeOS" onBack={() => navigateProfileSection('about')}>
+            {profileSection === 'licenses' && <ProfileSubpage title="Open-source licenses" backLabel="About BusyDoo" onBack={() => navigateProfileSection('about')}>
               <LicenseText />
               <LicenseText title="Motion" source="./licenses/motion.txt" />
             </ProfileSubpage>}
@@ -3874,7 +3876,7 @@ export default function App() {
         </div>
       </nav>
 
-      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave LifeOS?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
+      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave BusyDoo?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
 
       {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 

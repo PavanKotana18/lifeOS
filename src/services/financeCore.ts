@@ -123,7 +123,7 @@ export function sumMinorUnits(values: Iterable<bigint>): bigint {
 
 /** Locale formatting that keeps the amount exact even beyond Number precision. */
 export function formatMinorUnits(minorUnits: bigint, currencyCode: string, locale?: string): string {
-  // The system-default currency for LifeOS is INR; Indian grouping is its
+  // The system-default currency for BusyDoo is INR; Indian grouping is its
   // expected home-market display even when the device language is English-US.
   const resolvedLocale = locale ?? (currencyCode.toUpperCase() === 'INR' ? 'en-IN' : undefined);
   const { fractionDigits } = getCurrencyMetadata(currencyCode);

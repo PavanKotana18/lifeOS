@@ -11,7 +11,7 @@ import {
 } from './encryptedStorageIntegration';
 
 /**
- * Builds the encrypted storage layer around an existing LifeOS database.
+ * Builds the encrypted storage layer around an existing BusyDoo database.
  *
  * Construction does not provision keys, unlock encryption, migrate records,
  * or replace the application's active StorageService.

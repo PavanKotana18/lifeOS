@@ -31,7 +31,7 @@ export const BiometricService = {
     };
   },
 
-  async authenticate(title = 'Unlock LifeOS', subtitle = 'Verify your identity to proceed'): Promise<BiometricAuthResult> {
+  async authenticate(title = 'Unlock BusyDoo', subtitle = 'Verify your identity to proceed'): Promise<BiometricAuthResult> {
     try {
       const cap = (window as any).Capacitor;
       if (cap && cap.isPluginAvailable && cap.isPluginAvailable('BiometricAuth')) {

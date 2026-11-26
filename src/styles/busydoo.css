@@ -1,0 +1,98 @@
+/* Brand colors are intentionally independent of the user's accent choice. */
+:root {
+  --busy-black: #141414;
+  --doo-lime: #c8fa78;
+  --busy-white: #ffffff;
+  --busy-grey: #b3b3b3;
+  --busy-lime-ink: #365516;
+  --busy-control-size: 2.75rem;
+  --busy-icon-size: 1.25rem;
+  --busy-outline: 2px;
+  --busy-fast: 150ms;
+  --busy-ease: cubic-bezier(.2,.78,.24,1);
+}
+.busydoo-wordmark { display: block; width: 100%; height: auto; overflow: visible; color: var(--ink); }
+.busydoo-letter-o { fill: var(--busy-lime-ink); }
+.dark .busydoo-letter-o, .lifeos-launch-reveal .busydoo-letter-o, .busydoo-brand-stage .busydoo-letter-o { fill: var(--doo-lime); }
+.dark .busydoo-wordmark, .lifeos-launch-reveal .busydoo-wordmark, .busydoo-brand-stage .busydoo-wordmark { color: var(--busy-white); }
+.lifeos-brand { display: inline-flex; width: min(12rem, 70vw); }
+.app-brand-name > .busydoo-wordmark { width: clamp(5.9rem, 22vw, 7.5rem); }
+.lifeos-mark { color: var(--busy-lime-ink); background: var(--surface-raised); }
+.dark .lifeos-mark { color: var(--doo-lime); }
+.lifeos-launch-reveal {
+  position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; overflow: hidden;
+  color: var(--busy-white); background: var(--busy-black);
+  padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem max(1.5rem, env(safe-area-inset-bottom));
+}
+.lifeos-launch-lockup { width: min(23rem, 87vw); text-align: center; }
+.lifeos-launch-caption, .busydoo-brand-stage p { color: var(--busy-grey); font-size: .9rem; letter-spacing: .025em; }
+.lifeos-launch-caption { margin-top: .5rem; animation: busydoo-caption 175ms 455ms var(--busy-ease) both; }
+.lifeos-launch-reveal.is-reduced-motion .lifeos-launch-caption { animation: none; }
+.busydoo-brand-moment { display: grid; gap: .65rem; justify-items: start; }
+.busydoo-brand-stage {
+  width: 100%; display: grid; justify-items: center; gap: .25rem; padding: clamp(1.4rem, 6vw, 2.25rem);
+  background: var(--busy-black); border-radius: var(--radius-card); overflow: hidden;
+}
+.busydoo-brand-stage .busydoo-wordmark { width: min(16rem, 100%); }
+.busydoo-wordmark path { transform-box: fill-box; transform-origin: center bottom; }
+[data-wordmark-motion="cinematic"] .busydoo-letter-base { animation: busydoo-foundation 360ms var(--busy-ease) both; }
+[data-wordmark-motion="cinematic"] .busydoo-letter-base:nth-child(2) { animation-delay: 24ms; }
+[data-wordmark-motion="cinematic"] .busydoo-letter-base:nth-child(3) { animation-delay: 45ms; }
+[data-wordmark-motion="cinematic"] .busydoo-letter-base:nth-child(4) { animation-delay: 64ms; }
+[data-wordmark-motion="cinematic"] .busydoo-letter-d { animation: busydoo-weight 430ms 52ms var(--busy-ease) both; }
+[data-wordmark-motion="cinematic"] .busydoo-letter-o-first { animation: busydoo-first-o 525ms 64ms linear both; }
+[data-wordmark-motion="cinematic"] .busydoo-letter-o-second { animation: busydoo-second-o 540ms 100ms linear both; }
+[data-wordmark-motion="quick"] { animation: busydoo-quick 160ms var(--busy-ease) both; }
+@keyframes busydoo-foundation {
+  from { opacity: 0; transform: translate3d(0,22%,0) scaleY(.82); }
+  42% { opacity: 1; }
+  72% { transform: translate3d(0,-3%,0) scaleY(1.025); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes busydoo-weight {
+  0% { opacity: 0; transform: translate3d(-46%,-26%,0) rotate(-10deg) scaleY(1.12); }
+  41% { opacity: 1; transform: translate3d(0,4%,0) rotate(2deg) scale(1.06,.88); }
+  70% { transform: translate3d(0,-2%,0) rotate(-1deg) scale(.985,1.035); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes busydoo-first-o {
+  0% { opacity: 0; transform: translate3d(210%,-135%,0) rotate(38deg) scale(.82,1.15); }
+  27% { opacity: 1; transform: translate3d(98%,-111%,0) rotate(23deg); }
+  52% { transform: translate3d(9%,1%,0) rotate(-6deg) scale(1.15,.83); }
+  69% { transform: translate3d(-5%,-17%,0) rotate(-5deg) scale(.96,1.06); }
+  84% { transform: translate3d(-2%,0,0) scale(1.04,.96); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes busydoo-second-o {
+  0% { opacity: 0; transform: translate3d(123%,-97%,0) rotate(38deg) scale(.8,1.15); }
+  32% { opacity: 1; transform: translate3d(46%,-62%,0) rotate(19deg); }
+  56% { transform: translate3d(-12%,1%,0) rotate(-8deg) scale(1.18,.81); }
+  73% { transform: translate3d(6%,-12%,0) rotate(4deg) scale(.96,1.05); }
+  87% { transform: translate3d(2%,0,0) scale(1.035,.975); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes busydoo-quick { from { transform: translate3d(0,3px,0) scale(.978); } to { transform: none; } }
+@keyframes busydoo-caption { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+.app-header-shell { box-shadow: none; }
+:where(.lifeos-input, .choice-trigger, .feather-secondary, .feather-primary, .nav-item, .money-destination-card, .profile-navigation-row) {
+  transition-property: color, background-color, border-color, transform;
+  transition-duration: var(--motion-control, var(--busy-fast));
+  transition-timing-function: var(--motion-ease-standard, var(--busy-ease));
+}
+:where(.lifeos-input, .choice-trigger, .feather-secondary, .feather-primary, .nav-item, .money-destination-card, .profile-navigation-row):focus-visible {
+  outline: var(--busy-outline) solid var(--focus-color); outline-offset: 2px;
+}
+.app-bottom-nav .nav-item > svg, .money-destination-icon > svg { width: var(--busy-icon-size); height: var(--busy-icon-size); }
+.money-destination-card, .plan-hub-task, .scheduled-plan-row { border-radius: var(--radius-control); }
+.today-focus, .money-cashflow, .profile-identity-card, .insights-section { border-radius: var(--radius-card); }
+.alive-doodle-ink { stroke-width: 3; }
+.alive-doodle-accent { stroke-width: 2; }
+.transaction-history-amount.is-income, .transaction-icon.is-income { color: var(--income, var(--success)); }
+.transaction-history-amount.is-expense, .transaction-icon.is-expense { color: var(--expense, var(--danger)); }
+.transaction-icon.is-transfer { color: var(--transfer, var(--chart-2)); }
+.scheduled-row-icon { color: var(--commitment, var(--warning)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .busydoo-wordmark, .busydoo-wordmark path, .lifeos-launch-caption { animation: none !important; transform: none; opacity: 1; }
+}

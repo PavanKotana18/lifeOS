@@ -1,6 +1,8 @@
-# LifeOS
+# BusyDoo
 
-LifeOS is an Android personal life-management application built with React,
+**Life, in one place.**
+
+BusyDoo is an Android personal life-management application built with React,
 TypeScript, Vite and Capacitor.
 
 The application includes personal planning and tracking features, local data
@@ -75,7 +77,7 @@ Build a debug APK:
 ## Android build types
 
 Use the standard `:app:assembleDebug` variant for local development. It is
-labelled **LifeOS Debug**, uses the isolated package `com.lifeos.personal.debug`
+labelled **BusyDoo Debug**, uses the isolated package `com.lifeos.personal.debug`
 and the standard Android debug signing key. It does not replace existing Dev,
 Preview or production installations. Release keeps the production package
 `com.lifeos.personal` and requires the production signing identity. Release

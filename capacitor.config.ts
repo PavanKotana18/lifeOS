@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.lifeos.personal',
-  appName: 'LifeOS',
+  appName: 'BusyDoo',
   webDir: 'dist',
   loggingBehavior: 'none',
   android: {
@@ -11,7 +11,7 @@ const config: CapacitorConfig = {
     captureInput: false,
     webContentsDebuggingEnabled: false
   },
-  plugins: { LocalNotifications: { smallIcon: 'ic_lifeos_notification', iconColor: '#54785C' } },
+  plugins: { LocalNotifications: { smallIcon: 'ic_lifeos_notification', iconColor: '#C8FA78' } },
   server: {
     androidScheme: 'https'
   }

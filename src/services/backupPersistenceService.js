@@ -1,5 +1,5 @@
 /**
- * LifeOS Backup Persistence & Rotation Service (CJS / Browser compatible)
+ * BusyDoo Backup Persistence & Rotation Service (CJS / Browser compatible)
  * Provides durable local storage, verification, and staged-write transactional key rotation
  * for encrypted backups across application restarts using real persistent storage backends
  * (disk files in Node/CLI, localStorage and Dexie in browser/Capacitor).

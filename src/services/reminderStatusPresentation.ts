@@ -22,7 +22,7 @@ export function presentReminderStatus(report: ReminderStatusInput): ReminderStat
     const timing = typeof report.deliveryTiming === 'string' && report.deliveryTiming.startsWith('inexact')
       ? ' Android may delay it while the device is idle.' : '';
     const syncNote = report.synchronizationFailed === true ? ' The latest refresh could not be confirmed.' : '';
-    return { title: 'Reminder scheduled', message: `LifeOS has asked Android to show this reminder at the chosen time.${timing}${syncNote}`, tone: 'positive' };
+    return { title: 'Reminder scheduled', message: `BusyDoo has asked Android to show this reminder at the chosen time.${timing}${syncNote}`, tone: 'positive' };
   }
   if (reason === 'task-completed') {
     return { title: 'No reminder needed', message: 'This task is complete, so its reminder is no longer active.', tone: 'neutral' };
@@ -34,10 +34,10 @@ export function presentReminderStatus(report: ReminderStatusInput): ReminderStat
     return { title: 'Task reminders are off', message: 'Turn on task reminders in Profile → Notifications to receive alerts.', tone: 'attention' };
   }
   if (permission === 'denied' || (typeof reason === 'string' && reason.startsWith('permission-'))) {
-    return { title: 'Notifications are not allowed', message: 'Allow LifeOS notifications in Android settings, then check this reminder again.', tone: 'attention' };
+    return { title: 'Notifications are not allowed', message: 'Allow BusyDoo notifications in Android settings, then check this reminder again.', tone: 'attention' };
   }
   if (report.schedulingState === 'past-time-still-persisted;delivery-unconfirmed') {
-    return { title: 'Reminder time has passed', message: 'LifeOS could not confirm whether Android showed the alert. Check your notification history if available.', tone: 'attention' };
+    return { title: 'Reminder time has passed', message: 'BusyDoo could not confirm whether Android showed the alert. Check your notification history if available.', tone: 'attention' };
   }
   if (report.synchronizationFailed === true) {
     return { title: 'Reminder status could not be refreshed', message: 'Your task is saved. Check the reminder time and Android notification access before relying on an alert.', tone: 'attention' };

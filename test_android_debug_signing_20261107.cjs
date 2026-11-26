@@ -6,7 +6,7 @@ const gradle = fs.readFileSync('android/app/build.gradle', 'utf8').replace(/\r\n
 assert.match(gradle, /applicationId "com\.lifeos\.personal"/);
 assert.match(gradle, /debug\s*\{\s*applicationIdSuffix "\.debug"\s*versionNameSuffix "-debug"/,
   'standard Debug uses a new isolated package and debug label suffix');
-assert.match(fs.readFileSync('android/app/src/debug/res/values/strings.xml', 'utf8'), /<string name="app_name">LifeOS Debug<\/string>/);
+assert.match(fs.readFileSync('android/app/src/debug/res/values/strings.xml', 'utf8'), /<string name="app_name">BusyDoo Debug<\/string>/);
 assert.doesNotMatch(gradle, /lifeosDebugSigningReady|LIFEOS_DEBUG_KEYSTORE|\.dev"|\.preview"|buildType.*preview/i,
   'Debug does not require lost Dev credentials and Preview is no longer a build type');
 assert.match(gradle, /def lifeosReleaseSigningReady[\s\S]*?ANDROID_KEYSTORE_PATH[\s\S]*?ANDROID_KEYSTORE_PASSWORD/,
@@ -35,4 +35,4 @@ assert.doesNotMatch(gradle, /LIFEOS_PREVIEW_KEYSTORE|LIFEOS_DEBUG_KEYSTORE/,
   'old signing secrets are not required by either standard build type');
 assert.doesNotMatch(fs.readdirSync('android/app').join('\n'), /\.(?:keystore|jks|p12|pfx)$/i,
   'signing material is not added to the Android project');
-console.log('ANDROID BUILD CONTRACT: isolated LifeOS Debug package; production-only, manually approved Release; no Preview build path.');
+console.log('ANDROID BUILD CONTRACT: isolated BusyDoo Debug package; production-only, manually approved Release; no Preview build path.');
