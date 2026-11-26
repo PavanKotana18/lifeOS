@@ -8,10 +8,13 @@ const moneyPlanning = fs.readFileSync('src/components/MoneyPlanning.tsx', 'utf8'
 const css = fs.readFileSync('src/index.css', 'utf8');
 const manifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8');
 
-for (const [name, source] of [['record', app], ['account', sharedComposer], ['planning', moneyPlanning]]) {
+for (const [name, source] of [['record', app], ['planning', moneyPlanning]]) {
   assert.match(source, /ui-sheet-backdrop/, `${name} forms share the common backdrop`);
   assert.match(source, /ui-bottom-sheet/, `${name} forms share the common sheet sizing and safe-area behavior`);
 }
+assert.match(sharedComposer, /ui-sheet-backdrop/);
+assert.match(sharedComposer, /feather-composer-content/);
+assert.match(sharedComposer, /feather-composer-actions/);
 assert.match(moneyAccounts, /<ComposerShell key="money-account-dialog"/);
 assert.match(moneyAccounts, /<ComposerShell key="money-transfer-dialog"/);
 assert.match(css, /\.ui-bottom-sheet[^\n]*max-height: min\(90dvh, calc\(100dvh/);
