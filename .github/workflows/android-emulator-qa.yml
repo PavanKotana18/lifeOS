@@ -1,35 +1,45 @@
-﻿name: LifeOS isolated swipe comparison
+name: LifeOS visual gate isolation
 on:
   workflow_dispatch:
 permissions:
   contents: read
   actions: read
 jobs:
-  compare:
+  visual:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [navigation, combined]
+        test: [packagedMandatoryOnboardingScreensAndRestart, retainedTrackNativeFrames]
+        include:
+          - build: navigation
+            run: 45769131610
+            sha: dd52dc5e50245bdcb2648baf6e90130585aa4d18
+          - build: combined
+            run: 45769207864
+            sha: 987923e308c0ce80764f8a1b066c991321987b22
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.sha }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - name: Stage exact APKs and record provenance
+          node-version: 20
+      - name: Stage the exact hosted app and test APKs
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ matrix.run }}
         run: |
-          set -euo pipefail
-          mkdir -p candidates evidence
-          download() {
-            mkdir -p "candidates/$1"
-            gh run download "$2" -n "$3" -D "candidates/$1"
-            find "candidates/$1" -name '*.apk' -print -exec sha256sum {} \; | tee -a evidence/apks.txt
-          }
-          download main 45623499656 LifeOS-debug-apk
-          download reference 45728822022 LifeOS-signed-debug-apk-6457dde6edbd1d78763c6e2827db0318885bcb45
-          download navigation 45769131610 LifeOS-signed-debug-apk-dd52dc5e50245bdcb2648baf6e90130585aa4d18
-          download combined 45769207864 LifeOS-signed-debug-apk-987923e308c0ce80764f8a1b066c991321987b22
+          gh run download "$SOURCE_RUN" -n lifeos-android-test-apks -D android-apks
+          sha256sum android-apks/*.apk
       - run: bash scripts/enable-github-runner-kvm.sh
       - uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANDROID_TEST_FILTER: com.lifeos.personal.DirectedVisualAcceptanceTest#${{ matrix.test }}
+          ANDROID_REQUIRED_TEST: DirectedVisualAcceptanceTest#${{ matrix.test }}
+          ANDROID_EXPECTED_TESTS: '1'
         with:
           api-level: 34
           target: google_apis
@@ -39,11 +49,17 @@ jobs:
           heap-size: 512M
           emulator-boot-timeout: 300
           disable-animations: false
-          script: node scripts/swipe-compare.mjs
+          script: >-
+            bash -c '
+            status=0;
+            bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-visual-evidence || status=$?;
+            if [ -s qa-visual-evidence/device-profile.txt ] && [ "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d "\r")" = 1 ]; then
+              adb -s emulator-5554 pull /sdcard/Android/data/com.lifeos.personal.debug/files/LifeOS-directed-visual qa-visual-evidence/screenshots || true;
+            fi;
+            exit "$status"'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: lifeos-swipe-comparison
-          path: evidence/
+          name: visual-${{ matrix.build }}-${{ matrix.test }}
+          path: qa-visual-evidence/
           if-no-files-found: error
-
