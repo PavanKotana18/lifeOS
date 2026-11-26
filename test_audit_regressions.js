@@ -128,8 +128,8 @@ check(
 
 // F-05: Reminder must propagate to generated recurring tasks.
 check(
-  db.includes('reminderAt: task.reminderAt'),
-  'Recurring task creation propagates reminderAt'
+  db.includes('reminderAt: shiftRecurringTaskReminder(task, nextDueDate)'),
+  'Recurring task creation shifts reminderAt to match the next due date'
 );
 
 // Dashboard presents transparent per-domain counts and does not publish an opaque composite score.
