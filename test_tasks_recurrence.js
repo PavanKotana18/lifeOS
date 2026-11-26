@@ -195,6 +195,7 @@ async function main() {
       StorageService.tasks.toggleCompleted('parallel', true),
       StorageService.tasks.toggleCompleted('parallel', true)
     ]);
+
     check(
       await db.tasks.where('id').equals('rec_parallel_2026-11-04').count() === 1,
       'Concurrent completion creates exactly one occurrence'
@@ -213,6 +214,9 @@ async function main() {
       (await db.tasks.get('rec_month-end_2027-02-28'))?.dueDate === '2027-02-28',
       'Monthly recurrence clamps January 31 to February 28'
     );
+    await StorageService.tasks.toggleCompleted('rec_month-end_2027-02-28', true);
+    check((await db.tasks.get('rec_month-end_2027-03-31'))?.recurrenceAnchorDay === 31,
+      'Monthly recurrence keeps the original day after a shorter month');
 
     await add('weekly', '2026-11-01', 'Weekly');
     await StorageService.tasks.toggleCompleted('weekly', true);

@@ -2467,7 +2467,14 @@ export default function App() {
           priority: value('priority') as Task['priority'], category: value('category') || undefined,
           recurring: (value('recurring') || 'None') as Task['recurring'],
         };
-        if (editingTaskId) await StorageService.tasks.update(editingTaskId, taskUpdates);
+        if (editingTaskId) {
+          const previous = tasks.find(task => task.id === editingTaskId);
+          const scheduled = previous?.recurrenceScheduledDate || previous?.dueDate;
+          const keepSeries = scheduled && taskUpdates.dueDate && previous?.recurring === taskUpdates.recurring && taskUpdates.recurring !== 'None';
+          taskUpdates.recurrenceScheduledDate = keepSeries ? scheduled : undefined;
+          taskUpdates.recurrenceAnchorDay = keepSeries ? previous?.recurrenceAnchorDay ?? Number(scheduled.slice(-2)) : undefined;
+          await StorageService.tasks.update(editingTaskId, taskUpdates);
+        }
         else await StorageService.tasks.add({ ...taskUpdates, title: taskUpdates.title!, dueDate: taskUpdates.dueDate!, priority: taskUpdates.priority!, recurring: taskUpdates.recurring!, completed: false });
       }
       // A resolved storage write is committed. Close before fallible refresh work.

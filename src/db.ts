@@ -187,7 +187,8 @@ export function getNextRecurringTaskDate(
   todayLocalDate = (() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  })()
+  })(),
+  monthlyAnchorDay?: number,
 ): string {
   const parseDate = (value: string) => {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -207,6 +208,7 @@ export function getNextRecurringTaskDate(
   if (!dueDate) throw new Error('Invalid recurring task due date');
   const nextDate = parseDate(dueDate);
   const today = parseDate(todayLocalDate);
+  const originalDay = monthlyAnchorDay ?? nextDate.getUTCDate();
 
   const advance = () => {
     if (recurring === 'Daily') {
@@ -214,7 +216,6 @@ export function getNextRecurringTaskDate(
     } else if (recurring === 'Weekly') {
       nextDate.setUTCDate(nextDate.getUTCDate() + 7);
     } else if (recurring === 'Monthly') {
-      const originalDay = nextDate.getUTCDate();
       nextDate.setUTCDate(1);
       nextDate.setUTCMonth(nextDate.getUTCMonth() + 1);
       const lastDay = new Date(Date.UTC(
@@ -735,6 +736,8 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'updatedAt', 'tasks', i);
     optionalString(r, 'recurrenceRootId', 'tasks', i);
     optionalString(r, 'spawnedTaskId', 'tasks', i);
+    if (r.recurrenceScheduledDate !== undefined) requiredDate(r, 'recurrenceScheduledDate', 'tasks', i);
+    if (r.recurrenceAnchorDay !== undefined && (!Number.isInteger(r.recurrenceAnchorDay) || r.recurrenceAnchorDay < 1 || r.recurrenceAnchorDay > 31)) fail('tasks', i, 'recurrenceAnchorDay');
     try { normalizeTaskSchedule(r); } catch { fail('tasks', i, 'schedule'); }
     if (r.subtasks !== undefined) {
       if (!Array.isArray(r.subtasks)) fail('tasks', i, 'subtasks');
@@ -1480,7 +1483,9 @@ const rawStorageService: IDataStorage = {
 
         normalizeTaskSchedule(task);
         if (task.dueDate && task.recurring && task.recurring !== 'None' && !task.completed) {
-          const nextDueDate = getNextRecurringTaskDate(task.dueDate, task.recurring);
+          const scheduledDate = task.recurrenceScheduledDate || task.dueDate;
+          const anchorDay = task.recurrenceAnchorDay ?? Number(scheduledDate.slice(-2));
+          const nextDueDate = getNextRecurringTaskDate(scheduledDate, task.recurring, undefined, anchorDay);
           const rootId = getRecurrenceRootId(task);
           const nextTaskId = `rec_${rootId}_${nextDueDate}`;
           const existingOccurrence = await db.tasks.get(nextTaskId);
@@ -1493,6 +1498,7 @@ const rawStorageService: IDataStorage = {
               dueDate: nextDueDate,
               dueTime: task.dueTime,
               reminderAt: shiftRecurringTaskReminder(task, nextDueDate),
+              subtasks: task.subtasks?.map(({ id, title }) => ({ id, title, completed: false, createdAt: new Date().toISOString() })),
               reminderLeadMinutes: task.reminderLeadMinutes,
               dueAlertDisabled: task.dueAlertDisabled,
               priority: task.priority,
@@ -1500,6 +1506,8 @@ const rawStorageService: IDataStorage = {
               notes: task.notes,
               recurring: task.recurring,
               recurrenceRootId: rootId,
+              recurrenceAnchorDay: anchorDay,
+              recurrenceScheduledDate: nextDueDate,
               completed: false,
               createdAt: new Date().toISOString()
             });
@@ -1674,7 +1682,7 @@ export const encryptedStorageRuntime = createLifeOSEncryptedRuntime(
     validateBackupTables,
     normalizeTaskSchedule,
     getNextRecurringTaskDate: (task, fromDate) =>
-      task.dueDate ? getNextRecurringTaskDate(task.dueDate, task.recurring, fromDate) : null,
+      task.dueDate ? getNextRecurringTaskDate(task.recurrenceScheduledDate || task.dueDate, task.recurring, fromDate, task.recurrenceAnchorDay) : null,
     getRecurrenceRootId,
     shiftRecurringTaskReminder,
   }

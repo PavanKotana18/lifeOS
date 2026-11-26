@@ -489,6 +489,7 @@ async function rejects(fn, pattern) {
     const task = await storage.tasks.add({
       title: 'Daily reminder', dueDate: '2026-11-03', dueTime: '09:00',
       reminderAt: '2026-11-03T08:00:00.000Z', recurring: 'Daily', priority: 'Medium', completed: false,
+      subtasks: [{ id: 'first', title: 'Step', completed: true, createdAt: '2026-11-01T08:00:00.000Z' }],
     });
     await storage.tasks.toggleCompleted(task.id, true);
     await storage.tasks.toggleCompleted(task.id, true);
@@ -496,6 +497,8 @@ async function rejects(fn, pattern) {
     assert.equal(occurrences.length, 1);
     assert.equal(occurrences[0].dueDate, '2026-11-04');
     assert.equal(occurrences[0].reminderAt, '2026-11-04T08:00:00.000Z');
+    assert.equal(occurrences[0].subtasks[0].completed, false);
+    assert.equal(occurrences[0].recurrenceScheduledDate, '2026-11-04');
   });
 
   console.log('\n========================================');
