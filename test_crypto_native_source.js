@@ -4,7 +4,7 @@ const assert = require('assert');
 const source = fs.readFileSync(
   'android/app/src/main/java/com/lifeos/personal/LifeOSCryptoPlugin.java',
   'utf8'
-);
+).replace(/\r\n/g, '\n');
 
 function section(start, end) {
   const a = source.indexOf(start);

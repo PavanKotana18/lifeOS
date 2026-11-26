@@ -83,7 +83,7 @@ async function main() {
     if (
     parent &&
     parent.filename &&
-    parent.filename.endsWith('/src/db.recurrence-edges.cjs')
+    parent.filename === loaded.filename
   ) {
     if (request === './services/encryptedStorageIntegration') {
       return { BOOTSTRAP_SETTING_KEYS: new Set([
