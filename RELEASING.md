@@ -14,7 +14,11 @@ Keep branches current with their base before opening a pull request. Resolve con
 
 `package.json` is the authoritative Semantic Version (`MAJOR.MINOR.PATCH`). `package-lock.json` is updated with it by npm. The Profile screen reads the package version, and Android Gradle reads the same package version for `versionName`.
 
-Android `versionCode` uses `MAJOR * 1,000,000 + MINOR * 1,000 + PATCH + GITHUB_RUN_NUMBER`. Local builds without that environment value use the SemVer-derived base code. MINOR and PATCH must each remain below 1000.
+Android Release uses `MAJOR * 1,000,000 + MINOR * 1,000 + PATCH + GITHUB_RUN_NUMBER`. MINOR and PATCH must each remain below 1000.
+
+The **Build LifeOS Android APK** workflow owns the distributable Standard Debug version sequence. Its Debug code is the value in `android/debug-version-floor.txt` plus that workflow's run number. Emulator QA and ordinary local builds use the floor. A rebuild for owner review sets `LIFEOS_ANDROID_DEBUG_BUILD_NUMBER` to the reservation of the successful workflow run for the same source commit.
+
+Use the established local Debug keystore when building an in-place owner update. The GitHub runner's Debug certificate is for its own artifacts. Compare the installed APK's certificate with the owner candidate before installation and preserve the existing installation if they differ.
 
 Use a PATCH bump for compatible fixes, MINOR for backward-compatible features, and MAJOR for breaking changes. Do not change the Android application ID (`com.lifeos.personal`).
 

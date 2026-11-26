@@ -15,6 +15,15 @@ assert.match(gradle, /requestsRelease && !lifeosReleaseSigningReady[\s\S]*?debug
   'Release artifact tasks fail closed when production signing is unavailable');
 assert.doesNotMatch(gradle, /signingConfig signingConfigs\.debug/, 'Release never falls back to the Android debug signer');
 const workflow = fs.readFileSync('.github/workflows/build-apk.yml', 'utf8');
+const emulatorWorkflow = fs.readFileSync('.github/workflows/android-emulator-qa.yml', 'utf8');
+const debugFloor = Number(fs.readFileSync('android/debug-version-floor.txt', 'utf8').trim());
+assert.ok(Number.isSafeInteger(debugFloor) && debugFloor >= 1000241);
+assert.match(gradle, /withBuildType\('debug'\)[\s\S]*?output\.versionCode\.set\(debugVersionCode\)/);
+assert.match(workflow, /LIFEOS_ANDROID_DEBUG_BUILD_NUMBER: \$\{\{ github\.run_number \}\}/);
+assert.doesNotMatch(emulatorWorkflow, /LIFEOS_ANDROID_DEBUG_BUILD_NUMBER|GITHUB_RUN_NUMBER/);
+for (const standardBuild of [workflow, emulatorWorkflow]) {
+  assert.match(standardBuild, /dump permissions[\s\S]*?Standard Debug APK declares an SMS permission/);
+}
 assert.match(workflow, /build_release:[\s\S]*?type: boolean[\s\S]*?default: false/,
   'Release artifact creation is an explicit manual workflow choice');
 assert.match(workflow, /github\.event_name == 'workflow_dispatch' && inputs\.build_release == true/,

@@ -88,9 +88,13 @@ jobs:
           [[ -n "$VERSION" ]] || { echo "::error::Debug APK version metadata is missing."; exit 1; }
           VERSION_CODE="$(sed -n "s/.*versionCode='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -n 1)"
           [[ "$VERSION" == "$(node -p "require('./package.json').version")-debug" ]] || { echo "::error::APK versionName does not match package.json."; exit 1; }
-          IFS=. read -r VERSION_MAJOR VERSION_MINOR VERSION_PATCH <<< "${VERSION%-debug}"
-          EXPECTED_VERSION_CODE=$((10#$VERSION_MAJOR * 1000000 + 10#$VERSION_MINOR * 1000 + 10#$VERSION_PATCH + GITHUB_RUN_NUMBER))
-          [[ "$VERSION_CODE" == "$EXPECTED_VERSION_CODE" ]] || { echo "::error::APK versionCode differs from the expected run-specific value."; exit 1; }
+          EXPECTED_VERSION_CODE="$(cat android/debug-version-floor.txt)"
+          [[ "$VERSION_CODE" == "$EXPECTED_VERSION_CODE" ]] || { echo "::error::The isolated emulator APK must use the QA version floor."; exit 1; }
+          PERMISSIONS="$("$AAPT" dump permissions "$APK")"
+          if grep -Eq 'android\.permission\.[A-Z_]*SMS[A-Z_]*' <<< "$PERMISSIONS"; then
+            echo "::error::Standard Debug APK declares an SMS permission."
+            exit 1
+          fi
           SHA256="$(sha256sum "$APK" | awk '{print $1}')"
           echo "Verified isolated Debug APK package=com.lifeos.personal.debug version=$VERSION versionCode=$VERSION_CODE signer_sha256=$ACTUAL apk_sha256=$SHA256"
           {
