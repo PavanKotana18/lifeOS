@@ -1,8 +1,12 @@
+import { formatMinorUnits } from '../services/financeCore';
 import type { Goal } from '../types';
 import { getGoalProgress } from '../services/domainUtils';
 
 type Props = {
   month: string;
+  exactCashFlow?: [string, string, string];
+  currency?: string;
+  locale?: string;
   income: number;
   expenses: number;
   balance: number;
@@ -12,6 +16,7 @@ type Props = {
   weeklyCompleted: number;
   weeklyTotal: number;
   goals: Goal[];
+  progressForGoal?: (goal: Goal) => number;
   hasHistory: boolean;
   formatMoney: (amount: number) => string;
   onFinance: () => void;
@@ -30,6 +35,8 @@ function formatMonthLabel(month: string) {
 
 export default function InsightsHub(props: Props) {
   const { month, income, expenses, balance, transactionCount, completedRoutines, routinesDue, weeklyCompleted, weeklyTotal, goals, hasHistory, formatMoney, onFinance, onHabits, onGoals } = props;
+  const cash = (value: number, index: 0 | 1 | 2) => props.exactCashFlow && props.currency
+    ? formatMinorUnits(BigInt(props.exactCashFlow[index]), props.currency, props.locale) : formatMoney(value);
   const hasMoneyRecords = transactionCount > 0;
   const hasRoutineRecords = routinesDue > 0 || weeklyTotal > 0;
   const hasGoalRecords = goals.length > 0;
@@ -48,17 +55,19 @@ export default function InsightsHub(props: Props) {
     </section> : <>
       {hasMoneyRecords && <section className="insights-section insight-money lifeos-panel" aria-labelledby="insights-money-title">
         <div className="flex items-center justify-between gap-2"><div><p className="type-eyebrow">MONEY</p><h3 id="insights-money-title" className="font-semibold">{formatMonthLabel(month)}</h3><p className="text-xs text-secondary">Based on {transactionCount} saved transactions</p></div><button type="button" onClick={onFinance} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[var(--accent)]">View money</button></div>
-        <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3"><div><dt className="text-xs text-secondary">Income</dt><dd className="mt-1 font-semibold tabular-nums">{formatMoney(income)}</dd></div><div><dt className="text-xs text-secondary">Expenses</dt><dd className="mt-1 font-semibold tabular-nums">{formatMoney(expenses)}</dd></div><div><dt className="text-xs text-secondary">Income after expenses</dt><dd className="mt-1 font-semibold tabular-nums">{formatMoney(balance)}</dd></div></dl>
+        <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3"><div><dt className="text-xs text-secondary">Income</dt><dd className="mt-1 font-semibold tabular-nums">{cash(income, 0)}</dd></div><div><dt className="text-xs text-secondary">Expenses</dt><dd className="mt-1 font-semibold tabular-nums">{cash(expenses, 1)}</dd></div><div><dt className="text-xs text-secondary">Income after expenses</dt><dd className="mt-1 font-semibold tabular-nums">{cash(balance, 2)}</dd></div></dl>
       </section>}
       {hasRoutineRecords && <section className="insights-section insight-routines lifeos-panel" aria-labelledby="insights-routine-title"><div className="flex items-center justify-between gap-2"><div><p className="type-eyebrow">DAILY PRACTICE</p><h3 id="insights-routine-title" className="font-semibold">Habit check-ins</h3><p className="text-xs text-secondary">From your saved routine schedule</p></div><button type="button" onClick={onHabits} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[var(--accent)]">View habits</button></div>{routinesDue > 0 && <p className="mt-3 text-sm">Today · {completedRoutines} of {routinesDue} checked</p>}{weeklyTotal > 0 && <p className="mt-1 text-sm">This week · {weeklyCompleted} of {weeklyTotal} routines checked</p>}</section>}
       {hasGoalRecords && <section className="insights-section insight-goals lifeos-panel" aria-labelledby="insights-goal-title">
         <div className="flex items-center justify-between gap-2"><div><p className="type-eyebrow">LONGER-TERM</p><h3 id="insights-goal-title" className="font-semibold">Goal progress</h3><p className="text-xs text-secondary">Current progress against each saved target</p></div><button type="button" onClick={onGoals} className="min-h-11 rounded-xl px-3 text-sm font-semibold text-[var(--accent)]">View goals</button></div>
         <ul className="mt-3 space-y-4">{goals.slice(0, 3).map(goal => {
-          const progress = getGoalProgress(goal.currentValue, goal.targetValue);
+          const progress = props.progressForGoal?.(goal) ?? getGoalProgress(goal.currentValue, goal.targetValue);
           return <li key={goal.id}>
             <div className="flex justify-between gap-3 text-sm"><span className="min-w-0 truncate font-medium">{goal.title}</span><span className="shrink-0 tabular-nums text-secondary">{progress}%</span></div>
             <div className="lifeos-progress-track mt-2 h-2 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${progress}%` }} /></div>
-            <p className="mt-1 text-xs text-secondary">{goal.currentValue.toLocaleString()} of {goal.targetValue.toLocaleString()}{goal.unit ? ` ${goal.unit}` : ''}</p>
+            <p className="mt-1 text-xs text-secondary">{goal.mode === 'milestone' ? 'Milestones' :
+              goal.mode === 'reduce' ? `${goal.currentValue.toLocaleString()} now ? target ${goal.targetValue.toLocaleString()}${goal.unit ? ` ${goal.unit}` : ''}` :
+              `${goal.currentValue.toLocaleString()} of ${goal.targetValue.toLocaleString()}${goal.unit ? ` ${goal.unit}` : ''}`}</p>
           </li>;
         })}</ul>
       </section>}

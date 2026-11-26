@@ -1,3 +1,4 @@
+import { isGoalComplete, validateGoalMeasure } from './services/goalModes';
 import type { ImportDuplicateOptions } from './services/smartImport';
 import Dexie, { Table } from 'dexie';
 import { createSessionManager } from './services/sessionManager';
@@ -645,6 +646,7 @@ export function validateBackupTables(tablesData: any): string[] {
 
   check('budgets', (r, i) => {
     requiredNumber(r, 'monthlyAmount', 'budgets', i);
+    optionalBoolean(r, 'carryover', 'budgets', i);
     if (!month(r.monthYear)) fail('budgets', i, 'monthYear');
     requiredString(r, 'createdAt', 'budgets', i);
     try { validateMoneyMetadata({ currencyCode: r.currencyCode, amountMinor: r.amountMinor, amount: r.monthlyAmount }); } catch { fail('budgets', i, 'currency/amountMinor'); }
@@ -684,6 +686,12 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'description', 'habits', i);
     optionalString(r, 'icon', 'habits', i);
     optionalBoolean(r, 'archived', 'habits', i);
+    if (r.schedule !== undefined && (!Array.isArray(r.schedule) || new Set(r.schedule.map((item: any) => item?.from)).size !== r.schedule.length ||
+      r.schedule.some((item: any) => !obj(item) || !date(item.from) || !Array.isArray(item.weekdays) || !item.weekdays.length ||
+        new Set(item.weekdays).size !== item.weekdays.length || item.weekdays.some((day: number) => !Number.isInteger(day) || day < 0 || day > 6) ||
+        (item.sessionsPerWeek !== undefined && (!Number.isInteger(item.sessionsPerWeek) || item.sessionsPerWeek < 1 || item.sessionsPerWeek > item.weekdays.length))))) fail('habits', i, 'schedule');
+    if (r.pauses !== undefined && (!Array.isArray(r.pauses) || r.pauses.some((item: any) =>
+      !obj(item) || !date(item.from) || (item.through !== undefined && (!date(item.through) || item.through < item.from))))) fail('habits', i, 'pauses');
     optionalString(r, 'goalId', 'habits', i);
     if (r.targetPerDay !== undefined && (!num(r.targetPerDay) || r.targetPerDay <= 0)) fail('habits', i, 'targetPerDay');
     if (r.reminderTime !== undefined && !time(r.reminderTime)) fail('habits', i, 'reminderTime');
@@ -718,6 +726,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'unit', 'goals', i);
     optionalInstant(r, 'updatedAt', 'goals', i);
     optionalBoolean(r, 'archived', 'goals', i);
+    try { validateGoalMeasure(r); } catch { fail('goals', i, 'mode or goal measure'); }
     if (r.progressHistory !== undefined && (!Array.isArray(r.progressHistory) ||
       r.progressHistory.some((entry: any) => !obj(entry) || !instant(entry.at) || !num(entry.value) ||
         (entry.unit !== undefined && !str(entry.unit))))) fail('goals', i, 'progressHistory');
@@ -963,6 +972,7 @@ const rawStorageService: IDataStorage = {
             throw new Error('A budget cannot change currency without explicit reconciliation.');
           }
           const updates = { monthlyAmount: budget.monthlyAmount,
+            ...(budget.carryover !== undefined ? { carryover: budget.carryover } : {}),
             ...(budget.amountMinor !== undefined ? { amountMinor: budget.amountMinor } : {}),
             ...(budget.currencyCode !== undefined ? { currencyCode: budget.currencyCode } : {}) };
           await db.budgets.update(existing.id, updates);
@@ -1363,8 +1373,10 @@ const rawStorageService: IDataStorage = {
       return db.milestones.toArray();
     },
     async add(goal) {
+      validateGoalMeasure(goal);
       const id = createRecordId('g');
       const record: Goal = { ...goal, id, createdAt: new Date().toISOString() };
+      if (record.mode !== undefined && record.status !== 'Paused') record.status = isGoalComplete(record, []) ? 'Completed' : 'In Progress';
       await db.goals.add(record);
       return record;
     },
@@ -1383,10 +1395,8 @@ const rawStorageService: IDataStorage = {
           updatedAt: new Date().toISOString()
         };
         const milestones = await db.milestones.where('goalId').equals(id).toArray();
-        const eligible =
-          Number(next.targetValue) > 0 &&
-          Number(next.currentValue) >= Number(next.targetValue) &&
-          milestones.every(item => item.completed);
+        validateGoalMeasure(next);
+        const eligible = isGoalComplete(next, milestones);
 
         if (next.status !== 'Paused') {
           next.status = eligible ? 'Completed' :
@@ -1412,8 +1422,14 @@ const rawStorageService: IDataStorage = {
       const id = createRecordId('m');
       const record: Milestone = { ...milestone, id };
       await db.transaction('rw', db.goals, db.milestones, async () => {
-        if (!(await db.goals.get(record.goalId))) throw new Error('Milestone goal does not exist.');
+        const goal = await db.goals.get(record.goalId);
+        if (!goal) throw new Error('Milestone goal does not exist.');
         await db.milestones.add(record);
+        if (goal.mode !== undefined && goal.status !== 'Paused') {
+          const related = await db.milestones.where('goalId').equals(goal.id).toArray();
+          const status = isGoalComplete(goal, related) ? 'Completed' : 'In Progress';
+          if (status !== goal.status) await db.goals.update(goal.id, { status });
+        }
       });
       return record;
     },
@@ -1433,10 +1449,7 @@ const rawStorageService: IDataStorage = {
         const milestones = await db.milestones
           .where('goalId').equals(milestone.goalId).toArray();
 
-        const eligible =
-          Number(goal.targetValue) > 0 &&
-          Number(goal.currentValue) >= Number(goal.targetValue) &&
-          milestones.every(item => item.completed);
+        const eligible = isGoalComplete(goal, milestones);
 
         if (goal.status !== 'Paused') {
           const nextStatus = eligible ? 'Completed' :

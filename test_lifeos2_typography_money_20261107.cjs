@@ -43,7 +43,7 @@ for (const [code, locale, symbol] of [['INR', 'en-IN', '₹'], ['USD', 'en-US', 
 assert.ok(formatCurrency(1234567.89, 'INR', 'en-IN').includes('12,34,567.89'), 'Indian currency grouping and paise precision are retained');
 assert.ok(!formatCurrency(1234567.89, 'JPY', 'en-US').includes('.'), 'zero-minor-unit currency omits decimals');
 assert.match(moneyHome, /Net cash flow/);
-assert.match(moneyHome, /formatMoney\(netCashFlow\)/);
+assert.match(moneyHome, /exact\(exactCashFlow\?\.\[2\], netCashFlow\)/);
 assert.match(app, /className="nav-profile-avatar"/);
 assert.match(app, /primaryDestinationForTab\(activeTab\)/);
 assert.doesNotMatch(app, /overflow-x-auto[^\n]*financeSubtab|PRIMARY_NAVIGATION[\s\S]{0,500}explore/);
@@ -51,7 +51,7 @@ const markup = renderToStaticMarkup(React.createElement(MoneyHome, {
   month: '2026-11', income: 25000, expenses: 7800, netCashFlow: 17200,
   budgetRows: [{ category: 'Overall', allocated: 30000, spent: 7800, remaining: 22200 }],
   largestCategory: { name: 'Food', amount: 3500 }, expenseChange: 5, hasPreviousMonthRecords: true,
-  transactions: [{ id: 'synthetic-1', type: 'expense', amount: 1250, date: '2026-11-07', occurredAt: '2026-11-07T08:30:00.000Z', category: 'Food', description: 'Lunch' }],
+  transactions: [{ id: 'synthetic-1', type: 'expense', currencyCode: 'INR', amount: 1250, date: '2026-11-07', occurredAt: '2026-11-07T08:30:00.000Z', category: 'Food', description: 'Lunch' }],
   formatMoney: amount => formatCurrency(amount, 'INR', 'en-IN'), formatDate: date => date, formatTime: date => date.toISOString().slice(11, 16),
   accountSummaries: [], savingsGoals: [], legacyCurrency: 'INR', onAccounts() {},
   onMonthChange() {}, onAddExpense() {}, onAddIncome() {}, onTransfer() {}, onMoveToSavings() {}, onTransactions() {}, onBudgets() {}, onSavings() {}, onAnalytics() {}, onPlanning() {}, onEditTransaction() {},

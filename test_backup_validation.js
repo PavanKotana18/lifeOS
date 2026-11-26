@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 const ts = require('typescript');
+require('./scripts/register-ts-test-loader.cjs');
 const assert = require('assert');
 
 const source = fs.readFileSync(path.join(__dirname, 'src/db.ts'), 'utf8');

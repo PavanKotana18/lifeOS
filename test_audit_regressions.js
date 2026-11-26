@@ -29,8 +29,8 @@ check(
 
 // F-02: Form submission must persist the selected category.
 check(
-  app.includes("const money = createMoneyRecordAmount(value('amount'), userPrefs.currency)") &&
-  app.includes("StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month') })"),
+  app.includes("const money = createMoneyRecordAmount(value('amount'), code)") &&
+  app.includes("StorageService.budgets.upsert({ categoryId: value('categoryId') || undefined, monthlyAmount: money.amount, amountMinor: money.amountMinor, currencyCode: money.currencyCode, monthYear: value('month'), carryover: value('carryover') === 'yes' })"),
   'Budget submission persists category, exact minor units, and explicit currency'
 );
 
@@ -50,11 +50,12 @@ check(
 );
 
 // F-03: Exact posted spending lookup must use the resolved category name.
+const finance = fs.readFileSync('src/services/financeAnalytics.ts', 'utf8');
 check(
-  app.includes("tx.category === budgetCategoryName") &&
-    app.includes('spentTransactions.reduce((total, tx) => total +') &&
-    app.includes('BigInt(tx.amountMinor)'),
-  'Category budget spending uses the transaction category and stored exact minor units'
+  app.includes('financeAnalytics.budgetRows.find(row => row.id === b.id)') &&
+    finance.includes('categoryExpenseMinor[categoryName]') &&
+    finance.includes('BigInt(tx.amountMinor)'),
+  'Budget detail and analytics share the category lookup and stored minor units'
 );
 
 // F-03: Missing category must remain unavailable instead of fabricating zero spend.
@@ -66,7 +67,7 @@ check(
 
 // F-03: Overall budget must still use total expenses.
 check(
-  app.includes("(!b.categoryId || tx.category === budgetCategoryName)"),
+  finance.includes(': totalExpensesMinor;') && finance.includes('tx.currencyCode === currencyCode'),
   'Overall budget continues to include every posted expense in its currency'
 );
 

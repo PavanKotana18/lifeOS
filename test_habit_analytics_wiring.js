@@ -20,6 +20,7 @@ new Function('module', 'exports', compiled)(
 
 const {
   isHabitScheduledOnDate,
+  isHabitEligible,
   calculateWeeklyHabitRate,
   calculateStreaks
 } = productionModule.exports;
@@ -49,6 +50,14 @@ check(isHabitScheduledOnDate('daily', 'not-a-date'), 'Daily frequency remains sc
 check(!isHabitScheduledOnDate('weekdays', '2026-02-30'), 'Impossible date rejected');
 check(!isHabitScheduledOnDate('weekends', '2026/11/07'), 'Invalid date format rejected');
 
+const custom = { frequency: 'weekdays', schedule: [{ from: '2026-11-04', weekdays: [0, 6], sessionsPerWeek: 2 }] };
+check(isHabitEligible(custom, '2026-11-03'), 'The existing weekdays remain in force before a future revision');
+check(!isHabitEligible(custom, '2026-11-04') && isHabitEligible(custom, '2026-11-07'), 'The revision applies on its effective date');
+const habitWithPause = { ...custom, pauses: [{ from: '2026-11-07', through: '2026-11-07' }] };
+check(!isHabitEligible(habitWithPause, '2026-11-07') && isHabitEligible(habitWithPause, '2026-11-08'), 'A pause excludes only the dates it covers');
+const revisionLogs = ['2026-11-02', '2026-11-03', '2026-11-07', '2026-11-08'].map(date => ({ habitId: 'custom', date, completed: true }));
+check(calculateWeeklyHabitRate(revisionLogs, 'custom', new Date(2026, 10, 8), 'weekdays', custom).completed === 4,
+  'Earlier check-ins remain eligible when a revision takes effect');
 const weekdayLogs = [
   '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06'
 ].map(date => ({ habitId: 'weekday', date, completed: true }));
@@ -147,15 +156,15 @@ check(
 );
 
 check(
-  app.includes(`habits.find(h => h.id === habitId)?.frequency || 'daily'`),
+  app.includes(`calculateStreaks(habitLogs, habitId, targetDate, habit?.frequency || 'daily', habit)`),
   'App passes frequency into streak calculation'
 );
 check(
-  app.includes('calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency)'),
+  app.includes('calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency, h)'),
   'App passes frequency into weekly rate calculation'
 );
 check(
-  domainSource.includes("habit.frequency !== 'weekly' && isHabitScheduledOnDate(habit.frequency, date)") &&
+  domainSource.includes("&& isHabitEligible(habit, date)") &&
   domainSource.includes('weeklyRoutinesCompleted'),
   'Dashboard summary respects scheduled routines and separates weekly routines'
 );
@@ -208,5 +217,5 @@ check(
   'Habits tab uses the shared deletion handler'
 );
 
-console.log(`HABIT ANALYTICS AND UI WIRING: ${passed}/34 checks PASSED`);
-if (passed !== 34) process.exitCode = 1;
+console.log(`HABIT ANALYTICS AND UI WIRING: ${passed}/38 checks PASSED`);
+if (passed !== 38) process.exitCode = 1;

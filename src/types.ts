@@ -35,6 +35,7 @@ export interface Category {
 }
 
 export interface Budget {
+  carryover?: boolean;
   id: string;
   categoryId?: string; // Optional: category-specific or overall monthly budget
   monthlyAmount: number;
@@ -138,6 +139,8 @@ export interface PlannedCommitment {
 export type HabitFrequency = 'daily' | 'weekdays' | 'weekends' | 'weekly';
 
 export interface Habit {
+  schedule?: { from: string; weekdays: number[]; sessionsPerWeek?: number }[];
+  pauses?: { from: string; through?: string }[];
   goalId?: string;
   id: string;
   name: string;
@@ -175,7 +178,11 @@ export interface GoalProgressEntry {
   unit?: string;
 }
 
+export type GoalMode = 'accumulate' | 'reduce' | 'milestone' | 'frequency';
+
 export interface Goal {
+  mode?: GoalMode;
+  baselineValue?: number;
   archived?: boolean;
   progressHistory?: GoalProgressEntry[];
   id: string;

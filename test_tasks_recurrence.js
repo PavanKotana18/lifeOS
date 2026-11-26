@@ -1,3 +1,4 @@
+require('./scripts/register-ts-test-loader.cjs');
 require('fake-indexeddb/auto');
 const fs = require('fs');
 const path = require('path');

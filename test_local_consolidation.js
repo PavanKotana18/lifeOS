@@ -9,7 +9,7 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const { buildFinanceAnalytics } = f.load('src/services/financeAnalytics.ts');
   const rows = [0.1, 0.2].map(amount => ({ date:'2026-11-01', amount, type:'expense', category:'Food' }));
   rows.push({date:'2026-11-02',amount:0.4,type:'income'});
-  const a = buildFinanceAnalytics(rows,[{categoryId:'food',monthlyAmount:0.4}], '2026-11', 2, [{id:'food',name:'Food'}]);
+  const a = buildFinanceAnalytics(rows.map(row => ({ currencyCode:'INR', ...row })),[{categoryId:'food',monthlyAmount:0.4,currencyCode:'INR'}], '2026-11', 2, [{id:'food',name:'Food'}]);
   assert.equal(a.totalExpenses,0.3); assert.equal(a.categories[0].amount,0.3);
   assert.equal(a.netSavings,0.1); assert.equal(a.budgetRows[0].remaining,0.1);
   assert.equal(a.periodRows.at(-1).expenses,0.3); assert.equal(a.periodRows[0].expenses,null);
@@ -40,6 +40,19 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   await ns.syncMilestones([{id:'goal',status:'In Progress'}],[{id:'mile',goalId:'goal',title:'Fixture',targetDate:'2026-12-01'}], {...f.DEFAULT_NOTIFICATION_PREFERENCES,milestoneReminders:true});
   assert.equal(f.pending.size,9, 'task, weekly habit and milestone reminders use the supported inexact fallback'); assert.equal((await ns.getDiagnostics()).exactAlarm,'denied');
   const testAt = await ns.testNotification(1_000); assert.ok(testAt instanceof Date); assert.equal(f.pending.size,10, 'test notification is queued even without exact-alarm access');
+ }));
+ await test('Habit reminders honor each side of a future revision', async () => fixture(async f => {
+  const { formatLocalDate } = f.load('src/services/domainUtils.ts');
+  const now = new Date();
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+  const habit = { id: 'synthetic-habit-revision', frequency: 'daily', reminderTime: '09:35',
+   schedule: [{ from: formatLocalDate(next), weekdays: [(next.getDay() + 1) % 7] }] };
+  await f.NotificationService.syncHabits([habit], { ...f.DEFAULT_NOTIFICATION_PREFERENCES, habitReminders: true });
+  const scheduled = [...f.pending.values()].map(row => new Date(row.schedule.at));
+  assert.ok(scheduled.some(date => formatLocalDate(date) === formatLocalDate(tomorrow)));
+  assert.ok(scheduled.every(date => date.getHours() === 9 && date.getMinutes() === 35));
+  assert.ok(scheduled.every(date => formatLocalDate(date) < formatLocalDate(next) || date.getDay() === habit.schedule[0].weekdays[0]));
  }));
  await test('Only user-selected task reminders use Android idle-aware alarm quota', async () => fixture(async f => {
   const ns=f.NotificationService;

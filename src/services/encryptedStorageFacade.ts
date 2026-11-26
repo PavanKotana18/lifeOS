@@ -1,3 +1,4 @@
+import { isGoalComplete, validateGoalMeasure } from './goalModes';
 import { PossibleImportDuplicateError, type ImportDuplicateOptions } from './smartImport';
 import { createSampleData, isSampleRecord } from './sampleData';
 import { withCommitmentWriteLock } from './commitmentWriteLock';
@@ -124,9 +125,7 @@ function identity(table: EncryptedTable, row: any): string {
 
 function reconcileGoal(goal: Goal, milestones: Milestone[]): Goal {
   if (goal.status === 'Paused') return goal;
-  const eligible = Number(goal.targetValue) > 0 &&
-    Number(goal.currentValue) >= Number(goal.targetValue) &&
-    milestones.every(item => item.completed);
+  const eligible = isGoalComplete(goal, milestones);
   return { ...goal, status: eligible ? 'Completed' :
     (goal.status === 'Completed' ? 'In Progress' : goal.status) };
 }
@@ -390,6 +389,7 @@ export function createEncryptedStorageFacade(
               throw new Error('A budget cannot change currency without explicit reconciliation.');
             }
             const updated = { ...existing, monthlyAmount: input.monthlyAmount,
+              ...(input.carryover !== undefined ? { carryover: input.carryover } : {}),
               ...(input.amountMinor !== undefined ? { amountMinor: input.amountMinor } : {}),
               ...(input.currencyCode !== undefined ? { currencyCode: input.currencyCode } : {}) };
             ctx.put('budgets', updated);
@@ -820,12 +820,11 @@ export function createEncryptedStorageFacade(
       getAll: () => readAll<Goal>('goals'),
       getAllMilestones: () => readAll<Milestone>('milestones'),
 
-      add: async (input: Omit<Goal, 'id' | 'createdAt'>) =>
-        add('goals', {
-          ...input,
-          id: helpers.createRecordId('goal'),
-          createdAt: new Date().toISOString(),
-        }),
+      add: async (input: Omit<Goal, 'id' | 'createdAt'>) => {
+        validateGoalMeasure(input);
+        const goal = { ...input, id: helpers.createRecordId('goal'), createdAt: new Date().toISOString() };
+        return add('goals', goal.mode === undefined ? goal : reconcileGoal(goal, []));
+      },
 
       update: (id: string, changes: Partial<Goal>) => coordinator.run(async ctx => {
         const existing = await ctx.get<Goal>('goals', id);
@@ -833,6 +832,7 @@ export function createEncryptedStorageFacade(
         const milestones = (await ctx.getAll<Milestone>('milestones')).filter(m => m.goalId === id);
         const updatedAt = new Date().toISOString();
         const next = { ...existing, ...changes, id, createdAt: existing.createdAt, updatedAt };
+        validateGoalMeasure(next);
         const progressHistory = existing.currentValue !== next.currentValue || existing.unit !== next.unit
           ? [...(existing.progressHistory || []), { at: updatedAt, value: next.currentValue, ...(next.unit ? { unit: next.unit } : {}) }]
           : existing.progressHistory;
@@ -850,9 +850,12 @@ export function createEncryptedStorageFacade(
 
       addMilestone: async (input: Omit<Milestone, 'id'>) =>
         coordinator.run(async ctx => {
-          if (!(await ctx.get<Goal>('goals', input.goalId))) throw new Error('Milestone goal does not exist.');
+          const goal = await ctx.get<Goal>('goals', input.goalId);
+          if (!goal) throw new Error('Milestone goal does not exist.');
           const record = { ...input, id: helpers.createRecordId('milestone') };
+          const related = (await ctx.getAll<Milestone>('milestones')).filter(row => row.goalId === goal.id);
           ctx.add('milestones', record);
+          if (goal.mode !== undefined) ctx.put('goals', reconcileGoal(goal, [...related, record]));
           return record;
         }),
 
