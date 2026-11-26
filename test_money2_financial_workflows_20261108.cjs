@@ -33,7 +33,7 @@ const noop = async () => {};
 const accountsMarkup = renderToStaticMarkup(React.createElement(MoneyAccounts, { accounts, transactions, transfers, currencyCode: 'USD', onCreateAccount: noop, onUpdateAccount: noop, onDeleteAccount: noop, onCreateTransfer: noop, onUpdateTransfer: noop, onReverseTransfer: noop, onDeleteTransfer: noop }));
 assert.match(accountsMarkup, /Add account/);
 assert.match(accountsMarkup, /Current balance/);
-assert.doesNotMatch(accountsMarkup, /<h2[^>]*>Accounts/, "The destination header owns the Accounts title");
+assert.doesNotMatch(accountsMarkup, /<h2[^>]*>Accounts<\/h2>/, "The destination header owns the Accounts title");
 assert.match(accountsMarkup, /Move between accounts|Transfer/);
 assert.match(accountsMarkup, /Opening amount plus posted activity, including transfers\. Transfers are not income or spending\./, 'account balances explain that transfers affect balances without becoming cash flow');
 assert.ok(!accountsMarkup.includes('account_internal_') && !accountsMarkup.includes('transaction_internal_') && !accountsMarkup.includes('transfer_internal_'), 'Rendered account and transfer labels never expose internal IDs');

@@ -38,7 +38,7 @@ const moneyDestinations = [
   { id: 'budgets', label: 'Budgets', icon: WalletCards },
   { id: 'savings', label: 'Savings', icon: PiggyBank },
   { id: 'analytics', label: 'Insights', icon: ChartNoAxesCombined },
-  { id: 'planning', label: 'Plans', icon: CalendarDays },
+  { id: 'planning', label: 'Scheduled', icon: CalendarDays },
 ] as const;
 
 export default function MoneyHome({ month, monthly = false, onMonthly, monthSavings, expenseChange, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,

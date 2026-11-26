@@ -1,3 +1,4 @@
+import LifeDoodle from './LifeDoodle';
 import { PreferenceChoice } from './PreferenceChoice';
 import { useRef, useState } from 'react';
 import { Bell, ChevronRight, CircleCheck, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
@@ -12,6 +13,7 @@ type Props = {
   onOpenTask: (task: Task, trigger: HTMLButtonElement) => void;
   onToggleTask: (task: Task) => void;
   onCreate: () => void;
+  onQuickCreate?: (title: string) => void;
 };
 
 export const emptyPlanFilters = { priority: '', category: '', from: '', through: '', reminder: '', recurrence: '' };
@@ -53,7 +55,7 @@ function formatTaskDate(value: string | undefined, today: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date);
 }
 
-export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, onCreate }: Props) {
+export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, onCreate, onQuickCreate }: Props) {
   const [view, setView] = useState<PlanView>('all');
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<PlanStatus>('all');
@@ -77,8 +79,19 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
   return <section aria-labelledby="plan-title" className="plan-hub plan-workspace">
     <header className="plan-workspace-heading flex items-center justify-between gap-3">
       <h2 id="plan-title" className="type-section-title">Tasks</h2>
-      <button type="button" className="lifeos-accent-button min-h-11 rounded-xl px-3 text-sm font-semibold inline-flex items-center gap-2" onClick={onCreate}><Plus size={16} aria-hidden="true" />Add task</button>
+      {!onQuickCreate && <button type="button" className="lifeos-accent-button min-h-11 rounded-xl px-3 text-sm font-semibold inline-flex items-center gap-2" onClick={onCreate}><Plus size={16} aria-hidden="true" />Add task</button>}
     </header>
+    {onQuickCreate && <form className="plan-quick-task flex gap-2" aria-label="Quick task capture" onSubmit={event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const title = String(new FormData(form).get('title') || '').trim();
+      onQuickCreate(title);
+      form.reset();
+    }}>
+      <label className="sr-only" htmlFor="plan-quick-task-title">Quick task title</label>
+      <input id="plan-quick-task-title" name="title" maxLength={160} placeholder="Add a task to your list?" className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm" />
+      <button type="submit" className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold">Add task</button>
+    </form>}
     <div className="plan-view-controls" data-no-tab-swipe>
       <div className="plan-view-switch" role="group" aria-label="Task views">{views.map(item => <button type="button" key={item.id} aria-pressed={view === item.id} onClick={() => setView(item.id)}>{item.label}</button>)}</div>
       <div className="plan-toolbar">
@@ -120,7 +133,7 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
           <label className="plan-hub-task-check"><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(task)} aria-label={`Mark ${task.title} ${task.completed ? 'incomplete' : 'complete'}`} /></label>
           <button type="button" onClick={event => onOpenTask(task, event.currentTarget)} className="plan-hub-task-open"><span className="plan-hub-row-title">{task.title}</span><span className="plan-hub-row-meta">{taskStatus === 'Overdue' ? 'Overdue \u00b7 ' : task.completed ? 'Completed \u00b7 ' : ''}{formatTaskDate(task.dueDate, today)}{task.dueTime ? ` \u00b7 ${task.dueTime}` : task.dueDate ? ' \u00b7 end of day' : ''}<span className="plan-schedule-indicators">{task.recurring && task.recurring !== 'None' && <span><Repeat2 size={12} aria-hidden="true" />Repeats {task.recurring.toLocaleLowerCase()}</span>}{(task.reminderAt || task.reminderLeadMinutes) && <span><Bell size={12} aria-hidden="true" />Reminder set</span>}</span></span><ChevronRight size={17} aria-hidden="true" /></button>
         </li>;
-      })}</ul></section>) : <div className="plan-hub-empty"><CircleCheck size={21} aria-hidden="true" /><div><strong>{!tasks.length ? 'No tasks yet' : narrowed ? 'No tasks match this view' : 'You are all caught up'}</strong><span>{!tasks.length ? 'Start with one thing you want to remember.' : narrowed ? 'Try another view or status, or clear your search.' : 'Your completed tasks are available under All statuses.'}</span>{narrowed && tasks.length > 0 && <button type="button" onClick={() => { setView('all'); setStatus('all'); setFilters(emptyPlanFilters); setQuery(''); }}>Show every task</button>}</div></div>}
+      })}</ul></section>) : <div className="plan-hub-empty">{tasks.length ? <CircleCheck size={21} aria-hidden="true" /> : <LifeDoodle kind="empty-tasks" compact />}<div><strong>{!tasks.length ? 'No tasks yet' : narrowed ? 'No tasks match this view' : 'You are all caught up'}</strong><span>{!tasks.length ? 'Start with one thing you want to remember.' : narrowed ? 'Try another view or status, or clear your search.' : 'Your completed tasks are available under All statuses.'}</span>{narrowed && tasks.length > 0 && <button type="button" onClick={() => { setView('all'); setStatus('all'); setFilters(emptyPlanFilters); setQuery(''); }}>Show every task</button>}</div></div>}
     </section>
   </section>;
 }

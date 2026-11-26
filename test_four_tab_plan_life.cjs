@@ -72,6 +72,10 @@ walk(tree, n => n.type === 'input' && n.props['aria-label'] === 'Mark done incom
 walk(tree, n => n.type === 'button' && n.props.className === 'plan-hub-task-open' && text(n).startsWith('future'))[0].props.onClick({ currentTarget: {} });
 assert.match(markup, /Add task/); assert.doesNotMatch(markup, /plan-compose/);
 assert.deepEqual(calls, ['toggle:done', 'open:future']);
+const capture = renderToStaticMarkup(React.createElement(PlanHub, { ...props, onQuickCreate() {} }));
+assert.match(capture, /aria-label="Quick task capture"/);
+assert.match(capture, /name="title" maxLength="160"/);
+assert.equal((capture.match(/>Add task<\/button>/g) || []).length, 1, 'Plan exposes one task creation action');
 const many = renderToStaticMarkup(React.createElement(PlanHub, { ...props, tasks: Array.from({ length: 12 }, (_, i) => task('task' + i, today)) }));
 assert.equal((many.match(/class="plan-hub-task ui-interactive-row/g) || []).length, 12, 'Workspace does not hide tasks behind a five-row preview');
 assert.doesNotMatch(fs.readFileSync('src/components/PlanHub.tsx', 'utf8'), /onTouchStart|onTouchMove|onTouchEnd|onPointerMove/, 'Local filters do not install competing swipe handlers');

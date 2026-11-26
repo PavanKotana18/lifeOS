@@ -831,8 +831,12 @@ export function createEncryptedStorageFacade(
         const existing = await ctx.get<Goal>('goals', id);
         if (!existing) return;
         const milestones = (await ctx.getAll<Milestone>('milestones')).filter(m => m.goalId === id);
-        ctx.put('goals', reconcileGoal({ ...existing, ...changes, id,
-          createdAt: existing.createdAt, updatedAt: new Date().toISOString() }, milestones));
+        const updatedAt = new Date().toISOString();
+        const next = { ...existing, ...changes, id, createdAt: existing.createdAt, updatedAt };
+        const progressHistory = existing.currentValue !== next.currentValue || existing.unit !== next.unit
+          ? [...(existing.progressHistory || []), { at: updatedAt, value: next.currentValue, ...(next.unit ? { unit: next.unit } : {}) }]
+          : existing.progressHistory;
+        ctx.put('goals', reconcileGoal({ ...next, ...(progressHistory ? { progressHistory } : {}) }, milestones));
       }),
 
       delete: (id: string) => coordinator.run(async ctx => {

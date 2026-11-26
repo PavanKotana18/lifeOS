@@ -46,7 +46,7 @@ assert.doesNotMatch(home, /Showing 3 of 4 accounts/, "Balances appear on the mon
 assert.match(home, /Food<\/strong><small>2026-11-05<\/small>/, 'a transaction category is not repeated when it is already the title');
 assert.match(home, /aria-label="View Food, expense \$12\.00, 2026-11-05"/, 'transaction action and amount have a complete spoken label');
 assert.match(home, />This month/);
-assert.match(home, />Plans</);
+assert.match(home, />Scheduled</);
 
 const emptyHome = renderToStaticMarkup(React.createElement(MoneyHome, {
   ...homeProps, income: 0, expenses: 0, netCashFlow: 0, transactions: [], accountSummaries: [],
@@ -82,7 +82,7 @@ const controlledBusyForm = renderToStaticMarkup(React.createElement(MoneyAccount
   onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
   accountDraft: controlledDraft, onAccountDraftChange: noop, accountDirty: true, onAccountDirtyChange: noop, accountSaving: true,
 }));
-assert.match(controlledBusyForm, /aria-busy="true" aria-label="Create account"/);
+assert.match(controlledBusyForm, /aria-label="Create account"[^>]*aria-busy="true"/);
 assert.match(controlledBusyForm, /value="Rainy day fund"/);
 assert.match(controlledBusyForm, /value="125\.50"/);
 assert.match(controlledBusyForm, /disabled=""[^>]*>Cancel<\/button>/, 'Cancel is disabled while the guarded account save is active');
@@ -97,7 +97,7 @@ const controlledTransferBusyForm = renderToStaticMarkup(React.createElement(Mone
   onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
   transferDraft: controlledTransferDraft, onTransferDraftChange: noop, transferDirty: true, onTransferDirtyChange: noop, accountSaving: true,
 }));
-assert.match(controlledTransferBusyForm, /aria-busy="true" aria-label="Record transfer"/);
+assert.match(controlledTransferBusyForm, /aria-label="Record transfer"[^>]*aria-busy="true"/);
 assert.match(controlledTransferBusyForm, /value="35\.00"/);
 assert.match(controlledTransferBusyForm, /value="Payment"/);
 assert.match(controlledTransferBusyForm, /disabled=""[^>]*>Cancel<\/button>/, 'transfer Cancel is disabled during secure saving');

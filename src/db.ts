@@ -684,6 +684,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'description', 'habits', i);
     optionalString(r, 'icon', 'habits', i);
     optionalBoolean(r, 'archived', 'habits', i);
+    optionalString(r, 'goalId', 'habits', i);
     if (r.targetPerDay !== undefined && (!num(r.targetPerDay) || r.targetPerDay <= 0)) fail('habits', i, 'targetPerDay');
     if (r.reminderTime !== undefined && !time(r.reminderTime)) fail('habits', i, 'reminderTime');
     if (r.reminderWeekday !== undefined && (!Number.isInteger(r.reminderWeekday) || r.reminderWeekday < 1 || r.reminderWeekday > 7)) fail('habits', i, 'reminderWeekday');
@@ -716,6 +717,10 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'description', 'goals', i);
     optionalString(r, 'unit', 'goals', i);
     optionalInstant(r, 'updatedAt', 'goals', i);
+    optionalBoolean(r, 'archived', 'goals', i);
+    if (r.progressHistory !== undefined && (!Array.isArray(r.progressHistory) ||
+      r.progressHistory.some((entry: any) => !obj(entry) || !instant(entry.at) || !num(entry.value) ||
+        (entry.unit !== undefined && !str(entry.unit))))) fail('goals', i, 'progressHistory');
   });
 
   check('milestones', (r, i) => {
@@ -744,6 +749,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalInstant(r, 'completedAt', 'tasks', i);
     optionalInstant(r, 'updatedAt', 'tasks', i);
     optionalString(r, 'recurrenceRootId', 'tasks', i);
+    optionalString(r, 'goalId', 'tasks', i);
     optionalString(r, 'spawnedTaskId', 'tasks', i);
     if (r.recurrenceScheduledDate !== undefined) requiredDate(r, 'recurrenceScheduledDate', 'tasks', i);
     if (r.recurrenceAnchorDay !== undefined && (!Number.isInteger(r.recurrenceAnchorDay) || r.recurrenceAnchorDay < 1 || r.recurrenceAnchorDay > 31)) fail('tasks', i, 'recurrenceAnchorDay');
@@ -1387,7 +1393,10 @@ const rawStorageService: IDataStorage = {
             (next.status === 'Completed' ? 'In Progress' : next.status);
         }
 
-        await db.goals.put(next);
+        const progressHistory = current.currentValue !== next.currentValue || current.unit !== next.unit
+          ? [...(current.progressHistory || []), { at: next.updatedAt, value: next.currentValue, ...(next.unit ? { unit: next.unit } : {}) }]
+          : current.progressHistory;
+        await db.goals.put({ ...next, ...(progressHistory ? { progressHistory } : {}) });
       });
     },
     async delete(id) {
@@ -1508,6 +1517,7 @@ const rawStorageService: IDataStorage = {
               description: task.description,
               dueDate: nextDueDate,
               dueTime: task.dueTime,
+              ...(task.goalId ? { goalId: task.goalId } : {}),
               reminderAt: shiftRecurringTaskReminder(task, nextDueDate),
               subtasks: task.subtasks?.map(({ id, title }) => ({ id, title, completed: false, createdAt: new Date().toISOString() })),
               reminderLeadMinutes: task.reminderLeadMinutes,

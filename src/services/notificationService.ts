@@ -714,7 +714,7 @@ export const NotificationService = {
     try {
     await this.ensureChannel();
     await cancelPendingKinds(['milestoneReminder']);
-    const activeGoals = new Set(goals.filter(goal => goal.status === 'In Progress' && !isSampleRecord(goal.id)).map(goal => goal.id));
+    const activeGoals = new Set(goals.filter(goal => goal.status === 'In Progress' && !goal.archived && !isSampleRecord(goal.id)).map(goal => goal.id));
     const activeMilestones = milestones.filter(milestone => !milestone.completed && milestone.targetDate && !isSampleRecord(milestone.id) && activeGoals.has(milestone.goalId));
     const ids = milestones.map(milestone => notificationId(`milestone:${milestone.id}`));
     await cancelIds(ids);

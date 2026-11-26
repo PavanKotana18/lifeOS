@@ -1270,3 +1270,18 @@ html.dark .text-amber-400 { color: var(--warning); }
 .scheduled-detail-metadata > div { border: 1px solid var(--stroke); border-radius: .85rem; padding: .75rem; overflow-wrap: anywhere; }
 .scheduled-detail-metadata dt { font-size: .76rem; color: var(--ink-secondary); }
 .scheduled-detail-metadata dd { margin-top: .25rem; font-weight: 650; }
+
+.alive-doodle { flex: 0 0 auto; color: var(--accent-text, var(--accent)); }
+.alive-doodle-wash { fill: color-mix(in srgb, var(--accent) 15%, var(--surface)); }
+.alive-doodle-ink, .alive-doodle-accent {
+  fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.alive-doodle-accent { opacity: .72; stroke-width: 2.3; }
+.alive-doodle[data-animate="true"] .alive-doodle-ink { animation: doodle-draw 430ms cubic-bezier(.27,.65,.22,1) both; }
+.alive-doodle[data-animate="true"] .alive-doodle-accent { animation: doodle-accent 420ms cubic-bezier(.24,.7,.25,1.18) both; transform-origin: center; }
+@keyframes doodle-draw { from { stroke-dasharray: 1; stroke-dashoffset: 1; } to { stroke-dasharray: 1; stroke-dashoffset: 0; } }
+@keyframes doodle-accent { 0%, 30% { opacity: 0; scale: .72; } to { opacity: .72; scale: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .alive-doodle[data-animate="true"] :is(.alive-doodle-ink, .alive-doodle-accent) { animation: none; }
+}
+:root[data-motion-budget="constrained"] .alive-doodle[data-animate="true"] :is(.alive-doodle-ink, .alive-doodle-accent) { animation: none; }

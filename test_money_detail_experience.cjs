@@ -18,7 +18,7 @@ for(const section of ['transactions','accounts','budgets','savings','planning','
  const html=renderToStaticMarkup(React.createElement(Header,props)); assert.match(html,/Money overview/);assert.match(html,/<h2/);
  const tree=Header(props);const walk=(n,f)=>{if(!n)return;if(Array.isArray(n))return n.forEach(x=>walk(x,f));if(typeof n==='object'){f(n);walk(n.props?.children,f);}};
  walk(tree,node=>{if(node.type==='button')node.props.onClick();});assert.equal(back,1);
- if(section==='planning')assert.match(html,/Plans/);if(section==='analytics')assert.match(html,/Insights/);
+ if(section==='planning')assert.match(html,/Scheduled/);if(section==='analytics')assert.match(html,/Insights/);
 }
 const Period = require('./src/components/MoneyPeriod.tsx').default;
 const period = renderToStaticMarkup(React.createElement(Period, { label: 'Money', month: '2026-11', onChange() {} }));
