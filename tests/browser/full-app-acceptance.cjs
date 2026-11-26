@@ -664,7 +664,7 @@ async function main() {
           await page.emulateMedia({ colorScheme: theme });
           await page.waitForFunction(mode => document.documentElement.classList.contains('dark') === (mode === 'dark'), theme);
           const pageColor = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--page'));
-          for (const [from, to] of [['dashboard', 'finance'], ['finance', 'plan'], ['plan', 'life']]) {
+          for (const [from, to] of [['dashboard', 'finance'], ['finance', 'plan'], ['plan', 'settings']]) {
             await activeTab(from);
             await stable();
             await page.locator('#screen-' + to).waitFor({ state: 'attached' });
@@ -831,15 +831,15 @@ async function main() {
           };
         });
         const route = async name => {
-          if (await page.getByRole('button', { name: 'Open profile and settings' }).isVisible()) await clickButton('Open profile and settings');
+          if (await page.locator('[data-tab=settings]').getAttribute('aria-current') !== 'page') await activeTab('settings');
           const backButton = page.locator('.profile-page-heading button:visible');
           for (let depth = 0; depth < 2 && !(await heading('Profile').isVisible()); depth++) await backButton.click();
           if (name !== 'Profile') await clickButton('Appearance');
           if (name !== 'Profile' && name !== 'Appearance') await clickButton(name);
           await heading(name).waitFor();
-          await heading(name).evaluate(node => Promise.allSettled(node.closest('.profile-settings').getAnimations().map(animation => animation.finished)));
+          await heading(name).evaluate(node => Promise.allSettled(document.querySelector('#screen-settings .profile-settings').getAnimations().map(animation => animation.finished)));
         };
-        await clickButton('Open profile and settings');
+        await activeTab('settings');
         await heading('Profile').waitFor();
         await clickButton('Appearance');
         await clickButton('Themes');
@@ -962,7 +962,7 @@ async function main() {
     }
 
     await journey('Profile photo picker and encrypted persistence', async () => {
-      const opener = page.getByRole('button', { name: 'Open profile and settings', exact: true });
+      const opener = page.locator('[data-tab=settings]');
       const profile = page.getByTestId('profile-settings-home');
       const image = profile.locator('img.profile-avatar-image');
       await opener.click();
@@ -1012,7 +1012,7 @@ async function main() {
       });
       assert.deepEqual(persisted, { restoredPhoto: replacement, rowIsEncrypted: true, photoInBackupCiphertext: false, cachedLocally: false });
 
-      await profile.getByRole('button', { name: 'Back from profile' }).click();
+      await activeTab('dashboard');
       assert.equal(await opener.locator('img').getAttribute('src'), replacement);
       await page.reload();
       await opener.click();
@@ -1025,13 +1025,13 @@ async function main() {
       await profile.getByRole('button', { name: 'Remove photo', exact: true }).click();
       await image.waitFor({ state: 'detached' });
       assert.equal(await page.evaluate(async () => (await import('/src/db.ts')).StorageService.settings.get('profilePhoto', null)), null);
-      await profile.getByRole('button', { name: 'Back from profile' }).click();
+      await activeTab('dashboard');
       assert.equal(await opener.locator('img').count(), 0);
     });
     if (process.env.LIFEOS_PROFILE_PHOTO_GATE === '1') return;
 
     await journey('compact settings and six-month sample data', async () => {
-      await clickButton('Open profile and settings');
+      await activeTab('settings');
       await page.getByTestId('profile-settings-home').waitFor();
       await capture('profile-390');
       for (const name of ['Appearance', 'Preferences', 'Notifications', 'Privacy & Security', 'Backup & Restore', 'About', 'Developer tools']) {
@@ -1060,7 +1060,7 @@ async function main() {
           await capture('habits-sample-390');
           await planDestination('Goals');
           await capture('goals-sample-390');
-          await clickButton('Open profile and settings');
+          await activeTab('settings');
           await clickButton('Developer tools');
           await clickButton('Remove sample data');
           await page.getByRole('alertdialog').getByRole('button', { name: 'Remove sample data', exact: true }).click();
@@ -1117,7 +1117,7 @@ async function main() {
 
 
     await journey('appearance and date-only alert settings persist', async () => {
-      await clickButton('Open profile and settings');
+      await activeTab('settings');
       await clickButton('Preferences');
       await clickButton(/Time format/);
       await page.getByRole('dialog', { name: 'Time format' }).getByRole('button', { name: '24-hour' }).click();
@@ -1137,7 +1137,7 @@ async function main() {
       await page.reload();
       await page.getByTestId('today-dashboard').waitFor();
       assert.ok(await page.evaluate(() => document.documentElement.classList.contains('dark')), 'dark display persisted');
-      await clickButton('Open profile and settings');
+      await activeTab('settings');
       await clickButton('Preferences');
       assert.equal(await page.getByLabel('Date-only task alerts').inputValue(), '09:00');
       assert.ok(await page.getByRole('button', { name: 'Time format 24-hour' }).isVisible());
@@ -1161,8 +1161,8 @@ async function main() {
       await capture('edit-transaction-composer-390');
       await saveDialog('Save transaction');
       await page.getByRole('button', {name:'View transaction ' + title,exact:true}).click();
-      await detail.getByText('More actions', {exact:true}).click();
-      await detail.getByRole('button', {name:'Delete transaction',exact:true}).click();
+      await detail.getByRole('button', {name:'More options',exact:true}).click();
+      await page.locator('dialog[data-transaction-actions][open]').getByRole('button', {name:'Delete transaction',exact:true}).click();
       await page.getByRole('alertdialog').getByRole('button', {name:'Delete transaction',exact:true}).click();
       await page.waitForFunction(async name => {
         const { StorageService } = await import('/src/db.ts');
@@ -1280,7 +1280,7 @@ async function main() {
     });
 
     await journey('Profile nested destinations and notification choices persist', async () => {
-      await clickButton('Open profile and settings');
+      await activeTab('settings');
       await clickButton('Edit name');
       await page.getByLabel('Display name').fill('Synthetic acceptance profile');
       await clickButton('Save name');
@@ -1311,7 +1311,7 @@ async function main() {
       await page.reload();
       await page.getByTestId('today-dashboard').waitFor();
       assert.equal(await page.getByRole('dialog', { name: 'Allow notifications' }).count(), 0);
-      await clickButton('Open profile and settings');
+      await activeTab('settings');
       await clickButton('Notifications');
       assert.equal(await category.getAttribute('aria-checked'), 'false');
       await page.getByRole('button', { name: 'Notification tone Playful', exact: true }).waitFor();
@@ -1351,7 +1351,7 @@ async function main() {
         longestSampleMs: Math.max(...window.__qaNavigationFrames),
       }));
       assert.ok(report.navigationTiming.lastTransitionMs > 0 && report.navigationTiming.samples === 24);
-      await clickButton('Open profile and settings');
+      await activeTab('settings');
       await clickButton('Edit name');
       await page.getByLabel('Display name').fill('AlexandriaWithAnUnusuallyLongUnbrokenDisplayName');
       await clickButton('Save name');

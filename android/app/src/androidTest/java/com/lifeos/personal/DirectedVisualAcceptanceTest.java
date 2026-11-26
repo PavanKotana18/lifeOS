@@ -304,7 +304,7 @@ public class DirectedVisualAcceptanceTest {
                 scenario.onActivity(a -> a.getBridge().getWebView().getSettings().setTextZoom(Math.round(fontScale*100)));
                 final int[] zoom={0};scenario.onActivity(a -> zoom[0]=a.getBridge().getWebView().getSettings().getTextZoom());
                 assertEquals(Math.round(fontScale*100),zoom[0]);
-                for(String destination:new String[]{"dashboard","finance","plan","life"}) {
+                for(String destination:new String[]{"dashboard","finance","plan","settings"}) {
                     tab(destination);
                     until("(()=>{const n=document.querySelector('.app-bottom-nav'),s=document.querySelector('.app-shell');return document.documentElement.scrollWidth<=innerWidth+1&&parseFloat(getComputedStyle(s).paddingBottom)>=n.getBoundingClientRect().height&&[...n.querySelectorAll('.nav-item>span')].every(e=>e.scrollWidth<=e.clientWidth+1)})()");
                     capture(destination+"-android-text-"+Math.round(fontScale*100));
@@ -394,7 +394,7 @@ public class DirectedVisualAcceptanceTest {
                 click("Do this later");
                 until(today);
             }
-            until("!!document.querySelector('#screen-life')");
+            until("!!document.querySelector('#screen-settings')");
             assertFalse(new JSONObject(WebViewTestSupport.evaluateAsync(scenario,
                     "window.Capacitor.Plugins.LifeOSCrypto.getKeyState()")).getBoolean("keyProvisioned"));
 
@@ -414,8 +414,8 @@ public class DirectedVisualAcceptanceTest {
             try {
                 for (String theme : new String[]{"light", "dark"}) {
                     tab("dashboard");
-                    click("Open profile and settings");
-                    until("!!document.querySelector('#screen-settings')");
+                    tab("settings");
+                    until("!!document.querySelector('#screen-settings:not([hidden]) .profile-settings')");
                     scenario.onActivity(activity -> assertTrue("Profile must be protected before presentation",
                             (activity.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE) != 0));
                     click("Appearance");
@@ -426,10 +426,10 @@ public class DirectedVisualAcceptanceTest {
                         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
                         Thread.sleep(150);
                     }
-                    until("!document.querySelector('#screen-settings')");
+                    until("!document.querySelector('#screen-settings:not([hidden])')");
                     tab("dashboard");
                     until("!document.querySelector('[data-transition-state=outgoing]')");
-                    for (String destination : new String[]{"finance", "plan", "life"}) {
+                    for (String destination : new String[]{"finance", "plan", "settings"}) {
                         frames.clear();
                         dropped.set(0);
                         js("(()=>{const times=[];window.__retainedFrames=times;const frame=t=>{times.push(t);if(times.length<72)requestAnimationFrame(frame)};requestAnimationFrame(frame)})()");
