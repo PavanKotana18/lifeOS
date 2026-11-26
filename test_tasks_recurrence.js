@@ -278,7 +278,7 @@ async function main() {
       'Undo removes an untouched generated child and clears its parent reference'
     );
 
-    console.log(`RECURRENCE TESTS: ${passed}/14 PASSED`);
+    console.log(`RECURRENCE TESTS: ${passed}/15 PASSED`);
   } finally {
     await db.delete();
   }
