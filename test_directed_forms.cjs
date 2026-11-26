@@ -2,13 +2,14 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript'),Module=require('node:module');
 let effect;
 const props=new Map(),events=new Map(),viewportEvents=new Map();
-class Element { constructor(){this.isConnected=true;} focus(){document.activeElement=this;} scrollIntoView(){this.scrolled=true;} getClientRects(){return [{}];} }
+class Element { constructor(){this.isConnected=true;this.tabIndex=0;} closest(){return null;} focus(){document.activeElement=this;} scrollIntoView(){this.scrolled=true;} getClientRects(){return [{}];} }
 global.HTMLElement=Element;
 const opener=new Element(),first=new Element(),last=new Element(),nested=new Element();
+nested.closest = selector => selector === 'dialog[open]' ? nested : null;
 let actionHeight=96,actionResized,actionObserved,actionDisconnected=false;
 global.ResizeObserver=class {constructor(callback){actionResized=callback;}observe(element){actionObserved=element;}disconnect(){actionDisconnected=true;}};
 const actions={getBoundingClientRect:()=>({height:actionHeight})};
-const dialog={style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)},contains:e=>e===first||e===last,querySelectorAll:()=>[first,last],getClientRects:()=>[{}],querySelector:selector=>selector==='.ui-form-actions'?actions:first};
+const dialog={style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)},closest:()=>null,contains:e=>e===first||e===last||e===nested,querySelectorAll:()=>[first,last],getClientRects:()=>[{}],querySelector:selector=>selector==='.ui-form-actions'?actions:first};
 global.document={activeElement:opener,getElementById:id=>id==='active-form'?dialog:null,querySelector:()=>dialog,querySelectorAll:()=>[{getClientRects:()=>[]},dialog],documentElement:{style:{setProperty:(k,v)=>props.set(k,v),removeProperty:k=>props.delete(k)}},addEventListener:(k,v)=>events.set(k,v),removeEventListener:k=>events.delete(k)};
 global.window={innerHeight:800,visualViewport:{height:450,offsetTop:30,addEventListener:(k,v)=>viewportEvents.set(k,v),removeEventListener:k=>viewportEvents.delete(k)}};
 const file=process.cwd()+'/src/hooks/useRecordDialog.ts',m=new Module(file,module);
@@ -21,7 +22,7 @@ document.activeElement=first;events.get('keydown')({key:'Tab',shiftKey:true,prev
 events.get('keydown')({key:'Escape',preventDefault:()=>{}});assert.equal(dismissed,1);
 document.activeElement=nested;events.get('keydown')({key:'Escape',preventDefault:()=>{}});assert.equal(dismissed,1,'nested dialog owns Escape');
 document.activeElement=first;window.visualViewport.height=320;viewportEvents.get('resize')();assert.equal(props.get('--sheet-viewport-height'),'320px');assert.ok(first.scrolled);
-const remountedFirst=new Element(),remountedLast=new Element();document.getElementById=id=>id==='active-form'?{style:dialog.style,querySelector:()=>actions,contains:e=>e===remountedFirst||e===remountedLast,querySelectorAll:()=>[remountedFirst,remountedLast],getClientRects:()=>[{}]}:null;document.activeElement=remountedLast;events.get('keydown')({key:'Tab',shiftKey:false,preventDefault:()=>{}});assert.equal(document.activeElement,remountedFirst,'focus trap follows a form remounted after contextual security');
+const remountedFirst=new Element(),remountedLast=new Element();document.getElementById=id=>id==='active-form'?{style:dialog.style,closest:()=>null,querySelector:()=>actions,contains:e=>e===remountedFirst||e===remountedLast,querySelectorAll:()=>[remountedFirst,remountedLast],getClientRects:()=>[{}]}:null;document.activeElement=remountedLast;events.get('keydown')({key:'Tab',shiftKey:false,preventDefault:()=>{}});assert.equal(document.activeElement,remountedFirst,'focus trap follows a form remounted after contextual security');
 cleanup();assert.ok(actionDisconnected);assert.equal(document.activeElement,opener);assert.equal(events.size,0);assert.equal(viewportEvents.size,0);assert.equal(props.size,0);
 console.log('DIRECTED FORMS: 18 viewport, focus loop, nested-dialog ownership and cleanup assertions passed.');
 // The measured navigation inset follows actual container reflow, not a phone model.

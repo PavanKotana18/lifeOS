@@ -113,6 +113,14 @@ async function fillDialogField(label, value) {
   return field;
 }
 
+async function chooseComposerOption(label, option) {
+  await dialog().getByRole('button', { name: label, exact: true }).click();
+  const sheet = page.getByRole('dialog', { name: label, exact: true });
+  if (typeof option === 'number') await sheet.getByRole('option').nth(option).click();
+  else await sheet.getByRole('option', { name: option, exact: true }).click();
+  await sheet.waitFor({ state: 'hidden' });
+}
+
 async function saveDialog(buttonName) {
   await dialog().getByRole('button', { name: buttonName, exact: true }).click();
   await dialog().waitFor({ state: 'detached', timeout: 15_000 }).catch(async () => {
@@ -335,8 +343,7 @@ async function main() {
       await fillDialogField('Amount', '125.50');
       await fillDialogField('Merchant or description', 'QA acceptance: expense');
       await capture('add-transaction-composer-390');
-      const category = dialog().getByLabel('Category', { exact: false }).last();
-      await category.selectOption({ index: 1 });
+      await chooseComposerOption('Category', 1);
       await saveDialog('Save transaction');
       await page.getByText('QA acceptance: expense', { exact: true }).waitFor();
       await page.getByTestId('money-home').getByRole('button', { name: /^Budgets/ }).click();
@@ -440,7 +447,7 @@ async function main() {
       await clickButton('Back to list');
       await clickButton('Add habit', { exact: false });
       await fillDialogField('Habit name', 'QA acceptance: drink water');
-      await dialog().getByLabel('Progress tracking').selectOption('quantity');
+      await chooseComposerOption('Progress tracking', 'Count a daily quantity');
       await fillDialogField('Daily quantity target', '4');
       await fillDialogField('Unit', 'glasses');
       await capture('add-habit-composer-390');
@@ -518,10 +525,11 @@ async function main() {
       await clickButton('Add task');
       const title = 'QA acceptance: timed task';
       await fillDialogField('Task title', title);
+      await dialog().getByRole('button', { name: 'Schedule No date' }).click();
       await fillDialogField('Due date', '2099-04-22');
       await fillDialogField('Time (optional)', '19:36');
-      await dialog().getByText('More task details', { exact: true }).click();
-      await dialog().getByLabel('Extra reminder').selectOption('15');
+      await dialog().getByRole('button', { name: /Reminder Due-time options/ }).click();
+      await chooseComposerOption('Extra reminder', '15 minutes before');
       await capture('task-timed-composer-390');
       await saveDialog('Save task');
       const stored = () => page.evaluate(async name => {
@@ -536,6 +544,7 @@ async function main() {
       await page.getByRole('heading', { name: title, exact: true }).waitFor();
       await capture('task-timed-detail-390');
       await clickButton('Edit task');
+      await dialog().getByRole('button', { name: /Reminder Extra alert/ }).click();
       await dialog().getByLabel('Alert at due time').uncheck();
       await saveDialog('Save task');
       assert.equal((await stored()).dueAlertDisabled, true);
@@ -589,6 +598,47 @@ async function main() {
       } finally {
         await cdp.detach();
       }
+    });
+
+    await journey('composer choices, dirty dismissal and duplicate save after reload', async () => {
+      await activeTab('plan');
+      await clickButton('Add task');
+      await fillDialogField('Task title', 'QA composer single submission');
+      await dialog().getByRole('button', { name: /Priority Medium/ }).click();
+      const choice = page.getByRole('dialog', { name: 'Priority', exact: true });
+      assert.equal(await choice.getByRole('option', { name: 'Medium' }).getAttribute('aria-selected'), 'true');
+      await page.keyboard.press('Escape');
+      await choice.waitFor({ state: 'hidden' });
+      assert.match(await page.evaluate(() => document.activeElement?.textContent), /Priority/);
+      await dialog().getByRole('button', { name: /Priority Medium/ }).click();
+      await choice.getByRole('option', { name: 'High' }).click();
+      await dialog().getByRole('button', { name: /Priority High/ }).waitFor();
+      await clickButton('Cancel');
+      await clickButton('Keep editing');
+      assert.equal(await dialog().getByLabel('Task title').inputValue(), 'QA composer single submission');
+      await dialog().evaluate(form => { form.requestSubmit(); form.requestSubmit(); });
+      await page.getByRole('button', { name: /QA composer single submission/ }).waitFor();
+      await page.reload();
+      await activeTab('plan');
+      const tasks = await page.evaluate(async () => {
+        const { StorageService } = await import('/src/db.ts');
+        return (await StorageService.tasks.getAll()).filter(row => row.title === 'QA composer single submission').map(row => row.priority);
+      });
+      assert.deepEqual(tasks, ['High']);
+
+      await activeTab('finance');
+      await clickButton('Add transaction', { exact: false });
+      await clickButton('Add optional details');
+      const currency = dialog().getByRole('button', { name: 'Currency', exact: true });
+      await currency.click();
+      const currencies = page.getByRole('dialog', { name: 'Currency', exact: true });
+      await currencies.getByRole('searchbox', { name: 'Search currencies' }).fill('JPY');
+      await currencies.getByRole('option', { name: /JPY/ }).click();
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Currency');
+      await dialog().getByLabel('Amount · JPY').waitFor();
+      await clickButton('Cancel');
+      await clickButton('Discard changes');
+      await dialog().waitFor({ state: 'hidden' });
     });
 
     await journey('retained navigation intermediate frames in light and dark', async () => {
@@ -675,7 +725,7 @@ async function main() {
         const alert = 'Bank account xxxx4521 debited INR 17.25 at Fixture Cafe on 21/11/2026 Ref 552001818273';
         const sheet = page.getByRole('dialog', { name: 'Smart Import' });
         const detect = () => sheet.getByRole('button', { name: 'Detect transaction' }).click();
-        const confirmCategory = () => dialog().getByLabel('Category').selectOption({ index: 1 });
+        const confirmCategory = () => chooseComposerOption('Category', 1);
         const review = async input => {
           await clickButton('Import alert');
           await sheet.getByLabel('Bank alert').fill(input);

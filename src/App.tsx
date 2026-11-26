@@ -1,3 +1,8 @@
+import { AnimatePresence } from 'motion/react';
+import ComposerShell from './components/ComposerShell';
+import TaskComposerOptions from './components/TaskComposerOptions';
+import { AliveDisclosure } from './components/AliveDisclosure';
+import { PreferenceChoice as ComposerChoice } from './components/PreferenceChoice';
 import { flushSync } from 'react-dom';
 import { getMotionPreset } from './services/interfaceMotion';
 import { AppearanceStudio, ThemeStudio } from './components/AppearanceStudio';
@@ -3605,39 +3610,41 @@ export default function App() {
             date: suggestion.date || "", importTime: suggestion.time || "",
             dateTime: suggestion.date && suggestion.time ? suggestion.date + "T" + suggestion.time : "" }));
         }} onTransfer={() => { setSmartImportOpen(false); sharedAlert.finish(); navigateTo("finance"); navigateFinanceSubtab("accounts"); setOpenMoneyTransferOnAccounts(true); }} />}
+      <AnimatePresence>
       {createKind && (
-        <div className="ui-sheet-backdrop record-composer-backdrop" data-full-composer={!["contribution","milestone","goal-progress"].includes(createKind)} onMouseDown={(event) => { if (event.target === event.currentTarget) requestCloseForm(); }}>
-          <form id="record-dialog" onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} role="dialog" aria-modal="true" aria-labelledby="record-form-title" aria-describedby="record-form-description" aria-busy={recordSaving} className="ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer" onMouseDown={event => event.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between">
-              <h2 id="record-form-title" className="text-lg font-bold">{editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}</h2>
-              <button type="button" aria-label="Close" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-panel min-h-11 min-w-11 rounded-lg border text-secondary">✕</button>
-            </div>
+        <ComposerShell key={createKind} id="record-dialog" descriptionId="record-form-description"
+          title={editingTransactionId ? 'Edit transaction' : editingGoalId ? 'Edit goal' : editingTaskId ? 'Edit task' : editingHabitId ? 'Edit habit' : editingContributionId ? 'Edit savings contribution' : editingSavingsGoalId ? 'Edit savings goal' : createKind === 'budget' ? (editingBudgetId ? 'Edit monthly budget' : 'Set monthly budget') : createKind === 'contribution' ? 'Add savings contribution' : createKind === 'savings' ? (editingSavingsGoalId ? 'Edit savings goal' : 'Add savings goal') : createKind === 'milestone' ? 'Add goal milestone' : createKind === 'goal-progress' ? 'Update goal progress' : `Add ${createKind}`}
+          submitLabel={editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : editingBudgetId ? 'Save budget' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}
+          mode={['contribution', 'milestone', 'goal-progress'].includes(createKind) ? 'sheet' : 'page'}
+          saving={recordSaving} reduced={interfaceMotion.reducedMotion} dismiss={requestCloseForm}
+          onSubmit={saveNewRecord} onChange={() => setCreateFormDirty(true)} onChoiceChange={() => setCreateFormDirty(true)}>
             <p id="record-form-description" className="sr-only">Enter the record details and save your changes.</p>
-            {!['budget', 'contribution', 'goal-progress'].includes(createKind) && <label className="mb-3 block text-xs text-secondary">
-              {createKind === 'transaction' ? 'Merchant or description (optional)' : createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
-              <input autoFocus={createKind !== 'transaction'} required={createKind !== 'transaction'} maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
+            {!['budget', 'contribution', 'goal-progress', 'transaction'].includes(createKind) && <label className="feather-composer-lead">
+              {createKind === 'habit' ? 'Habit name' : createKind === 'goal' || createKind === 'savings' ? 'Goal title' : createKind === 'milestone' ? 'Milestone title' : 'Task title'}
+              <input autoFocus required maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
             </label>}
             {createKind === 'transaction' && <>
+              <label className="feather-composer-lead">Amount · {createDraft.currencyCode || userPrefs.currency}<input autoFocus={!editingTransactionId} required type="number" min={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <label className="mb-3 block text-xs text-secondary">Merchant or description (optional)
+                <input maxLength={120} value={createDraft.title || ''} onChange={e => setCreateDraft({ ...createDraft, title: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" />
+              </label>
               {!editingTransactionId && <button type="button" className="record-transfer-link lifeos-raised min-h-11 w-full rounded-xl text-sm font-semibold" onClick={async () => {
                 if (createOperation.current || (createFormDirty && !await confirmAction({ title: 'Discard this transaction draft?', message: 'Transfers use a separate form.', confirmLabel: 'Open transfer', cancelLabel: 'Keep editing' }))) return;
                 setCreateKind(null); setCreateFormDirty(false);
                 navigateFinanceSubtab('accounts'); setOpenMoneyTransferOnAccounts(true);
               }}>Transfer between accounts</button>}
-              <label className="mb-3 block text-xs text-secondary">Type<select value={createDraft.type} onChange={e => {
-                const type = e.target.value as 'income' | 'expense';
-                const category = categories.find(item => item.type === type)?.name || '';
-                setCreateDraft({ ...createDraft, type, category });
-              }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="expense">Expense</option><option value="income">Income</option></select></label>
-              <label className="mb-3 block text-xs text-secondary">Amount · {createDraft.currencyCode || userPrefs.currency}<input autoFocus={!editingTransactionId} required type="number" min={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Category<select required={isEncryptedStorageActivated()} value={createDraft.category || ''} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">
-                <option value="">Select category</option>
-                {createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type) && (
-                  <option value={createDraft.category}>Legacy category: {createDraft.category}</option>
-                )}
-                {categories.filter(category => category.type === createDraft.type).map(category => (
-                  <option key={category.id} value={category.name}>{category.name}</option>
-                ))}
-              </select></label>
+              <ComposerChoice variant="field" label="Type" value={createDraft.type || 'expense'}
+                options={[['expense', 'Expense'], ['income', 'Income']]} onSelect={value => {
+                  const type = value as 'income' | 'expense';
+                  const category = categories.find(item => item.type === type)?.name || '';
+                  setCreateDraft(draft => ({ ...draft, type, category }));
+                }} />
+              <ComposerChoice variant="field" label="Category" value={createDraft.category || ''} required={isEncryptedStorageActivated()}
+                options={[[ '', 'Select category'],
+                  ...(createDraft.category && !categories.some(category => category.name === createDraft.category && category.type === createDraft.type)
+                    ? [[createDraft.category, 'Legacy category: ' + createDraft.category] as const] : []),
+                  ...categories.filter(category => category.type === createDraft.type).map(category => [category.name, category.name] as const)]}
+                onSelect={category => setCreateDraft(draft => ({ ...draft, category }))} />
               {!isEncryptedStorageActivated() && <p className="mb-3 text-sm text-secondary" role="status">Your categories will appear after you protect your first record. Nothing is saved until you choose one.</p>}
               {createDraft.importFingerprint && <label className="mb-3 block text-xs text-secondary">Transaction date<input type="date" required value={createDraft.date || ""} onChange={event => {
                 const date = event.target.value;
@@ -3645,8 +3652,18 @@ export default function App() {
               }} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
               <button type="button" className="mb-3 min-h-11 rounded-lg px-2 text-left text-xs font-semibold lifeos-accent-text" aria-expanded={transactionDetailsOpen} aria-controls="transaction-optional-details" onClick={() => setTransactionDetailsOpen(open => !open)}>{transactionDetailsOpen ? 'Hide optional details' : 'Add optional details'}</button>
               {transactionDetailsOpen && <div id="transaction-optional-details" className="transaction-optional-details rounded-xl p-3">
-                <label className="mb-3 block text-xs text-secondary">Currency<select value={createDraft.currencyCode || userPrefs.currency} onChange={e => setCreateDraft({ ...createDraft, currencyCode: e.target.value, accountId: financialAccounts.some(account => account.id === createDraft.accountId && account.currencyCode === e.target.value) ? createDraft.accountId : '' })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{CURRENCY_CODES.map(code => <option key={code} value={code}>{formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</option>)}</select><span className="mt-1 block">This labels the transaction. Changing the reporting currency does not convert saved records.</span></label>
-                <label className="mb-3 block text-xs text-secondary">Account (optional)<select value={createDraft.accountId || ''} onChange={e => { const account = financialAccounts.find(row => row.id === e.target.value); setCreateDraft({ ...createDraft, accountId: e.target.value, ...(account ? { currencyCode: account.currencyCode } : {}) }); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="">Unassigned</option>{financialAccounts.filter(account => account.isActive).map(account => <option key={account.id} value={account.id}>{account.name} · {account.currencyCode}</option>)}</select></label>
+                <ComposerChoice variant="field" label="Currency" value={createDraft.currencyCode || userPrefs.currency}
+                  options={CURRENCY_CODES.map(code => [code, formatCurrencyChoice(code, userPrefs.locale === 'system' ? undefined : userPrefs.locale)])}
+                  onSelect={currencyCode => setCreateDraft(draft => ({
+                    ...draft, currencyCode, accountId: financialAccounts.some(account => account.id === draft.accountId && account.currencyCode === currencyCode) ? draft.accountId : '',
+                  }))} />
+                <p className="mb-3 text-xs text-secondary">This labels the transaction. Changing the reporting currency does not convert saved records.</p>
+                <ComposerChoice variant="field" label="Account (optional)" value={createDraft.accountId || ''}
+                  options={[[ '', 'Unassigned'], ...financialAccounts.filter(account => account.isActive).map(account => [account.id, account.name + ' · ' + account.currencyCode] as const)]}
+                  onSelect={accountId => {
+                    const account = financialAccounts.find(row => row.id === accountId);
+                    setCreateDraft(draft => ({ ...draft, accountId, ...(account ? { currencyCode: account.currencyCode } : {}) }));
+                  }} />
                 <label className="mb-3 block text-xs text-secondary">Payment method<input maxLength={50} value={createDraft.paymentMethod || ''} onChange={e => setCreateDraft({ ...createDraft, paymentMethod: e.target.value })} placeholder="Other" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 block text-xs text-secondary">Notes (optional)<textarea rows={2} maxLength={500} value={createDraft.notes || ''} onChange={e => setCreateDraft({ ...createDraft, notes: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
                 <label className="mb-3 flex min-h-11 items-center gap-2 text-xs text-secondary"><input type="checkbox" checked={createDraft.isRecurring === 'yes'} onChange={e => setCreateDraft({ ...createDraft, isRecurring: e.target.checked ? 'yes' : '' })} />Recurring transaction</label>
@@ -3659,21 +3676,29 @@ export default function App() {
               </div>}
             </>}
             {createKind === 'habit' && <>
-              <label className="mb-3 block text-xs text-secondary">How often?<select value={createDraft.frequency} onChange={e => setCreateDraft({ ...createDraft, frequency: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option><option value="weekly">Weekly</option></select></label>
-              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-              <label className="mb-3 block text-xs text-secondary">Progress tracking<select disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))} value={createDraft.trackingMode || 'binary'} onChange={e => setCreateDraft({ ...createDraft, trackingMode: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm"><option value="binary">Completed / not completed</option><option value="quantity">Count a daily quantity</option></select>{editingHabitId && habitLogs.some(log => log.habitId === editingHabitId) && <span className="mt-1 block">Tracking mode is kept so saved check-in history stays unchanged.</span>}</label>
+              <ComposerChoice variant="field" label="How often?" value={createDraft.frequency || 'daily'}
+                options={[['daily', 'Every day'], ['weekdays', 'Weekdays'], ['weekends', 'Weekends'], ['weekly', 'Weekly']]}
+                onSelect={frequency => setCreateDraft(draft => ({ ...draft, frequency }))} />
+              <ComposerChoice variant="field" label="Progress tracking" value={createDraft.trackingMode || 'binary'}
+                disabled={Boolean(editingHabitId && habitLogs.some(log => log.habitId === editingHabitId))}
+                disabledHint="Tracking mode is kept for saved check-ins"
+                options={[['binary', 'Completed / not completed'], ['quantity', 'Count a daily quantity']]}
+                onSelect={trackingMode => setCreateDraft(draft => ({ ...draft, trackingMode }))} />
               <label className="mb-3 block text-xs text-secondary">{createDraft.trackingMode === 'quantity' ? 'Daily quantity target' : 'Daily target (optional)'}<input required={createDraft.trackingMode === 'quantity'} type="number" min="0.01" step="any" value={createDraft.targetPerDay || ''} onChange={e => setCreateDraft({ ...createDraft, targetPerDay: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.trackingMode === 'quantity' && <label className="mb-3 block text-xs text-secondary">Unit<input required maxLength={24} value={createDraft.quantityUnit || ''} onChange={e => setCreateDraft({ ...createDraft, quantityUnit: e.target.value })} placeholder="glasses, minutes, pages" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
               <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               {createDraft.frequency === 'weekly' && <label className="mb-3 block text-xs text-secondary">Reminder weekday<select value={createDraft.reminderWeekday || '2'} onChange={e => setCreateDraft({ ...createDraft, reminderWeekday: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label>}
+              <AliveDisclosure label="Notes"><label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={300} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></AliveDisclosure>
             </>}
             {createKind === 'goal' && <>
-              <label className="mb-3 block text-xs text-secondary">Category<select value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select></label>
+              <ComposerChoice variant="field" label="Category" value={createDraft.category || 'Other'}
+                options={['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(value => [value, value])}
+                onSelect={category => setCreateDraft(draft => ({ ...draft, category }))} />
               <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Target<input required type="number" min="0.01" step="any" inputMode="decimal" value={createDraft.target} onChange={e => setCreateDraft({ ...createDraft, target: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label><label className="text-xs text-secondary">Current<input type="number" min="0" step="any" inputMode="decimal" value={createDraft.current} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></div>
               <label className="mb-3 block text-xs text-secondary">Unit (optional)<input maxLength={20} value={createDraft.unit} onChange={e => setCreateDraft({ ...createDraft, unit: e.target.value })} placeholder="km, books, ₹..." className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority || 'Medium'} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
               {editingGoalId && <label className="mb-3 block text-xs text-secondary">Status<select value={createDraft.status || 'In Progress'} onChange={e => setCreateDraft({ ...createDraft, status: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['In Progress', 'Paused', 'Completed'].map(status => <option key={status}>{status}</option>)}</select></label>}
-              <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
+              <AliveDisclosure label="Notes"><label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></AliveDisclosure>
             </>}
             {createKind === 'budget' && <>
               {editingBudgetId && <p className="mb-3 rounded-xl bg-[var(--surface-raised)] p-3 text-xs text-secondary">Editing keeps this plan’s category, month and currency. Create a separate plan to change those details.</p>}
@@ -3693,29 +3718,14 @@ export default function App() {
             </>}
             {createKind === 'milestone' && <label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label>}
             {createKind === 'goal-progress' && <><label className="mb-3 block text-xs text-secondary">Goal<select required value={createDraft.goalId || ''} onChange={e => setCreateDraft({ ...createDraft, goalId: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{goals.map(goal => <option key={goal.id} value={goal.id}>{goal.title}</option>)}</select></label><label className="mb-4 block text-xs text-secondary">Current progress<input required type="number" min="0" step="any" inputMode="decimal" value={createDraft.current || ''} onChange={e => setCreateDraft({ ...createDraft, current: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label></>}
-            {createKind === 'task' && <>
-              <div className="mb-3 grid grid-cols-2 gap-2"><label className="text-xs text-secondary">Due date (optional)<input type="date" value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value, ...(!e.target.value ? { time: '', reminderAt: '', reminderLead: '', recurring: 'None' } : {}) })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label><label className="text-xs text-secondary">Time (optional)<input disabled={!createDraft.date} type="time" value={createDraft.time || ''} onChange={e => setCreateDraft({ ...createDraft, time: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-2 py-3 text-sm" /></label></div>
-              <label className="mb-3 block text-xs text-secondary">Priority<select value={createDraft.priority} onChange={e => setCreateDraft({ ...createDraft, priority: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['Low', 'Medium', 'High', 'Urgent'].map(priority => <option key={priority}>{priority}</option>)}</select></label>
-<label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={!createDraft.date || !(createDraft.time || dateOnlyAlertTime)} checked={createDraft.dueAlert !== 'off'} onChange={event => setCreateDraft({ ...createDraft, dueAlert: event.target.checked ? 'on' : 'off' })} /> Alert at due time</label>
-              <details className="ui-optional-form-details" open={Boolean(editingTaskId && (createDraft.description || createDraft.category || createDraft.reminderLead || (createDraft.recurring && createDraft.recurring !== 'None')))}><summary>More task details</summary>
-                <label className="mb-3 block text-xs text-secondary">Description (optional)<textarea rows={2} maxLength={500} value={createDraft.description || ''} onChange={e => setCreateDraft({ ...createDraft, description: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-xs text-secondary">Category (optional)<input maxLength={50} value={createDraft.category} onChange={e => setCreateDraft({ ...createDraft, category: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
-                <label className="mb-3 block text-sm">Extra reminder
-                  <select disabled={!createDraft.date || (!createDraft.time && !dateOnlyAlertTime && !createDraft.reminderAt)} value={['', '5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead || '') ? createDraft.reminderLead || '' : 'custom'} onChange={event => setCreateDraft({ ...createDraft, reminderLead: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3">
-                    <option value="">None</option><option value="5">5 minutes before</option><option value="10">10 minutes before</option><option value="15">15 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option><option value="custom">Custom lead time</option>{createDraft.reminderAt && <option value="legacy">Keep saved reminder</option>}
-                  </select>
-                </label>
-                {createDraft.reminderLead && !['5', '10', '15', '30', '60', '1440', 'legacy'].includes(createDraft.reminderLead) && <label className="mb-3 block text-sm">Minutes before<input type="number" min="1" max="10080" required value={createDraft.reminderCustom || (createDraft.reminderLead === 'custom' ? '' : createDraft.reminderLead)} onChange={event => setCreateDraft({ ...createDraft, reminderLead: 'custom', reminderCustom: event.target.value })} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>}
-                <label className="mb-3 block text-xs text-secondary">Repeat<select disabled={!createDraft.date} value={createDraft.recurring || 'None'} onChange={e => setCreateDraft({ ...createDraft, recurring: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm">{['None', 'Daily', 'Weekly', 'Monthly'].map(item => <option key={item}>{item}</option>)}</select></label>
-              </details>
-            </>}
+            {createKind === 'task' && <TaskComposerOptions draft={createDraft} update={setCreateDraft}
+              dateOnlyAlertTime={dateOnlyAlertTime} editing={Boolean(editingTaskId)} dirty={() => setCreateFormDirty(true)} />}
             {!['habit', 'budget', 'task', 'transaction', 'goal-progress'].includes(createKind) && <label className="mb-4 block text-xs text-secondary">{createKind === 'goal' || createKind === 'savings' ? 'Target date' : createKind === 'milestone' ? 'Target date (optional)' : 'Date'}<input type="date" required={createKind !== 'milestone'} value={createDraft.date || ''} onChange={e => setCreateDraft({ ...createDraft, date: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
             {editingTransactionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this transaction?', message: 'This transaction will be removed from your history. This cannot be undone.', confirmLabel: 'Delete transaction', destructive: true }))) return; await StorageService.transactions.delete(editingTransactionId); setCreateKind(null); setCreateFormDirty(false); setEditingTransactionId(null); await reloadAllData(); showToast('Transaction deleted', 'info'); }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete transaction</button>}
             {editingContributionId && <button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this contribution?', message: 'The contribution will be removed and subtracted from the saved goal total.', confirmLabel: 'Delete contribution', destructive: true }))) return; try { await StorageService.savings.deleteContribution(editingContributionId); setCreateKind(null); setCreateFormDirty(false); setEditingContributionId(null); await reloadAllData(); showToast('Contribution deleted and savings total reconciled', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Contribution could not be deleted safely.', 'danger'); } }} className="mb-2 min-h-11 w-full rounded-xl border border-[var(--danger)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">Delete contribution</button>}
-            <div className="ui-form-actions"><button type="button" disabled={recordSaving} onClick={requestCloseForm} className="lifeos-raised min-h-12 flex-1 rounded-xl text-sm font-semibold">Cancel</button><button type="submit" disabled={recordSaving} className="lifeos-accent-button min-h-12 flex-1 rounded-xl px-3 text-sm font-semibold">{recordSaving ? 'Saving…' : editingTransactionId ? 'Save transaction' : editingGoalId ? 'Save goal' : editingTaskId ? 'Save task' : editingHabitId ? 'Save habit' : editingContributionId ? 'Save contribution' : editingSavingsGoalId ? 'Save savings goal' : editingBudgetId ? 'Save budget' : createKind === 'budget' ? 'Save budget' : createKind === 'contribution' ? 'Save contribution' : createKind === 'goal-progress' ? 'Save progress' : `Save ${createKind}`}</button></div>
-          </form>
-        </div>
+        </ComposerShell>
       )}
+      </AnimatePresence>
 
       {/* Floating Bottom Nav */}
       <nav data-no-tab-swipe hidden={profileOpen} ref={bottomNavigationRef} aria-label="Main navigation" className="lifeos-nav app-bottom-nav fixed bottom-0 left-0 right-0 z-30 mx-auto border-t px-2 pt-2 backdrop-blur">

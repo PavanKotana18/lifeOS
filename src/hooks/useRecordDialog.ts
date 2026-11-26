@@ -17,7 +17,7 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
   useEffect(() => {
     if (!open) return;
     const opener = openerRef.current;
-    const findDialog = () => { const element = document.getElementById(dialogId); return element?.getClientRects().length ? element : null; };
+    const findDialog = () => { const element = document.getElementById(dialogId); return element?.getClientRects().length && !element.closest('[inert]') ? element : null; };
     const dialog = findDialog();
     if (!dialog) return;
     const viewport = window.visualViewport;
@@ -33,10 +33,10 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
     const keydown = (event: KeyboardEvent) => {
       // Nested confirmations and native security dialogs own their own focus.
       const currentDialog = findDialog();
-      if (!currentDialog?.contains(document.activeElement)) return;
+      if (!currentDialog?.contains(document.activeElement) || document.activeElement?.closest('dialog[open]')) return;
       if (event.key === 'Escape') { event.preventDefault(); dismissRef.current(); }
       if (event.key !== 'Tab') return;
-      const controls = [...currentDialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(item => item.getClientRects().length);
+      const controls = [...currentDialog.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(item => item.getClientRects().length && !item.closest('[inert],dialog:not([open])') && item.tabIndex >= 0);
       const first = controls[0], last = controls[controls.length - 1];
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }

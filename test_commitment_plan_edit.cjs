@@ -28,7 +28,7 @@ const bind = values => new Function(...Object.keys(values), `${js};return save;`
     const plan = await f.StorageService.commitments.add(create);
     const inputs = [], errors = [];
     const draft = { id: plan.id, title: 'Edited while paused', amount: '12.34', currency: 'USD', frequency: 'monthly', date: plan.nextDueDate, categoryId: category.id, accountId: '', notes: '' };
-    const common = { saving: false, decimalToMinorUnits, setCommitment: () => {}, setCommitmentDirty: () => {}, setError: error => errors.push(error),
+    const common = { saving: false, submittingCommitment: { current: false }, decimalToMinorUnits, setCommitment: () => {}, setCommitmentDirty: () => {}, setError: error => errors.push(error),
       onAddCommitment: async input => inputs.push(input),
       onUpdateCommitment: async (id, input) => { inputs.push(input); await f.StorageService.commitments.update(id, input); },
     };
@@ -47,6 +47,20 @@ const bind = values => new Function(...Object.keys(values), `${js};return save;`
     assert.equal((await f.StorageService.commitments.getAll()).find(row => row.id === other.id).status, 'paused', 'A pause made after draft opening survives saving');
     await bind({ ...common, commitment: { ...draft, id: undefined } })({ preventDefault() {} });
     assert.equal(inputs.at(-1).status, 'active', 'Only newly created plans start active');
+    let release;
+    const waiting = new Promise(resolve => { release = resolve; });
+    const save = bind({ ...common, commitment: { ...draft, id: undefined }, onAddCommitment: async input => {
+      inputs.push(input);
+      await waiting;
+    } });
+    const beforeDoubleClick = inputs.length;
+    const event = { preventDefault() {} };
+    const firstSave = save(event);
+    await save(event);
+    release();
+    await firstSave;
+    assert.equal(inputs.length, beforeDoubleClick + 1, 'A rapid resubmit admits one scheduled write');
+    assert.equal(common.submittingCommitment.current, false, 'A completed write releases the submission guard');
     assert.ok(errors.every(error => error === ''));
     console.log('PLAN EDIT: actual save handler preserves latest paused state, exact amount, explicit resume and new-plan defaults through encrypted storage.');
   } finally {

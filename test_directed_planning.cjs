@@ -27,23 +27,24 @@ const draftState = {
   rateDirty: true,
 };
 const markup = renderToStaticMarkup(React.createElement(MoneyPlanning, { ...props, draftState, onDraftStateChange: () => {}, saving: true }));
-assert.match(markup, /aria-busy="true"[^>]*aria-label="Planned commitment"/);
+const commitmentTag = markup.match(/<form[^>]*aria-label="Planned commitment"[^>]*>/)?.[0] || '';
+assert.match(commitmentTag, /aria-busy="true"/);
 assert.match(markup, /aria-busy="true"[^>]*aria-label="Manual exchange rate"/);
 assert.match(markup, /value="Rent"/);
 assert.match(markup, /value="25000\.00"/);
 assert.match(markup, /value="Keep this draft"/);
 assert.match(markup, /value="83\.25"/);
 assert.match(markup, /value="Bank statement"/);
-assert.equal((markup.match(/disabled=""/g) || []).length, 4, 'both Save and Cancel actions are disabled while either guarded write is pending');
+assert.equal((markup.match(/disabled=""/g) || []).length, 5, 'Save, Cancel and composer Close are disabled while either guarded write is pending');
 assert.match(markup, />Saving…</);
 
 assert.match(source, /export type MoneyPlanningDraftState = \{ commitment: CommitmentDraft \| null; rate: RateDraft \| null; commitmentDirty: boolean; rateDirty: boolean \}/);
 assert.match(source, /draftState\?: MoneyPlanningDraftState/);
 assert.match(source, /onDraftStateChange\?: Dispatch<SetStateAction<MoneyPlanningDraftState>>/);
 assert.match(source, /onDraftStateChange\(state => update\(state\)\)/, 'external draft writes use functional updates to avoid stale snapshots');
-assert.match(source, /setCommitment\(current => current \? \{ \.\.\.current, title: e\.target\.value \} : current\)/);
+assert.match(source, /setCommitment\(current => current && \{ \.\.\.current, title: event\.target\.value \}\)/);
 assert.match(source, /setRate\(current => current \? \{ \.\.\.current, value: e\.target\.value \} : current\)/);
-assert.match(source, /if \(saving \|\| !commitment\) return/);
+assert.match(source, /if \(saving \|\| submittingCommitment\.current \|\| !commitment\) return/);
 assert.match(source, /if \(saving \|\| !rate\) return/);
 assert.match(source, /if \(!saving && event\.target === event\.currentTarget\)/, 'backdrop dismissal is ignored while saving');
 assert.match(source, /decimalToMinorUnits\(commitment\.amount, commitment\.currency\)/, 'the existing minor-unit conversion remains in use');

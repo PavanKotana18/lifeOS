@@ -107,21 +107,21 @@ check(
 
 // F-04: Transaction category options must be filtered by transaction type.
 check(
-  app.includes('categories.filter(category => category.type === createDraft.type).map(category => (') &&
-  app.includes('<option value="">Select category</option>'),
+  app.includes('categories.filter(category => category.type === createDraft.type).map(category => [category.name, category.name]') &&
+  app.includes("options={[[ '', 'Select category']"),
   'Transaction category dropdown displays only categories matching its type'
 );
 
 // F-04: Switching transaction type must select a category of the new type.
 check(
-  app.includes("const type = e.target.value as 'income' | 'expense';") &&
+  app.includes("const type = value as 'income' | 'expense';") &&
   app.includes('const category = categories.find(item => item.type === type)?.name || \'\';'),
   'Changing transaction type resets the category to a valid matching category'
 );
 
 // F-04: Editing historical transactions must preserve an unavailable legacy category.
 check(
-  app.includes('Legacy category: {createDraft.category}') &&
+  app.includes("'Legacy category: ' + createDraft.category") &&
   app.includes('!categories.some(category => category.name === createDraft.category && category.type === createDraft.type)'),
   'Transaction edit form preserves unchanged legacy category values'
 );
