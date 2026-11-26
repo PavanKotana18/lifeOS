@@ -2147,7 +2147,7 @@ export default function App() {
   const openCreateForm = (kind: 'transaction' | 'habit' | 'goal' | 'task' | 'budget' | 'savings' | 'contribution' | 'milestone' | 'goal-progress', goalId?: string, taskDate?: string, initialTitle = '') => {
     const now = new Date();
     const today = formatLocalDate(now);
-    setCreateFormDirty(false);
+    setCreateFormDirty(Boolean(initialTitle));
     setCreateDraft({
       title: initialTitle, amount: '', category: kind === 'transaction' ? (categories.find(category => category.type === 'expense')?.name || '') : kind === 'goal' ? 'Other' : '', date: taskDate || (kind === 'task' || kind === 'goal' ? '' : today), month: financeMonth,
       dateTime: formatLocalDateTime(now), time: '', reminderAt: '', description: '', notes: '',
