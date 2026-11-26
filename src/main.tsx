@@ -1,5 +1,5 @@
 import React from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { StorageService } from './db';
@@ -16,7 +16,7 @@ import './styles/interface-motion.css';
 import './styles/feather-expressive.css';
 import './styles/planning-life-transformation.css';
 
-import { LifeOSLaunchReveal } from './components/LifeOSBrand';
+import BusyDooLaunch, { initialBusyDooLaunch, REPLAY_BUSYDOO_LAUNCH } from './components/BusyDooLaunch';
 
 const SystemAppearance = registerPlugin<{ getSystemAppearance: () => Promise<{ dark: boolean }> }>('SystemAppearance');
 const LaunchExperience = registerPlugin<{
@@ -39,55 +39,42 @@ function readLaunchInfo(): Promise<{ coldStart: boolean }> {
     );
   });
 }
+const releaseNativeSplash = () => LaunchExperience.releaseNativeSplash();
+
 function BootstrappedApp({ coldStart }: { coldStart: boolean }) {
-  const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const [showReveal, setShowReveal] = useState(coldStart);
+  const [launch, setLaunch] = useState<'first' | 'regular' | 'replay' | null>(() => {
+    if (!coldStart) return null;
+    return initialBusyDooLaunch() ? 'first' : 'regular';
+  });
+  const surface = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!coldStart) return;
-    // This effect runs after React committed the same branded cover under the
-    // native splash, preventing a blank WebView handoff.
-    void LaunchExperience.releaseNativeSplash().catch(() => {});
-    let elapsed = false;
-    let ready = (window as Window & { lifeosStartupReady?: boolean }).lifeosStartupReady === true;
-    let frame = 0;
-    let finishing = false;
-    let handoff: Animation | undefined;
-    let fade: Animation | undefined;
-    let fallback: number | undefined;
-    let disposed = false;
-    const finishIfReady = () => {
-      if (!elapsed || !ready || finishing) return;
-      finishing = true;
-      frame = window.requestAnimationFrame(() => {
-        const cover = document.querySelector<HTMLElement>('.lifeos-launch-reveal');
-        const mark = cover?.querySelector<HTMLElement>('.lifeos-launch-mark');
-        const destination = document.querySelector<HTMLElement>('[data-launch-destination] .lifeos-onboarding-mark');
-        if (reducedMotion || !cover?.animate || !mark || !destination) { setShowReveal(false); return; }
-        const source = mark.getBoundingClientRect();
-        const target = destination.getBoundingClientRect();
-        if (!source.width || !target.width) { setShowReveal(false); return; }
-        const x = target.left + target.width / 2 - source.left - source.width / 2;
-        const y = target.top + target.height / 2 - source.top - source.height / 2;
-        handoff = mark.animate([{ transform: 'none' }, { transform: 'translate(' + x + 'px,' + y + 'px) scale(' + (target.width / source.width) + ')' }],
-          { duration: 280, easing: 'cubic-bezier(.22,.68,.26,1)', fill: 'forwards' });
-        fade = cover.animate([{ opacity: 1 }, { opacity: 1, offset: .62 }, { opacity: 0 }], { duration: 280, fill: 'forwards' });
-        const complete = () => { if (!disposed) setShowReveal(false); };
-        void fade.finished.then(complete, complete);
-        fallback = window.setTimeout(complete, 360);
-      });
-    };
-    const onReady = () => { ready = true; finishIfReady(); };
-    window.addEventListener('lifeos:startup-ready', onReady);
-    const timer = window.setTimeout(() => { elapsed = true; finishIfReady(); }, reducedMotion ? 0 : 850);
-    finishIfReady();
+    const replay = () => setLaunch(current => current ?? 'replay');
+    window.addEventListener(REPLAY_BUSYDOO_LAUNCH, replay);
+    return () => window.removeEventListener(REPLAY_BUSYDOO_LAUNCH, replay);
+  }, []);
+  useLayoutEffect(() => {
+    const app = surface.current;
+    if (!launch || !app) return;
+    const opener = launch === 'replay' ? document.activeElement : null;
+    app.inert = true;
     return () => {
-      disposed = true;
-      window.clearTimeout(timer); window.clearTimeout(fallback); window.cancelAnimationFrame(frame);
-      handoff?.cancel(); fade?.cancel();
-      window.removeEventListener('lifeos:startup-ready', onReady);
+      app.inert = false;
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
     };
-  }, [coldStart, reducedMotion]);
-  return <React.StrictMode><App />{showReveal && <LifeOSLaunchReveal reducedMotion={reducedMotion} />}</React.StrictMode>;
+  }, [launch]);
+
+  const finish = () => {
+    if (launch === 'first') {
+      try { localStorage.setItem('busydoo-harmony-seen', 'yes'); } catch { /* The launch preference is cosmetic. */ }
+    }
+    setLaunch(null);
+  };
+
+  return <React.StrictMode>
+    <div ref={surface} className="contents"><App /></div>
+    {launch && <BusyDooLaunch key={launch} cinematic={launch !== 'regular'}
+      releaseNativeSplash={launch === 'replay' ? undefined : releaseNativeSplash} onFinish={finish} />}
+  </React.StrictMode>;
 }
 
 const renderApp = (coldStart: boolean) => ReactDOM.createRoot(root).render(<BootstrappedApp coldStart={coldStart} />);

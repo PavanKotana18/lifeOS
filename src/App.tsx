@@ -59,6 +59,7 @@ import type { QuickTaskDetails } from './components/QuickTaskEntry';
 import PlannedCashFlow from './components/PlannedCashFlow';
 import MoneyPlanning, { type MoneyPlanningDraftState } from './components/MoneyPlanning';
 import { APP_NAME } from './config/appBrand';
+import { REPLAY_BUSYDOO_LAUNCH } from './components/BusyDooLaunch';
 import AppHeader from './components/AppHeader';
 import TransactionSummary from './components/TransactionSummary';
 import MoneyPeriod from './components/MoneyPeriod';
@@ -3686,6 +3687,7 @@ export default function App() {
             </ProfileSubpage>}
             {profileSection === 'about' && <ProfileSubpage embedded title="About BusyDoo" onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><div className="preference-row"><span>Version</span><span className="text-secondary">{packageInfo.version}</span></div>
+                <ProfileSettingRow title="Replay A Life in Harmony" onClick={() => window.dispatchEvent(new Event(REPLAY_BUSYDOO_LAUNCH))} />
                 <ProfileSettingRow title="Open-source licenses" onClick={() => navigateProfileSection('licenses')} /></div>
             </ProfileSubpage>}
             {profileSection === 'licenses' && <ProfileSubpage embedded title="Open-source licenses" backLabel="About BusyDoo" onBack={() => navigateProfileSection('about')}>

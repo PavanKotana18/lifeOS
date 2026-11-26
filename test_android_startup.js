@@ -55,7 +55,7 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
     react,
     'react-dom/client': dom,
     './App': () => {},
-    './components/LifeOSBrand': { LifeOSLaunchReveal: () => null },
+    './components/BusyDooLaunch': { default: () => null, initialBusyDooLaunch: () => true, REPLAY_BUSYDOO_LAUNCH: 'busydoo:replay-launch' },
     './db': { StorageService: { settings: { get: (_key, fallback) => readPreference ? readPreference() : Promise.resolve(fallback) } } },
     './services/domainUtils': { resolveAppearance: (preference, systemDark) => preference === 'system' ? systemDark ? 'dark' : 'light' : preference },
     './services/systemAppearance': { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveInitialVisualTheme },
