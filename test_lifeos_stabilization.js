@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const h = require('./tests/wp0/production-harness.cjs');
 require('./scripts/register-ts-test-loader.cjs');
+const { decimalToMinorUnits } = require('./src/services/financeCore.ts');
 const { sortTransactions } = require('./src/services/domainUtils.ts');
 const { buildTransactionUpdate } = require('./src/services/userPreferences.ts');
 const { resolveInitialSystemDark } = require('./src/services/systemAppearance.ts');
@@ -21,10 +22,10 @@ function fixture(run) {
 }
 function financeRows(rows, sort = 'date-desc', filters = {}) {
   return h.bind(h.appFunction('filteredTransactions'), {
-    useMemo: callback => callback(), sortTransactions,
-    transactions: rows, financeMonth: '2026-11',
+    useMemo: callback => callback(), sortTransactions, decimalToMinorUnits,
+    transactions: rows, financeMonth: '2026-11', activityRange: { from: '', through: '', min: '', max: '' },
     financeTypeFilter: 'all', financeCategoryFilter: 'all', financeAccountFilter: 'all', financeCurrencyFilter: 'all', userPrefs: { currency: 'INR' }, financeSearch: '', financeSort: sort, ...filters,
-  });
+  }, ['matchesActivityDate', 'matchesActivityAmount'].map(name => 'const ' + name + ' = ' + h.appFunction(name) + ';').join('\n'));
 }
 
 (async () => {
@@ -51,6 +52,10 @@ function financeRows(rows, sort = 'date-desc', filters = {}) {
       { id: 'b-inr', type: 'expense', amount: 3, currencyCode: 'INR', accountId: 'bank-b', category: 'Food', description: 'Two', paymentMethod: 'Cash', date: '2026-11-06', createdAt: '2026-11-06T11:00:00Z' },
       { id: 'legacy', type: 'expense', amount: 4, category: 'Food', description: 'Legacy', paymentMethod: 'Cash', date: '2026-11-06', createdAt: '2026-11-06T12:00:00Z' },
     ];
+    const rangedRows = rows.concat({ ...rows[0], id: 'december', date: '2026-12-01', currencyCode: 'KWD', amount: 1.234, amountMinor: '1234' });
+    assert.deepEqual(financeRows(rangedRows, 'date-desc', {
+      financeCurrencyFilter: 'KWD', activityRange: { from: '2026-11-20', through: '2026-12-01', min: '1.234', max: '1.234' },
+    }).map(row => row.id), ['december'], 'date ranges span months and exact amount bounds are inclusive');
     assert.deepEqual(financeRows(rows, 'date-desc', { financeAccountFilter: 'bank-a' }).map(row => row.id), ['a-usd']);
     assert.deepEqual(financeRows(rows, 'date-desc', { financeCurrencyFilter: 'USD' }).map(row => row.id), ['a-usd']);
     assert.deepEqual(financeRows(rows, 'date-desc', { financeCurrencyFilter: 'INR' }).map(row => row.id), ['b-inr', 'legacy'], 'untagged history keeps the locked reporting-currency interpretation');
