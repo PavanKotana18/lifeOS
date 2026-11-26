@@ -705,10 +705,11 @@ export default function App() {
     const context = {
       enabled: userPrefs.swipeNavigationEnabled,
       pointerType: event.pointerType,
-      settingsScreen: !PRIMARY_NAVIGATION.some(({ tab }) => tab === activeTab) || (activeTab === 'finance' && financeSubtab !== 'overview') ||
+      settingsScreen: primaryDestinationForTab(activeTab) === null ||
+        Boolean((activeTab === 'planner' && plannerDetailTaskId) || ((activeTab === 'habits' || activeTab === 'goals') && lifeDetail)) ||
         (profileOpen && (profileSection !== 'home' || Boolean(document.querySelector('#screen-settings form[data-no-tab-swipe]')))),
       modalOpen: Boolean(createKind || modalContent || confirmation || firstRecordSecurityOpen || secureSetup || showExitConfirmation
-        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || (activeTab === 'finance' && financeSubtab !== 'overview')
+        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || financeDialogOpen
         || document.querySelector('dialog[open]') || keyboardOwnsViewport()),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
@@ -1283,7 +1284,9 @@ export default function App() {
   const initApp = async () => {
     // Bootstrap-safe preferences only.
     const savedTheme = await StorageService.settings.get<AppearancePreference>('theme', 'system');
-    const savedVisualTheme = await resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', visualThemeId));
+    // The previous default was cached even when no palette was chosen.
+    const paletteFallback = visualThemeId === 'busydoo' ? DEFAULT_THEME_ID : visualThemeId;
+    const savedVisualTheme = await resolveInitialVisualTheme(() => StorageService.settings.get('visualTheme', paletteFallback));
     let cachedAccent: string | undefined;
     try { cachedAccent = normalizeCustomAccent(localStorage.getItem('lifeos-custom-accent')); } catch { /* Cosmetic cache is optional. */ }
     let accentTimer: ReturnType<typeof setTimeout> | number | undefined;

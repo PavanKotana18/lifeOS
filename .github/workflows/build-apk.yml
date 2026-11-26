@@ -52,18 +52,7 @@ jobs:
         run: npm ci
 
       - name: Run Automated LifeOS Verification Tests
-        run: |
-          node --input-type=commonjs <<'JS'
-          const { spawnSync } = require('node:child_process');
-          const commands = require('./package.json').scripts.test.split(' && ');
-          const failed = [];
-          for (const command of commands) {
-            const result = spawnSync(command, { shell: true, stdio: 'inherit' });
-            if (result.status !== 0) failed.push(command);
-          }
-          console.log('FAILED REQUIRED COMMANDS:', JSON.stringify(failed));
-          process.exitCode = failed.length ? 1 : 0;
-          JS
+        run: npm test
 
       # Known acceptance failures stay visible without making the existing gate red.
       # The runner still fails for harness/dependency errors and unexpected passes.
@@ -86,7 +75,6 @@ jobs:
         run: npm run test:sentinel
 
       - name: Check TypeScript
-        if: success() || failure()
         run: npx tsc --noEmit
 
       - name: Build Web Application
