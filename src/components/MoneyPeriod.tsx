@@ -36,6 +36,7 @@ export default function MoneyPeriod({ label, month, onChange }: {
         <div className="period-months" role="group" aria-label="Months">
           {monthLabels.map((monthLabel, index) => <button key={monthLabel} type="button" className="feather-secondary"
             disabled={!validYear} aria-pressed={current.getUTCFullYear() === yearNumber && current.getUTCMonth() === index} onClick={() => {
+              if (!validYear) return;
               onChange(String(yearNumber).padStart(4, '0') + '-' + String(index + 1).padStart(2, '0'));
               dialog.current?.close();
             }}>{monthLabel}</button>)}
