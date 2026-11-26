@@ -607,13 +607,18 @@ export function validateBackupTables(tablesData: any): string[] {
     for (const key of ['recurrenceAnchorDate', 'lastPostedDate']) {
       if (r[key] !== undefined && !date(r[key])) fail('plannedCommitments', i, key);
     }
-    if (r.lastPostedDate && r.lastPostedDate >= r.nextDueDate) fail('plannedCommitments', i, 'lastPostedDate');
+    const recordedOnce = r.frequency === 'once' && r.status === 'recorded';
+    if (r.frequency === 'once') {
+      if (r.lastPostedDate !== (recordedOnce ? r.nextDueDate : undefined)) fail('plannedCommitments', i, 'one-time history');
+    } else if (r.status === 'recorded' || (r.lastPostedDate && r.lastPostedDate >= r.nextDueDate)) {
+      fail('plannedCommitments', i, 'lastPostedDate');
+    }
     requiredString(r, 'title', 'plannedCommitments', i);
     requiredNumber(r, 'amount', 'plannedCommitments', i);
     try { validateMoneyMetadata(r); } catch { fail('plannedCommitments', i, 'currency/amountMinor'); }
-    if (!enumValue(r.frequency, ['weekly', 'monthly', 'yearly'])) fail('plannedCommitments', i, 'frequency');
+    if (!enumValue(r.frequency, ['once', 'weekly', 'monthly', 'yearly'])) fail('plannedCommitments', i, 'frequency');
     requiredDate(r, 'nextDueDate', 'plannedCommitments', i);
-    if (!enumValue(r.status, ['active', 'paused'])) fail('plannedCommitments', i, 'status');
+    if (!enumValue(r.status, ['active', 'paused', 'recorded'])) fail('plannedCommitments', i, 'status');
     requiredString(r, 'createdAt', 'plannedCommitments', i);
     optionalString(r, 'notes', 'plannedCommitments', i);
     optionalString(r, 'categoryId', 'plannedCommitments', i);
@@ -621,7 +626,11 @@ export function validateBackupTables(tablesData: any): string[] {
     if (r.categoryId && !tablesData.categories.some((category: any) => category.id === r.categoryId && category.type === (r.type || 'expense'))) fail('plannedCommitments', i, 'categoryId reference');
     if (r.lastPostedDate && !r.recurrenceAnchorDate) fail('plannedCommitments', i, 'recurrenceAnchorDate');
     for (const tx of tablesData.transactions) {
-      if (tx.commitmentId === r.id && (!r.lastPostedDate || tx.commitmentOccurrenceDate > r.lastPostedDate || tx.commitmentOccurrenceDate >= r.nextDueDate)) fail('plannedCommitments', i, 'occurrence history');
+      if (tx.commitmentId !== r.id) continue;
+      if (recordedOnce ? tx.commitmentOccurrenceDate !== r.nextDueDate
+        : (!r.lastPostedDate || tx.commitmentOccurrenceDate > r.lastPostedDate || tx.commitmentOccurrenceDate >= r.nextDueDate)) {
+        fail('plannedCommitments', i, 'occurrence history');
+      }
     }
     if (r.accountId && !ids.financialAccounts.has(r.accountId)) fail('plannedCommitments', i, 'accountId reference');
     optionalInstant(r, 'updatedAt', 'plannedCommitments', i);
@@ -1211,6 +1220,7 @@ const rawStorageService: IDataStorage = {
     async getAll() { return (await db.plannedCommitments.toArray()).sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate) || a.title.localeCompare(b.title)); },
     async add(input) {
       const record: PlannedCommitment = { ...input, id: createRecordId('commitment'), createdAt: new Date().toISOString() };
+      if (record.status === 'recorded') throw new Error('Record the occurrence to complete this plan.');
       validatePlannedCommitment(record);
       await db.transaction('rw', db.plannedCommitments, db.financialAccounts, db.categories, async () => {
         validatePlannedCommitmentReferences(record, await db.financialAccounts.toArray(), await db.categories.toArray());
@@ -1222,6 +1232,7 @@ const rawStorageService: IDataStorage = {
       await db.transaction('rw', db.plannedCommitments, db.financialAccounts, db.categories, async () => {
         const existing = await db.plannedCommitments.get(id);
         if (!existing) return;
+        if (existing.status === 'recorded' || updates.status === 'recorded') throw new Error('Recorded one-time plans cannot be edited.');
         const updated = { ...existing, ...updates, id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() };
         validatePlannedCommitment(updated);
         validatePlannedCommitmentReferences(updated, await db.financialAccounts.toArray(), await db.categories.toArray());
