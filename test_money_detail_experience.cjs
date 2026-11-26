@@ -53,5 +53,11 @@ assert.equal(read().month.disabled, false);
 read().month.onClick();
 assert.equal(selected, '2027-02');
 
-const app=fs.readFileSync('src/App.tsx','utf8');assert.match(app,/aria-label="Search transactions"/);assert.match(app,/<summary>Filters<\/summary>/);assert.match(app,/setFinanceCategoryFilter\('all'\)/);assert.match(app,/formatMinorUnits\(BigInt\(t.amountMinor\)/);
+const app = fs.readFileSync('src/App.tsx', 'utf8');
+assert.match(app, /aria-label="Search transactions"/);
+assert.match(app, /data-activity-filters aria-label="Transaction filters"/);
+assert.match(app, /Minimum amount/);
+assert.match(app, /Through date/);
+assert.ok(app.includes("setFinanceCategoryFilter('all')"));
+assert.ok(app.includes('formatMinorUnits(BigInt(t.amountMinor)'));
 console.log('PASS Money detail headings, actual period validation/back handlers, explicit posted/planned labels and exact amount wiring');

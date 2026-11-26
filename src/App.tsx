@@ -3112,7 +3112,7 @@ export default function App() {
                   ))}
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-secondary"><ComposerChoice variant="field" label="Sort" value={financeSort}
-                options={[["date-desc", "Newest first"], ["date-asc", "Oldest first"], ["amount-desc", "Largest within each day"]]} onSelect={e => setFinanceSort(e)} /></div>
+                options={[["date-desc", "Newest first"], ["date-asc", "Oldest first"], ["amount-desc", "Largest amount"]]} onSelect={e => setFinanceSort(e)} /></div>
 
                 <button type="submit" className="lifeos-accent-button min-h-11 rounded-xl px-4">Show transactions</button></form></dialog>
                 <div className="money-detail-results" hidden={!hasTransactionFilters}><span role="status">{filteredTransactions.length + filteredTransfers.length} results</span><button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button></div>

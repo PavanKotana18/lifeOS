@@ -325,8 +325,10 @@ async function main() {
       }, 'QA acceptance: review weekly plan');
       await clickButton('Filters');
       const filters = page.getByRole('dialog', { name: 'Task filters' });
-      await filters.getByLabel('Status').selectOption('completed');
-      await filters.getByLabel('Priority').selectOption('Medium');
+      await filters.getByRole('button', { name: 'Status', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Status', exact: true }).getByRole('option', { name: 'Completed', exact: true }).click();
+      await filters.getByRole('button', { name: 'Priority', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Priority', exact: true }).getByRole('option', { name: 'Medium', exact: true }).click();
       await capture('plan-filters-390');
       await clickButton('Apply filters');
       await page.getByRole('button', { name: 'Filters (2)' }).waitFor();
