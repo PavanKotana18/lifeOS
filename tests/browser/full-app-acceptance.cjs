@@ -665,6 +665,7 @@ async function main() {
                 incomingLeft: incoming.getBoundingClientRect().left,
                 width: clip.width, clipLeft: clip.left, clipRight: clip.right,
                 opacity: [getComputedStyle(outgoing).opacity, getComputedStyle(incoming).opacity],
+                gutters: [parseFloat(getComputedStyle(outgoing).paddingRight), parseFloat(getComputedStyle(incoming).paddingLeft)],
                 indicator: new DOMMatrix(getComputedStyle(indicator).transform).m41 / indicator.offsetWidth,
                 heading: document.querySelector('#primary-route-title').getBoundingClientRect().left,
                 previewInert: incoming.inert && incoming.getAttribute('aria-hidden') === 'true',
@@ -684,6 +685,7 @@ async function main() {
             assert.ok(Math.abs(middle.outgoingRight - middle.incomingLeft) < 1, 'adjacent panels meet without a gap or overlap');
             assert.ok(middle.incomingLeft > middle.clipLeft && middle.incomingLeft < middle.clipRight);
             assert.deepEqual(middle.opacity, ['1', '1']);
+            assert.ok(middle.gutters.every(inset => inset >= 12), 'both moving panels carry their inline gutters');
             assert.equal(middle.heading, before.heading, 'masthead stays stationary');
             assert.ok(middle.previewInert, 'visual preview remains inaccessible');
             assert.ok(Math.abs(middle.indicator - before.indicator - Math.abs(middle.stageX) / middle.width) < .02);

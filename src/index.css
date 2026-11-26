@@ -142,8 +142,13 @@ body {
 .app-content-width { width: min(100%, var(--content-measure)); margin-inline: auto; }
 html:has(.app-header-shell) { scroll-padding-block-start: calc(env(safe-area-inset-top) + 5rem); }
 .app-header-shell { touch-action: pan-y pinch-zoom; }
-.app-main { width: min(100%, var(--content-measure)); min-width: 0; margin-inline: auto; padding: var(--page-gutter); touch-action: pan-y pinch-zoom; overscroll-behavior-x: contain; overflow-x: clip; }
-/* One opaque track moves beneath the stationary masthead. */
+.app-main { --track-panel-gutter: var(--page-gutter); width: min(100%, var(--content-measure)); min-width: 0; margin-inline: auto; padding: var(--page-gutter); touch-action: pan-y pinch-zoom; overscroll-behavior-x: contain; overflow-x: clip; }
+/* One opaque track moves beneath the stationary masthead. Each panel carries its own gutters. */
+.app-main:not(.profile-main) { padding-inline: 0; }
+.app-main:not(.profile-main) .ui-tab-screen {
+  padding-left: max(var(--track-panel-gutter), env(safe-area-inset-left));
+  padding-right: max(var(--track-panel-gutter), env(safe-area-inset-right));
+}
 .ui-tab-viewport { display: grid; grid-template-columns: minmax(0, 1fr); overflow: clip; }
 .ui-tab-screen-stack { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; align-items: stretch; }
 .ui-tab-screen-stack > [data-lifeos-screen] { grid-area: 1 / 1; min-width: 0; }
@@ -613,11 +618,11 @@ html.dark { color-scheme: dark; }
   .money-home-heading, .money-quick-actions, .money-cashflow, .money-activity, .money-tools { grid-column: 1 / -1; }
   .life-hub { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 1.25rem; }
   .life-hub-heading, .life-insights-link { grid-column: 1 / -1; }
-  .app-main { padding-inline: clamp(1.5rem, 3vw, 2.25rem); }
+  .app-main { --track-panel-gutter: clamp(1.5rem, 3vw, 2.25rem); padding-inline: var(--track-panel-gutter); }
 }
 
 @media (max-width: 24rem) {
-  .app-main { padding-inline: .8rem; }
+  .app-main { --track-panel-gutter: .8rem; padding-inline: var(--track-panel-gutter); }
   .app-bottom-nav { padding-inline: .35rem; }
   .app-bottom-nav .nav-item { gap: .2rem; font-size: .68rem; }
   .money-quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
