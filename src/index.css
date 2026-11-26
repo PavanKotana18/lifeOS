@@ -1159,3 +1159,11 @@ html.dark .text-amber-400 { color: var(--warning); }
 .alive-workspace-empty + * { margin-top: .65rem; }
 
 .task-detail-screen[data-exiting="true"] { pointer-events: none; }
+
+.appearance-actions button {
+  min-block-size: 44px;
+  padding-inline: .8rem;
+  border-radius: var(--radius-control);
+  font-size: .82rem;
+  font-weight: 600;
+}

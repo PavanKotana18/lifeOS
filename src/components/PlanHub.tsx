@@ -1,5 +1,4 @@
 import LifeDoodle from './LifeDoodle';
-import LifeDoodle from './LifeDoodle';
 import { PreferenceChoice } from './PreferenceChoice';
 import { useRef, useState } from 'react';
 import { Bell, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';

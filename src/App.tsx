@@ -878,12 +878,12 @@ export default function App() {
     if (cancelProfileAdmission()) return;
     navigationMotion.cancelPending();
     if (typeof document !== 'undefined') {
-      const scheduledDetail = document.querySelector<HTMLElement>('dialog[data-scheduled-details][open] [data-motion-back]');
-      if (scheduledDetail) { scheduledDetail.click(); return; }
       const choices = document.querySelectorAll<HTMLDialogElement>('dialog[data-preference-choice][open]');
       if (choices.length) { choices[choices.length - 1].close(); return; }
       const transactionOptions = document.querySelector<HTMLDialogElement>('dialog[data-transaction-actions][open]');
       if (transactionOptions) { transactionOptions.close(); return; }
+      const scheduledDetail = document.querySelector<HTMLElement>('dialog[data-scheduled-details][open] [data-motion-back]');
+      if (scheduledDetail) { scheduledDetail.click(); return; }
       const filterSheet = document.querySelector<HTMLDialogElement>('dialog[data-plan-filters][open],dialog[data-activity-filters][open],dialog[data-transaction-details][open],dialog[data-transfer-details][open],dialog[data-money-period][open],dialog[data-smart-import][open],dialog[data-scheduled-details][open]');
       if (filterSheet) { filterSheet.close(); return; }
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
@@ -2740,6 +2740,7 @@ export default function App() {
           && matchesActivityAmount(row.toAmountMinor, 0, row.toCurrencyCode)))
         && (!query || [row.notes, ...names, 'transfer'].some(value => value?.toLowerCase().includes(query)));
     }) : [];
+  const transactionResultCount = filteredTransactions.length + filteredTransfers.length;
   const transactionDateGroups = financeSort === 'amount-desc' && (filteredTransactions.length || filteredTransfers.length)
     ? [null]
     : [...new Set([...filteredTransactions, ...filteredTransfers].map(row => row.date))]
@@ -2868,7 +2869,7 @@ export default function App() {
         </div>}
 
       {/* Main Container */}
-      <main data-record-background className={profileOpen && profileSection !== 'home' ? "app-main profile-main" : "app-main"}>
+      <main data-record-background className={profileOpen && profileSection !== 'home' ? 'app-main profile-main' : 'app-main'}>
         <div className="ui-tab-viewport"><div className="ui-tab-screen-stack" ref={navigationMotion.attachStage}>
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
@@ -2937,13 +2938,17 @@ export default function App() {
               </div>
               <div className="flex justify-between gap-3 text-xs text-secondary">
                 <span>Net cash flow: <strong className="text-primary tabular-nums">{formatMinorUnits(BigInt(financeAnalytics.netSavingsMinor), userPrefs.currency, userPrefs.locale === 'system' ? undefined : userPrefs.locale)}</strong></span>
-                <span>Savings rate: <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong></span>
+                <div className="inline-flex items-center gap-1">Cash-flow margin <strong className="tabular-nums" style={{ color: financeAnalytics.savingsRate !== null && financeAnalytics.savingsRate < 0 ? 'var(--danger)' : 'var(--accent)' }}>{financeAnalytics.savingsRate === null ? '—' : `${financeAnalytics.savingsRate.toFixed(1)}%`}</strong><InfoTip label="Cash-flow margin" /></div>
               </div>
             </div>
 
             <section className="today-habit-summary" style={todaySectionStyle("habits")} aria-labelledby="today-routines-title">
               <header className="today-section-heading">
-                <h3 id="today-routines-title" className="type-section-title">Daily routines</h3>
+              <div className="today-routines-heading"><h3 id="today-routines-title" className="type-section-title">Daily routines</h3>
+                {todayOverview.routinesDue > 0 && <p className="type-caption text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>}
+                <button type="button" className="feather-secondary" onClick={() => openCreateForm('habit')}>Add habit</button>
+                <button type="button" className="feather-secondary" onClick={() => navigateTo('habits')}>View habits</button>
+              </div>
                 <button type="button" className="money-text-action" onClick={() => habits.length ? navigateTo("habits") : openCreateForm("habit")}>{habits.length ? "View habits" : "Add habit"}</button>
               </header>
               {habits.length === 0 ? <p className="today-routines-empty">Your habits will appear here.</p> :
@@ -3136,9 +3141,9 @@ export default function App() {
                 <button type="submit" className="lifeos-accent-button min-h-11 rounded-xl px-4">Show transactions</button></form></dialog>
                 <div className="money-detail-results" hidden={!hasTransactionFilters}><span role="status">{transactionResultCount} {transactionResultCount === 1 ? "result" : "results"}</span>{hasTransactionFilters && <button type="button" onClick={() => { setFinanceSearch(''); setFinanceCategoryFilter('all'); setFinanceAccountFilter('all'); setFinanceCurrencyFilter('all'); setFinanceTypeFilter('all'); setFinanceSort('date-desc'); setActivityRange({ from: '', through: '', min: '', max: '' }); }}>Clear filters</button>}</div>
                 {/* Transactions List */}
-                <div className="space-y-2">
+                <div className="transaction-timeline">
                   {!transactionDateGroups.length ? (
-                    <div className="text-center py-8 text-xs text-muted">No transactions match these filters.</div>
+                    <p className="money-empty-action">{transactions.length || accountTransfers.length ? 'No transactions match these filters.' : 'No transactions this month.'}</p>
                   ) : (
                     transactionDateGroups.map(date => <section className="transaction-day" key={date ?? "all"} aria-label={date ? formatDate(date) : "Sorted transactions"}>
                       {date && <h3 className="transaction-day-heading">{formatDate(date)}</h3>}
@@ -3206,7 +3211,7 @@ export default function App() {
             </div>}
 
             {financeSubtab === 'savings' && <div className="space-y-3">
-              <div className="flex items-center justify-between"><div><h3 className="font-semibold">Savings goals</h3><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
+              <div className="flex items-center justify-between"><div><div className="flex items-center gap-1"><h3 className="font-semibold">Savings goals</h3><InfoTip label="Savings contributions" /></div><p className="text-xs text-secondary">Build toward the things you care about</p></div><button onClick={() => openCreateForm('savings')} className="lifeos-accent-button min-h-11 rounded-xl px-3 py-2 text-xs font-semibold">+ Add goal</button></div>
               {savingsGoals.length === 0 ? <div className="rounded-2xl border border-[var(--stroke)] lifeos-panel py-8 text-center text-sm text-secondary">No savings goals yet.</div> : <div className="lifeos-panel rounded-2xl border px-4">{savingsGoals.map(goal => <SavingsGoalProgress key={goal.id} goal={goal} onEditGoal={() => openEditSavingsGoal(goal)} contributions={savingsContributions.filter(item => item.goalId === goal.id)} formatMoney={formatMoney} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale} formatDate={formatDate} onEditContribution={openEditContribution} onDeleteContribution={async contribution => {
                   if (!(await confirmAction({ title: 'Delete this contribution?', message: `${formatMoney(contribution.amount, contribution.currencyCode || goal.currencyCode)} will be removed and the saved goal total will be adjusted.`, confirmLabel: 'Delete contribution', destructive: true }))) return;
                   try { await StorageService.savings.deleteContribution(contribution.id); await reloadAllData(); showToast('Contribution deleted and savings total updated', 'success'); }
@@ -3230,7 +3235,7 @@ export default function App() {
                 }} />)}</div>}
             </div>}
 
-            {financeSubtab === 'planning' && <div className="feather-scheduled-layout"><MoneyPlanning reduced={interfaceMotion.reducedMotion} draftState={planningDrafts} transactions={transactions} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
+            {financeSubtab === 'planning' && <div className="feather-scheduled-layout"><MoneyPlanning draftState={planningDrafts} reduced={interfaceMotion.reducedMotion} transactions={transactions} onDraftStateChange={setPlanningDrafts} saving={financeWriteBusy} commitments={plannedCommitments} rates={manualExchangeRates} accounts={financialAccounts} categories={categories} confirmAction={confirmAction}
               onAddCommitment={async input => { await runPreparedFinanceWrite(() => StorageService.commitments.add(input)); }}
               onUpdateCommitment={async (id, input) => { await runPreparedFinanceWrite(() => StorageService.commitments.update(id, input)); }}
               onRecordOccurrence={async row => { await runPreparedFinanceWrite(() => StorageService.commitments.postOccurrence(row.id, row)); }}
@@ -3324,7 +3329,7 @@ export default function App() {
                         {h.trackingMode === 'quantity' ? <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-label={`Add one ${h.quantityUnit} to ${h.name}`} onClick={() => void handleHabitQuantity(h, todayStr, 1)}>+1</button>
                           : <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? 'Done' : 'Check in'}</button>}
                       </div>
-                      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" className="h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
+                      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" data-checked={done} className="alive-habit-day h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
                     </div>
                   );
                 })
@@ -3336,7 +3341,7 @@ export default function App() {
         {/* VIEW 4: GOALS */}
         <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
           <div className="space-y-4">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
-            <div className="flex justify-between items-center"><h2 className="type-section-title">Goals</h2><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
+            <div className="flex justify-between items-center"><div className="flex items-center gap-1"><h2 className="type-section-title">Goals</h2><InfoTip label="Goal progress" /></div><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">+ Add goal</button></div>
             {!lifeDetail && goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(['active', 'paused', 'completed', 'archived'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
@@ -3370,7 +3375,7 @@ export default function App() {
                     <span className="goal-percent tabular-nums">{pct}%</span>
                   </button>
                   <div className="lifeos-progress-track h-2 overflow-hidden rounded-full" role="progressbar" aria-label={g.title + ' progress'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: pct + '%' }} /></div>
-                  <p className="text-sm text-secondary safe-wrap">{goalProgressLabel(g)}</p>
+                  <p className="text-sm text-secondary safe-wrap">{goalProgressLabel(g)} {g.status === 'Completed' && <strong className="goal-completed-label">Completed</strong>}</p>
                 </article>;
               })}</div>;
             })()}
@@ -3815,7 +3820,7 @@ export default function App() {
               {createDraft.trackingMode === 'quantity' && <label className="mb-3 block text-xs text-secondary">Unit<input required maxLength={24} value={createDraft.quantityUnit || ''} onChange={e => setCreateDraft({ ...createDraft, quantityUnit: e.target.value })} placeholder="glasses, minutes, pages" className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>}
               <label className="mb-3 block text-xs text-secondary">Reminder time (optional)<input type="time" value={createDraft.reminderTime || ''} onChange={e => setCreateDraft({ ...createDraft, reminderTime: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <AliveDisclosure label="Custom schedule">
-                <fieldset><legend className="text-sm font-semibold">Scheduled weekdays</legend>
+                <fieldset className="task-composer-section"><legend className="text-sm font-semibold">Scheduled weekdays</legend>
                   <div className="flex flex-wrap gap-2">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => {
                     const selected = (createDraft.weekdays || '').split(',').filter(Boolean);
                     return <label key={day} className="flex min-h-11 items-center gap-1 px-2 text-sm"><input type="checkbox" checked={selected.includes(String(index))}

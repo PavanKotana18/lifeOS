@@ -10,7 +10,8 @@ const analytics = app.slice(start, end);
 for (const token of ['lifeos-panel', 'text-secondary', 'var(--success)', 'var(--danger)', 'var(--stroke)']) {
   assert.ok((analytics + charts).includes(token), 'Analytics uses semantic token ' + token);
 }
-assert.ok(charts.includes('lifeos-input'), 'Period selection uses the semantic input token');
+assert.match(charts, /<PreferenceChoice variant="field" label="Time period"/, 'Period selection uses the shared semantic input');
+assert.match(fs.readFileSync('src/components/PreferenceChoice.tsx', 'utf8'), /choice-trigger/);
 assert.match(charts, /<Bar dataKey="income"/);
 assert.match(charts, /<Bar dataKey="expenses"/);
 assert.match(analytics, /financeAnalytics\.expenseChange/);

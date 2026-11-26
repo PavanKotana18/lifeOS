@@ -36,14 +36,16 @@ type Props = {
   draftState?: MoneyPlanningDraftState;
   onDraftStateChange?: Dispatch<SetStateAction<MoneyPlanningDraftState>>;
   saving?: boolean;
+  reduced?: boolean;
 };
 const inputClass = 'lifeos-input mt-1 min-h-11 w-full rounded-xl px-3 py-2 text-sm';
 const scheduleFrequency = (frequency: PlannedCommitment['frequency']) => frequency === 'once'
   ? 'One time' : frequency[0].toUpperCase() + frequency.slice(1);
 const codeOptions = [...new Set(CURRENCY_CODES)].sort();
 
-export default function MoneyPlanning({ commitments, transactions = [], rates, accounts, categories, confirmAction, onAddCommitment, onUpdateCommitment, onDeleteCommitment, onRecordOccurrence, onAddRate, onUpdateRate, onDeleteRate, draftState, onDraftStateChange, saving = false }: Props) {
-  const reducedMotion = useReducedMotion() ?? false;
+export default function MoneyPlanning({ commitments, transactions = [], rates, accounts, categories, confirmAction, onAddCommitment, onUpdateCommitment, onDeleteCommitment, onRecordOccurrence, onAddRate, onUpdateRate, onDeleteRate, draftState, onDraftStateChange, saving = false, reduced }: Props) {
+  const systemReducedMotion = useReducedMotion();
+  const reducedMotion = reduced ?? systemReducedMotion ?? false;
   const submittingCommitment = useRef(false);
   const [planningPanel, setPlanningPanel] = useState<'upcoming' | 'recurring' | 'history' | 'rates'>('upcoming');
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -247,6 +249,15 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
         {error && <p role="alert" className="lifeos-danger rounded-lg p-2 text-xs">{error}</p>}
       </ComposerShell>}
     </AnimatePresence>
-    {rate && <div className="ui-sheet-backdrop" onMouseDown={event => { if (!saving && event.target === event.currentTarget) void closeRate(); }}><form id="money-rate-dialog" role="dialog" aria-modal="true" aria-busy={saving} aria-label="Manual exchange rate" onSubmit={saveRate} onChange={() => setRateDirty(true)} className="ui-sheet-motion ui-bottom-sheet lifeos-panel record-composer record-composer--page space-y-3"><h3 className="text-lg font-semibold">{rate.id ? 'Edit manual rate' : 'Add manual rate'}</h3><div className="grid grid-cols-2 gap-3"><label className="block text-xs text-secondary">From currency<select className={inputClass} value={rate.base} onChange={e => setRate(current => current ? { ...current, base: e.target.value } : current)}>{codeOptions.map(code => <option key={code} value={code}>{code}</option>)}</select></label><label className="block text-xs text-secondary">To currency<select className={inputClass} value={rate.quote} onChange={e => setRate(current => current ? { ...current, quote: e.target.value } : current)}>{codeOptions.map(code => <option key={code} value={code}>{code}</option>)}</select></label></div><label className="block text-xs text-secondary">Quote units per 1 base unit<input required inputMode="decimal" maxLength={24} placeholder="e.g. 83.25" className={inputClass} value={rate.value} onChange={e => setRate(current => current ? { ...current, value: e.target.value } : current)} /></label><label className="block text-xs text-secondary">Effective date<input required type="date" className={inputClass} value={rate.date} onChange={e => setRate(current => current ? { ...current, date: e.target.value } : current)} /></label><label className="block text-xs text-secondary">Source label (optional)<input maxLength={80} placeholder="e.g. Bank statement" className={inputClass} value={rate.source} onChange={e => setRate(current => current ? { ...current, source: e.target.value } : current)} /></label>{error && <p role="alert" className="lifeos-danger rounded-lg p-2 text-xs">{error}</p>}<div className="ui-form-actions"><button type="button" disabled={saving} onClick={() => { void closeRate(); }} className="lifeos-raised min-h-11 flex-1 rounded-xl">Cancel</button><button type="submit" disabled={saving} className="lifeos-accent-button min-h-11 flex-1 rounded-xl font-semibold">{saving ? 'Saving…' : 'Save rate'}</button></div></form></div>}
+    <AnimatePresence>{rate && <ComposerShell key="money-rate-dialog" id="money-rate-dialog" portal mode="page"
+      title={rate.id ? 'Edit manual rate' : 'Add manual rate'} accessibleName="Manual exchange rate" submitLabel={rate.id ? 'Save changes' : 'Add manual rate'} saving={saving} reduced={reducedMotion}
+      dismiss={() => { if (!saving) void closeRate(); }} onSubmit={saveRate} onChange={() => setRateDirty(true)} onChoiceChange={() => setRateDirty(true)}>
+      <div className="grid grid-cols-2 gap-3"><div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="From currency" value={rate.base} searchable
+                options={[...(codeOptions.map(code => [String(code), code] as const))]} onSelect={e => setRate(current => current ? { ...current, base: e } : current)} /></div>
+      <div className="block text-xs text-secondary"><PreferenceChoice variant="field" label="To currency" value={rate.quote} searchable
+                options={[...(codeOptions.map(code => [String(code), code] as const))]} onSelect={e => setRate(current => current ? { ...current, quote: e } : current)} /></div></div><label className="block text-xs text-secondary">Quote units per 1 base unit<input required inputMode="decimal" maxLength={24} placeholder="e.g. 83.25" className={inputClass} value={rate.value} onChange={e => setRate(current => current ? { ...current, value: e.target.value } : current)} /></label>
+      <label className="block text-xs text-secondary">Effective date<input required type="date" className={inputClass} value={rate.date} onChange={e => setRate(current => current ? { ...current, date: e.target.value } : current)} /></label>
+      <label className="block text-xs text-secondary">Source label (optional)<input maxLength={80} placeholder="e.g. Bank statement" className={inputClass} value={rate.source} onChange={e => setRate(current => current ? { ...current, source: e.target.value } : current)} /></label>{error && <p role="alert" className="lifeos-danger rounded-lg p-2 text-xs">{error}</p>}
+    </ComposerShell>}</AnimatePresence>
   </main>;
 }

@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react';
 import { Info, X } from 'lucide-react';
+import { APP_NAME } from '../config/appBrand';
 
 export type InfoContent = { definition: string; example: string; use: string; details?: string; learnMore?: string };
 
@@ -8,7 +9,7 @@ export default function InfoSheet({ label, content }: { label: string; content: 
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
-  const sections = [['Simple example', content.example], ['How BusyDoo uses it', content.use], ['Important details', content.details], ['Learn more', content.learnMore]];
+  const sections = [['Simple example', content.example], [`How ${APP_NAME} uses it`, content.use], ['Important details', content.details], ['Learn more', content.learnMore]];
 
   return <>
     <button ref={trigger} type="button" className="lifeos-info-trigger" aria-label={'About ' + label}

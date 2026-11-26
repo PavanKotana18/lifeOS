@@ -32,7 +32,7 @@ assert.doesNotMatch(markup, /synthetic-private-task-id|99127|pendingNotification
 
 const app = fs.readFileSync('./src/App.tsx', 'utf8');
 const taskDetails = fs.readFileSync('./src/components/TaskDetailScreen.tsx', 'utf8');
-assert.match(app, /<TaskDetailScreen task=\{plannerDetailTask\}/, 'task details are wired to the selected task');
+assert.match(app, /<TaskDetailScreen[^>]*task=\{plannerDetailTask\}/, 'task details are wired to the selected task');
 for (const field of ['TASK DETAILS', 'task.title', 'Due', 'status', 'Priority', 'Reminder', 'Edit task', 'Complete task']) {
   assert.ok(taskDetails.includes(field), `task details contain the human-facing ${field} field/action`);
 }

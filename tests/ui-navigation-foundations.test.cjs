@@ -40,7 +40,8 @@ assert.match(app, /<RetainedScreen active=\{activeTab === 'plan'\} retainInactiv
 assert.match(app, /retainInactive prepare=\{primaryPrepared\} id="screen-settings"/, "Profile is retained and prewarmed for the swipe track");
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
   'Money retains local account and planning form drafts while another tab is briefly visited');
-assert.match(app, /prefers-reduced-motion/);
+assert.match(app, /useInterfaceMotion\(\)/);
+assert.match(track, /if \(reduced\) return/);
 assert.match(app, /navigateTo\('planner'\)/, 'Today routes into the task destination');
 assert.match(app, /resolveBackAction/);
 const track = fs.readFileSync(path.join(__dirname, '..', 'src', 'hooks', 'useAliveNavigation.ts'), 'utf8');
@@ -51,7 +52,7 @@ assert.match(track, /Promise\.all\(animations\.map\(animation => animation\.fini
 assert.match(track, /if \(!animations\.length\) \{ cancel\(\); return; \}/, 'unsupported animation falls back to an immediate route');
 assert.match(track, /transition\.current\?\.id !== flight\.id/, 'obsolete transitions cannot settle newer navigation');
 assert.match(app, /transitionToTab\(tab, direction, velocity,/, 'tap and swipe destinations share one transition path');
-assert.match(track, /clearDrag\(\);\s*cancel\(\);[\s\S]*?if \(reduced \|\| !primaryTravel/, 'reduced-motion navigation clears the outgoing drag state');
+assert.match(track, /clearDrag\(\);\s*cancel\(\);[\s\S]*?if \(reduced \|\| !old/, 'reduced-motion navigation clears the outgoing drag state');
 assert.match(app, /axis === 'horizontal'.*setPointerCapture\(event\.pointerId\)/s,
   'pointer capture starts only after horizontal intent so an ordinary tap keeps its native click');
 assert.match(app, /updatePrimaryGesture\(start, event\.pointerId/);
