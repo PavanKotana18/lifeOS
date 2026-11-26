@@ -154,7 +154,7 @@ html:has(.app-header-shell) { scroll-padding-block-start: calc(env(safe-area-ins
 .ui-tab-screen { position: relative; min-width: 0; background: var(--page); }
 .ui-tab-screen[hidden] { display: none !important; }
 .ui-tab-screen[data-transition-state="outgoing"] { pointer-events: none; min-height: calc(100dvh - min(0px, var(--outgoing-top, 0px))); }
-.ui-tab-screen-stack[data-track-dragging] { transform: translate3d(var(--gesture-x, 0px), 0, 0); }
+.ui-tab-screen-stack[data-track-dragging] { will-change: transform; }
 .ui-tab-screen-stack[data-track-dragging] * { user-select: none; }
 .ui-tab-screen-stack > .ui-tab-screen[data-gesture-preview][hidden] {
   display: block !important;

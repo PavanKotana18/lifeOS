@@ -74,7 +74,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     removePreview(drag.current?.preview ?? null);
     drag.current = null;
     element?.removeAttribute('data-gesture-dragging');
-    track.current?.style.removeProperty('--gesture-x');
+    track.current?.style.removeProperty('transform');
     track.current?.removeAttribute('data-track-dragging');
     indicator.current?.style.removeProperty('--track-indicator');
     settle.current?.();
@@ -210,7 +210,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     if (transition.current) cancel();
     clearDrag();
     drag.current = { element, origin, width, position: origin, scrollTop, scrollOffset, preview: null, previewTab: null };
-    track.current?.style.setProperty('--gesture-x', `${origin}px`);
+    if (track.current) track.current.style.transform = `translate3d(${origin}px, 0, 0)`;
     track.current?.setAttribute('data-track-dragging', 'true');
     element.setAttribute('data-gesture-dragging', 'true');
   };
@@ -239,7 +239,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
       : resistDrag(offset, width, preset) * .5;
     if (position === current.position) return;
     current.position = position;
-    track.current?.style.setProperty('--gesture-x', `${current.position}px`);
+    if (track.current) track.current.style.transform = `translate3d(${current.position}px, 0, 0)`;
     indicator.current?.style.setProperty('--track-indicator', `translate3d(${dragIndicator(current)}%,0,0)`);
   };
 
@@ -265,7 +265,7 @@ export function useAliveNavigation(preset: MotionPresetId, reduced: boolean) {
     const cleanup = () => {
       removePreview(preview);
       element.removeAttribute('data-gesture-dragging');
-      stage.style.removeProperty('--gesture-x');
+      stage.style.removeProperty('transform');
       stage.removeAttribute('data-track-dragging');
       indicator.current?.style.removeProperty('--track-indicator');
       for (const animation of animations) animation.cancel();

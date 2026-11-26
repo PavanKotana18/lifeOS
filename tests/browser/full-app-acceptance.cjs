@@ -567,7 +567,9 @@ async function main() {
         };
         const atRest = () => page.waitForFunction(() => {
           const screen = document.querySelector('#screen-finance');
-          return screen && !screen.hasAttribute('data-gesture-dragging') &&
+          const track = document.querySelector('.ui-tab-screen-stack');
+          return screen && track && !screen.hasAttribute('data-gesture-dragging') &&
+            !track.hasAttribute('data-track-dragging') && !track.style.transform &&
             Math.abs(new DOMMatrix(getComputedStyle(screen).transform).m41) < 1;
         });
         await swipe([265, 245, 224, 269]);
@@ -593,7 +595,10 @@ async function main() {
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       const cdp = await context.newCDPSession(page);
       const touch = (type, points = []) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
-      const stable = () => page.waitForFunction(() => !document.querySelector('[data-transition-state=outgoing],[data-track-dragging]'));
+      const stable = () => page.waitForFunction(() => {
+        const track = document.querySelector('.ui-tab-screen-stack');
+        return track && !track.style.transform && !document.querySelector('[data-transition-state=outgoing],[data-track-dragging]');
+      });
       try {
         for (const theme of ['light', 'dark']) {
           await page.emulateMedia({ colorScheme: theme });
