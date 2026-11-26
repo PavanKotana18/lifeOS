@@ -1190,16 +1190,25 @@ async function main() {
       await capture('planned-bill-composer-390');
       await saveDialog('Save plan');
       await page.getByTestId('money-planning').getByText(name, { exact: true }).waitFor();
+      await clickButton('Add');
+      await dialog().getByRole('textbox', { name: 'Name', exact: true }).fill('QA one-time expense');
+      await fillDialogField('Amount', '12.34');
+      await dialog().getByRole('button', { name: /Frequency.*Monthly/ }).click();
+      await page.getByRole('dialog', { name: 'Frequency', exact: true }).getByRole('button', { name: 'One time', exact: true }).click();
+      await saveDialog('Save plan');
+      await page.getByTestId('money-planning').getByText('QA one-time expense', { exact: true }).waitFor();
       const persisted = await page.evaluate(async () => {
-        const { lifeOSDatabase } = await import('/src/db.ts');
+        const { lifeOSDatabase, StorageService } = await import('/src/db.ts');
         const encrypted = row => row.__lifeosEncrypted === 1;
+        const oneTime = (await StorageService.commitments.getAll()).find(row => row.title === 'QA one-time expense');
         return {
           accounts: (await lifeOSDatabase.financialAccounts.toArray()).filter(encrypted).length,
           transfers: (await lifeOSDatabase.accountTransfers.toArray()).filter(encrypted).length,
           commitments: (await lifeOSDatabase.plannedCommitments.toArray()).filter(encrypted).length,
+          oneTime: [oneTime?.frequency, oneTime?.amountMinor],
         };
       });
-      assert.deepEqual(persisted, { accounts: 2, transfers: 1, commitments: 1 });
+      assert.deepEqual(persisted, { accounts: 2, transfers: 1, commitments: 2, oneTime: ['once', '1234'] });
     });
     await journey('synthetic notification tap opens an encrypted Plan task', async () => {
       await activeTab('dashboard');

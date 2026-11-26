@@ -194,6 +194,26 @@ const h = require('./tests/wp0/production-harness.cjs');
     await Promise.all([reset, clearedPost]);
     check((await restarted.StorageService.transactions.getAll()).length === 0 && (await restarted.StorageService.commitments.getAll()).length === 0,
       'Cross-context backup reset prevents stale confirmations from resurrecting cleared financial data');
+
+    const oneTimeCategory = await restarted.StorageService.categories.add({ name: 'Synthetic one-time expense', type: 'expense', color: '#345678' });
+    const oneTime = await restarted.StorageService.commitments.add(input({
+      title: 'Synthetic one-time plan', categoryId: oneTimeCategory.id, frequency: 'once',
+    }));
+    const [firstPost, retryPost] = await Promise.all([
+      restarted.StorageService.commitments.postOccurrence(oneTime.id, oneTime),
+      restarted.StorageService.commitments.postOccurrence(oneTime.id, oneTime),
+    ]);
+    assert.equal(firstPost.id, retryPost.id);
+    assert.equal(firstPost.amountMinor, '1234');
+    assert.equal(firstPost.isRecurring, false);
+    const recorded = (await restarted.StorageService.commitments.getAll()).find(row => row.id === oneTime.id);
+    assert.equal(recorded.status, 'recorded');
+    assert.equal(recorded.nextDueDate, recorded.lastPostedDate);
+    await assert.rejects(restarted.StorageService.commitments.update(oneTime.id, { status: 'active' }), /cannot be edited/);
+    const oneTimeBackup = await restarted.StorageService.backup.exportData();
+    await restarted.StorageService.backup.importData(oneTimeBackup, { replaceExisting: true });
+    assert.equal((await restarted.StorageService.commitments.postOccurrence(oneTime.id, oneTime)).id, firstPost.id);
+    check((await restarted.StorageService.transactions.getAll()).length === 1, 'A recorded one-time plan stays idempotent after an encrypted backup round-trip');
     console.log(`COMMITMENT OCCURRENCES: ${passed} checks passed with synthetic production encrypted-storage fixtures; native interfaces simulated.`);
   } finally {
     if (restarted) { restarted.sessionManager.lock(); await restarted.sessionManager.waitForIdle(); restarted.lifeOSDatabase.close(); }
