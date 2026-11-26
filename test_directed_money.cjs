@@ -82,7 +82,7 @@ const controlledBusyForm = renderToStaticMarkup(React.createElement(MoneyAccount
   onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
   accountDraft: controlledDraft, onAccountDraftChange: noop, accountDirty: true, onAccountDirtyChange: noop, accountSaving: true,
 }));
-assert.match(controlledBusyForm, /aria-busy="true" aria-label="Create account"/);
+assert.match(controlledBusyForm, /aria-label="Create account"[^>]*aria-busy="true"/);
 assert.match(controlledBusyForm, /value="Rainy day fund"/);
 assert.match(controlledBusyForm, /value="125\.50"/);
 assert.match(controlledBusyForm, /disabled=""[^>]*>Cancel<\/button>/, 'Cancel is disabled while the guarded account save is active');
@@ -97,7 +97,7 @@ const controlledTransferBusyForm = renderToStaticMarkup(React.createElement(Mone
   onCreateTransfer: asyncNoop, onUpdateTransfer: asyncNoop, onReverseTransfer: asyncNoop, onDeleteTransfer: asyncNoop,
   transferDraft: controlledTransferDraft, onTransferDraftChange: noop, transferDirty: true, onTransferDirtyChange: noop, accountSaving: true,
 }));
-assert.match(controlledTransferBusyForm, /aria-busy="true" aria-label="Record transfer"/);
+assert.match(controlledTransferBusyForm, /aria-label="Record transfer"[^>]*aria-busy="true"/);
 assert.match(controlledTransferBusyForm, /value="35\.00"/);
 assert.match(controlledTransferBusyForm, /value="Payment"/);
 assert.match(controlledTransferBusyForm, /disabled=""[^>]*>Cancel<\/button>/, 'transfer Cancel is disabled during secure saving');

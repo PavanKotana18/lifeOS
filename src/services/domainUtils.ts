@@ -1,4 +1,9 @@
-import type { Habit, HabitLog, NotificationPreferences, Task, Transaction } from '../types';
+import type { Goal, Habit, HabitLog, NotificationPreferences, Task, Transaction } from '../types';
+export function recordGoalProgress(previous: Goal, next: Goal, at: string): Goal['progressHistory'] {
+  if (previous.currentValue === next.currentValue && previous.unit === next.unit) return previous.progressHistory;
+  return [...(previous.progressHistory || []), { at, value: next.currentValue, ...(next.unit ? { unit: next.unit } : {}) }];
+}
+
 export type AppearancePreference = 'dark' | 'light' | 'system';
 
 export const profileInitial = (name: string) => name.trim().charAt(0).toLocaleUpperCase() || '';

@@ -1,3 +1,4 @@
+import LifeDoodle from './LifeDoodle';
 import { useState } from 'react';
 import { ArrowRight, Check, Pencil, Trash2 } from 'lucide-react';
 import type { SavingsContribution, SavingsGoal } from '../types';
@@ -49,7 +50,7 @@ export default function SavingsGoalProgress({ goal, formatMoney, locale, formatD
     </div>
     <div className="savings-goal-content">
       <div className="savings-goal-heading"><div className="min-w-0"><p className="type-eyebrow">{goal.category || 'PERSONAL GOAL'}</p><h4 id={`savings-title-${goal.id}`} className="type-section-title truncate">{goal.title}</h4></div><div className="flex items-center gap-2"><InfoTip label="Savings progress">Progress compares saved contributions with the target in this goal’s currency. The visual progress indicator is capped at 100%.</InfoTip><span className="savings-goal-target-date">By {formatDate(goal.targetDate)}</span></div></div>
-      <p className="savings-goal-status" aria-live="polite">{status}</p>
+      <div className="flex items-center gap-2"><p className="savings-goal-status" aria-live="polite">{status}</p>{visualProgress === 1 && <LifeDoodle kind="savings-milestone" compact />}</div>
       <p className="savings-goal-target">Target · {targetLabel}</p>
       <div className="savings-goal-actions">
         <button type="button" onClick={onEditGoal} className="savings-goal-delete" aria-label={`Edit ${goal.title}`}><Pencil size={16} aria-hidden="true" /><span>Edit</span></button>

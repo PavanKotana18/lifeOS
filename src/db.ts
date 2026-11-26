@@ -1,4 +1,5 @@
 import type { ImportDuplicateOptions } from './services/smartImport';
+import { recordGoalProgress } from './services/domainUtils';
 import Dexie, { Table } from 'dexie';
 import { createSessionManager } from './services/sessionManager';
 import { createLifeOSEncryptedRuntime } from './services/encryptedStorageRuntime';
@@ -716,6 +717,9 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'description', 'goals', i);
     optionalString(r, 'unit', 'goals', i);
     optionalInstant(r, 'updatedAt', 'goals', i);
+    if (r.progressHistory !== undefined && (!Array.isArray(r.progressHistory) ||
+      r.progressHistory.some((entry: any) => !obj(entry) || !instant(entry.at) || !num(entry.value) ||
+        (entry.unit !== undefined && !str(entry.unit))))) fail('goals', i, 'progressHistory');
   });
 
   check('milestones', (r, i) => {
@@ -1387,7 +1391,8 @@ const rawStorageService: IDataStorage = {
             (next.status === 'Completed' ? 'In Progress' : next.status);
         }
 
-        await db.goals.put(next);
+        const progressHistory = recordGoalProgress(current, next, next.updatedAt);
+        await db.goals.put({ ...next, ...(progressHistory ? { progressHistory } : {}) });
       });
     },
     async delete(id) {

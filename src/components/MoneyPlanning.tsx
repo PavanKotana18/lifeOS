@@ -11,6 +11,7 @@ import { decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, minorUnits
 import { formatLocalDate } from '../services/domainUtils';
 import type { ConfirmationOptions } from './ConfirmationDialog';
 import InfoTip from './InfoTip';
+import LifeDoodle from './LifeDoodle';
 import ScheduledDetailDialog from './ScheduledDetailDialog';
 
 type CommitmentInput = Omit<PlannedCommitment, 'id' | 'createdAt' | 'updatedAt'>;
@@ -164,7 +165,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
         {renderPlan(nextPlan, true)}
       </section>}
       {!visiblePlans.length
-        ? <div className="scheduled-empty lifeos-panel"><p>No upcoming commitments.</p></div>
+        ? <div className="scheduled-empty lifeos-panel flex items-center gap-2"><LifeDoodle kind="empty-scheduled" /><p>No upcoming commitments.</p></div>
         : visiblePlans.some(row => row !== nextPlan) && <div className="scheduled-timeline" aria-label="Commitment timeline">
           {visiblePlans.filter(row => row !== nextPlan).map(row => renderPlan(row, false))}
         </div>}

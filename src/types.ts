@@ -168,7 +168,14 @@ export type GoalCategory = 'Financial' | 'Fitness' | 'Career' | 'Education' | 'P
 export type PriorityLevel = 'Low' | 'Medium' | 'High' | 'Urgent';
 export type GoalStatus = 'In Progress' | 'Completed' | 'Paused';
 
+export interface GoalProgressEntry {
+  at: string;
+  value: number;
+  unit?: string;
+}
+
 export interface Goal {
+  progressHistory?: GoalProgressEntry[];
   id: string;
   title: string;
   description?: string;
