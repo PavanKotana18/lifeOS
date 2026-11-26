@@ -93,6 +93,19 @@
 .transaction-icon.is-transfer { color: var(--transfer, var(--chart-2)); }
 .scheduled-row-icon { color: var(--commitment, var(--warning)); }
 
+/* Let the existing modal lifecycle retain focus and Android Back ownership. */
+@keyframes busydoo-panel-enter {
+  from { opacity: .76; transform: translate3d(0,.5rem,0); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :where(dialog.transaction-detail-screen, dialog.money-period-dialog, dialog[data-activity-filters], dialog[data-plan-filters], dialog[data-contextual-info])[open] {
+    animation: busydoo-panel-enter var(--motion-panel, 190ms) var(--busy-ease) both;
+  }
+  .alive-doodle[data-animate="true"] .alive-doodle-ink {
+    animation-timing-function: var(--busy-ease);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .busydoo-wordmark, .busydoo-wordmark path, .lifeos-launch-caption { animation: none !important; transform: none; opacity: 1; }
 }

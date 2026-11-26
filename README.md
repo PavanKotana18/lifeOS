@@ -2,6 +2,10 @@
 
 **Life, in one place.**
 
+The BusyDoo default uses Busy Black, Doo Lime, and white. The existing themes and custom accents are available under **Profile ? Appearance**. Open **Profile ? About BusyDoo** to replay the wordmark. The wordmark is hand-drawn in [LifeOSBrand.tsx](src/components/LifeOSBrand.tsx), and the bundled Inter font is covered by the [SIL Open Font License](src/assets/fonts/OFL.txt).
+
+Existing installations and backups retain their LifeOS package, database, recovery, and backup identifiers. The Standard app stays independent of the Private SMS experiment.
+
 BusyDoo is an Android personal life-management application built with React,
 TypeScript, Vite and Capacitor.
 
