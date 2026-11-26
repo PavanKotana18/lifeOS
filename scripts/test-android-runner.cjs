@@ -33,7 +33,7 @@ const declaredTests = fs.readdirSync(pathToAndroidTests)
   });
 // Timed and denied-access scenarios run with explicit exact-alarm state in the
 // disposable native lab. Unattended profiles keep their existing inventory.
-assert.equal(declaredTests.length, 31, 'Android test inventory changed; update the hosted expected counts deliberately');
+assert.equal(declaredTests.length, 32, 'Android test inventory changed; update the hosted expected counts deliberately');
 for (const [inventory, expectedCount, requiredTest] of [
   ['instrumentation-exclusions-api29.txt', 20, 'com.lifeos.personal.CryptoAcceptanceTest#newInstanceStartsLockedWithoutProvisioning'],
   ['instrumentation-exclusions-api34-35.txt', 26, 'com.lifeos.personal.LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView'],
@@ -50,7 +50,8 @@ for (const [inventory, expectedCount, requiredTest] of [
     'the cold-share WebView test runs on supported engines; stock API 29 exercises native compatibility and intent checks');
 }
 const visualRunner = fs.readFileSync(path.resolve(__dirname, 'run-directed-android-visual.sh'), 'utf8');
-assert.match(visualRunner, /ANDROID_EXPECTED_TESTS=1/, 'the excluded visual case has its own mandatory one-test count');
+assert.match(visualRunner, /ANDROID_EXPECTED_TESTS=2/, 'the onboarding and retained-track visual cases have their own mandatory count');
+assert.match(visualRunner, /DirectedVisualAcceptanceTest#retainedTrackNativeFrames/, 'the native frame case is exercised in the dedicated visual lane');
 assert.match(visualRunner, /DirectedVisualAcceptanceTest#packagedMandatoryOnboardingScreensAndRestart/, 'the visual runner selects the mandatory onboarding visual case');
 const compatibilityTest = fs.readFileSync(path.join(pathToAndroidTests, 'WebViewCompatibilityAcceptanceTest.java'), 'utf8');
 assert.match(compatibilityTest, /unsupportedEngineShowsNativeUpdateMessage/,

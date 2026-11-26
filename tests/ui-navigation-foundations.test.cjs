@@ -24,6 +24,7 @@ assert.equal(navigation.screenScrollKey({ tab: 'finance', financeSubtab: 'overvi
 assert.equal(navigation.screenScrollKey({ tab: 'settings', profileSection: 'appearance' }), 'settings:appearance');
 assert.equal(navigation.screenScrollKey({ tab: 'goals', goalsSubtab: 'completed' }), 'goals:completed');
 assert.equal(navigation.screenScrollKey({ tab: 'habits', habitsSubtab: 'weekly' }), 'habits:weekly');
+assert.equal(navigation.screenScrollKey({ tab: 'planner', detailKey: 'fixture' }), 'planner:fixture');
 assert.equal(navigation.readMotionDuration('170ms', 260), 170);
 assert.equal(navigation.readMotionDuration('0ms', 260), 0);
 assert.equal(navigation.readMotionDuration('invalid', 260), 260);
@@ -34,25 +35,23 @@ assert.equal(navigation.retainedScreenTransitionState(false, 'prepare'), 'inacti
 assert.equal(navigation.retainedScreenTransitionState(false, 'running'), 'inactive');
 
 const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
-assert.match(app, /<RetainedScreen active=\{activeTab === 'dashboard'\}(?! retainInactive)/, 'Today can unmount because App owns its state');
+assert.match(app, /<RetainedScreen active=\{activeTab === 'dashboard'\} retainInactive/, 'Today is retained for swipe previews');
 assert.match(app, /<RetainedScreen active=\{activeTab === 'plan'\} retainInactive/, 'Tasks retains its local filters across Plan sections and detail routes');
-assert.doesNotMatch(app, /id="screen-life"/, 'Habits and Goals no longer use a separate Life landing screen');
+assert.match(app, /retainInactive prepare=\{primaryPrepared\} id="screen-life"/, "Life is retained and prewarmed for the swipe track");
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
   'Money retains local account and planning form drafts while another tab is briefly visited');
 assert.match(app, /prefers-reduced-motion/);
 assert.match(app, /navigateTo\('planner'\)/, 'Today routes into the task destination');
 assert.match(app, /resolveBackAction/);
-assert.match(app, /window\.requestAnimationFrame\(\(\) =>[\s\S]*setTabTransition\(current => current\?\.id === id/,
-  'the incoming screen is painted in its prepared state before the transition starts');
-assert.match(app, /onTransitionEnd: \(event[\s\S]*propertyName === 'transform'[\s\S]*finishTabTransition/,
-  'the active transition settles on its own transform lifecycle event');
-assert.match(app, /duration \+ 120/, 'a bounded fallback resolves missing transition events');
-assert.match(app, /activeTransitionId\.current !== id/, 'obsolete transition callbacks cannot settle a newer navigation');
-assert.match(app, /transitionToTab\(tab, direction\)/, 'tap and swipe destinations share one transition path');
-const transitionHandler = app.match(/const transitionToTab = \(tab: MainTab[\s\S]*?\n  \};/);
-assert.ok(transitionHandler, 'tab transition has one owner');
-assert.ok(transitionHandler[0].indexOf("removeAttribute('data-gesture-dragging')") < transitionHandler[0].indexOf('if (reducedMotion)'),
-  'reduced-motion navigation clears the outgoing drag state before settling');
+const track = fs.readFileSync(path.join(__dirname, '..', 'src', 'hooks', 'useAliveNavigation.ts'), 'utf8');
+assert.match(track, /useLayoutEffect\(\(\) => \{\s*if \(!tabTransition\) return;/,
+  'the track animates during the incoming route commit before paint');
+assert.match(track, /Promise\.all\(animations\.map\(animation => animation\.finished\)\)\.then\(finish, finish\)/,
+  'settles when synchronized animations finish or reject');
+assert.match(track, /if \(!animations\.length\) \{ cancel\(\); return; \}/, 'unsupported animation falls back to an immediate route');
+assert.match(track, /transition\.current\?\.id !== flight\.id/, 'obsolete transitions cannot settle newer navigation');
+assert.match(app, /transitionToTab\(tab, direction, velocity,/, 'tap and swipe destinations share one transition path');
+assert.match(track, /clearDrag\(\);\s*cancel\(\);[\s\S]*?if \(reduced \|\| !primaryTravel/, 'reduced-motion navigation clears the outgoing drag state');
 assert.match(app, /axis === 'horizontal'.*setPointerCapture\(event\.pointerId\)/s,
   'pointer capture starts only after horizontal intent so an ordinary tap keeps its native click');
 assert.match(app, /updatePrimaryGesture\(start, event\.pointerId/);
@@ -73,18 +72,18 @@ assert.match(app, /textarea,select,\[contenteditable="true"\].*input:not\(\[type
   'text entry, native pickers and sliders do not hand their interaction to tab navigation');
 assert.match(app, /if \(activeTouchPointers\.current\.size > 1\)/, 'multi-touch cancels the current gesture');
 assert.match(app, /if \(start\.viewportWidth !== window\.innerWidth\)/, 'a resized viewport cancels the active gesture');
-assert.match(app, /if \(!isLocked\) return;[\s\S]*cancelPrimaryGesture\('app-locked'\)[\s\S]*setTabTransition\(null\)/, 'locking cancels active gestures and settles transitions before private screens are removed');
+assert.match(app, /if \(!isLocked\) return;[\s\S]*cancelPrimaryGesture\('app-locked'\)[\s\S]*cancelTrack\(\)/, 'locking cancels active gestures and settles transitions before private screens are removed');
 assert.match(app, /screenScrollKey\(/);
 assert.match(app, /rememberActiveScroll\(\)/);
 assert.match(app, /pendingNotification\.current/, 'notification task routing remains connected');
 
 const retained = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'RetainedScreen.tsx'), 'utf8');
-assert.match(retained, /if \(active && !visited\) setVisited\(true\)/);
-assert.match(retained, /if \(!active && \(!retainInactive \|\| !visited\)\) return null/);
-assert.match(retained, /hidden=\{!active\}/, 'only active content is painted; no outgoing ghost layer remains');
+assert.match(retained, /visited\.current = true/);
+assert.match(retained, /if \(!active && !outgoing && !refresh && \(!retainInactive \|\| !visited\.current\)\) return null/);
+assert.match(retained, /hidden=\{!active && !outgoing\}/, 'only the current and moving outgoing surfaces can be painted');
 assert.match(retained, /aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/,
-  'inactive retained screens are removed from accessibility and focus navigation');
-assert.match(retained, /data-transition-state=\{transitionState\}/);
+  'inactive previews and outgoing content are removed from accessibility and focus navigation');
+assert.match(retained, /data-transition-state=\{outgoing \? "outgoing" : transitionState\}/);
 assert.doesNotMatch(retained, /exiting|exit-prepare|onExitTransitionEnd/);
 
 const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.css'), 'utf8');
@@ -92,10 +91,10 @@ assert.match(css, /--motion-tab: 190ms/);
 assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/);
 assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
-assert.match(css, /enter-prepare[^}]*opacity: \.92; transform: translate3d\(0, 4px, 0\)/);
-assert.match(css, /data-transition-direction="left"\]\[data-transition-state="enter-prepare"\][^}]*translate3d\(16px, 0, 0\)/);
-assert.match(css, /data-transition-state="entering"[^}]*transition: opacity var\(--motion-tab\)[^}]*transform var\(--motion-tab\)/);
-assert.match(css, /\.ui-tab-screen\[data-gesture-dragging="true"\][^}]*transition: none !important[^}]*translate3d\(var\(--gesture-x/);
+assert.match(css, /\.ui-tab-viewport[^}]*overflow-x: clip; overflow-y: visible/);
+assert.match(css, /\.ui-tab-screen-stack\[data-track-dragging\][^}]*will-change: transform/);
+assert.match(css, /\[data-gesture-preview\]\[hidden\][^}]*pointer-events: none/);
+assert.doesNotMatch(css, /\.ui-tab-screen[^}]*enter-prepare[^}]*opacity: \.92/);
 assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 assert.match(css, /\.app-bottom-nav[^\n]*safe-area-inset-bottom/);
 

@@ -19,12 +19,15 @@ import java.io.File;
 import java.io.FileOutputStream;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
 /** Fresh emulator only, no private writes or authentication bypass. */
 @RunWith(AndroidJUnit4.class)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class DirectedVisualAcceptanceTest {
     private ActivityScenario<MainActivity> scenario;
     private File output;
@@ -281,7 +284,10 @@ public class DirectedVisualAcceptanceTest {
             }
         } finally { scenario.onActivity(a -> a.getBridge().getWebView().getSettings().setTextZoom(originalZoom[0])); }
     }
-    private void swipeFromContent(String selector,String destination,boolean left,String alignment) throws Exception {
+    private void swipeFromContent(String selector, String destination, boolean left, String alignment) throws Exception {
+        swipeFromContent(selector, destination, left, alignment, null);
+    }
+    private void swipeFromContent(String selector, String destination, boolean left, String alignment, String intermediate) throws Exception {
         js("document.querySelector("+JSONObject.quote(selector)+").scrollIntoView({block:"+JSONObject.quote(alignment)+",behavior:'instant'})");
         if("end".equals(alignment))js("window.scrollBy({top:document.querySelector('.app-bottom-nav').getBoundingClientRect().height+16,behavior:'instant'})");
         JSONArray p=new JSONArray(js("(()=>{const r=document.querySelector("+JSONObject.quote(selector)+").getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2,innerWidth]})()"));
@@ -292,7 +298,10 @@ public class DirectedVisualAcceptanceTest {
         float travel=Math.min(110f,room)*scale*(left?-1:1);
         UiAutomation auto=InstrumentationRegistry.getInstrumentation().getUiAutomation();long down=SystemClock.uptimeMillis();
         MotionEvent e=MotionEvent.obtain(down,down,MotionEvent.ACTION_DOWN,x,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
-        for(int i=1;i<=6;i++) { long now=SystemClock.uptimeMillis();e=MotionEvent.obtain(down,now,MotionEvent.ACTION_MOVE,x+travel*i/6f,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();if(i==3&&selector.equals(".today-focus h3"))capture("swipe-intermediate");Thread.sleep(30); }
+        for(int i=1;i<=6;i++) { long now=SystemClock.uptimeMillis();e=MotionEvent.obtain(down,now,MotionEvent.ACTION_MOVE,x+travel*i/6f,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();if(i==3&&selector.equals("#primary-route-title")) {
+            until("(()=>{const a=document.querySelector('[data-gesture-dragging=true]'),b=document.querySelector('[data-gesture-preview=true]');return !!(a&&b&&b.inert&&Math.abs(a.getBoundingClientRect().right-b.getBoundingClientRect().left)<2)})()");
+            if (intermediate != null) capture(intermediate);
+        }Thread.sleep(30); }
         e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),MotionEvent.ACTION_UP,x+travel,y,0);e.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);assertTrue(auto.injectInputEvent(e,true));e.recycle();
         until("document.querySelector('[data-tab="+destination+"]')?.getAttribute('aria-current')==='page'");
         assertEquals("false",js("!!document.querySelector('form[role=dialog]')"));
@@ -321,6 +330,113 @@ public class DirectedVisualAcceptanceTest {
                 assertFalse("Visual-only screenshots must not provision a key",key.getBoolean("keyProvisioned"));
                 scenario.onActivity(a->assertTrue("Onboarding remains screenshot protected",(a.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE)!=0));
             } catch(Exception | AssertionError failure) { captureFailureBeforeTeardown(failure); throw failure; }
+        }
+    }
+
+    @Test public void retainedTrackNativeFrames() throws Exception {
+        output = new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalFilesDir(null), "LifeOS-directed-visual");
+        assertTrue(output.isDirectory() || output.mkdirs());
+        try (ActivityScenario<MainActivity> launched = ActivityScenario.launch(MainActivity.class)) {
+            scenario = launched;
+            WebViewTestSupport.awaitReactRoot(scenario);
+            String today = "!!document.querySelector('#screen-dashboard')";
+            String nickname = "!!document.querySelector('input[autocomplete=nickname]')";
+            String notifications = "document.querySelector('.initial-setup h1')?.textContent==='Notifications'";
+            String protection = "document.querySelector('.initial-setup h1')?.textContent==='Biometric setup'";
+            String recovery = "document.querySelector('.initial-setup h1')?.textContent==='Recovery setup'";
+            // The React root can be present before native startup has selected
+            // a screen. Wait for an actionable public stage after recreation.
+            until(today + " || " + nickname + " || " + notifications + " || " + protection + " || " + recovery);
+            if ("true".equals(js(nickname))) {
+                js("(()=>{const e=document.querySelector('input[autocomplete=nickname]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Synthetic navigation');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+                click("Continue");
+                until(notifications);
+            }
+            if ("true".equals(js(notifications))) {
+                click("Not now");
+                click("Continue");
+                until(protection);
+            }
+            if ("true".equals(js(protection))) {
+                click("Not now");
+                until(recovery);
+            }
+            if ("true".equals(js(recovery))) {
+                click("Review deferral");
+                click("Do this later");
+                until(today);
+            }
+            until("!!document.querySelector('#screen-life')");
+            assertFalse(new JSONObject(WebViewTestSupport.evaluateAsync(scenario,
+                    "window.Capacitor.Plugins.LifeOSCrypto.getKeyState()")).getBoolean("keyProvisioned"));
+
+            android.os.HandlerThread collector = new android.os.HandlerThread("retained-track-frames");
+            collector.start();
+            JSONArray report = new JSONArray();
+            java.util.List<long[]> frames = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+            java.util.concurrent.atomic.AtomicInteger dropped = new java.util.concurrent.atomic.AtomicInteger();
+            android.view.Window.OnFrameMetricsAvailableListener listener = (window, metrics, missed) -> {
+                long total = metrics.getMetric(android.view.FrameMetrics.TOTAL_DURATION);
+                if (total > 0) frames.add(new long[]{metrics.getMetric(android.view.FrameMetrics.INTENDED_VSYNC_TIMESTAMP),
+                        metrics.getMetric(android.view.FrameMetrics.VSYNC_TIMESTAMP), total});
+                dropped.addAndGet(missed);
+            };
+            scenario.onActivity(activity -> activity.getWindow().addOnFrameMetricsAvailableListener(listener,
+                    new android.os.Handler(collector.getLooper())));
+            try {
+                for (String theme : new String[]{"light", "dark"}) {
+                    tab("dashboard");
+                    click("Open profile and settings");
+                    until("!!document.querySelector('#screen-settings')");
+                    scenario.onActivity(activity -> assertTrue("Profile must be protected before presentation",
+                            (activity.getWindow().getAttributes().flags & WindowManager.LayoutParams.FLAG_SECURE) != 0));
+                    click("Appearance");
+                    click("Themes");
+                    click(theme.equals("dark") ? "Dark" : "Light");
+                    until("document.documentElement.classList.contains('dark')===" + theme.equals("dark"));
+                    for (int depth = 0; depth < 3; depth++) {
+                        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK);
+                        Thread.sleep(150);
+                    }
+                    until("!document.querySelector('#screen-settings')");
+                    tab("dashboard");
+                    until("!document.querySelector('[data-transition-state=outgoing]')");
+                    for (String destination : new String[]{"finance", "plan", "life"}) {
+                        frames.clear();
+                        dropped.set(0);
+                        js("(()=>{const times=[];window.__retainedFrames=times;const frame=t=>{times.push(t);if(times.length<72)requestAnimationFrame(frame)};requestAnimationFrame(frame)})()");
+                        swipeFromContent("#primary-route-title", destination, true, "start");
+                        until("!document.querySelector('[data-transition-state=outgoing],[data-track-dragging]')");
+                        JSONObject item = new JSONObject();
+                        item.put("theme", theme);
+                        item.put("destination", destination);
+                        JSONArray nativeFrames = new JSONArray();
+                        synchronized (frames) {
+                            for (long[] frame : frames) {
+                                nativeFrames.put(new JSONArray().put(frame[0]).put(frame[1]).put(frame[2]));
+                            }
+                        }
+                        item.put("androidWindowFieldsNs", new JSONArray().put("intendedVsync").put("vsync").put("totalDuration"));
+                        item.put("androidWindowFrames", nativeFrames);
+                        item.put("androidWindowListenerDrops", dropped.get());
+                        item.put("webViewAnimationFrameTimestampsMs", new JSONArray(js("window.__retainedFrames")));
+                        assertTrue("Android Window did not report frame metrics for " + destination,
+                                nativeFrames.length() > 0);
+                        assertTrue("WebView did not report frame timestamps for " + destination,
+                                item.getJSONArray("webViewAnimationFrameTimestampsMs").length() >= 5);
+                        report.put(item);
+                    }
+                    tab("dashboard");
+                    until("!document.querySelector('[data-transition-state=outgoing]')");
+                    swipeFromContent("#primary-route-title", "finance", true, "start", "retained-track-" + theme + "-intermediate");
+                }
+            } finally {
+                scenario.onActivity(activity -> activity.getWindow().removeOnFrameMetricsAvailableListener(listener));
+                collector.quitSafely();
+                try (FileOutputStream file = new FileOutputStream(new File(output, "retained-track-native-frame-metrics.json"))) {
+                    file.write(report.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                }
+            }
         }
     }
 

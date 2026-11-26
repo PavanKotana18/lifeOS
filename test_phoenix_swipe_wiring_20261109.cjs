@@ -22,9 +22,9 @@ assert.match(pointerMove[1], /axis === 'horizontal'.*setPointerCapture/s, 'captu
 assert.match(app, /window\.addEventListener\('pointermove',[\s\S]*window\.addEventListener\('pointerup',[\s\S]*window\.addEventListener\('pointercancel',[\s\S]*window\.addEventListener\('lostpointercapture'/,
   'pointer ownership survives leaving the content surface and handles cancellation/lost capture');
 assert.match(app, /onClickCapture=\{handleContentClickCapture\}/, 'a horizontal drag suppresses only its pointer-generated control click');
-assert.match(app, /navigateTo\(target, deltaX < 0 \? 'left' : 'right'\)/, 'a committed drag updates navigation without an intermediate reset');
+assert.match(app, /flushSync\(\(\) => navigateTo\(target, deltaX < 0 \? 'left' : 'right', velocity\)\)/, 'a committed drag updates navigation without an intermediate reset');
 assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/, 'vertical scroll and pinch remain browser-owned');
-assert.match(retained, /hidden=\{!active\}[\s\S]*aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/,
+assert.match(retained, /hidden=\{!active && !outgoing\}[\s\S]*aria-hidden=\{!active\}[\s\S]*toggleAttribute\('inert', !active\)/,
   'inactive retained destinations are hidden from touch, focus and assistive technology');
 assert.match(css, /prefers-reduced-motion: reduce/, 'reduced-motion rules remain present');
 

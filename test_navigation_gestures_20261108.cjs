@@ -11,9 +11,10 @@ const {
 const sample = (overrides = {}) => ({ deltaX: 100, deltaY: 0, durationMs: 240, startedAtSystemEdge: false, startedInHorizontalControl: false, startedInHardExcludedControl: false, enabled: true, ...overrides });
 assert.equal(resolvePrimarySwipe('dashboard', sample({ deltaX: -120 })), 'finance');
 assert.equal(resolvePrimarySwipe('finance', sample({ deltaX: 120 })), 'dashboard');
-assert.equal(resolvePrimarySwipe('plan', sample({ deltaX: -120 })), null);
-assert.equal(resolvePrimarySwipe('habits', sample({ deltaX: 120 })), 'finance', 'Plan children swipe with their primary destination');
+assert.equal(resolvePrimarySwipe('plan', sample({ deltaX: -120 })), 'life');
+assert.equal(resolvePrimarySwipe('habits', sample({ deltaX: 120 })), 'plan', 'Life children swipe with their primary destination');
 assert.equal(resolvePrimarySwipe('dashboard', sample({ deltaX: 120 })), null, 'first destination does not wrap');
+assert.equal(resolvePrimarySwipe('life', sample({ deltaX: -120 })), null, 'last destination does not wrap');
 assert.equal(resolvePrimarySwipe('planner', sample({ deltaX: 120 })), 'finance', 'child routes resolve through their primary destination');
 assert.equal(resolvePrimarySwipe('finance', sample({ deltaX: -90, deltaY: 64 })), null, 'diagonal scroll is not captured');
 assert.equal(resolvePrimarySwipe('finance', sample({ deltaX: -20, deltaY: 90 })), null, 'vertical scrolling is not captured');
@@ -63,11 +64,11 @@ const dragged = updatePrimaryGesture(started, 7, 120, 308);
 assert.equal(dragged.accepted, true, 'horizontal intent is followed by the active screen');
 assert.equal(dragged.intent, 'horizontal', 'intent is exposed separately from a tap/pending state');
 assert.equal(dragged.session.axis, 'horizontal');
-assert.equal(dragged.session.latestOffsetX, -92, 'the active screen follows near finger speed');
+assert.equal(dragged.session.latestOffsetX, -100, 'the track follows the finger before edge resistance');
 assert.equal(shouldSuppressPrimaryGestureClick(dragged.session), true,
   'a button click is suppressed only after horizontal ownership is established');
 const longDrag = updatePrimaryGesture(started, 7, -1000, 300);
-assert.equal(longDrag.session.latestOffsetX, -168, 'drag resistance is bounded by the current logical viewport width');
+assert.equal(longDrag.session.latestOffsetX, -400, 'gesture offsets are bounded by the current logical viewport width');
 assert.equal(resolvePrimaryGestureEnd('finance', dragged.session, 7, 120, 308, 1120, true), 'plan');
 assert.equal(resolvePrimaryGestureEnd('finance', dragged.session, 8, 120, 308, 1120, true), null,
   'pointer-up from another touch cannot commit navigation');
