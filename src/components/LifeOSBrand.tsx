@@ -16,12 +16,3 @@ export function LifeOSBrand({ className = '', markClassName = '' }: { className?
     <span className="lifeos-brand-word">{APP_NAME}</span>
   </span>;
 }
-
-export function LifeOSLaunchReveal({ reducedMotion = false }: { reducedMotion?: boolean }) {
-  return <div className={`lifeos-launch-reveal${reducedMotion ? ' is-reduced-motion' : ''}`} role="status" aria-label={`${APP_NAME} is opening`} aria-live="polite">
-    <div className="lifeos-launch-lockup">
-      <div className="lifeos-launch-mark"><LifeOSMark /></div>
-      <div className="lifeos-launch-word">{APP_NAME}</div>
-    </div>
-  </div>;
-}
