@@ -21,12 +21,6 @@ jobs:
           mkdir -p candidates evidence
           download() {
             mkdir -p "candidates/$1"
-            for attempt in {1..12}; do
-              if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$2/artifacts" --jq '.artifacts[].name' | rg -Fxq "$3"; then
-                break
-              fi
-              sleep 30
-            done
             gh run download "$2" -n "$3" -D "candidates/$1"
             find "candidates/$1" -name '*.apk' -print -exec sha256sum {} \; | tee -a evidence/apks.txt
           }
