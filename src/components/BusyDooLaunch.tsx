@@ -40,6 +40,7 @@ export default function BusyDooLaunch({ cinematic, releaseNativeSplash, onFinish
     let frame = 0;
     let timer = 0;
     let watchdog = 0;
+    let released = false;
     const exit = () => {
       if (disposed) return;
       if (reduced) { complete.current(); return; }
@@ -71,14 +72,16 @@ export default function BusyDooLaunch({ cinematic, releaseNativeSplash, onFinish
     if (releaseNativeSplash) {
       // Preload the matching image while the native cover still owns the screen.
       const release = () => {
-        if (disposed) return;
+        if (disposed || released) return;
+        released = true;
         void releaseNativeSplash().catch(() => {});
-        timer = window.setTimeout(play, NATIVE_HANDOFF_MS);
+        if (cinematic && !reduced) timer = window.setTimeout(play, NATIVE_HANDOFF_MS);
+        else play();
       };
       const image = mark.current;
       const show = () => {
         window.clearTimeout(watchdog);
-        if (!timer) release();
+        release();
       };
       watchdog = window.setTimeout(show, 350);
       if (image?.decode) void image.decode().then(show, show);
