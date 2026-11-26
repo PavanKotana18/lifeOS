@@ -1,5 +1,5 @@
-import { useLayoutEffect, useRef } from 'react';
-import { motion } from 'motion/react';
+﻿import { useLayoutEffect, useRef } from 'react';
+import * as m from 'motion/react-m';
 import { Check, Info, X } from 'lucide-react';
 
 export type SnackbarNotice = { message: string; type: 'info' | 'success' | 'danger' };
@@ -41,12 +41,12 @@ export default function Snackbar({ notice, onDismiss, reduced }: {
 
   const Icon = notice.type === 'success' ? Check : Info;
   return <div className="ui-toast lifeos-snackbar" ref={position}>
-    <motion.div className="snackbar-surface" data-tone={notice.type}
+    <m.div className="snackbar-surface" data-tone={notice.type}
       initial={reduced ? false : { y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
       exit={reduced ? { opacity: 0 } : { y: 8, opacity: 0 }} transition={{ duration: reduced ? 0 : .16 }}>
       <Icon size={17} aria-hidden="true" />
       <span role={notice.type === 'danger' ? 'alert' : 'status'}>{notice.message}</span>
       <button type="button" className="snackbar-close" onClick={onDismiss} aria-label="Dismiss message"><X size={18} aria-hidden="true" /></button>
-    </motion.div>
+    </m.div>
   </div>;
 }

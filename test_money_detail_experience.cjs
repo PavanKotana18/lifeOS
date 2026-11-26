@@ -17,8 +17,8 @@ for(const section of ['transactions','accounts','budgets','savings','planning','
  let back=0; const props={section,month:'2026-11',onMonthChange(){},onBack:()=>back++};
  const html=renderToStaticMarkup(React.createElement(Header,props)); assert.match(html,/Money overview/);assert.match(html,/<h2/);
  const tree=Header(props);const walk=(n,f)=>{if(!n)return;if(Array.isArray(n))return n.forEach(x=>walk(x,f));if(typeof n==='object'){f(n);walk(n.props?.children,f);}};
- walk(tree,node=>{if(node.type==='button')node.props.onClick();});assert.equal(back,1);
- if(section==='planning')assert.match(html,/Scheduled/);if(section==='analytics')assert.match(html,/Insights/);
+ walk(tree,node=>{if(node.props?.back)node.props.back.onClick();});assert.equal(back,1);
+ if(section==='planning')assert.match(html,/Schedule/);if(section==='analytics')assert.match(html,/Insights/);
 }
 const Period = require('./src/components/MoneyPeriod.tsx').default;
 const period = renderToStaticMarkup(React.createElement(Period, { label: 'Money', month: '2026-11', onChange() {} }));

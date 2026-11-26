@@ -5,6 +5,7 @@ import MoneyPeriod from './MoneyPeriod';
 import InfoTip from './InfoTip';
 
 type Props = {
+  showHeader?: boolean;
   month: string;
   monthly?: boolean;
   onMonthly?: () => void;
@@ -42,7 +43,7 @@ const moneyDestinations = [
   { id: 'planning', label: 'Scheduled', icon: CalendarDays },
 ] as const;
 
-export default function MoneyHome({ month, monthly = false, onMonthly, monthSavings, expenseChange, exactCashFlow, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
+export default function MoneyHome({ month, monthly = false, showHeader = true, onMonthly, monthSavings, expenseChange, exactCashFlow, income, expenses, netCashFlow, budgetRows, excludedCurrencyCount = 0, transactions, formatMoney, formatDate, formatTime, onMonthChange,
   onAddTransaction, onTransactions, onBudgets, onSavings, onAnalytics, onPlanning, onAccounts, legacyCurrency, locale, onEditTransaction }: Props) {
   const exact = (value: string | undefined, fallback: number) => value === undefined ? formatMoney(fallback) : formatMinorUnits(BigInt(value), legacyCurrency, locale);
   const cashIncome = exact(exactCashFlow?.[0], income);
@@ -51,7 +52,7 @@ export default function MoneyHome({ month, monthly = false, onMonthly, monthSavi
   const destinationActions = { transactions: onTransactions, accounts: onAccounts, budgets: onBudgets, savings: onSavings, analytics: onAnalytics, planning: onPlanning };
 
   return <div className="money-home" data-testid="money-home">
-    {!monthly && <header className="money-home-heading">
+    {!monthly && showHeader && <header className="money-home-heading">
       <MoneyPeriod label="Money" month={month} onChange={onMonthChange} />
     </header>}
 

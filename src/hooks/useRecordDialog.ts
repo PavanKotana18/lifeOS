@@ -20,6 +20,9 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
     const findDialog = () => { const element = document.getElementById(dialogId); return element?.getClientRects().length && !element.closest('[inert]') ? element : null; };
     const dialog = findDialog();
     if (!dialog) return;
+    const background = Array.from(document.querySelectorAll?.<HTMLElement>('[data-record-background]') ?? [])
+      .filter(element => !element.contains(dialog))
+      .map(element => ({ element, inert: element.inert, hidden: element.getAttribute('aria-hidden') }));
     const viewport = window.visualViewport;
     const updateViewport = () => {
       document.documentElement.style.setProperty('--sheet-viewport-height', `${viewport?.height ?? window.innerHeight}px`);
@@ -42,7 +45,12 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     };
     if (!dialog.contains(document.activeElement)) {
-      dialog.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled)')?.focus({ preventScroll: true });
+      const target = dialog.matches?.('[data-composer-focus]') ? dialog : dialog.querySelector<HTMLElement>('input:not(:disabled),select:not(:disabled),textarea:not(:disabled),button:not(:disabled)');
+      target?.focus({ preventScroll: true });
+    }
+    for (const { element } of background) {
+      element.inert = true;
+      element.setAttribute('aria-hidden', 'true');
     }
     updateViewport();
     const actions = dialog.querySelector<HTMLElement>('.ui-form-actions');
@@ -59,6 +67,11 @@ export function useRecordDialog(open: boolean, dismiss: () => void, dialogId: st
       document.removeEventListener('keydown', keydown);
       document.documentElement.style.removeProperty('--sheet-viewport-height');
       document.documentElement.style.removeProperty('--sheet-viewport-top');
+      for (const { element, inert, hidden } of background) {
+        element.inert = inert;
+        if (hidden === null) element.removeAttribute('aria-hidden');
+        else element.setAttribute('aria-hidden', hidden);
+      }
       if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, [open, dialogId]);

@@ -2,7 +2,6 @@ const assert = require('node:assert/strict');
 require('./scripts/register-ts-test-loader.cjs');
 const { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveInitialVisualTheme } = require('./src/services/systemAppearance.ts');
 const themeCatalog = require('./src/services/themeCatalog.ts');
-const busydooBrand = require('./src/services/busydooBrand.ts');
 
 (async () => {
   let checks = 0;
@@ -71,8 +70,8 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
     './styles/four-tab-transformation.css': {},
     './styles/interface-motion.css': {},
     './styles/planning-life-transformation.css': {},
-    './styles/busydoo.css': {},
-    './services/busydooBrand': busydooBrand,
+    './styles/approved-composers.css': {},
+    './styles/feather-expressive.css': {},
   };
   vm.runInNewContext(mainCode, {
     exports: {},

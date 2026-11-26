@@ -1,8 +1,15 @@
-import { useId, useState, type ReactNode } from 'react';
-import { Bell, ChevronLeft, ChevronRight, Palette, SlidersHorizontal, Shield, UserRound, Database, Info } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wallet } from 'lucide-react';
+import { FeatherHeader } from './FeatherHeader';
 import type { LucideIcon } from 'lucide-react';
 
-export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses';
+export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses' | 'money-imports';
+
+export const PROFILE_TITLES: Record<ProfileSection, string> = {
+  home: 'Profile', appearance: 'Appearance', preferences: 'Preferences', notifications: 'Notifications',
+  privacy: 'Privacy & security', data: 'Backup & Restore', about: 'About BusyDoo', developer: 'Developer tools',
+  themes: 'Themes', accent: 'Accent color', motion: 'Motion', 'app-lock': 'App lock', recovery: 'Recovery', licenses: 'Open-source licenses', 'money-imports': 'Money & Imports',
+};
 
 export function profileParent(section: ProfileSection): ProfileSection {
   if (section === 'themes' || section === 'accent' || section === 'motion') return 'appearance';
@@ -19,24 +26,17 @@ const profileLinks = [
   { section: 'appearance', title: 'Appearance', detail: 'Theme, color and display mode', Icon: Palette },
   { section: 'preferences', title: 'Preferences', detail: 'Currency, dates, time and units', Icon: SlidersHorizontal },
   { section: 'notifications', title: 'Notifications', detail: 'Choose which reminders BusyDoo sends', Icon: Bell },
+  { section: 'money-imports', title: 'Money & Imports', detail: 'Review a pasted or shared bank alert', Icon: Wallet },
   { section: 'privacy', title: 'Privacy & Security', detail: 'App lock and recovery status', Icon: Shield },
   { section: 'data', title: 'Backup & Restore', detail: 'Encrypted backup and local records', Icon: Database },
   { section: 'about', title: 'About', detail: 'Version and privacy information', Icon: Info },
 ] as const;
 
-export function ProfileAvatar({ photo, initial }: { photo?: string | null; initial: string }) {
-  return photo ? <img className="profile-avatar-image" src={photo} alt="" draggable={false} />
-    : initial || <UserRound size={18} aria-hidden="true" />;
+export function ProfileAvatar({ photo }: { photo?: string | null; initial?: string }) {
+  return photo ? <img className="profile-avatar-image" src={photo} alt="" draggable={false} /> : <span className="profile-avatar-placeholder" aria-hidden="true"><UserRound size="56%" strokeWidth={1.55} /></span>;
 }
 
-type ProfilePhotoControls = {
-  photo?: string | null;
-  photoBusy?: boolean;
-  photoError?: string;
-  onPhotoChange?: (remove?: boolean) => Promise<void>;
-};
-
-export function ProfileIdentityCard({ name, initial, onChange, photo, photoBusy, photoError, onPhotoChange }: { name: string; initial: string; onChange: (name: string) => Promise<void> } & ProfilePhotoControls) {
+export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoError, onPhotoChange, onChange }: { name: string; initial: string; photo?: string | null; photoBusy?: boolean; photoError?: string; onPhotoChange?: (remove?: boolean) => Promise<void>; onChange: (name: string) => Promise<void> }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
@@ -48,9 +48,9 @@ export function ProfileIdentityCard({ name, initial, onChange, photo, photoBusy,
       {!editing && <button type="button" className="min-h-11 text-sm lifeos-accent-text" onClick={() => { setDraft(name); setEditing(true); }}>Edit name</button>}
     </div>
     {onPhotoChange && <div className="profile-photo-actions" aria-busy={photoBusy}>
-      <button type="button" disabled={photoBusy} onClick={() => void onPhotoChange()}>{photo ? 'Replace photo' : 'Choose photo'}</button>
+      <button type="button" disabled={photoBusy} onClick={() => void onPhotoChange()}>{photo ? "Replace photo" : "Choose photo"}</button>
       {photo && <button type="button" disabled={photoBusy} onClick={() => void onPhotoChange(true)}>Remove photo</button>}
-      {photoBusy && <span role="status" className="text-xs text-secondary">Updating photo?</span>}
+      {photoBusy && <span role="status" className="text-secondary text-xs">Updating photo?</span>}
     </div>}
     {photoError && <p role="alert" className="mt-1 text-xs text-[var(--danger)]">{photoError}</p>}
     {editing && <form data-no-tab-swipe className="mt-3 space-y-2" onSubmit={async event => {
@@ -67,52 +67,44 @@ export function ProfileIdentityCard({ name, initial, onChange, photo, photoBusy,
   </section>;
 }
 
-export function ProfileNavigationRow({ title, detail, icon: Icon, onClick, value }: { title: string; detail: string; value?: string; icon: LucideIcon; onClick: () => void }) {
-  const description = useId();
-  return <button type="button" onClick={onClick} className="profile-navigation-row" aria-label={title} aria-describedby={description}>
-    <span className="profile-navigation-icon" aria-hidden="true"><Icon size={19} strokeWidth={1.8} /></span>
-    <span className="profile-navigation-copy">
-      <span className="profile-navigation-title">{title}</span>
-      <span id={description} className="profile-navigation-description">{detail}{value && <strong>{value}</strong>}</span>
-    </span>
-    <ChevronRight className="profile-navigation-chevron" size={15} aria-hidden="true" />
+export function ProfileNavigationRow({ title, icon: Icon, onClick, value }: { title: string; detail: string; value?: string; icon: LucideIcon; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="profile-navigation-row lifeos-panel group flex min-h-14 w-full items-center gap-3 border-b px-3 py-2 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)] active:scale-[.995]">
+    <span className="lifeos-tint flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lifeos-accent-text" aria-hidden="true"><Icon size={17} strokeWidth={1.9} /></span>
+    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span>{value && <span className="block text-xs text-secondary">{value}</span>}</span>
   </button>;
 }
 
-export function ProfileHome({ name, initial, onNameChange, onOpen, onBack, embedded = false, developerAllowed = false, securityStatus, ...photoControls }: {
+export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPhotoChange, onNameChange, onOpen, onBack, sharedHeader = false, developerAllowed = false, securityStatus }: {
   name: string;
   initial: string;
+  photo?: string | null;
+  photoBusy?: boolean;
+  photoError?: string;
+  onPhotoChange?: (remove?: boolean) => Promise<void>;
   onNameChange: (name: string) => Promise<void>;
   onOpen: (section: typeof profileLinks[number]['section'] | 'developer') => void;
   onBack: () => void;
-  embedded?: boolean;
+  sharedHeader?: boolean;
   developerAllowed?: boolean;
   securityStatus?: string;
-} & ProfilePhotoControls) {
+}) {
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
-    {!embedded && <ProfilePageHeader title="Profile" backLabel="Back from profile" onBack={onBack} />}
-    <ProfileIdentityCard name={name} initial={initial} onChange={onNameChange} {...photoControls} />
+    {!sharedHeader && <FeatherHeader title="Profile" heading="h1" back={{ label: 'Back from profile', onClick: onBack }} />}
+    <ProfileIdentityCard name={name} initial={initial} photo={photo} photoBusy={photoBusy} photoError={photoError} onPhotoChange={onPhotoChange} onChange={onNameChange} />
     <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
       {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>
-        <section key={index} aria-label={index === 0 ? "Personal preferences" : "Security and information"} className="profile-link-group">
+        <section key={index} aria-label={index === 0 ? "Personal preferences" : "Security and information"} className="profile-link-group lifeos-panel rounded-2xl border">
           {group.map(({ section, title, detail, Icon }) => <ProfileNavigationRow key={section} title={title} detail={detail} icon={Icon}
             value={section === "privacy" ? securityStatus : undefined} onClick={() => onOpen(section)} />)}
         </section>)}
-      {developerAllowed && <section className="profile-link-group"><ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} /></section>}
+      {developerAllowed && <section className="profile-link-group lifeos-panel rounded-2xl border"><ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} /></section>}
     </nav>
   </div>;
 }
 
-export function ProfileSubpage({ title, onBack, backLabel = 'Profile', children }: { title: string; description?: string; backLabel?: string; onBack: () => void; children: ReactNode }) {
+export function ProfileSubpage({ title, onBack, backLabel = 'Back to Profile', embedded = false, children }: { title: string; description?: string; backLabel?: string; embedded?: boolean; onBack: () => void; children: ReactNode }) {
   return <section className="profile-settings profile-subpage mx-auto w-full max-w-xl space-y-4" data-testid="profile-settings-subpage">
-    <ProfilePageHeader title={title} backLabel={backLabel} onBack={onBack} />
+    {!embedded && <FeatherHeader title={title} heading="h2" back={{ label: backLabel, onClick: onBack }} />}
     {children}
   </section>;
-}
-
-function ProfilePageHeader({ title, backLabel, onBack }: { title: string; backLabel: string; onBack: () => void }) {
-  return <header className="profile-page-heading">
-    <button type="button" aria-label={backLabel} onClick={onBack}><ChevronLeft size={22} aria-hidden="true" /></button>
-    <h1 className="type-page-title" tabIndex={-1}>{title}</h1>
-  </header>;
 }

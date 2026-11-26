@@ -1,0 +1,42 @@
+﻿# LifeOS Alive Motion coverage
+
+Motion belongs to the surface listed here. Primary routes use the retained-screen coordinator. Motion handles compositor transform and opacity. Direct manipulation updates the same route pose with the animation stopped. Component presence owns composer and task detail exits. Native dialogs own modal focus and do not borrow the primary tab gesture. Local CSS handles feedback, grid reveals, and original SVGs.
+
+Physical presets use the Silky 300 ms / .06 bounce, Snappy 240 ms / .02 bounce, and Oil 350 ms / zero bounce route springs. Drag travels at finger speed until 20% of the viewport. From there it applies preset resistance, with the existing spring solver and bounded recent velocity used for cancellation. Opacity follows an independent no-overshoot curve on each animated surface. Timing values below are configuration, with separate browser evidence for observed intervals.
+
+| Trigger and rendered state change | Surface and direction | Opacity, scale, timing | Interruption, reduced motion and fallback | Validation |
+| --- | --- | --- | --- | --- |
+| Tap Today, Money or Plan. Old content hands off to the selected tab. | Destination enters ±52 px. Prior page moves 36 px against it. Selection indicator travels one or two slots. | Arriving .98 to 1, departing 1 to .78, no route scale. Indicator stiffness 380, damping 31. | New selection captures poses and cancels old motion. Inert outgoing surface. Reduced mode jumps to state. | Prototype rendered both surfaces. Candidate rapid-tap scenario in browser harness. |
+| Swipe primary content and release or reverse. | Active screen follows horizontal touch. Successful release uses bounded momentum. Cancellation springs back from the observed pose. | No drag fade or scale. Preset strength, resistance and recent velocity affect settlement. | Native vertical scroll and system edges retain priority. Cancel on lost capture, second touch, resizing, lock or background. Reduced mode still supports navigation with static state. | Gesture unit contracts and candidate browser touch dispatch. |
+| Tap Money destinations or Back. | Activity, Accounts, Budgets, Savings, Insights and Scheduled use ±46 px section arrival. Plan Tasks/Habits/Goals use retained primary route flow. | Money .68 to 1 and no scale, route spring. | Next request cancels prior inner motion. Reduced mode switches in place. | Browser captures Scheduled. Responsive browser suite covers each destination. |
+| Open Profile, enter a setting, go Back. | Profile slides from right across its width. Child destinations ±42 px. Back leaves to right or returns in place to parent. | Profile opacity 1, child .65 to 1, no scale. Route spring. | Full-screen Back samples current pose. Focus and scrolling restore. Reduced mode returns immediately. | Prototype captured Profile and Appearance. Native baseline secure window verified. |
+| Open Create Task and dismiss. | Focused task form slides across viewport width, with sticky action and quick options. Back exits right. | Opacity 1, no scale. 340 ms entrance, 270 ms reverse. | Exiting layer is inert with no hit testing. Reduced mode changes state in place. | Browser captures both directions. Save tested through the encrypted facade. |
+| Tap Schedule, Reminder or Add details. | Measured content reveals from the trigger using grid 0fr to 1fr. Chevron rotates 180°. | Opacity 0 to 1, no scale. Panel 255–375 ms by preset. | Native inputs stay mounted. Closed fields are inert and arbitrary presses can reverse CSS interpolation. Reduced mode snaps. | Candidate sequence expands live notes and subtasks. Reminder save checked by browser acceptance. |
+| Create/edit habit, goal, transaction, budget, commitment and savings goal. | Existing form and confirmation surfaces use compact sheet entrance. Task form has dedicated motion above. | Shared sheet threshold and token. Real busy state, no fake values. | Native pickers keep their own gesture. Reduced mode opens immediately. | Domain writes covered by unit tests and browser journeys. Per-creation intermediate evidence is partial. |
+| Open task details. | Fixed detail enters from right and reverses on close. Parent route restores scroll state. | Opacity 1, no scale. 310 ms entrance spring, 250 ms exit. | Inert exit. Reduced mode switches immediately. | Browser task and notification routes. Shared task-card morph remains incomplete. |
+| Open habit or goal details and history. | Detail enters 44 px. Goal history reveals down from the button. | Detail .86 to 1, no scale. Preset route spring. | Closing restores list state without travel. Reduced motion is static. | Browser captures goal progress and habit check-in. Full detail return choreography remains partial. |
+| Browse a Scheduled commitment. | Native detail dialog enters from the right. Back reverses. | No opacity or scale change on main panel. Route spring. | Pointer events disabled during exit. Reduced and unsupported cases close immediately. Posting is a separate confirmation and runs the existing atomic storage operation. | Paired browser sequence compares old Edit with the new Browse route. Atomic accounting remains independently covered. |
+| Open transaction detail, edit an account or budget. | Existing native modal or composer animation. | Shared sheet motion. | Native dialog preserves focus and escape. Reduced motion is static. | Functional browser flows. Selective shared-element transitions remain open. |
+| Press a button, card, chip or choice. | Local control or icon compresses, then returns. | Common .98 scale in 55 ms. Selected rows .965. Tab icon .83. | Always interruptible by pointer release. Reduced mode uses color and state. | Tap frame traces and responsive coverage. |
+| Select filters, dates, categories or preferences. | Existing choice dialogs and chips. Date/time remains the platform control. | Color and border change. Preference sheet enters 10 px in 160 ms. | Native ownership, escape and reduced mode maintained. | Functional browser filter and reminder-select flow. |
+| Complete task, undo, or check in a habit. | Drawn check line, weekly marker and leaf response after persistence. | Stroke 1 to 0 in 240 ms. Leaf and marker grow .65 to 1 over 270–300 ms. | Undo returns to real unchecked state. Reduced and constrained modes remove decorative travel. | Candidate task and habit browser frame sequences. |
+| Change goal or savings progress. | Real progress bar or savings ring interpolates to persisted value. | Panel token, no scale. SVG stroke dash offset interpolates. | A newer committed value retargets the same indicator. Reduced mode shows exact final value. | Browser goal capture. Savings tests verify capped visual versus displayed total. |
+| Save, edit, delete, pause, resume, errors, offline or permission changes. | Existing status/text feedback and contextual dialogs. No ambient loop. | Shared visual feedback. Status reflects storage result, not animation timing. | Native permission results retain ownership. Static under reduced motion. | Functional and storage tests. Individual rendered motion sequences remain partial. |
+
+## Original SVG artwork
+
+All nine drawings share a 100 × 80 view box, rounded 2.6-unit ink, a 2.3-unit accent, and a surface-derived wash. Light and dark use the active accent and surface tokens. Drawing is one-shot, with a 430 ms stroke and a 420 ms accent settle. Reduced or constrained motion renders the static shapes. Artwork is local vector JSX with no asset runtime or stream.
+
+| Drawing | Trigger | Visual |
+| --- | --- | --- |
+| Empty Tasks | Empty Tasks workspace | Paper and pencil |
+| All Tasks completed | Every task in the unfiltered workspace is complete | Rounded medallion and check |
+| First Habit | Empty Habits workspace | Potted new leaf |
+| Habit consistency | Seven-day streak thresholds | Branch with a small star |
+| First Goal | Empty Goals workspace | Hill and flag |
+| Goal milestone | Saved milestone is completed | Ring with check and short accents |
+| Savings milestone | Exact saved amount reaches the target | Coin and jar |
+| Empty Scheduled | No scheduled commitments in the selected view | Calendar and clock |
+| Welcome | Name step on first setup | Figure with horizon and rays |
+
+Browser evidence uses fictional records. Some threshold artwork can be seen only after exercising the corresponding persisted state. Native screen capture may be redacted by the existing secure window.

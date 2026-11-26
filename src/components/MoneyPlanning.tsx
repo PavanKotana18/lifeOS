@@ -4,7 +4,7 @@ import ComposerShell from './ComposerShell';
 import { AliveDisclosure } from './AliveDisclosure';
 import { PreferenceChoice } from './PreferenceChoice';
 import type { Dispatch, FormEvent, SetStateAction } from 'react';
-import { ArrowDownLeft, ArrowUpRight, CalendarClock, Plus, RefreshCw } from 'lucide-react';
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarClock, Plus, RefreshCw } from 'lucide-react';
 import type { Category, FinancialAccount, ManualExchangeRate, PlannedCommitment, Transaction } from '../types';
 import { CURRENCY_CODES } from '../services/userPreferences';
 import { decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, minorUnitsToDecimal } from '../services/financeCore';
@@ -12,7 +12,7 @@ import { formatLocalDate } from '../services/domainUtils';
 import type { ConfirmationOptions } from './ConfirmationDialog';
 import InfoTip from './InfoTip';
 import LifeDoodle from './LifeDoodle';
-import ScheduledDetailDialog from './ScheduledDetailDialog';
+import AliveDetailDialog from './AliveDetailDialog';
 
 type CommitmentInput = Omit<PlannedCommitment, 'id' | 'createdAt' | 'updatedAt'>;
 type RateInput = Omit<ManualExchangeRate, 'id' | 'createdAt' | 'updatedAt'>;
@@ -173,7 +173,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
       {!rates.length ? <p className="mt-5 rounded-xl lifeos-raised p-4 text-sm text-secondary">No manual rates saved. Mixed currencies will remain separate until a dated rate is available.</p> : <div className="mt-4 divide-y divide-[var(--stroke)]">{rates.map(row => <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><span className="text-sm"><strong>{row.baseCurrencyCode} → {row.quoteCurrencyCode}</strong><small className="ml-2 text-secondary">{row.effectiveDate}{row.sourceLabel ? ` · ${row.sourceLabel}` : ''}</small></span><span className="font-semibold tabular-nums">1 {row.baseCurrencyCode} = {row.rate} {row.quoteCurrencyCode}</span><span className="flex gap-1"><button type="button" onClick={() => editRate(row)} className="min-h-10 rounded-lg px-2 text-xs lifeos-accent-text">Edit</button><button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this manual rate?', message: `${row.baseCurrencyCode} to ${row.quoteCurrencyCode} at ${row.rate} for ${row.effectiveDate} will be removed.`, confirmLabel: 'Delete rate', destructive: true }))) return; await runAction(() => onDeleteRate(row.id)); }} className="min-h-10 rounded-lg px-2 text-xs text-secondary">Delete</button></span></div>)}</div>}
       <p className="mt-3 rounded-xl lifeos-raised p-3 text-xs leading-relaxed text-secondary">Each rate includes its effective date and optional source label. BusyDoo does not download rates or imply a conversion is current.</p>
     </section>}
-    {detail && <ScheduledDetailDialog key={detail.id} title={detail.title} eyebrow="Scheduled commitment" onClose={() => setDetailId(null)}>
+    {detail && <AliveDetailDialog key={detail.id} title={detail.title} eyebrow="Scheduled commitment" onClose={() => setDetailId(null)}>
       <div className="scheduled-detail-amount">
         <p className="text-secondary">{detail.type === 'income' ? 'Incoming' : 'Outgoing'} · {detail.currencyCode}</p>
         <strong className="type-display-amount tabular-nums">{showAmount(detail)}</strong>
@@ -201,7 +201,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
           setDetailId(null); setPlanningPanel('history');
         }}>History</button>
       </div>
-    </ScheduledDetailDialog>}
+    </AliveDetailDialog>}
     <AnimatePresence>
       {commitment && <ComposerShell key="commitment" id="money-commitment-dialog" mode="page" portal
         title={commitment.id ? 'Edit planned commitment' : 'Plan recurring income or expense'}
@@ -212,7 +212,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
           <input required maxLength={80} className={inputClass} value={commitment.title}
             onChange={event => setCommitment(current => current && { ...current, title: event.target.value })} />
         </label>
-        <PreferenceChoice variant="field" label="Type" value={commitment.type || 'expense'}
+        <PreferenceChoice variant="quick" label="Type" icon={<ArrowLeftRight size={18} aria-hidden="true" />} value={commitment.type || 'expense'}
           options={[['expense', 'Expense'], ['income', 'Income']]}
           onSelect={type => setCommitment(current => current && { ...current, type: type as 'income' | 'expense', categoryId: '' })} />
         <label className="block text-xs text-secondary">Amount
@@ -221,7 +221,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
             onChange={event => setCommitment(current => current && { ...current, amount: event.target.value })} />
         </label>
         <div className="grid grid-cols-2 gap-3">
-          <PreferenceChoice variant="field" label="Frequency" value={commitment.frequency}
+          <PreferenceChoice variant="quick" icon={<CalendarClock size={18} aria-hidden="true" />} label="Frequency" value={commitment.frequency}
             options={[['once', 'One time'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']]}
             onSelect={frequency => setCommitment(current => current && { ...current, frequency: frequency as PlannedCommitment['frequency'] })} />
           <label className="block text-xs text-secondary">Next due date
@@ -229,7 +229,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
               onChange={event => setCommitment(current => current && { ...current, date: event.target.value })} />
           </label>
         </div>
-        <AliveDisclosure label="Optional details" defaultOpen={Boolean(commitment.categoryId || commitment.accountId || commitment.notes || commitment.currency !== 'INR')}>
+        <AliveDisclosure label="Currency, account and category" defaultOpen={Boolean(commitment.categoryId || commitment.accountId || commitment.notes || commitment.currency !== 'INR')}>
           <PreferenceChoice variant="field" label="Currency" value={commitment.currency}
             options={codeOptions.map(code => [code, formatCurrencyChoice(code)])}
             onSelect={currency => setCommitment(current => current && { ...current, currency, accountId: '' })} />
