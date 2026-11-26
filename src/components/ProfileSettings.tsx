@@ -18,7 +18,7 @@ export function ProfileSettingRow({ title, value, onClick }: { title: string; va
 const profileLinks = [
   { section: 'appearance', title: 'Appearance', detail: 'Theme, color and display mode', Icon: Palette },
   { section: 'preferences', title: 'Preferences', detail: 'Currency, dates, time and units', Icon: SlidersHorizontal },
-  { section: 'notifications', title: 'Notifications', detail: 'Choose which reminders LifeOS sends', Icon: Bell },
+  { section: 'notifications', title: 'Notifications', detail: 'Choose which reminders BusyDoo sends', Icon: Bell },
   { section: 'privacy', title: 'Privacy & Security', detail: 'App lock and recovery status', Icon: Shield },
   { section: 'data', title: 'Backup & Restore', detail: 'Encrypted backup and local records', Icon: Database },
   { section: 'about', title: 'About', detail: 'Version and privacy information', Icon: Info },

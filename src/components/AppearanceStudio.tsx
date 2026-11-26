@@ -16,11 +16,11 @@ export function AppearanceStudio({ theme, mode, accent, motion, onOpen }: {
   onOpen: (page: 'themes' | 'accent' | 'motion') => void;
 }) {
   return <nav className="appearance-destinations profile-link-group" aria-label="Appearance settings">
-    <ProfileNavigationRow title="Themes" detail="Choose the look of LifeOS" icon={Layers}
+    <ProfileNavigationRow title="Themes" detail="Choose the look of BusyDoo" icon={Layers}
       value={THEME_CATALOG[theme].label + ' · ' + displayLabels[mode]} onClick={() => onOpen('themes')} />
     <ProfileNavigationRow title="Accent color" detail="Personalize highlights and controls" icon={Palette}
       value={accentSelectionLabel(accent)} onClick={() => onOpen('accent')} />
-    <ProfileNavigationRow title="Motion" detail="Choose how LifeOS moves" icon={Activity}
+    <ProfileNavigationRow title="Motion" detail="Choose how BusyDoo moves" icon={Activity}
       value={MOTION_PRESET_OPTIONS.find(option => option.id === motion)?.label} onClick={() => onOpen('motion')} />
   </nav>;
 }
@@ -29,7 +29,7 @@ function InterfacePreview({ tokens }: { tokens: ThemeTokens }) {
   return <span className="appearance-mini" aria-hidden="true" style={{
     backgroundColor: tokens.background, color: tokens.primaryText, borderColor: tokens.border,
   }}>
-    <span className="appearance-mini-header"><span style={{ backgroundColor: tokens.accent }} />LifeOS</span>
+    <span className="appearance-mini-header"><span style={{ backgroundColor: tokens.accent }} />BusyDoo</span>
     <span className="appearance-mini-card" style={{ backgroundColor: tokens.surface, borderColor: tokens.border }}>
       <strong>Today</strong><span style={{ color: tokens.secondaryText }}>Daily plan</span>
       <span className="appearance-mini-action" style={{ backgroundColor: tokens.accent, color: tokens.accentForeground }}>Add</span>

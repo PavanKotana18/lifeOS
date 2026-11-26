@@ -91,7 +91,7 @@ const RECORD_TABLES = new Set([
 
 function assertNativeCryptoAvailable(): void {
   if (!Capacitor.isPluginAvailable('LifeOSCrypto')) {
-    throw new Error('LifeOS native encryption is unavailable on this platform.');
+    throw new Error('BusyDoo native encryption is unavailable on this platform.');
   }
 }
 

@@ -1,4 +1,5 @@
-export type ThemeId = 'soft-ivory-sage' | 'ocean-mist' | 'warm-sand' | 'lavender-haze' | 'midnight-slate' | 'rose-clay';
+import { BUSYDOO } from './busydooBrand';
+export type ThemeId = 'busydoo' | 'soft-ivory-sage' | 'ocean-mist' | 'warm-sand' | 'lavender-haze' | 'midnight-slate' | 'rose-clay';
 export type AppearanceMode = 'light' | 'dark';
 
 export interface ThemeTokens {
@@ -8,10 +9,21 @@ export interface ThemeTokens {
 }
 
 const pair = (light: ThemeTokens, dark: ThemeTokens) => Object.freeze({ light: Object.freeze(light), dark: Object.freeze(dark) });
-export const DEFAULT_THEME_ID: ThemeId = 'soft-ivory-sage';
+export const DEFAULT_THEME_ID: ThemeId = 'busydoo';
 
 /** Local, versioned design palette; it stores no user content and makes no network request. */
 export const THEME_CATALOG: Readonly<Record<ThemeId, { label: string; light: ThemeTokens; dark: ThemeTokens }>> = Object.freeze({
+  busydoo: {
+    label: 'BusyDoo',
+    ...pair(
+      { background: BUSYDOO.light, surface: BUSYDOO.white, elevatedSurface: '#F1F3EB', primaryText: BUSYDOO.black, secondaryText: '#4F534A',
+        accent: BUSYDOO.lightAccentText, accentForeground: BUSYDOO.white, accentTint: '#E9F4D8', border: '#DADFD2', focus: '#4A6F25',
+        success: '#256344', warning: '#774800', danger: '#A1283A', disabled: '#5D6258', chartSeries: ['#467626', '#246881', '#715397', '#925728', '#57636B'] },
+      { background: BUSYDOO.black, surface: BUSYDOO.raised, elevatedSurface: BUSYDOO.graphite, primaryText: BUSYDOO.white, secondaryText: BUSYDOO.grey,
+        accent: BUSYDOO.lime, accentForeground: BUSYDOO.black, accentTint: '#303B23', border: '#464840', focus: BUSYDOO.lime,
+        success: '#89D5A7', warning: '#F6C775', danger: '#FFA1AB', disabled: '#ADAEA7', chartSeries: ['#C8FA78', '#83C8E3', '#CCADEA', '#F3AA77', '#C7D2D8'] }
+    ),
+  },
   'soft-ivory-sage': {
     label: 'Soft Ivory + Sage Feather',
     ...pair(
@@ -77,7 +89,7 @@ export function contrastRatio(foreground: string, background: string): number {
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
 }
 
-export function applyThemeTokens(themeId: string, mode: AppearanceMode, root: HTMLElement = document.documentElement): void {
+export function applyThemeTokens(themeId: string, mode: AppearanceMode, root: HTMLElement = document.documentElement): ThemeTokens {
   const tokens = getThemeTokens(themeId, mode);
   const variables: Record<string, string> = {
     '--page': tokens.background, '--surface': tokens.surface, '--surface-raised': tokens.elevatedSurface,
@@ -86,8 +98,11 @@ export function applyThemeTokens(themeId: string, mode: AppearanceMode, root: HT
     '--accent-foreground': tokens.accentForeground, '--accent-tint': tokens.accentTint,
     '--focus-color': tokens.focus, '--success': tokens.success, '--warning': tokens.warning,
     '--danger': tokens.danger, '--disabled': tokens.disabled,
+    '--income': tokens.success, '--expense': tokens.danger, '--transfer': tokens.chartSeries[1],
+    '--commitment': tokens.warning, '--selected-surface': tokens.accentTint,
     '--chart-1': tokens.chartSeries[0], '--chart-2': tokens.chartSeries[1], '--chart-3': tokens.chartSeries[2],
     '--chart-4': tokens.chartSeries[3], '--chart-5': tokens.chartSeries[4],
   };
   for (const [name, value] of Object.entries(variables)) root.style.setProperty(name, value);
+  return tokens;
 }

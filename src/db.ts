@@ -1644,7 +1644,7 @@ const rawStorageService: IDataStorage = {
         db.habits.count(), db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(), db.settings.count()
       ]);
       if (existingCounts.some(count => count > 0) && !options.replaceExisting) {
-        throw new Error('Existing LifeOS data was found. Confirm replacement before restoring this backup.');
+        throw new Error('Existing BusyDoo data was found. Confirm replacement before restoring this backup.');
       }
       const counts: Record<string, number> = {};
 
@@ -1668,7 +1668,7 @@ const rawStorageService: IDataStorage = {
           db.milestones.count(), db.tasks.count(), db.settings.count()
         ]);
         if (liveCounts.some(count => count > 0) && !options.replaceExisting) {
-          throw new Error('Existing LifeOS data was found. Confirm replacement before restoring this backup.');
+          throw new Error('Existing BusyDoo data was found. Confirm replacement before restoring this backup.');
         }
         for (const table of tableNames) {
           const records = tablesData[table] as any[];
@@ -1753,7 +1753,7 @@ export async function activateEncryptedStorage(): Promise<void> {
   if (encryptedStorageActivated) return;
 
   if (!sessionManager.isUnlocked()) {
-    throw new Error('LifeOS session must be authenticated before encrypted storage activation.');
+    throw new Error('BusyDoo session must be authenticated before encrypted storage activation.');
   }
 
   // Native Android Keystore state is authoritative; never trust an in-memory
@@ -1761,11 +1761,11 @@ export async function activateEncryptedStorage(): Promise<void> {
   const keyState = await CryptoService.getKeyState();
 
   if (!keyState.metadataConsistent || keyState.recoveryNeedsRebind) {
-    throw new Error('Encryption metadata is inconsistent. Recover or rebind the encryption key before opening LifeOS data.');
+    throw new Error('Encryption metadata is inconsistent. Recover or rebind the encryption key before opening BusyDoo data.');
   }
 
   if (!keyState.keyProvisioned || !keyState.keystoreAliasPresent) {
-    throw new Error('The LifeOS encryption key is not available in Android Keystore.');
+    throw new Error('The BusyDoo encryption key is not available in Android Keystore.');
   }
 
   if (!keyState.recoveryProvisioned && !keyState.recoveryDeferred) {

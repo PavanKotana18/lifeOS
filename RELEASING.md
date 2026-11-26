@@ -1,4 +1,4 @@
-# LifeOS branch and release process
+# BusyDoo branch and release process
 
 ## Branches
 
@@ -16,7 +16,7 @@ Keep branches current with their base before opening a pull request. Resolve con
 
 Android Release uses `MAJOR * 1,000,000 + MINOR * 1,000 + PATCH + GITHUB_RUN_NUMBER`. MINOR and PATCH must each remain below 1000.
 
-The **Build LifeOS Android APK** workflow owns the distributable Standard Debug version sequence. Its Debug code is the value in `android/debug-version-floor.txt` plus that workflow's run number. Emulator QA and ordinary local builds use the floor. A rebuild for owner review sets `LIFEOS_ANDROID_DEBUG_BUILD_NUMBER` to the reservation of the successful workflow run for the same source commit.
+The **Build BusyDoo Android APK** workflow owns the distributable Standard Debug version sequence. Its Debug code is the value in `android/debug-version-floor.txt` plus that workflow's run number. Emulator QA and ordinary local builds use the floor. A rebuild for owner review sets `LIFEOS_ANDROID_DEBUG_BUILD_NUMBER` to the reservation of the successful workflow run for the same source commit.
 
 Use the established local Debug keystore when building an in-place owner update. The GitHub runner's Debug certificate is for its own artifacts. Compare the installed APK's certificate with the owner candidate before installation and preserve the existing installation if they differ.
 
@@ -53,7 +53,7 @@ gradle -p android --no-daemon :app:assembleDebug
 ```
 
 The APK is `android/app/build/outputs/apk/debug/app-debug.apk`. It must identify
-as `com.lifeos.personal.debug` and `LifeOS Debug`. Android's standard debug key
+as `com.lifeos.personal.debug` and `BusyDoo Debug`. Android's standard debug key
 is used for this isolated package; no signing secret is stored in source
 control. Do not install it over the old `.dev` or `.preview` packages.
 

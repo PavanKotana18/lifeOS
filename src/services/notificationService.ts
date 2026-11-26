@@ -443,7 +443,7 @@ export const NotificationService = {
           });
         }
       }
-      // Retire only stale LifeOS task schedules after the desired set is
+      // Retire only stale BusyDoo task schedules after the desired set is
       // confirmed. Serializing this operation prevents overlapping syncs from
       // cancelling each other's schedules during rapid task edits/resume.
       const stale = oldTaskNotifications.filter(item => !desiredIds.has(item.id));
@@ -490,7 +490,7 @@ export const NotificationService = {
         const code = safeErrorCode(error);
         writeLastError(code);
         updateDiagnostics({ lastScheduleResult: `failed:${code}` });
-        console.warn('LifeOS task notification scheduling failed:', code);
+        console.warn('BusyDoo task notification scheduling failed:', code);
         throw error;
       }
     };
@@ -663,7 +663,7 @@ export const NotificationService = {
         deliveryState: 'cancelled', cancellationAt: new Date().toISOString(), cancellationReason: 'task-deleted',
       });
       updateDiagnostics({ lastCancellationReason: 'task-deleted' });
-    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS task notification cancellation failed.'); throw error; }
+    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('BusyDoo task notification cancellation failed.'); throw error; }
   },
 
   async snoozeTask(task: Task, tone: NotificationTone = 'warm') {
@@ -717,7 +717,7 @@ export const NotificationService = {
     await cancelIds(habits.flatMap(habit => [1, 2, 3, 4, 5, 6, 7].map(day => notificationId(`habit:${habit.id}:${day}`))));
     if (!preferences.habitReminders || !(await this.canScheduleNotifications())) { if (preferences.habitReminders) writeLastError('permission-denied-or-revoked'); return; }
     await schedule(entries);
-    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS habit notification scheduling failed.'); throw error; }
+    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('BusyDoo habit notification scheduling failed.'); throw error; }
   },
 
   async cancelHabit(habit: Habit) {
@@ -726,7 +726,7 @@ export const NotificationService = {
       const pending = await LocalNotifications.getPending();
       await cancelIds([...ids, ...pending.notifications.filter(row => row.extra?.kind === 'habitReminder' && row.extra?.habitId === habit.id).map(row => row.id)]);
     }
-    catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS habit notification cancellation failed.'); throw error; }
+    catch (error) { writeLastError(safeErrorCode(error)); console.warn('BusyDoo habit notification cancellation failed.'); throw error; }
   },
 
   async syncMilestones(goals: Goal[], milestones: Milestone[], preferences: NotificationPreferences, tone: NotificationTone = 'warm') {
@@ -752,18 +752,18 @@ export const NotificationService = {
       }];
     });
     await schedule(notifications);
-    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS milestone notification scheduling failed.'); throw error; }
+    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('BusyDoo milestone notification scheduling failed.'); throw error; }
   },
 
   async cancelMilestones(milestones: Milestone[]) {
     try { await cancelIds(milestones.map(milestone => notificationId(`milestone:${milestone.id}`))); }
-    catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS milestone notification cancellation failed.'); throw error; }
+    catch (error) { writeLastError(safeErrorCode(error)); console.warn('BusyDoo milestone notification cancellation failed.'); throw error; }
   },
 
   async ensureChannel() {
     if (!requireNativeNotifications()) return;
-    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'LifeOS reminders', description: 'Local task, habit and goal reminders', importance: 4, visibility: 0, vibration: true })
-      .catch(error => { ensureChannelPromise = null; writeLastError(safeErrorCode(error)); console.warn('LifeOS notification channel creation failed.'); throw error; });
+    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'BusyDoo reminders', description: 'Local task, habit and goal reminders', importance: 4, visibility: 0, vibration: true })
+      .catch(error => { ensureChannelPromise = null; writeLastError(safeErrorCode(error)); console.warn('BusyDoo notification channel creation failed.'); throw error; });
     const pending = ensureChannelPromise;
     try { await pending; }
     finally { if (ensureChannelPromise === pending) ensureChannelPromise = null; }
@@ -855,21 +855,21 @@ export const NotificationService = {
       await this.ensureChannel();
       await cancelIds([testId]);
       const at = new Date(Date.now() + Math.max(1_000, delayMs));
-      await schedule([{ id: testId, title: 'LifeOS test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification', extra: { kind: 'test' } }]);
+      await schedule([{ id: testId, title: 'BusyDoo test notification', body: 'Local notifications are reaching your device.', schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification', extra: { kind: 'test' } }]);
       const pending = await LocalNotifications.getPending();
       if (!pending.notifications.some(item => item.id === testId)) throw new Error('schedule-verification-missing:test-notification');
       writeLastError('');
       return at;
-    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('LifeOS test notification failed.'); throw error; }
+    } catch (error) { writeLastError(safeErrorCode(error)); console.warn('BusyDoo test notification failed.'); throw error; }
   },
 
   async sendImmediateTestNotification() {
     if (!isNative()) throw new Error('Local notifications are available only in the installed Android app.');
     await this.ensureChannel();
-    if (!await this.canScheduleNotifications()) throw new Error('Allow LifeOS notifications and its reminder channel in Android settings.');
+    if (!await this.canScheduleNotifications()) throw new Error('Allow BusyDoo notifications and its reminder channel in Android settings.');
     const requestedAt = new Date();
     try {
-      await schedule([{ id: immediateTestId, title: 'LifeOS immediate test', body: 'This test posts without an alarm.', channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification', extra: { kind: 'test' } }]);
+      await schedule([{ id: immediateTestId, title: 'BusyDoo immediate test', body: 'This test posts without an alarm.', channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification', extra: { kind: 'test' } }]);
       writeLastError('');
       return requestedAt;
     } catch (error) { writeLastError(safeErrorCode(error)); throw error; }

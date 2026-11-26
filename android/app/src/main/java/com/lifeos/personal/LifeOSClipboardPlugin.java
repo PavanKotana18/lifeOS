@@ -16,7 +16,7 @@ public final class LifeOSClipboardPlugin extends Plugin {
     private static final String RECOVERY_CODE_PATTERN = "[A-Za-z0-9_-]{43}";
 
     static ClipData createSensitiveClip(String text) {
-        ClipData clip = ClipData.newPlainText("LifeOS recovery code", text);
+        ClipData clip = ClipData.newPlainText("BusyDoo recovery code", text);
         PersistableBundle extras = new PersistableBundle();
         // Use the documented extra string so this also works below API 33.
         extras.putBoolean("android.content.extra.IS_SENSITIVE", true);

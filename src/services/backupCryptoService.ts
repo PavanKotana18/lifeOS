@@ -136,13 +136,13 @@ export async function decryptBackup(
   try {
     envelope = JSON.parse(encryptedText);
   } catch {
-    throw new Error('This is not a valid encrypted LifeOS backup. Plaintext backups are not accepted.');
+    throw new Error('This is not a valid encrypted BusyDoo backup. Plaintext backups are not accepted.');
   }
 
   if (!envelope || envelope.format !== FORMAT || envelope.version !== VERSION ||
       envelope.cipher !== 'AES-256-GCM' || envelope.kdf !== KDF ||
       envelope.iterations !== ITERATIONS) {
-    throw new Error('Unsupported or invalid encrypted LifeOS backup format. Plaintext backups are not accepted.');
+    throw new Error('Unsupported or invalid encrypted BusyDoo backup format. Plaintext backups are not accepted.');
   }
 
   const salt = fromBase64(envelope.salt, SALT_BYTES);
@@ -165,11 +165,11 @@ export async function decryptBackup(
     const parsed = JSON.parse(plaintext);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
         (!parsed.tables && !parsed.data)) {
-      throw new Error('Decrypted content is not a valid LifeOS backup.');
+      throw new Error('Decrypted content is not a valid BusyDoo backup.');
     }
     return plaintext;
   } catch (error) {
-    if (error instanceof Error && error.message === 'Decrypted content is not a valid LifeOS backup.') {
+    if (error instanceof Error && error.message === 'Decrypted content is not a valid BusyDoo backup.') {
       throw error;
     }
     throw new Error('Backup decryption failed. Check the passphrase or file integrity.');

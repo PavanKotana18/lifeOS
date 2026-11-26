@@ -1,5 +1,5 @@
 /**
- * LifeOS CSV Export Service with Formula Injection (CWE-1236) Protection
+ * BusyDoo CSV Export Service with Formula Injection (CWE-1236) Protection
  */
 
 const formulaPrefix = /^(?:[\t\r\n]|[\s\u0000-\u001f]*[=+@-])/;

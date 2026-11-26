@@ -14,6 +14,8 @@ import './styles/four-tab-transformation.css';
 import './styles/interface-motion.css';
 import './styles/planning-life-transformation.css';
 
+import { BUSYDOO } from './services/busydooBrand';
+import './styles/busydoo.css';
 import { LifeOSLaunchReveal } from './components/LifeOSBrand';
 
 const SystemAppearance = registerPlugin<{ getSystemAppearance: () => Promise<{ dark: boolean }> }>('SystemAppearance');
@@ -40,6 +42,10 @@ function readLaunchInfo(): Promise<{ coldStart: boolean }> {
 function BootstrappedApp({ coldStart }: { coldStart: boolean }) {
   const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const [showReveal, setShowReveal] = useState(coldStart);
+  const [cinematic] = useState(() => {
+    try { return coldStart && localStorage.getItem('busydoo-brand-seen') !== 'yes'; }
+    catch { return false; }
+  });
   useEffect(() => {
     if (!coldStart) return;
     // This effect runs after React committed the same branded cover under the
@@ -49,43 +55,35 @@ function BootstrappedApp({ coldStart }: { coldStart: boolean }) {
     let ready = (window as Window & { lifeosStartupReady?: boolean }).lifeosStartupReady === true;
     let frame = 0;
     let finishing = false;
-    let handoff: Animation | undefined;
     let fade: Animation | undefined;
-    let fallback: number | undefined;
     let disposed = false;
+    const complete = () => {
+      if (disposed) return;
+      try { if (cinematic) localStorage.setItem('busydoo-brand-seen', 'yes'); } catch { /* Cosmetic only. */ }
+      setShowReveal(false);
+    };
     const finishIfReady = () => {
       if (!elapsed || !ready || finishing) return;
       finishing = true;
       frame = window.requestAnimationFrame(() => {
         const cover = document.querySelector<HTMLElement>('.lifeos-launch-reveal');
-        const mark = cover?.querySelector<HTMLElement>('.lifeos-launch-mark');
-        const destination = document.querySelector<HTMLElement>('[data-launch-destination] .lifeos-onboarding-mark');
-        if (reducedMotion || !cover?.animate || !mark || !destination) { setShowReveal(false); return; }
-        const source = mark.getBoundingClientRect();
-        const target = destination.getBoundingClientRect();
-        if (!source.width || !target.width) { setShowReveal(false); return; }
-        const x = target.left + target.width / 2 - source.left - source.width / 2;
-        const y = target.top + target.height / 2 - source.top - source.height / 2;
-        handoff = mark.animate([{ transform: 'none' }, { transform: 'translate(' + x + 'px,' + y + 'px) scale(' + (target.width / source.width) + ')' }],
-          { duration: 280, easing: 'cubic-bezier(.22,.68,.26,1)', fill: 'forwards' });
-        fade = cover.animate([{ opacity: 1 }, { opacity: 1, offset: .62 }, { opacity: 0 }], { duration: 280, fill: 'forwards' });
-        const complete = () => { if (!disposed) setShowReveal(false); };
+        if (reducedMotion || !cover?.animate) { complete(); return; }
+        fade = cover.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 110, fill: 'forwards' });
         void fade.finished.then(complete, complete);
-        fallback = window.setTimeout(complete, 360);
       });
     };
     const onReady = () => { ready = true; finishIfReady(); };
     window.addEventListener('lifeos:startup-ready', onReady);
-    const timer = window.setTimeout(() => { elapsed = true; finishIfReady(); }, reducedMotion ? 0 : 850);
+    const timer = window.setTimeout(() => { elapsed = true; finishIfReady(); }, reducedMotion ? 0 : cinematic ? BUSYDOO.cinematicMs : BUSYDOO.quickMs);
     finishIfReady();
     return () => {
       disposed = true;
-      window.clearTimeout(timer); window.clearTimeout(fallback); window.cancelAnimationFrame(frame);
-      handoff?.cancel(); fade?.cancel();
+      window.clearTimeout(timer); window.cancelAnimationFrame(frame);
+      fade?.cancel();
       window.removeEventListener('lifeos:startup-ready', onReady);
     };
-  }, [coldStart, reducedMotion]);
-  return <React.StrictMode><App />{showReveal && <LifeOSLaunchReveal reducedMotion={reducedMotion} />}</React.StrictMode>;
+  }, [cinematic, coldStart, reducedMotion]);
+  return <React.StrictMode><App />{showReveal && <LifeOSLaunchReveal cinematic={cinematic} reducedMotion={reducedMotion} />}</React.StrictMode>;
 }
 
 const renderApp = (coldStart: boolean) => ReactDOM.createRoot(root).render(<BootstrappedApp coldStart={coldStart} />);
@@ -104,9 +102,9 @@ async function bootstrapAppearance() {
   const dark = resolveAppearance(preference, systemDark) === 'dark';
   if (Capacitor.isNativePlatform()) (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark = systemDark;
   document.documentElement.classList.toggle('dark', dark);
-  applyThemeTokens(themeId, dark ? 'dark' : 'light');
+  const themeTokens = applyThemeTokens(themeId, dark ? 'dark' : 'light');
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#101712' : '#FAFAF7');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeTokens.background);
   try { localStorage.setItem('lifeos-theme-id', themeId); } catch { /* Cosmetic cache is optional. */ }
   try { localStorage.setItem('lifeos-appearance', preference); } catch { /* Cosmetic cache is optional. */ }
 }
@@ -114,7 +112,7 @@ async function bootstrapAppearance() {
 // The app still starts locked and owns authentication. Appearance errors and
 // deadlines never unlock storage, provision keys, or substitute a fake UI root.
 void bootstrapAppearance().catch(() => {
-  console.warn('LifeOS could not apply the initial appearance.');
+  console.warn('BusyDoo could not apply the initial appearance.');
 }).finally(() => {
   document.documentElement.dataset.themeReady = 'true';
   void readLaunchInfo().then(info => renderApp(info.coldStart));

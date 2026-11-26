@@ -1,5 +1,5 @@
 /**
- * LifeOS Storage Access Framework Service (TypeScript)
+ * BusyDoo Storage Access Framework Service (TypeScript)
  * Provides native Android Storage Access Framework (SAF) integration via StorageAccessPlugin
  * with deterministic UTF-8 byte counting, 50MB boundary enforcement, cancellation handling,
  * and browser Web Blob fallback.

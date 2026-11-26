@@ -1,7 +1,7 @@
 {
   "name": "lifeos-personal",
   "version": "1.0.0",
-  "description": "LifeOS — Complete Functional Personal Life Management Application",
+  "description": "BusyDoo — Complete Functional Personal Life Management Application",
   "private": true,
   "scripts": {
     "dev": "vite",

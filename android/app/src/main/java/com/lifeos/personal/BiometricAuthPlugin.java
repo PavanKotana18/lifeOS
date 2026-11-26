@@ -88,7 +88,7 @@ public class BiometricAuthPlugin extends Plugin {
                     }
                 );
 
-                String title = call.getString("title", "Unlock LifeOS");
+                String title = call.getString("title", "Unlock BusyDoo");
                 String subtitle = call.getString("subtitle", "Authenticate using fingerprint or device credential");
 
                 BiometricPrompt.PromptInfo.Builder prompt = new BiometricPrompt.PromptInfo.Builder()

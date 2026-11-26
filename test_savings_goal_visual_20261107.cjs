@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const ts = require('typescript');
@@ -46,6 +46,6 @@ assert.ok(app.includes('message: `\u201c${goal.title}\u201d and its recorded con
   'savings deletion explains that the goal and contributions are removed before asking for confirmation');
 assert.match(app, /StorageService\.savings\.deleteGoal\(goal\.id\)/,
   'the confirmed action still deletes through the savings storage service');
-assert.match(app, /LifeOS could not confirm the deletion\. Refresh Savings before retrying\./);
+assert.match(app, /BusyDoo could not confirm the deletion\. Refresh Savings before retrying\./);
 assert.match(app, /Goal deleted\. Reopen Savings to refresh the latest data\./, 'post-delete refresh failure is distinct from delete failure');
 console.log('SAVINGS GOAL VISUAL: 19 rendered-state, data-state, deletion and accessibility contracts passed with synthetic amounts.');

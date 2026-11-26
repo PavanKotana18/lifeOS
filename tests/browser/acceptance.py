@@ -51,7 +51,7 @@ def save(label):
  w.until(lambda _: not any(x.is_displayed() for x in d.find_elements(By.CSS_SELECTOR,'form[role="dialog"]')))
 def finish_first_launch(name):
  wait('input[autocomplete="nickname"]').send_keys(name); click('Continue')
- wait('[aria-label="Protect your LifeOS space"]'); click('Continue with secure unlock')
+ wait('[aria-label="Protect your BusyDoo space"]'); click('Continue with secure unlock')
  wait('[aria-label="Set up your recovery kit"]'); click('Create and save recovery kit'); wait('[data-testid="copy-recovery-code"]')
  code=d.find_element(By.CSS_SELECTOR,'[data-sensitive-recovery-code]').text; assert code=='A'*43, 'synthetic code is available in the recovery card'
  click('Save complete recovery kit')
@@ -61,7 +61,7 @@ def finish_first_launch(name):
  confirm=wait('[data-testid="recovery-code-confirmation"]'); confirm.send_keys('B'*43); assert d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').get_attribute('disabled') is not None
  confirm.clear(); confirm.send_keys(copied[:14]+' '+copied[14:])
  w.until(lambda _: d.find_element(By.CSS_SELECTOR,'[data-testid="continue-to-lifeos"]').is_enabled())
- click('Continue to LifeOS'); wait('[data-testid="today-dashboard"]')
+ click('Continue to BusyDoo'); wait('[data-testid="today-dashboard"]')
 def passed(name): results.append({'journey':name,'status':'PASS','environment':'Chrome, real React UI and IndexedDB; synthetic native AES-GCM adapter'})
 try:
  for _ in range(40):
@@ -159,7 +159,7 @@ try:
  d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':150,'y':y,'id':1},{'x':240,'y':y,'id':2}]});d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':70,'y':y,'id':1},{'x':160,'y':y,'id':2}]});d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]});assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';assert not d.find_elements(By.CSS_SELECTOR,'[data-gesture-dragging]');passed('Multitouch cancels primary navigation without a stuck drag')
  (out/'gesture-trace.json').write_text(json.dumps(d.execute_script('return window.__lifeosGestureTrace||[]'),indent=2))
  click('Profile'); capture('profile');
- for section in ['Preferences','Notifications','Privacy & security','Data & backup','About LifeOS']:
+ for section in ['Preferences','Notifications','Privacy & security','Data & backup','About BusyDoo']:
   click(section); capture('settings-'+section.lower().replace(' ','-').replace('&','and')); click('Profile')
  click('Appearance'); capture('appearance'); click('Dark'); capture('appearance-dark'); d.refresh(); wait('[data-testid="today-dashboard"]'); assert d.execute_script('return document.documentElement.classList.contains("dark")'); passed('Theme and encrypted records survive page restart using synthetic native key')
  assert d.execute_async_script("const done=arguments[0];import('/src/db.ts').then(async m=>done(await m.StorageService.settings.get('todayLayout',null)));")==today_layout;passed('Today section customization persists after restart')

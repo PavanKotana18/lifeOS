@@ -25,7 +25,7 @@ export interface EncryptedLifecycleOptions {
 }
 
 /**
- * Opens encrypted LifeOS storage only after native key authentication and
+ * Opens encrypted BusyDoo storage only after native key authentication and
  * confirmed recovery protection. Initial setup is never silently accepted.
  */
 export async function openEncryptedStorageLifecycle(
@@ -45,7 +45,7 @@ export async function openEncryptedStorageLifecycle(
 
     if (state.keyProvisioned) {
       if (!state.keystoreAliasPresent) {
-        throw new Error('The LifeOS encryption key is unavailable in Android Keystore.');
+        throw new Error('The BusyDoo encryption key is unavailable in Android Keystore.');
       }
 
       const result = await crypto.unlock();
@@ -84,7 +84,7 @@ export async function openEncryptedStorageLifecycle(
       // The code is passed only to the UI callback. It is never logged or persisted here.
       const confirmed = await confirmRecoveryCode(prepared.recoveryCode);
       if (confirmed !== true) {
-        throw new Error('Recovery setup was not confirmed. LifeOS data remains locked.');
+        throw new Error('Recovery setup was not confirmed. BusyDoo data remains locked.');
       }
 
       await crypto.confirmRecovery();

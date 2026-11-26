@@ -45,7 +45,7 @@ check('Online and offline browser events update connectivity state', () => {
 
 check('Offline indicator explains local data availability', () => {
   assert.match(app, /role="status" aria-live="polite"/);
-  assert.match(app, /Offline — LifeOS records remain stored on this device\./);
+  assert.match(app, /Offline — BusyDoo records remain stored on this device\./);
 });
 
 check('Connectivity indicator does not gate local database operations', () => {
@@ -81,9 +81,9 @@ check('Resume processing prevents overlapping recovery runs', () => {
 });
 
 check('Resume and listener-registration failures are handled explicitly', () => {
-  assert.ok(app.includes("LifeOS resume recovery failed"));
-  assert.ok(app.includes("LifeOS app-state listener registration failed"));
-  assert.ok(app.includes("LifeOS back-button listener registration failed"));
+  assert.ok(app.includes("BusyDoo resume recovery failed"));
+  assert.ok(app.includes("BusyDoo app-state listener registration failed"));
+  assert.ok(app.includes("BusyDoo back-button listener registration failed"));
 });
 
 check('Disposed lifecycle callbacks do not continue updating app state', () => {

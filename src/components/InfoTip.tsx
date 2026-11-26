@@ -36,7 +36,7 @@ export default function InfoTip({ label, children }: { label: string; children?:
         <div className="flex items-start justify-between gap-3"><h2 id={titleId} className="text-base font-semibold">{label}</h2>
           <button type="button" className="lifeos-info-close" aria-label={`Close ${label} explanation`} onClick={dismiss}><X size={18} aria-hidden="true" /></button></div>
         <p id={descriptionId} className="mt-3 text-sm leading-6 text-secondary">{children || topic?.definition}</p>
-        {topic && ([['Simple example', topic.example], ['How LifeOS uses it', topic.use], ['Important details', topic.details], ['Learn more', topic.learnMore]] as const)
+        {topic && ([['Simple example', topic.example], ['How BusyDoo uses it', topic.use], ['Important details', topic.details], ['Learn more', topic.learnMore]] as const)
           .filter(([, body]) => body).map(([title, body]) => <section key={title} className="info-sheet-section"><h3>{title}</h3><p>{body}</p></section>)}
       </div>
     </dialog>

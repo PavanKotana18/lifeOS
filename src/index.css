@@ -46,27 +46,27 @@
   --leading-display: 1.08;
   --leading-title: 1.22;
   --leading-body: 1.5;
-  --page: #101712;
-  --surface: #17211a;
-  --surface-raised: #202d23;
-  --surface-muted: #263c2c;
-  --stroke: #3a493d;
-  --ink: #f2f6f2;
-  --ink-secondary: #c3d0c5;
-  --ink-muted: #a4b0a6;
-  --accent: #a3c7a9;
-  --accent-foreground: #142017;
-  --accent-tint: #263c2c;
-  --focus-color: #b8d9bd;
-  --success: #8ad09e;
-  --warning: #ffd17e;
-  --danger: #ff9690;
-  --disabled: #a4b0a6;
-  --chart-1: #a3c7a9;
-  --chart-2: #7dc0d6;
-  --chart-3: #c1a3da;
-  --chart-4: #f0a47e;
-  --chart-5: #d0d8d1;
+  --page: #141414;
+  --surface: #1e1e1e;
+  --surface-raised: #2c2c2c;
+  --surface-muted: #303b23;
+  --stroke: #464840;
+  --ink: #ffffff;
+  --ink-secondary: #b3b3b3;
+  --ink-muted: #adaea7;
+  --accent: #c8fa78;
+  --accent-foreground: #141414;
+  --accent-tint: #303b23;
+  --focus-color: #c8fa78;
+  --success: #89d5a7;
+  --warning: #f6c775;
+  --danger: #ffa1ab;
+  --disabled: #adaea7;
+  --chart-1: #c8fa78;
+  --chart-2: #83c8e3;
+  --chart-3: #ccadea;
+  --chart-4: #f3aa77;
+  --chart-5: #c7d2d8;
 }
 
 .text-primary { color: var(--ink); }
@@ -177,7 +177,7 @@ html:has(.app-header-shell) { scroll-padding-block-start: calc(env(safe-area-ins
 .app-profile-button:focus-visible, .lifeos-nav .nav-item:focus-visible, .money-home button:focus-visible, .life-hub button:focus-visible { outline: 2px solid var(--focus-color); outline-offset: 3px; }
 .today-sections { display: flex; flex-direction: column; gap: 0.85rem; }
 .today-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.today-focus { background: linear-gradient(145deg, color-mix(in srgb, var(--surface) 92%, var(--accent)), var(--surface)); }
+.today-focus { background: var(--surface); }
 .today-focus, .today-money-summary, .today-sections > section, .today-sections > div.lifeos-panel { border-radius: 1.15rem; }
 .today-inline-empty { display: flex; min-height: 3.25rem; align-items: center; justify-content: space-between; gap: 0.75rem; border-top: 1px solid var(--stroke); padding: 0.35rem 0.1rem 0; color: var(--ink-secondary); font-size: 0.8rem; line-height: 1.45; }
 .today-inline-empty button { flex: 0 0 auto; padding-inline: 0.35rem; font-size: 0.75rem; }
@@ -239,7 +239,7 @@ html:has(.app-header-shell) { scroll-padding-block-start: calc(env(safe-area-ins
 .money-home-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
 .money-period { display: grid; flex: 0 0 auto; gap: 0.25rem; color: var(--ink-secondary); }
 .money-period input { width: 9.5rem; border: 1px solid var(--stroke); border-radius: 0.8rem; background: var(--surface); color: var(--ink); padding: 0 0.6rem; font-size: 0.8125rem; }
-.money-cashflow { overflow: hidden; border: 1px solid var(--stroke); border-radius: 1.5rem; background: linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 88%, var(--accent)), var(--surface-raised)); padding: clamp(1rem, 4.5vw, 1.4rem); }
+.money-cashflow { overflow: hidden; border: 1px solid var(--stroke); border-radius: 1.5rem; background: var(--surface-raised); padding: clamp(1rem, 4.5vw, 1.4rem); }
 .money-cashflow-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .money-cashflow-mark { display: grid; width: 2.75rem; height: 2.75rem; flex: 0 0 auto; place-items: center; border-radius: 1rem; background: var(--accent-tint); color: var(--accent); }
 .money-cashflow .type-display-amount { margin-top: 0.7rem; }
@@ -516,17 +516,6 @@ input::placeholder, textarea::placeholder { color: var(--ink-muted); opacity: 1;
 .lifeos-progress-fill { background: var(--accent); }
 .lifeos-mark { box-shadow: 0 2px 8px rgb(0 0 0 / 18%); }
 .lifeos-mark { color: var(--accent); background: var(--accent-tint); --brand-mark-vein: var(--accent-tint); box-shadow: none; }
-.lifeos-brand { display: inline-flex; align-items: center; gap: .72rem; color: var(--ink); }
-.lifeos-brand > svg { width: 2.8rem; height: 2.8rem; flex: none; padding: .25rem; border-radius: 1rem; color: var(--accent); background: var(--accent-tint); --brand-mark-vein: var(--accent-tint); }
-.lifeos-brand-word { font-size: 1.08rem; line-height: 1.15; font-weight: 650; letter-spacing: -.035em; }
-.lifeos-onboarding-mark { width: 2.9rem !important; height: 2.9rem !important; }
-.lifeos-launch-reveal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; overflow: hidden; color: var(--ink); background: var(--page); padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem max(1.5rem, env(safe-area-inset-bottom)); }
-.lifeos-launch-lockup { display: grid; justify-items: center; transform-origin: center; animation: lifeos-launch-arrive 850ms cubic-bezier(.2,.72,.2,1) both; }
-.lifeos-launch-mark { display: grid; width: 6.25rem; height: 6.25rem; place-items: center; color: var(--accent); border-radius: 2rem; background: var(--accent-tint); --brand-mark-vein: var(--accent-tint); animation: lifeos-launch-illumination 850ms ease-out both; }
-.lifeos-launch-mark svg { width: 4.6rem; height: 4.6rem; }
-.lifeos-launch-word { margin-top: 1.25rem; font-size: 1.8rem; line-height: 1.1; font-weight: 650; letter-spacing: -.045em; }
-.lifeos-launch-caption { margin-top: .55rem; color: var(--ink-secondary); font-size: .84rem; letter-spacing: .015em; opacity: 0; animation: lifeos-launch-caption-in 500ms 500ms ease-out forwards; }
-.lifeos-launch-reveal.is-reduced-motion .lifeos-launch-lockup, .lifeos-launch-reveal.is-reduced-motion .lifeos-launch-mark, .lifeos-launch-reveal.is-reduced-motion .lifeos-launch-caption { animation: none; opacity: 1; transform: none; }
 .logo-brand { animation: lifeos-logo-in 220ms ease-out both; }
 .logo-portrait { animation: lifeos-logo-shift 360ms ease-in-out both; }
 .logo-rest { animation: lifeos-logo-settle 220ms ease-out both; }
@@ -560,9 +549,6 @@ input::placeholder, textarea::placeholder { color: var(--ink-muted); opacity: 1;
 @keyframes lifeos-logo-in { from { opacity: .5; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
 @keyframes lifeos-logo-shift { 0% { opacity: 0; transform: scale(.92); } 35% { opacity: 1; transform: scale(1); } 100% { opacity: 1; transform: scale(1); } }
 @keyframes lifeos-logo-settle { from { opacity: .75; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
-@keyframes lifeos-launch-arrive { 0% { opacity: 0; transform: scale(.94); } 36% { opacity: 1; transform: scale(1.015); } 68% { transform: scale(1); } 100% { opacity: 1; transform: scale(1); } }
-@keyframes lifeos-launch-illumination { 0% { box-shadow: 0 0 0 0 rgb(65 107 81 / 0%); } 42% { box-shadow: 0 0 36px 2px rgb(65 107 81 / 17%); } 100% { box-shadow: 0 0 0 0 rgb(65 107 81 / 0%); } }
-@keyframes lifeos-launch-caption-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
 :focus-visible {
   outline: 2px solid var(--focus-color);
@@ -588,25 +574,25 @@ html:not(.dark) {
   color-scheme: light;
   --page: #FAFAF7;
   --surface: #ffffff;
-  --surface-raised: #F5F7F3;
-  --surface-muted: #E8F0E7;
-  --stroke: #E9EEE8;
-  --ink: #25312A;
-  --ink-secondary: #58665B;
-  --ink-muted: #626D64;
-  --accent: #416B51;
+  --surface-raised: #f1f3eb;
+  --surface-muted: #e9f4d8;
+  --stroke: #dadfd2;
+  --ink: #141414;
+  --ink-secondary: #4f534a;
+  --ink-muted: #5d6258;
+  --accent: #365516;
   --accent-foreground: #FFFFFF;
-  --accent-tint: #E8F0E7;
-  --focus-color: #416B51;
-  --success: #286747;
-  --warning: #704900;
-  --danger: #A52A2A;
-  --disabled: #626D64;
-  --chart-1: #416B51;
-  --chart-2: #386F8A;
-  --chart-3: #80649B;
-  --chart-4: #B76842;
-  --chart-5: #69766B;
+  --accent-tint: #e9f4d8;
+  --focus-color: #4a6f25;
+  --success: #256344;
+  --warning: #774800;
+  --danger: #a1283a;
+  --disabled: #5d6258;
+  --chart-1: #467626;
+  --chart-2: #246881;
+  --chart-3: #715397;
+  --chart-4: #925728;
+  --chart-5: #57636b;
   background: var(--page);
 }
 html.dark { color-scheme: dark; }

@@ -12,7 +12,7 @@ export default function RecoveryDialog({ onRecover, onClose }: {
   return <main className="lifeos-page fixed inset-0 z-[100] flex items-center justify-center p-6">
     <section role="dialog" aria-modal="true" aria-labelledby="recovery-dialog-title" className="lifeos-panel w-full max-w-md space-y-4 rounded-2xl border p-5 shadow-xl">
       <h1 id="recovery-dialog-title" className="text-xl font-semibold">Recover the existing encryption key</h1>
-      <p className="text-sm text-secondary">Select your complete private recovery kit. LifeOS verifies it against an existing encrypted record before biometric re-binding. Database records are never replaced.</p>
+      <p className="text-sm text-secondary">Select your complete private recovery kit. BusyDoo verifies it against an existing encrypted record before biometric re-binding. Database records are never replaced.</p>
       <label className="block text-sm">Private recovery kit<input type="file" accept="application/json,.json" disabled={busy}
         onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; setMessage(''); setKit('');
           const generation = ++fileGeneration.current;

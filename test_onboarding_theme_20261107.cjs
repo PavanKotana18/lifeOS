@@ -18,6 +18,6 @@ const html = renderToStaticMarkup(React.createElement(Onboarding, {
 assert.match(html, /What should we call you\?/);
 assert.match(html, /Continue/);
 assert.match(html, /Synthetic User/);
-assert.match(html, /LifeOS/);
+assert.match(html, /BusyDoo/);
 assert.doesNotMatch(html, /recovery kit|biometric setup|Enable notifications/i);
 console.log('ONBOARDING: welcome renders only the name field and Continue.');

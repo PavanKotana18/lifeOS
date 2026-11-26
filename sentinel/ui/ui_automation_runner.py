@@ -316,7 +316,7 @@ def run_ui_automation():
 
             title = driver.title
 
-            assert "LifeOS" in title, "App crashed under rapid repeated taps"
+            assert "BusyDoo" in title, "App crashed under rapid repeated taps"
 
         test_step("Resilience: Rapid repeated tap stress test", test_rapid_taps)
 

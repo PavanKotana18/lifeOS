@@ -1,5 +1,5 @@
 /**
- * LifeOS Storage Access Framework Service (CJS / Browser compatible)
+ * BusyDoo Storage Access Framework Service (CJS / Browser compatible)
  * Provides native Android Storage Access Framework (SAF) integration via StorageAccessPlugin
  * with deterministic UTF-8 byte counting, 50MB boundary enforcement, cancellation handling,
  * and browser Web Blob fallback.

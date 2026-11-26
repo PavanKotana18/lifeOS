@@ -5,7 +5,7 @@ type Props = { counts: ModuleCounts; onNavigate: (tab: ModuleTab) => void };
 
 export default function ExploreHub({ counts, onNavigate }: Props) {
   return <section aria-labelledby="explore-title" className="space-y-4">
-    <header><p className="text-sm text-secondary">Your tools, in one place</p><h2 id="explore-title" className="text-xl font-semibold">Explore LifeOS</h2></header>
+    <header><p className="text-sm text-secondary">Your tools, in one place</p><h2 id="explore-title" className="text-xl font-semibold">Explore BusyDoo</h2></header>
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {MODULE_CATALOG.map(module => <button key={module.tab} type="button" data-module={module.tab} onClick={() => onNavigate(module.tab)} className="lifeos-panel min-h-28 rounded-2xl border p-4 text-left transition hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2">
         <span className="block text-base font-semibold">{module.title}</span>
