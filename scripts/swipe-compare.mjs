@@ -167,7 +167,7 @@ function asyncAdb(args, stdin) {
 }
 
 const failures=[];
-for (const variant of ['main','navigation','combined']) {
+for (const variant of ['main','reference','navigation','combined']) {
   let dev;
   try {
     const folder='candidates/'+variant;

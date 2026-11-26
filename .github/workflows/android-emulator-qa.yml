@@ -21,12 +21,19 @@ jobs:
           mkdir -p candidates evidence
           download() {
             mkdir -p "candidates/$1"
+            for attempt in {1..12}; do
+              if gh api "repos/${GITHUB_REPOSITORY}/actions/runs/$2/artifacts" --jq '.artifacts[].name' | rg -Fxq "$3"; then
+                break
+              fi
+              sleep 30
+            done
             gh run download "$2" -n "$3" -D "candidates/$1"
             find "candidates/$1" -name '*.apk' -print -exec sha256sum {} \; | tee -a evidence/apks.txt
           }
           download main 45623499656 LifeOS-debug-apk
-          download navigation 45728781669 LifeOS-signed-debug-apk-9500ef90cf304cddfc120b1bce5ac6d194f0be90
-          download combined 45728822022 LifeOS-signed-debug-apk-6457dde6edbd1d78763c6e2827db0318885bcb45
+          download reference 45728822022 LifeOS-signed-debug-apk-6457dde6edbd1d78763c6e2827db0318885bcb45
+          download navigation 45769131610 LifeOS-signed-debug-apk-dd52dc5e50245bdcb2648baf6e90130585aa4d18
+          download combined 45769207864 LifeOS-signed-debug-apk-987923e308c0ce80764f8a1b066c991321987b22
       - run: bash scripts/enable-github-runner-kvm.sh
       - uses: reactivecircus/android-emulator-runner@v2
         with:
