@@ -34,6 +34,14 @@ jobs:
         run: |
           gh run download "$SOURCE_RUN" -n lifeos-android-test-apks -D android-apks
           sha256sum android-apks/*.apk
+          cat > run-isolated-visual.sh <<'SH'
+          status=0
+          bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-visual-evidence || status=$?
+          if [ -s qa-visual-evidence/device-profile.txt ] && [ "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d '\r')" = 1 ]; then
+            adb -s emulator-5554 pull /sdcard/Android/data/com.lifeos.personal.debug/files/LifeOS-directed-visual qa-visual-evidence/screenshots || true
+          fi
+          exit "$status"
+          SH
       - run: bash scripts/enable-github-runner-kvm.sh
       - uses: reactivecircus/android-emulator-runner@v2
         env:
@@ -49,14 +57,7 @@ jobs:
           heap-size: 512M
           emulator-boot-timeout: 300
           disable-animations: false
-          script: >-
-            bash -c '
-            status=0;
-            bash scripts/run-android-instrumentation.sh android-apks/app-debug.apk android-apks/app-debug-androidTest.apk qa-visual-evidence || status=$?;
-            if [ -s qa-visual-evidence/device-profile.txt ] && [ "$(adb -s emulator-5554 shell getprop ro.kernel.qemu | tr -d "\r")" = 1 ]; then
-              adb -s emulator-5554 pull /sdcard/Android/data/com.lifeos.personal.debug/files/LifeOS-directed-visual qa-visual-evidence/screenshots || true;
-            fi;
-            exit "$status"'
+          script: bash run-isolated-visual.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
