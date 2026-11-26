@@ -32,13 +32,18 @@ assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await s
 assert.doesNotMatch(shell, /theme-toggle-btn|onClick=\{toggleTheme\}/, 'header has no duplicate theme shortcut');
 assert.match(fsSource, /<ThemeStudio\b/, 'curated theme selection remains in Settings appearance');
 assert.match(fs.readFileSync('src/components/AppearanceStudio.tsx', 'utf8'), /role="group" aria-labelledby="appearance-palettes"/);
-assert.match(fsSource, /aria-label="Open profile and settings"/, 'profile remains the header settings entry point');
+assert.match(fsSource, /tab === 'settings' && profilePhoto/, 'Profile photo belongs in bottom navigation');
+assert.doesNotMatch(fsSource, /aria-label="Open profile and settings"/, 'the masthead has no duplicate Profile entry');
 assert.match(fsSource, /lifeos-mark/, 'LifeOS mark uses its semantic shell class');
 assert.match(fsSource, /BrandMark/, 'App shell renders the shared original vector brand mark');
 assert.match(fsSource, /todayOverview\.routinesCompleted\} of \{todayOverview\.routinesDue\} done today/, 'habit heading remains in the semantic palette');
 assert.match(fsSource, /habit\.reminderTime/, 'habit details retain their reminder time');
 assert.match(footer, /onClick=\{\(\) => void CapacitorApp\.exitApp\(\)\}/, 'exit action remains connected');
-assert.match(footer, /role="status" aria-live="polite"/, 'toast remains announced to assistive technology');
+const Snackbar = require('./src/components/Snackbar.tsx').default;
+assert.match(footer, /<Snackbar notice=\{toast\}/, 'feedback uses the shared snackbar');
+const renderNotice = type => render(React.createElement(Snackbar, { notice: { message: 'Saved', type }, reduced: true, onDismiss() {} }));
+assert.match(renderNotice('success'), /role="status">Saved/, 'success feedback is announced politely');
+assert.match(renderNotice('danger'), /role="alert">Saved/, 'errors are announced immediately');
 assert.match(styles, /\.lifeos-warning \{ color: var\(--warning\); \}/, 'warning text maps to the active theme');
 
 const SecureSetupDialog = require('./src/components/SecureSetupDialog.tsx').default;

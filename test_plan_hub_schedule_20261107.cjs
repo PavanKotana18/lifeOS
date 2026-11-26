@@ -49,7 +49,7 @@ assert.doesNotMatch(markup, /Open calendar/);
 assert.doesNotMatch(markup, /Goals in Life/);
 assert.doesNotMatch(markup, /Open calendar/);
 assert.doesNotMatch(markup, /Open planner/);
-assert.doesNotMatch(markup, /Goals<\/h3>/, 'goal management stays in Life instead of being duplicated under Plan');
+assert.doesNotMatch(markup, /Goals<\/h3>/, 'the Tasks view has a separate destination from Goals');
 assert.doesNotMatch(markup, /truncate/, 'long task and goal titles are not clipped by the Plan summary');
 const dateOnlyMarkup = renderToStaticMarkup(React.createElement(PlanHub, {
   tasks: [task('date-only-display', '2026-11-07', undefined)], today: '2026-11-07', now: new Date('2026-11-07T08:00:00'), onNavigatePlanner: () => {}, onOpenTask: () => {}, onToggleTask: () => {}, onCreateTask: () => {}, onSelectRange: () => {}, onOpenGoals: () => {},

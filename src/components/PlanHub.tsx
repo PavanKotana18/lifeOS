@@ -1,4 +1,5 @@
-﻿import { useRef, useState } from 'react';
+import { PreferenceChoice } from './PreferenceChoice';
+import { useRef, useState } from 'react';
 import { Bell, ChevronRight, CircleCheck, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
 import type { Task } from '../types';
 import { getTaskStatus, sortTasksBySchedule } from '../services/domainUtils';
@@ -92,13 +93,18 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
         }}>
           <header className="flex items-center justify-between"><h3 className="text-lg font-semibold">Filters</h3><button type="button" className="min-h-11 px-2" onClick={() => dialog.current?.close()}>Close</button></header>
           <div className="plan-filter-fields">
-            <label>Status<select value={draft.status} onChange={event => setDraft({ ...draft, status: event.target.value as PlanStatus })}><option value="all">All statuses</option><option value="open">Pending</option><option value="completed">Completed</option><option value="overdue">Overdue</option></select></label>
-            <label>Priority<select value={draft.priority} onChange={event => setDraft({ ...draft, priority: event.target.value })}><option value="">Any priority</option>{['Low','Medium','High','Urgent'].map(value => <option key={value}>{value}</option>)}</select></label>
+            <PreferenceChoice variant="field" label="Status" value={draft.status}
+                options={[["all", "All statuses"], ["open", "Pending"], ["completed", "Completed"], ["overdue", "Overdue"]]} onSelect={event => setDraft({ ...draft, status: event as PlanStatus })} />
+            <PreferenceChoice variant="field" label="Priority" value={draft.priority}
+                options={[["", "Any priority"], ...(['Low','Medium','High','Urgent'].map(value => [String(value), value] as const))]} onSelect={event => setDraft({ ...draft, priority: event })} />
             <label>From<input type="date" value={draft.from} max={draft.through || undefined} onChange={event => setDraft({ ...draft, from: event.target.value })} /></label>
             <label>Through<input type="date" value={draft.through} min={draft.from || undefined} onChange={event => setDraft({ ...draft, through: event.target.value })} /></label>
-            <label>Category<select value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })}><option value="">All categories</option>{categories.map(value => <option key={value}>{value}</option>)}</select></label>
-            <label>Reminder<select value={draft.reminder} onChange={event => setDraft({ ...draft, reminder: event.target.value })}><option value="">Any</option><option value="yes">Has alert</option><option value="no">No alert</option></select></label>
-            <label>Repeat<select value={draft.recurrence} onChange={event => setDraft({ ...draft, recurrence: event.target.value })}><option value="">Any</option><option value="yes">Repeating</option><option value="no">One-time</option></select></label>
+            <PreferenceChoice variant="field" label="Category" value={draft.category} searchable
+                options={[["", "All categories"], ...(categories.map(value => [String(value), value] as const))]} onSelect={event => setDraft({ ...draft, category: event })} />
+            <PreferenceChoice variant="field" label="Reminder" value={draft.reminder}
+                options={[["", "Any"], ["yes", "Has alert"], ["no", "No alert"]]} onSelect={event => setDraft({ ...draft, reminder: event })} />
+            <PreferenceChoice variant="field" label="Repeat" value={draft.recurrence}
+                options={[["", "Any"], ["yes", "Repeating"], ["no", "One-time"]]} onSelect={event => setDraft({ ...draft, recurrence: event })} />
           </div>
           <footer className="grid grid-cols-2 gap-2"><button type="button" className="lifeos-input min-h-11 rounded-xl" onClick={() => setDraft({ ...emptyPlanFilters, status: 'all' })}>Clear filters</button><button type="submit" className="lifeos-accent-button min-h-11 rounded-xl">Apply filters</button></footer>
         </form>

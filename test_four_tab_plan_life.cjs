@@ -52,7 +52,17 @@ view('Today').props.onClick(); tree = renderPlan(props); markup = renderToStatic
 assert.match(markup, /late/); assert.doesNotMatch(markup, /class="plan-hub-row-title">future/); assert.doesNotMatch(markup, /class="plan-hub-row-title">undated/);
 view('Unscheduled').props.onClick(); tree = renderPlan(props);
 assert.deepEqual(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').map(n => n.props['aria-label']), ['Mark undated complete', 'Mark done-undated incomplete']);
-walk(tree, n => n.type === 'select')[0].props.onChange({ target: { value: 'all' } }); tree = renderPlan(props);
+const applyStatus = value => {
+  const [statusChoice] = walk(tree, node => node.props.label === 'Status' && typeof node.props.onSelect === 'function');
+  assert.ok(statusChoice.props.options.some(([key]) => key === value));
+  statusChoice.props.onSelect(value);
+  tree = renderPlan(props);
+  walk(tree, node => node.type === 'form')[0].props.onSubmit({ preventDefault() {} });
+  tree = renderPlan(props);
+};
+applyStatus('completed');
+assert.deepEqual(walk(tree, node => node.type === 'input' && node.props.type === 'checkbox').map(node => node.props['aria-label']), ['Mark done-undated incomplete']);
+applyStatus('all');
 assert.equal(walk(tree, n => n.type === 'input' && n.props.type === 'checkbox').length, 2, 'Completed undated tasks are accessible');
 walk(tree, n => n.type === 'input' && n.props.type === 'search')[0].props.onChange({ target: { value: 'missing' } }); tree = renderPlan(props);
 assert.match(renderToStaticMarkup(tree), /No tasks match this view/);

@@ -4,20 +4,20 @@ require('./scripts/register-ts-test-loader.cjs');
 const { PRIMARY_NAVIGATION, MODULE_CATALOG } = require('./src/services/navigationCatalog.ts');
 const { pushTabHistory, popTabHistory } = require('./src/services/tabHistory.ts');
 assert.deepEqual(PRIMARY_NAVIGATION.map(({ tab, label }) => [tab, label]), [
-  ['dashboard', 'Today'], ['finance', 'Money'], ['plan', 'Plan'], ['life', 'Life'],
+  ['dashboard', 'Today'], ['finance', 'Money'], ['plan', 'Plan'], ['settings', 'Profile'],
 ]);
 assert.equal(new Set(PRIMARY_NAVIGATION.map(item => item.tab)).size, 4);
 for (const tab of ['habits', 'goals', 'planner', 'settings']) {
-  assert.ok(MODULE_CATALOG.some(module => module.tab === tab), 'Existing module remains reachable from Life, Plan or Profile: ' + tab);
+  assert.ok(MODULE_CATALOG.some(module => module.tab === tab), 'Existing module remains reachable from Plan or Profile: ' + tab);
 }
 const { primaryDestinationForTab, resolvePlanPath } = require('./src/services/navigationCatalog.ts');
-assert.equal(primaryDestinationForTab('habits'), 'life');
-assert.equal(primaryDestinationForTab('goals'), 'life');
-assert.equal(primaryDestinationForTab('insights'), 'life');
+assert.equal(primaryDestinationForTab('habits'), 'plan');
+assert.equal(primaryDestinationForTab('goals'), 'plan');
+assert.equal(primaryDestinationForTab('insights'), 'plan');
 assert.equal(primaryDestinationForTab('planner'), 'plan');
-assert.equal(primaryDestinationForTab('settings'), null);
+assert.equal(primaryDestinationForTab('settings'), 'settings');
 assert.equal(new Set(MODULE_CATALOG.map(item => item.tab)).size, MODULE_CATALOG.length);
-assert.equal(resolvePlanPath('/life'), 'life');
+assert.equal(resolvePlanPath('/life'), 'plan');
 assert.equal(resolvePlanPath('#/life/habits'), 'habits');
 assert.equal(resolvePlanPath('/plan/goals'), 'goals');
 assert.equal(resolvePlanPath('/life/insights'), 'insights');

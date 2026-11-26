@@ -37,7 +37,7 @@ assert.equal(navigation.retainedScreenTransitionState(false, 'running'), 'inacti
 const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.tsx'), 'utf8');
 assert.match(app, /<RetainedScreen active=\{activeTab === 'dashboard'\} retainInactive/, 'Today is retained for swipe previews');
 assert.match(app, /<RetainedScreen active=\{activeTab === 'plan'\} retainInactive/, 'Tasks retains its local filters across Plan sections and detail routes');
-assert.match(app, /retainInactive prepare=\{primaryPrepared\} id="screen-life"/, "Life is retained and prewarmed for the swipe track");
+assert.match(app, /retainInactive prepare=\{primaryPrepared\} id="screen-settings"/, "Profile is retained and prewarmed for the swipe track");
 assert.match(app, /<RetainedScreen active=\{activeTab === 'finance'\} retainInactive/,
   'Money retains local account and planning form drafts while another tab is briefly visited');
 assert.match(app, /prefers-reduced-motion/);

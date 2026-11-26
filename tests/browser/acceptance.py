@@ -158,7 +158,7 @@ try:
  d.execute_script('const r=document.createRange();r.selectNodeContents(arguments[0]);const s=getSelection();s.removeAllRanges();s.addRange(r)',heading);swipe('.today-focus h3',-120);assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';d.execute_script('getSelection().removeAllRanges()');passed('Selected text retains ownership instead of becoming a tab swipe')
  d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':150,'y':y,'id':1},{'x':240,'y':y,'id':2}]});d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':70,'y':y,'id':1},{'x':160,'y':y,'id':2}]});d.execute_cdp_cmd('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]});assert wait('[data-tab="dashboard"]').get_attribute('aria-current')=='page';assert not d.find_elements(By.CSS_SELECTOR,'[data-gesture-dragging]');passed('Multitouch cancels primary navigation without a stuck drag')
  (out/'gesture-trace.json').write_text(json.dumps(d.execute_script('return window.__lifeosGestureTrace||[]'),indent=2))
- click('Open profile and settings'); capture('profile');
+ click('Profile'); capture('profile');
  for section in ['Preferences','Notifications','Privacy & security','Data & backup','About LifeOS']:
   click(section); capture('settings-'+section.lower().replace(' ','-').replace('&','and')); click('Profile')
  click('Appearance'); capture('appearance'); click('Dark'); capture('appearance-dark'); d.refresh(); wait('[data-testid="today-dashboard"]'); assert d.execute_script('return document.documentElement.classList.contains("dark")'); passed('Theme and encrypted records survive page restart using synthetic native key')

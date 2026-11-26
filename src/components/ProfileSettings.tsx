@@ -53,7 +53,7 @@ export function ProfileIdentityCard({ name, initial, onChange, photo, photoBusy,
       {photoBusy && <span role="status" className="text-xs text-secondary">Updating photo?</span>}
     </div>}
     {photoError && <p role="alert" className="mt-1 text-xs text-[var(--danger)]">{photoError}</p>}
-    {editing && <form className="mt-3 space-y-2" onSubmit={async event => {
+    {editing && <form data-no-tab-swipe className="mt-3 space-y-2" onSubmit={async event => {
       event.preventDefault();
       if (!draft.trim() || busy) return;
       setBusy(true); setError('');
@@ -79,17 +79,18 @@ export function ProfileNavigationRow({ title, detail, icon: Icon, onClick, value
   </button>;
 }
 
-export function ProfileHome({ name, initial, onNameChange, onOpen, onBack, developerAllowed = false, securityStatus, ...photoControls }: {
+export function ProfileHome({ name, initial, onNameChange, onOpen, onBack, embedded = false, developerAllowed = false, securityStatus, ...photoControls }: {
   name: string;
   initial: string;
   onNameChange: (name: string) => Promise<void>;
   onOpen: (section: typeof profileLinks[number]['section'] | 'developer') => void;
   onBack: () => void;
+  embedded?: boolean;
   developerAllowed?: boolean;
   securityStatus?: string;
 } & ProfilePhotoControls) {
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
-    <ProfilePageHeader title="Profile" backLabel="Back from profile" onBack={onBack} />
+    {!embedded && <ProfilePageHeader title="Profile" backLabel="Back from profile" onBack={onBack} />}
     <ProfileIdentityCard name={name} initial={initial} onChange={onNameChange} {...photoControls} />
     <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
       {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>

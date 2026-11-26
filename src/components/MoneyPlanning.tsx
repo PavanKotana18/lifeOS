@@ -4,13 +4,14 @@ import ComposerShell from './ComposerShell';
 import { AliveDisclosure } from './AliveDisclosure';
 import { PreferenceChoice } from './PreferenceChoice';
 import type { Dispatch, FormEvent, SetStateAction } from 'react';
-import { CalendarClock, Plus, RefreshCw } from 'lucide-react';
-import type { Category, FinancialAccount, ManualExchangeRate, PlannedCommitment } from '../types';
+import { ArrowDownLeft, ArrowUpRight, CalendarClock, Plus, RefreshCw } from 'lucide-react';
+import type { Category, FinancialAccount, ManualExchangeRate, PlannedCommitment, Transaction } from '../types';
 import { CURRENCY_CODES } from '../services/userPreferences';
 import { decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, minorUnitsToDecimal } from '../services/financeCore';
 import { formatLocalDate } from '../services/domainUtils';
 import type { ConfirmationOptions } from './ConfirmationDialog';
 import InfoTip from './InfoTip';
+import ScheduledDetailDialog from './ScheduledDetailDialog';
 
 type CommitmentInput = Omit<PlannedCommitment, 'id' | 'createdAt' | 'updatedAt'>;
 type RateInput = Omit<ManualExchangeRate, 'id' | 'createdAt' | 'updatedAt'>;
@@ -19,6 +20,7 @@ type RateDraft = { id?: string; base: string; quote: string; value: string; date
 export type MoneyPlanningDraftState = { commitment: CommitmentDraft | null; rate: RateDraft | null; commitmentDirty: boolean; rateDirty: boolean };
 type Props = {
   commitments: PlannedCommitment[];
+  transactions?: Transaction[];
   rates: ManualExchangeRate[];
   accounts: FinancialAccount[];
   categories: Category[];
@@ -35,12 +37,15 @@ type Props = {
   saving?: boolean;
 };
 const inputClass = 'lifeos-input mt-1 min-h-11 w-full rounded-xl px-3 py-2 text-sm';
+const scheduleFrequency = (frequency: PlannedCommitment['frequency']) => frequency === 'once'
+  ? 'One time' : frequency[0].toUpperCase() + frequency.slice(1);
 const codeOptions = [...new Set(CURRENCY_CODES)].sort();
 
-export default function MoneyPlanning({ commitments, rates, accounts, categories, confirmAction, onAddCommitment, onUpdateCommitment, onDeleteCommitment, onRecordOccurrence, onAddRate, onUpdateRate, onDeleteRate, draftState, onDraftStateChange, saving = false }: Props) {
+export default function MoneyPlanning({ commitments, transactions = [], rates, accounts, categories, confirmAction, onAddCommitment, onUpdateCommitment, onDeleteCommitment, onRecordOccurrence, onAddRate, onUpdateRate, onDeleteRate, draftState, onDraftStateChange, saving = false }: Props) {
   const reducedMotion = useReducedMotion() ?? false;
   const submittingCommitment = useRef(false);
-  const [planningPanel, setPlanningPanel] = useState<"plans" | "rates">("plans");
+  const [planningPanel, setPlanningPanel] = useState<'upcoming' | 'recurring' | 'history' | 'rates'>('upcoming');
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [localDraftState, setLocalDraftState] = useState<MoneyPlanningDraftState>({ commitment: null, rate: null, commitmentDirty: false, rateDirty: false });
   const controlledDrafts = draftState !== undefined && onDraftStateChange !== undefined;
   const activeDraftState: MoneyPlanningDraftState = controlledDrafts ? draftState! : localDraftState;
@@ -79,15 +84,123 @@ export default function MoneyPlanning({ commitments, rates, accounts, categories
   const editRate = (row: ManualExchangeRate) => { setError(''); setRateDirty(false); setRate({ id: row.id, base: row.baseCurrencyCode, quote: row.quoteCurrencyCode, value: row.rate, date: row.effectiveDate, source: row.sourceLabel || '' }); };
   const closeRate = async () => { if (saving) return; if (rateDirty && !(await confirmAction({ title: 'Discard rate changes?', message: 'Your manual exchange rate has not been saved.', confirmLabel: 'Discard changes', cancelLabel: 'Keep editing', destructive: true }))) return; setRate(null); setRateDirty(false); setError(''); };
   const saveRate = async (event: FormEvent) => { event.preventDefault(); if (saving || !rate) return; try { const input: RateInput = { baseCurrencyCode: rate.base, quoteCurrencyCode: rate.quote, rate: rate.value.trim(), effectiveDate: rate.date, sourceLabel: rate.source.trim() || undefined }; if (rate.id) await onUpdateRate(rate.id, input); else await onAddRate(input); setRate(null); setRateDirty(false); setError(''); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Rate could not be saved.'); } };
-  return <main className="space-y-5" data-testid="money-planning">
-    <div className="flex gap-2" role="group" aria-label="Planning views"><button type="button" className="lifeos-input min-h-11 rounded-xl px-3" aria-pressed={planningPanel === "plans"} onClick={() => setPlanningPanel("plans")}>Scheduled plans</button><button type="button" className="lifeos-input min-h-11 rounded-xl px-3" aria-pressed={planningPanel === "rates"} onClick={() => setPlanningPanel("rates")}>Exchange rates</button></div>
+  const deletePlan = async (row: PlannedCommitment) => {
+    if (!await confirmAction({ title: 'Delete this planned bill?', message: row.title + ' will be removed from your planning list. No posted transaction is affected.', confirmLabel: 'Delete plan', destructive: true })) return;
+    await runAction(() => onDeleteCommitment(row.id));
+  };
+  const today = formatLocalDate(new Date());
+  const plans = commitments.filter(row => row.status !== 'recorded')
+    .sort((left, right) => left.nextDueDate.localeCompare(right.nextDueDate));
+  const visiblePlans = plans.filter(row => planningPanel !== 'recurring' || row.frequency !== 'once');
+  const nextPlan = planningPanel === 'upcoming' ? visiblePlans.find(row => row.status === 'active') : undefined;
+  const detail = commitments.find(row => row.id === detailId);
+  const statusLabel = (row: PlannedCommitment) => row.status === 'recorded' ? 'Recorded' : row.status === 'paused'
+    ? 'Paused' : row.nextDueDate < today ? 'Past due' : row.nextDueDate === today ? 'Due today' : 'Upcoming';
+  const canRecord = (row: PlannedCommitment) => Boolean(!saving && postingId === null && row.status === 'active'
+    && row.nextDueDate <= today && onRecordOccurrence);
+  const showAmount = (row: PlannedCommitment) => formatMinorUnits(BigInt(row.amountMinor), row.currencyCode);
+  const posted = planningPanel === 'history' ? transactions.filter(row => row.commitmentId && row.commitmentOccurrenceDate)
+    .sort((a, b) => (b.commitmentOccurrenceDate || '').localeCompare(a.commitmentOccurrenceDate || '')) : [];
+  const recordedKeys = new Set(posted.map(row => `${row.commitmentId}:${row.commitmentOccurrenceDate}`));
+  const missingRecordedPlans = planningPanel === 'history' ? commitments.filter(plan => plan.lastPostedDate &&
+    !recordedKeys.has(`${plan.id}:${plan.lastPostedDate}`)) : [];
+
+  const renderPlan = (row: PlannedCommitment, featured: boolean) => {
+    const Direction = row.type === 'income' ? ArrowDownLeft : ArrowUpRight;
+    return <article key={row.id} className="scheduled-plan-row" data-next={featured}>
+      <button type="button" className="scheduled-row-open" aria-label={`View ${row.title}`} onClick={() => {
+        setError(''); setDetailId(row.id);
+      }}>
+        <span className="scheduled-row-icon"><Direction size={20} aria-hidden="true" /></span>
+        <span className="scheduled-row-identity">
+          <strong>{row.title}</strong>
+          <small>{row.type === 'income' ? 'Incoming' : 'Outgoing'} · {scheduleFrequency(row.frequency)}</small>
+          <small>Due {row.nextDueDate} · {statusLabel(row)}</small>
+        </span>
+        <span className="scheduled-row-amount tabular-nums">{showAmount(row)}<small>{row.currencyCode}</small></span>
+      </button>
+      <div className="scheduled-row-actions">
+        <button type="button" disabled={!canRecord(row)} onClick={() => void recordOccurrence(row)}
+          aria-label={`Record occurrence for ${row.title}`}>{postingId === row.id ? 'Recording…' : 'Record occurrence'}</button>
+        <button type="button" onClick={() => void runAction(() => onUpdateCommitment(row.id, { status: row.status === 'active' ? 'paused' : 'active' }))}>
+          {row.status === 'active' ? 'Pause' : 'Resume'}
+        </button>
+        <button type="button" onClick={() => editCommitment(row)}>Edit</button>
+        <button type="button" onClick={() => void deletePlan(row)}>Delete</button>
+      </div>
+    </article>;
+  };
+
+  return <main className="space-y-4" data-testid="money-planning">
+    <div className="scheduled-tabs" role="group" aria-label="Schedule views">
+      {([['upcoming', 'Upcoming'], ['recurring', 'Recurring'], ['history', 'History'], ['rates', 'Exchange rates']] as const).map(([id, label]) =>
+        <button key={id} type="button" className="lifeos-input" aria-pressed={planningPanel === id} onClick={() => setPlanningPanel(id)}>{label}</button>)}
+    </div>
     {error && !commitment && !rate && <p role="alert" className="lifeos-danger rounded-xl border p-3 text-sm">{error}</p>}
-    {planningPanel === "plans" ?     <section className="lifeos-panel rounded-2xl border p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div className="flex gap-3"><span className="lifeos-tint flex h-11 w-11 items-center justify-center rounded-xl"><CalendarClock size={19} /></span><div><div className="flex items-center gap-2"><h3 className="font-semibold">Scheduled plans</h3><InfoTip label="Recurring Money confirmation">A plan creates no transaction automatically. When due, review and confirm one occurrence to record it and advance the plan.</InfoTip></div><p className="mt-1 text-xs text-secondary">Nothing is posted until you confirm an occurrence.</p></div></div><button type="button" onClick={addCommitment} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold"><Plus size={15} className="mr-1 inline" />Add</button></div>
-      {!commitments.length ? <p className="mt-5 rounded-xl lifeos-raised p-4 text-sm text-secondary">No upcoming commitments. Add one if it helps your planning.</p> : <div className="mt-4 divide-y divide-[var(--stroke)]">{commitments.map(row => <article key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div className="min-w-0"><strong className="block truncate text-sm">{row.title}</strong><span className="text-xs text-secondary">{row.type || 'expense'} - {row.frequency === 'once' ? 'One time' : row.frequency} · {row.status === 'recorded' ? 'recorded ' + row.nextDueDate : 'next ' + row.nextDueDate + ' · ' + row.status}</span></div><div className="flex items-center gap-2"><span className="text-sm font-semibold tabular-nums">{formatMinorUnits(BigInt(row.amountMinor), row.currencyCode)}</span>{row.status !== 'recorded' && <><button type="button" disabled={saving || postingId !== null || row.status !== 'active' || row.nextDueDate > formatLocalDate(new Date()) || !onRecordOccurrence} onClick={() => void recordOccurrence(row)} className="min-h-11 rounded-lg px-2 text-xs lifeos-accent-text disabled:opacity-50" aria-label={`Record occurrence for ${row.title}`}>{postingId === row.id ? 'Recording...' : 'Record occurrence'}</button><button type="button" onClick={() => void runAction(() => onUpdateCommitment(row.id, { status: row.status === 'active' ? 'paused' : 'active' }))} className="min-h-10 rounded-lg px-2 text-xs text-secondary">{row.status === 'active' ? 'Pause' : 'Resume'}</button><button type="button" onClick={() => editCommitment(row)} className="min-h-10 rounded-lg px-2 text-xs lifeos-accent-text">Edit</button></>}<button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this planned bill?', message: `“${row.title}” will be removed from your planning list. No posted transaction is affected.`, confirmLabel: 'Delete plan', destructive: true }))) return; await runAction(() => onDeleteCommitment(row.id)); }} className="min-h-10 rounded-lg px-2 text-xs text-secondary">Delete</button></div></article>)}</div>}
+    {planningPanel === 'history' ? <section aria-label="Recorded occurrences" className="lifeos-panel rounded-2xl border p-4">
+      <h3 className="type-section-title">Recorded occurrences</h3>
+      {!posted.length && !missingRecordedPlans.length && <p className="text-sm text-secondary">No recorded occurrences yet.</p>}
+      {posted.map(row => <article className="scheduled-history-row" key={row.id}>
+        <div><strong>{row.description || row.category}</strong><p className="text-sm text-secondary">Recorded &middot; {row.commitmentOccurrenceDate}</p></div>
+        {row.amountMinor && row.currencyCode && <span>{formatMinorUnits(BigInt(row.amountMinor), row.currencyCode)}</span>}
+      </article>)}
+      {missingRecordedPlans.map(row => <article className="scheduled-history-row" key={row.id}>
+        <div><strong>{row.title}</strong><p className="text-sm text-secondary">Recorded &middot; {row.lastPostedDate} &middot; Transaction removed</p></div>
+      </article>)}
+      {commitments.filter(row => row.status === 'recorded').map(row => <button type="button" key={row.id}
+        className="min-h-11 px-3 text-sm text-secondary" onClick={() => void deletePlan(row)}>Delete recorded plan {row.title}</button>)}
+    </section> : planningPanel !== 'rates' ? <section className="scheduled-workspace">
+      <header className="scheduled-workspace-header">
+        <div className="flex items-center gap-2">
+          <h3 className="type-section-title">{planningPanel === 'recurring' ? 'Recurring commitments' : 'Upcoming items'}</h3>
+          <InfoTip label="Recurring Money confirmation">A plan creates no transaction automatically. When due, review and confirm one occurrence to record it and advance the plan.</InfoTip>
+        </div>
+        <button type="button" onClick={addCommitment} className="feather-primary shrink-0">
+          <Plus size={15} className="mr-1 inline" aria-hidden="true" />Add scheduled item
+        </button>
+      </header>
+      {nextPlan && <section className="scheduled-next" aria-label="Next commitment">
+        <p><CalendarClock size={17} aria-hidden="true" />Next commitment</p>
+        {renderPlan(nextPlan, true)}
+      </section>}
+      {!visiblePlans.length
+        ? <div className="scheduled-empty lifeos-panel"><p>No upcoming commitments.</p></div>
+        : visiblePlans.some(row => row !== nextPlan) && <div className="scheduled-timeline" aria-label="Commitment timeline">
+          {visiblePlans.filter(row => row !== nextPlan).map(row => renderPlan(row, false))}
+        </div>}
     </section> :     <section className="lifeos-panel rounded-2xl border p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div className="flex gap-3"><span className="lifeos-tint flex h-11 w-11 items-center justify-center rounded-xl"><RefreshCw size={19} /></span><div><h3 className="font-semibold">Manual exchange rates</h3><p className="mt-1 text-xs text-secondary">Offline rates you enter yourself. They are not live market quotes.</p></div></div><button type="button" onClick={addRate} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold"><Plus size={15} className="mr-1 inline" />Add rate</button></div>
       {!rates.length ? <p className="mt-5 rounded-xl lifeos-raised p-4 text-sm text-secondary">No manual rates saved. Mixed currencies will remain separate until a dated rate is available.</p> : <div className="mt-4 divide-y divide-[var(--stroke)]">{rates.map(row => <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><span className="text-sm"><strong>{row.baseCurrencyCode} → {row.quoteCurrencyCode}</strong><small className="ml-2 text-secondary">{row.effectiveDate}{row.sourceLabel ? ` · ${row.sourceLabel}` : ''}</small></span><span className="font-semibold tabular-nums">1 {row.baseCurrencyCode} = {row.rate} {row.quoteCurrencyCode}</span><span className="flex gap-1"><button type="button" onClick={() => editRate(row)} className="min-h-10 rounded-lg px-2 text-xs lifeos-accent-text">Edit</button><button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this manual rate?', message: `${row.baseCurrencyCode} to ${row.quoteCurrencyCode} at ${row.rate} for ${row.effectiveDate} will be removed.`, confirmLabel: 'Delete rate', destructive: true }))) return; await runAction(() => onDeleteRate(row.id)); }} className="min-h-10 rounded-lg px-2 text-xs text-secondary">Delete</button></span></div>)}</div>}
       <p className="mt-3 rounded-xl lifeos-raised p-3 text-xs leading-relaxed text-secondary">Each rate includes its effective date and optional source label. LifeOS does not download rates or imply a conversion is current.</p>
     </section>}
+    {detail && <ScheduledDetailDialog key={detail.id} title={detail.title} eyebrow="Scheduled commitment" onClose={() => setDetailId(null)}>
+      <div className="scheduled-detail-amount">
+        <p className="text-secondary">{detail.type === 'income' ? 'Incoming' : 'Outgoing'} · {detail.currencyCode}</p>
+        <strong className="type-display-amount tabular-nums">{showAmount(detail)}</strong>
+      </div>
+      <dl className="scheduled-detail-metadata">
+        <div><dt>Next due</dt><dd>{detail.nextDueDate}</dd></div>
+        <div><dt>Status</dt><dd>{statusLabel(detail)}</dd></div>
+        <div><dt>Repeats</dt><dd>{scheduleFrequency(detail.frequency)}</dd></div>
+        <div><dt>Category</dt><dd>{categories.find(row => row.id === detail.categoryId)?.name ?? 'Unassigned'}</dd></div>
+        <div><dt>Account</dt><dd>{accounts.find(row => row.id === detail.accountId)?.name ?? 'Unassigned'}</dd></div>
+      </dl>
+      {detail.notes && <p className="whitespace-pre-wrap break-words text-sm">{detail.notes}</p>}
+      <button type="button" className="lifeos-accent-button min-h-11 rounded-xl px-4 font-semibold"
+        disabled={!canRecord(detail)} onClick={() => {
+          setDetailId(null);
+          void recordOccurrence(detail);
+        }}>Record occurrence</button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="lifeos-raised min-h-11 rounded-xl px-4" onClick={() => { setDetailId(null); editCommitment(detail); }}>Edit</button>
+        {detail.status !== 'recorded' && <button type="button" className="lifeos-raised min-h-11 rounded-xl px-4"
+          disabled={saving} onClick={() => void runAction(() => onUpdateCommitment(detail.id, { status: detail.status === 'active' ? 'paused' : 'active' }))}>
+          {detail.status === 'active' ? 'Pause' : 'Resume'}
+        </button>}
+        <button type="button" className="lifeos-raised min-h-11 rounded-xl px-4" onClick={() => {
+          setDetailId(null); setPlanningPanel('history');
+        }}>History</button>
+      </div>
+    </ScheduledDetailDialog>}
     <AnimatePresence>
       {commitment && <ComposerShell key="commitment" id="money-commitment-dialog" mode="page" portal
         title={commitment.id ? 'Edit planned commitment' : 'Plan recurring income or expense'}
