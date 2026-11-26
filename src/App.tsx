@@ -1,4 +1,3 @@
-import { BUSYDOO } from './services/busydooBrand';
 import { goalProgressPercent, isGoalComplete, validateGoalMeasure } from './services/goalModes';
 import { AnimatePresence } from 'motion/react';
 import ComposerShell from './components/ComposerShell';
@@ -102,12 +101,12 @@ function ScreenLoading({ label }: { label: string }) {
 const systemDarkPreference = () => resolveSystemDark((window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark, window.matchMedia('(prefers-color-scheme: dark)').matches);
 const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME_ID, customAccent?: string) => {
   document.documentElement.classList.toggle('dark', theme === 'dark');
-  applyThemeTokens(themeId, theme);
+  const themeTokens = applyThemeTokens(themeId, theme);
   for (const [name, value] of Object.entries(buildCustomAccentOverrides(normalizeCustomAccent(customAccent), themeId, theme))) {
     document.documentElement.style.setProperty(name, value);
   }
   document.documentElement.style.colorScheme = theme;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? BUSYDOO.black : BUSYDOO.light);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeTokens.background);
 };
 
 const notificationLabels: Record<keyof NotificationPreferences, string> = {

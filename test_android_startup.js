@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 require('./scripts/register-ts-test-loader.cjs');
 const { resolveInitialAppearancePreference, resolveInitialSystemDark, resolveInitialVisualTheme } = require('./src/services/systemAppearance.ts');
 const themeCatalog = require('./src/services/themeCatalog.ts');
+const busydooBrand = require('./src/services/busydooBrand.ts');
 
 (async () => {
   let checks = 0;
@@ -12,9 +13,9 @@ const themeCatalog = require('./src/services/themeCatalog.ts');
   check(await resolveInitialAppearancePreference(() => { throw new Error('store unavailable'); }), 'system');
   check(await resolveInitialAppearancePreference(() => new Promise(() => {}), 5), 'system');
   check(await resolveInitialVisualTheme(async () => 'ocean-mist'), 'ocean-mist');
-  check(await resolveInitialVisualTheme(async () => 'invalid'), 'soft-ivory-sage');
-  check(await resolveInitialVisualTheme(() => Promise.reject(new Error('store unavailable')), 5), 'soft-ivory-sage');
-  check(await resolveInitialVisualTheme(() => new Promise(() => {}), 5), 'soft-ivory-sage');
+  check(await resolveInitialVisualTheme(async () => 'invalid'), themeCatalog.DEFAULT_THEME_ID);
+  check(await resolveInitialVisualTheme(() => Promise.reject(new Error('store unavailable')), 5), themeCatalog.DEFAULT_THEME_ID);
+  check(await resolveInitialVisualTheme(() => new Promise(() => {}), 5), themeCatalog.DEFAULT_THEME_ID);
   check(await resolveInitialSystemDark(true, () => new Promise(() => {}), 5), true);
   check(await resolveInitialSystemDark(false, () => Promise.reject(new Error('bridge unavailable'))), false);
   check(await resolveInitialSystemDark(false, async () => ({ dark: true })), true);
@@ -70,6 +71,8 @@ async function entrypointScenario({ readPreference, nativeAppearance, cacheThrow
     './styles/four-tab-transformation.css': {},
     './styles/interface-motion.css': {},
     './styles/planning-life-transformation.css': {},
+    './styles/busydoo.css': {},
+    './services/busydooBrand': busydooBrand,
   };
   vm.runInNewContext(mainCode, {
     exports: {},

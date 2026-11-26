@@ -89,7 +89,7 @@ export function contrastRatio(foreground: string, background: string): number {
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
 }
 
-export function applyThemeTokens(themeId: string, mode: AppearanceMode, root: HTMLElement = document.documentElement): void {
+export function applyThemeTokens(themeId: string, mode: AppearanceMode, root: HTMLElement = document.documentElement): ThemeTokens {
   const tokens = getThemeTokens(themeId, mode);
   const variables: Record<string, string> = {
     '--page': tokens.background, '--surface': tokens.surface, '--surface-raised': tokens.elevatedSurface,
@@ -104,4 +104,5 @@ export function applyThemeTokens(themeId: string, mode: AppearanceMode, root: HT
     '--chart-4': tokens.chartSeries[3], '--chart-5': tokens.chartSeries[4],
   };
   for (const [name, value] of Object.entries(variables)) root.style.setProperty(name, value);
+  return tokens;
 }

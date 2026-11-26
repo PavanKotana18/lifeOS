@@ -102,9 +102,9 @@ async function bootstrapAppearance() {
   const dark = resolveAppearance(preference, systemDark) === 'dark';
   if (Capacitor.isNativePlatform()) (window as Window & { lifeosSystemDark?: boolean }).lifeosSystemDark = systemDark;
   document.documentElement.classList.toggle('dark', dark);
-  applyThemeTokens(themeId, dark ? 'dark' : 'light');
+  const themeTokens = applyThemeTokens(themeId, dark ? 'dark' : 'light');
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? BUSYDOO.black : BUSYDOO.light);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeTokens.background);
   try { localStorage.setItem('lifeos-theme-id', themeId); } catch { /* Cosmetic cache is optional. */ }
   try { localStorage.setItem('lifeos-appearance', preference); } catch { /* Cosmetic cache is optional. */ }
 }
