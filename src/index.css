@@ -149,7 +149,7 @@ html:has(.app-header-shell) { scroll-padding-block-start: calc(env(safe-area-ins
   padding-left: max(var(--track-panel-gutter), env(safe-area-inset-left));
   padding-right: max(var(--track-panel-gutter), env(safe-area-inset-right));
 }
-.ui-tab-viewport { display: grid; grid-template-columns: minmax(0, 1fr); overflow: clip; }
+.ui-tab-viewport { display: grid; grid-template-columns: minmax(0, 1fr); overflow-x: clip; overflow-y: visible; }
 .ui-tab-screen-stack { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; align-items: stretch; }
 .ui-tab-screen-stack > [data-lifeos-screen] { grid-area: 1 / 1; min-width: 0; }
 .ui-tab-screen { position: relative; min-width: 0; background: var(--page); }

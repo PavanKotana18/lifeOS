@@ -657,13 +657,15 @@ async function main() {
               const outgoing = document.getElementById('screen-' + from);
               const incoming = document.getElementById('screen-' + to);
               const stage = document.querySelector('.ui-tab-screen-stack');
-              const clip = document.querySelector('.ui-tab-viewport').getBoundingClientRect();
+              const viewport = document.querySelector('.ui-tab-viewport');
+              const clip = viewport.getBoundingClientRect();
               const indicator = document.querySelector('.alive-nav-indicator');
               return {
                 stageX: new DOMMatrix(getComputedStyle(stage).transform).m41,
                 outgoingRight: outgoing.getBoundingClientRect().right,
                 incomingLeft: incoming.getBoundingClientRect().left,
                 width: clip.width, clipLeft: clip.left, clipRight: clip.right,
+                clipY: getComputedStyle(viewport).overflowY,
                 opacity: [getComputedStyle(outgoing).opacity, getComputedStyle(incoming).opacity],
                 gutters: [parseFloat(getComputedStyle(outgoing).paddingRight), parseFloat(getComputedStyle(incoming).paddingLeft)],
                 indicator: new DOMMatrix(getComputedStyle(indicator).transform).m41 / indicator.offsetWidth,
@@ -684,6 +686,7 @@ async function main() {
             assert.ok(middle.stageX < -100, 'track follows the finger');
             assert.ok(Math.abs(middle.outgoingRight - middle.incomingLeft) < 1, 'adjacent panels meet without a gap or overlap');
             assert.ok(middle.incomingLeft > middle.clipLeft && middle.incomingLeft < middle.clipRight);
+            assert.equal(middle.clipY, 'visible', 'taller incoming content extends below a short outgoing route');
             assert.deepEqual(middle.opacity, ['1', '1']);
             assert.ok(middle.gutters.every(inset => inset >= 12), 'both moving panels carry their inline gutters');
             assert.equal(middle.heading, before.heading, 'masthead stays stationary');

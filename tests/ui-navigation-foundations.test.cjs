@@ -91,7 +91,7 @@ assert.match(css, /--motion-tab: 190ms/);
 assert.match(css, /\.app-main[^\n]*touch-action: pan-y pinch-zoom/);
 assert.match(css, /\.ui-tab-screen \{[^}]*background: var\(--page\)/);
 assert.match(css, /\.ui-tab-screen\[hidden\] \{ display: none !important; \}/);
-assert.match(css, /\.ui-tab-viewport[^}]*overflow: clip/);
+assert.match(css, /\.ui-tab-viewport[^}]*overflow-x: clip; overflow-y: visible/);
 assert.match(css, /\.ui-tab-screen-stack\[data-track-dragging\][^}]*translate3d\(var\(--gesture-x/);
 assert.match(css, /\[data-gesture-preview\]\[hidden\][^}]*pointer-events: none/);
 assert.doesNotMatch(css, /\.ui-tab-screen[^}]*enter-prepare[^}]*opacity: \.92/);
