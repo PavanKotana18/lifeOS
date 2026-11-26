@@ -1,3 +1,5 @@
+import type { Goal } from '../types';
+import InfoTip from './InfoTip';
 import { useId, useState, type Dispatch, type SetStateAction } from 'react';
 import { Bell, CalendarDays, Flag, Repeat2 } from 'lucide-react';
 import { AliveDisclosure, AliveReveal } from './AliveDisclosure';
@@ -14,10 +16,11 @@ const reminderChoices = [
 ] as const;
 const field = 'lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm';
 
-export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, editing, dirty }: {
+export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, goals = [], editing, dirty }: {
   draft: Draft;
   update: Dispatch<SetStateAction<Draft>>;
   dateOnlyAlertTime: string;
+  goals?: Goal[];
   editing: boolean;
   dirty: () => void;
 }) {
@@ -64,6 +67,7 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
     </AliveReveal>
     <AliveReveal id={id + '-reminder'} open={panel === 'reminder'}>
       <div className="task-option-panel space-y-2">
+        <div className="flex items-center gap-2 text-xs text-secondary">Task reminders <InfoTip label="Task reminders" /></div>
         <label className="flex min-h-11 items-center gap-3 text-sm">
           <input type="checkbox" disabled={!draft.date || !(draft.time || dateOnlyAlertTime)} checked={draft.dueAlert !== 'off'}
             onChange={event => set('dueAlert', event.target.checked ? 'on' : 'off')} /> Alert at due time
@@ -85,6 +89,11 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
         <label className="block text-xs text-secondary">Description (optional)
           <textarea rows={2} maxLength={500} value={draft.description || ''} onChange={event => set('description', event.target.value)} className={field} />
         </label>
+        {!editing && <label className="block text-xs text-secondary">Subtasks (one per line)
+          <textarea rows={3} value={draft.subtasks || ''} onChange={event => set('subtasks', event.target.value)} className={field} />
+        </label>}
+        {goals.length > 0 && <PreferenceChoice variant="field" label="Linked goal" value={draft.goalId || ''}
+          options={[[ '', 'No linked goal' ], ...goals.map(goal => [goal.id, goal.title] as const)]} onSelect={value => choose('goalId', value)} />}
         <label className="block text-xs text-secondary">Category (optional)
           <input maxLength={50} value={draft.category || ''} onChange={event => set('category', event.target.value)} className={field} />
         </label>

@@ -1,4 +1,3 @@
-import { recordGoalProgress } from './domainUtils';
 import { PossibleImportDuplicateError, type ImportDuplicateOptions } from './smartImport';
 import { createSampleData, isSampleRecord } from './sampleData';
 import { withCommitmentWriteLock } from './commitmentWriteLock';
@@ -834,7 +833,9 @@ export function createEncryptedStorageFacade(
         const milestones = (await ctx.getAll<Milestone>('milestones')).filter(m => m.goalId === id);
         const updatedAt = new Date().toISOString();
         const next = { ...existing, ...changes, id, createdAt: existing.createdAt, updatedAt };
-        const progressHistory = recordGoalProgress(existing, next, updatedAt);
+        const progressHistory = existing.currentValue !== next.currentValue || existing.unit !== next.unit
+          ? [...(existing.progressHistory || []), { at: updatedAt, value: next.currentValue, ...(next.unit ? { unit: next.unit } : {}) }]
+          : existing.progressHistory;
         ctx.put('goals', reconcileGoal({ ...next, ...(progressHistory ? { progressHistory } : {}) }, milestones));
       }),
 
