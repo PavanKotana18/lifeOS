@@ -1,7 +1,7 @@
 import LifeDoodle from './LifeDoodle';
 import { PreferenceChoice } from './PreferenceChoice';
 import { useRef, useState } from 'react';
-import { Bell, Plus, Repeat2, SlidersHorizontal } from 'lucide-react';
+import { Bell, Repeat2, SlidersHorizontal } from 'lucide-react';
 import type { Task } from '../types';
 import { getTaskStatus, sortTasksBySchedule } from '../services/domainUtils';
 
@@ -79,18 +79,19 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
   return <section aria-labelledby="plan-title" className="plan-hub plan-workspace">
     <header className="plan-workspace-heading flex items-center justify-between gap-3">
       <h2 id="plan-title" className="type-section-title">Tasks</h2>
-      {!onQuickCreate && <button type="button" className="lifeos-accent-button min-h-11 rounded-xl px-3 text-sm font-semibold inline-flex items-center gap-2" onClick={onCreate}><Plus size={16} aria-hidden="true" />Add task</button>}
+      {!onQuickCreate && <button type="button" className="feather-primary" onClick={onCreate}>Add task</button>}
     </header>
     {onQuickCreate && <form className="plan-quick-task flex gap-2" aria-label="Quick task capture" onSubmit={event => {
       event.preventDefault();
       const form = event.currentTarget;
       const title = String(new FormData(form).get('title') || '').trim();
+      if (!title) return;
       onQuickCreate(title);
       form.reset();
     }}>
       <label className="sr-only" htmlFor="plan-quick-task-title">Quick task title</label>
       <input id="plan-quick-task-title" name="title" maxLength={160} placeholder="Add a task to your list?" className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm" />
-      <button type="submit" className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold">Add task</button>
+      <button type="submit" className="feather-primary shrink-0">Add task</button>
     </form>}
     <div className="plan-view-controls" data-no-tab-swipe>
       <div className="plan-view-switch" role="group" aria-label="Task views">{views.map(item => <button type="button" key={item.id} aria-pressed={view === item.id} onClick={() => setView(item.id)}>{item.label}</button>)}</div>

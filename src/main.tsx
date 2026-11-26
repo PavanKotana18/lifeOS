@@ -22,6 +22,7 @@ const SystemAppearance = registerPlugin<{ getSystemAppearance: () => Promise<{ d
 const LaunchExperience = registerPlugin<{
   getLaunchInfo: () => Promise<{ coldStart: boolean }>;
   releaseNativeSplash: () => Promise<void>;
+  setSystemBarAppearance: (appearance: { color: string; darkIcons: boolean }) => Promise<void>;
 }>('LaunchExperience');
 
 const root = document.getElementById('root')!;
@@ -61,6 +62,27 @@ function BootstrappedApp({ coldStart }: { coldStart: boolean }) {
       app.inert = false;
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
     };
+  }, [launch]);
+
+  useLayoutEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    const root = document.documentElement;
+    const overlay = document.querySelector<HTMLElement>('.busydoo-launch');
+    let last = '';
+    const sync = () => {
+      const page = getComputedStyle(root).getPropertyValue('--page').trim();
+      const color = launch ? overlay?.dataset.cinematic === 'true' ? '#101513' : '#030303' : page;
+      const darkIcons = !launch && !root.classList.contains('dark');
+      const appearance = color + darkIcons;
+      if (appearance === last || !/^#[0-9a-f]{6}$/i.test(color)) return;
+      last = appearance;
+      void LaunchExperience.setSystemBarAppearance({ color, darkIcons }).catch(() => {});
+    };
+    const observer = new MutationObserver(sync);
+    observer.observe(root, { attributes: true, attributeFilter: ['style', 'class'] });
+    if (overlay) observer.observe(overlay, { attributes: true, attributeFilter: ['data-cinematic'] });
+    sync();
+    return () => observer.disconnect();
   }, [launch]);
 
   const finish = () => {

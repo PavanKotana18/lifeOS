@@ -1,3 +1,4 @@
+import { cancelSheet, closeSheet, showSheet } from './sheetMotion';
 import { useId, useRef, useState } from 'react';
 import { Info, X } from 'lucide-react';
 import { APP_NAME } from '../config/appBrand';
@@ -16,16 +17,16 @@ export default function InfoSheet({ label, content }: { label: string; content: 
       aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
       onClick={() => {
         const sheet = dialog.current;
-        if (sheet && !sheet.open) { sheet.showModal(); setOpen(true); }
+        if (sheet && !sheet.open) { showSheet(sheet); setOpen(true); }
       }}><Info size={17} aria-hidden="true" /></button>
-    <dialog ref={dialog} id={id} className="lifeos-info-dialog lifeos-info-sheet" data-contextual-info="true"
+    <dialog data-polish-sheet onCancel={cancelSheet} ref={dialog} id={id} className="lifeos-info-dialog lifeos-info-sheet" data-contextual-info="true"
       aria-labelledby={id + '-title'} aria-describedby={id + '-definition'}
       onClose={() => { setOpen(false); trigger.current?.focus({ preventScroll: true }); }}
-      onClick={event => { if (event.target === event.currentTarget) dialog.current?.close(); }}>
+      onClick={event => { if (event.target === event.currentTarget) closeSheet(dialog.current); }}>
       <div className="lifeos-info-dialog-content">
         <header className="flex items-center justify-between gap-3">
           <h2 id={id + '-title'} className="type-section-title">{label}</h2>
-          <button type="button" className="lifeos-info-close" aria-label={'Close ' + label + ' explanation'} onClick={() => dialog.current?.close()}><X size={18} aria-hidden="true" /></button>
+          <button type="button" className="lifeos-info-close" aria-label={'Close ' + label + ' explanation'} onClick={() => closeSheet(dialog.current)}><X size={18} aria-hidden="true" /></button>
         </header>
         <p id={id + '-definition'} className="info-definition">{content.definition}</p>
         {sections.filter(([, body]) => body).map(([title, body]) => <section key={title} className="info-sheet-section"><h3>{title}</h3><p>{body}</p></section>)}

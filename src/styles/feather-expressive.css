@@ -204,7 +204,7 @@
 .feather-expressive :is(.profile-identity-card, .profile-link-group) { box-shadow: none; border: 0; }
 .feather-expressive .profile-identity-card { background: var(--feather-highlight); }
 .feather-expressive .profile-link-group { background: transparent; padding-inline: 0; }
-.feather-expressive .profile-navigation-row { padding-inline: 0; }
+.feather-expressive .profile-navigation-row { padding-inline: var(--space-3); }
 .feather-expressive .profile-subpage .preference-group { border-color: transparent; }
 .feather-expressive .profile-navigation-row:hover { border-color: transparent; }
 .feather-expressive :is(.task-detail-meta > div, .feather-detail-surface) { border: 0; background: var(--feather-grouped); }
@@ -512,3 +512,64 @@ h1#primary-route-title:focus, h1#profile-route-title:focus { outline: none; }
 .transaction-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .transaction-actions .transaction-add { flex: 1 1 11rem; }
 .transaction-actions .feather-secondary { flex: 1 0 auto; }
+
+
+dialog[data-polish-sheet][open] {
+  animation: feather-sheet-rise 310ms cubic-bezier(.16, 1, .3, 1) both;
+}
+dialog[data-polish-sheet][open]::backdrop { animation: feather-sheet-shade 310ms ease-out both; }
+dialog[data-polish-sheet][data-sheet-closing] { animation: feather-sheet-lower 230ms cubic-bezier(.4, 0, 1, 1) both; pointer-events: none; }
+dialog[data-polish-sheet][data-sheet-closing]::backdrop { animation: feather-sheet-shade 230ms ease-in reverse both; }
+@keyframes feather-sheet-rise { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes feather-sheet-lower { to { transform: translateY(100%); } }
+@keyframes feather-sheet-shade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  dialog[data-polish-sheet][open], dialog[data-polish-sheet][open]::backdrop { animation: none; }
+}
+.profile-editor-sheet {
+  margin: auto auto 0;
+  inset: auto 0 0;
+  width: min(100%, 34rem);
+  max-height: min(88dvh, 100%);
+  border: 1px solid var(--stroke);
+  border-radius: 1.5rem 1.5rem 0 0;
+  padding: 1rem 1rem max(1rem, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+.profile-editor-sheet::backdrop, .profile-crop-editor::backdrop { background: rgb(0 0 0 / .48); }
+.profile-editor-action { display: flex; align-items: center; gap: .75rem; width: 100%; min-height: 48px; text-align: start; }
+.profile-editor-action.is-destructive { color: var(--danger); }
+.profile-avatar-trigger { position: relative; }
+.profile-avatar-camera { position: absolute; inset: auto -.2rem -.2rem auto; border-radius: 50%; background: var(--surface); color: var(--accent); padding: .2rem; border: 1px solid var(--stroke); }
+.profile-track-page { inline-size: 100%; }
+.profile-track-page .profile-settings { max-width: none; }
+.profile-crop-editor { width: 100%; height: 100%; max-width: none; max-height: none; margin: 0; padding: var(--page-gutter); }
+.profile-crop-toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
+.profile-crop-stage { position: relative; width: min(100%, 68dvh, 480px); aspect-ratio: 1; margin: 1rem auto; overflow: hidden; touch-action: none; background: var(--surface-raised); }
+.profile-crop-stage img { position: absolute; max-width: none; transform-origin: center; pointer-events: none; }
+.profile-crop-stage::after { content: ''; position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 100vw rgb(0 0 0 / .49); border: 1px solid rgb(255 255 255 / .65); pointer-events: none; }
+
+.life-habit-check.is-quantity { width: auto; padding-inline: .55rem; font-size: .75rem; }
+.today-sections { position: relative; }
+.feather-expressive .today-sections > [data-today-card] {
+  position: relative;
+  border: 0;
+  border-radius: var(--radius-card);
+  background: var(--feather-grouped);
+  padding: var(--space-4);
+  cursor: pointer;
+}
+.feather-expressive .today-sections > :is([data-today-card="focus"], [data-today-card="money"]) {
+  background: var(--feather-highlight);
+}
+.today-sections [data-today-card] :is(.today-routine-row, .lifeos-raised) { background: transparent; }
+.today-sections [data-today-lifted] {
+  transform: translate(var(--today-drag-x, 0px), var(--today-drag-y, 0px)) scale(1.025);
+  outline: 1px solid var(--focus-color);
+  box-shadow: 0 14px 34px rgb(0 0 0 / .22);
+  z-index: 4;
+  user-select: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .today-sections [data-today-lifted] { transform: translate(var(--today-drag-x, 0px), var(--today-drag-y, 0px)); }
+}

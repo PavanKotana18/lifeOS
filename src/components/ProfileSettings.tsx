@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
-import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wallet } from 'lucide-react';
+import { closeSheet, showSheet } from './sheetMotion';
+import { useRef, useState, type ReactNode } from 'react';
+import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wallet, Camera, Crop, ImagePlus, PencilLine, Trash2 } from 'lucide-react';
 import { FeatherHeader } from './FeatherHeader';
 import type { LucideIcon } from 'lucide-react';
 
@@ -36,34 +37,64 @@ export function ProfileAvatar({ photo }: { photo?: string | null; initial?: stri
   return photo ? <img className="profile-avatar-image" src={photo} alt="" draggable={false} /> : <span className="profile-avatar-placeholder" aria-hidden="true"><UserRound size="56%" strokeWidth={1.55} /></span>;
 }
 
-export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoError, onPhotoChange, onChange }: { name: string; initial: string; photo?: string | null; photoBusy?: boolean; photoError?: string; onPhotoChange?: (remove?: boolean) => Promise<void>; onChange: (name: string) => Promise<void> }) {
-  const [editing, setEditing] = useState(false);
+export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoError, onPhotoChange, onEditPhoto, onChange }: { name: string; initial: string; photo?: string | null; photoBusy?: boolean; photoError?: string; onPhotoChange?: (remove?: boolean) => Promise<void>; onEditPhoto?: () => void; onChange: (name: string) => Promise<void> }) {
+  const photoSheet = useRef<HTMLDialogElement>(null);
+  const nameSheet = useRef<HTMLDialogElement>(null);
+  const avatar = useRef<HTMLButtonElement>(null);
+  const pencil = useRef<HTMLButtonElement>(null);
+  const remove = useRef(false);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return <section className="profile-identity-card lifeos-panel rounded-2xl border" aria-labelledby="profile-identity-title">
     <div className="profile-identity-row flex items-center gap-3">
-      <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-lg font-semibold" aria-hidden="true"><ProfileAvatar photo={photo} initial={initial} /></div>
+      {onPhotoChange ? <button type="button" ref={avatar} aria-label="Profile photo options" aria-haspopup="dialog"
+        className="profile-avatar profile-avatar-trigger lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl"
+        disabled={photoBusy} onClick={() => showSheet(photoSheet.current)}>
+        <ProfileAvatar photo={photo} initial={initial} /><Camera size={20} className="profile-avatar-camera" aria-hidden="true" />
+      </button> : <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl" aria-hidden="true"><ProfileAvatar photo={photo} initial={initial} /></div>}
       <h2 id="profile-identity-title" className="min-w-0 flex-1 safe-wrap text-xl font-semibold">{name.trim() || 'Your profile'}</h2>
-      {!editing && <button type="button" className="min-h-11 text-sm lifeos-accent-text" onClick={() => { setDraft(name); setEditing(true); }}>Edit name</button>}
+      <button type="button" ref={pencil} aria-label="Edit name" aria-haspopup="dialog" className="feather-icon-button" onClick={() => {
+        setDraft(name); setError(''); showSheet(nameSheet.current);
+      }}><PencilLine size={19} aria-hidden="true" /></button>
     </div>
-    {onPhotoChange && <div className="profile-photo-actions" aria-busy={photoBusy}>
-      <button type="button" disabled={photoBusy} onClick={() => void onPhotoChange()}>{photo ? "Replace photo" : "Choose photo"}</button>
-      {photo && <button type="button" disabled={photoBusy} onClick={() => void onPhotoChange(true)}>Remove photo</button>}
-      {photoBusy && <span role="status" className="text-secondary text-xs">Updating photo?</span>}
-    </div>}
-    {photoError && <p role="alert" className="mt-1 text-xs text-[var(--danger)]">{photoError}</p>}
-    {editing && <form data-no-tab-swipe className="mt-3 space-y-2" onSubmit={async event => {
-      event.preventDefault();
-      if (!draft.trim() || busy) return;
-      setBusy(true); setError('');
-      try { await onChange(draft); setEditing(false); }
-      catch { setError('Could not save your name.'); }
-      finally { setBusy(false); }
-    }}><label className="block text-sm font-medium">Display name<input autoFocus required maxLength={48} value={draft} onChange={event => setDraft(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
-      {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
-      <div className="flex justify-end gap-2"><button type="button" disabled={busy} className="min-h-11 px-3" onClick={() => { setEditing(false); setError(''); }}>Cancel</button><button type="submit" disabled={busy || !draft.trim()} className="lifeos-accent-button min-h-11 rounded-xl px-3">Save name</button></div>
-    </form>}
+    {photoBusy && <p role="status" className="text-secondary text-xs">Opening photo picker?</p>}
+    {photoError && <p role="alert" className="text-xs text-[var(--danger)]">{photoError}</p>}
+    {onPhotoChange && <dialog ref={photoSheet} data-polish-sheet data-profile-editor aria-label="Profile photo"
+      className="profile-editor-sheet lifeos-page" onCancel={event => { event.preventDefault(); closeSheet(photoSheet.current); }}
+      onClick={event => { if (event.target === event.currentTarget) closeSheet(photoSheet.current); }}
+      onClose={() => {
+        avatar.current?.focus({ preventScroll: true });
+        if (remove.current) { remove.current = false; void onPhotoChange(true); }
+      }}>
+      <h3 className="type-section-title">Profile photo</h3>
+      <button type="button" className="profile-editor-action" onClick={() => { closeSheet(photoSheet.current); void onPhotoChange(); }}>
+        <ImagePlus size={19} aria-hidden="true" />{photo ? 'Replace photo' : 'Choose photo'}
+      </button>
+      {photo && <><button type="button" className="profile-editor-action" onClick={() => { photoSheet.current?.close(); onEditPhoto?.(); }}><Crop size={19} aria-hidden="true" />Edit photo</button>
+        <button type="button" className="profile-editor-action is-destructive" onClick={() => { remove.current = true; closeSheet(photoSheet.current); }}><Trash2 size={19} aria-hidden="true" />Remove photo</button></>}
+      <button type="button" className="feather-secondary" onClick={() => closeSheet(photoSheet.current)}>Cancel</button>
+    </dialog>}
+    <dialog ref={nameSheet} data-polish-sheet data-profile-editor aria-label="Edit name" className="profile-editor-sheet lifeos-page"
+      onCancel={event => { event.preventDefault(); if (!busy) closeSheet(nameSheet.current); }}
+      onClick={event => { if (!busy && event.target === event.currentTarget) closeSheet(nameSheet.current); }}
+      onClose={() => pencil.current?.focus({ preventScroll: true })}>
+      <form className="space-y-3" onSubmit={async event => {
+        event.preventDefault();
+        if (!draft.trim() || busy) return;
+        setBusy(true); setError('');
+        try { await onChange(draft); closeSheet(nameSheet.current); }
+        catch { setError('Could not save your name.'); }
+        finally { setBusy(false); }
+      }}>
+        <h3 className="type-section-title">Edit name</h3>
+        <label className="block text-sm font-medium">Display name<input autoFocus required maxLength={48} value={draft}
+          onChange={event => setDraft(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
+        {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
+        <div className="flex justify-end gap-2"><button type="button" disabled={busy} className="feather-secondary" onClick={() => closeSheet(nameSheet.current)}>Cancel</button>
+          <button type="submit" disabled={busy || !draft.trim()} className="feather-primary">Save name</button></div>
+      </form>
+    </dialog>
   </section>;
 }
 
@@ -74,13 +105,13 @@ export function ProfileNavigationRow({ title, icon: Icon, onClick, value }: { ti
   </button>;
 }
 
-export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPhotoChange, onNameChange, onOpen, onBack, sharedHeader = false, developerAllowed = false, securityStatus }: {
+export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPhotoChange, onEditPhoto, onNameChange, onOpen, onBack, sharedHeader = false, developerAllowed = false, securityStatus }: {
   name: string;
   initial: string;
   photo?: string | null;
   photoBusy?: boolean;
   photoError?: string;
-  onPhotoChange?: (remove?: boolean) => Promise<void>;
+  onPhotoChange?: (remove?: boolean) => Promise<void>; onEditPhoto?: () => void;
   onNameChange: (name: string) => Promise<void>;
   onOpen: (section: typeof profileLinks[number]['section'] | 'developer') => void;
   onBack: () => void;
@@ -90,7 +121,7 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
 }) {
   return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
     {!sharedHeader && <FeatherHeader title="Profile" heading="h1" back={{ label: 'Back from profile', onClick: onBack }} />}
-    <ProfileIdentityCard name={name} initial={initial} photo={photo} photoBusy={photoBusy} photoError={photoError} onPhotoChange={onPhotoChange} onChange={onNameChange} />
+    <ProfileIdentityCard name={name} initial={initial} photo={photo} photoBusy={photoBusy} photoError={photoError} onPhotoChange={onPhotoChange} onEditPhoto={onEditPhoto} onChange={onNameChange} />
     <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
       {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>
         <section key={index} aria-label={index === 0 ? "Personal preferences" : "Security and information"} className="profile-link-group lifeos-panel rounded-2xl border">

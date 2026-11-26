@@ -8,6 +8,7 @@ require.extensions['.tsx'] = (loaded, file) => loaded._compile(ts.transpileModul
 }).outputText, file);
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
+const { taskScheduleError } = require('./src/services/domainUtils.ts');
 const QuickTaskEntry = require('./src/components/QuickTaskEntry.tsx').default;
 const source = ts.createSourceFile('QuickTaskEntry.tsx', fs.readFileSync('src/components/QuickTaskEntry.tsx', 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let initializer;
@@ -28,16 +29,17 @@ assert.match(markup, /<label for="[^"]+"/);
 assert.match(markup, /aria-describedby="[^"]+-hint"/);
 assert.match(markup, /maxLength="200"/);
 assert.match(markup, /disabled=""[^>]*>Add task/);
-assert.match(markup, /Add a date when you are ready to schedule it/);
+assert.match(markup, /Choose a due date/);
 assert.match(markup, /aria-label="About Task reminders"/);
 assert.match(markup, /Schedule, priority and reminder/);
 assert.match(markup, /type="date"/);
 assert.match(markup, /Priority/);
 const event = { preventDefault() {} };
-function harness(title, onAdd) {
+const futureDate = '2099-12-31';
+function harness(title, onAdd, dueDate = futureDate) {
   const operation = { current: false }, titles = [], busy = [], errors = [];
-  const details = { dueDate: '', dueTime: '', reminderAt: '', priority: 'Medium' };
-  const handler = bind({ title, operation, onAdd, dueDate: details.dueDate, dueTime: details.dueTime, reminderAt: details.reminderAt, priority: details.priority,
+  const details = { dueDate, dueTime: '', reminderAt: '', priority: 'Medium' };
+  const handler = bind({ taskScheduleError, title, operation, onAdd, dueDate: details.dueDate, dueTime: details.dueTime, reminderAt: details.reminderAt, priority: details.priority,
     setDueDate: value => { details.dueDate = value; }, setDueTime: value => { details.dueTime = value; }, setReminderAt: value => { details.reminderAt = value; }, setPriority: value => { details.priority = value; },
     setTitle: value => titles.push(value), setSaving: value => busy.push(value), setError: value => errors.push(value) });
   return { handler, operation, titles, busy, errors, details };
@@ -50,10 +52,14 @@ function harness(title, onAdd) {
     assert.equal(calls, 0); assert.deepEqual(fixture.titles, []); assert.equal(fixture.operation.current, false);
     assert.ok(fixture.errors[0]); assert.deepEqual(fixture.busy, []);
   }
+  const missingDate = harness('No date', async () => { calls++; }, '');
+  await missingDate.handler(event);
+  assert.equal(calls, 0);
+  assert.match(missingDate.errors.at(-1), /due date/);
   const posted = [];
-  const success = harness('  Synthetic unscheduled task  ', async (...args) => posted.push(args));
+  const success = harness('  Synthetic scheduled task  ', async (...args) => posted.push(args));
   await success.handler(event);
-  assert.deepEqual(posted, [['Synthetic unscheduled task', { dueDate: undefined, dueTime: undefined, reminderAt: undefined, priority: 'Medium' }]]); assert.deepEqual(success.titles, ['']);
+  assert.deepEqual(posted, [['Synthetic scheduled task', { dueDate: futureDate, dueTime: undefined, reminderAt: undefined, priority: 'Medium' }]]); assert.deepEqual(success.titles, ['']);
   assert.deepEqual(success.busy, [true, false]); assert.equal(success.operation.current, false);
 
   let attempts = 0;
@@ -79,5 +85,5 @@ function harness(title, onAdd) {
   assert.deepEqual(concurrent.titles, [], 'Draft remains until the actual write resolves');
   finish(); await first;
   assert.equal(pendingWrites, 1); assert.deepEqual(concurrent.titles, ['']); assert.equal(concurrent.operation.current, false);
-  console.log('QUICK TASK ENTRY: title-only rendering, validation, guarded double submit, failure preservation and successful retry passed; no mounted/native rendering claimed.');
+  console.log('QUICK TASK ENTRY: required date rendering, validation, guarded double submit, failure preservation and successful retry passed; no mounted/native rendering claimed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

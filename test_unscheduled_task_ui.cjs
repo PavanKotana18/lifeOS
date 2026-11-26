@@ -6,12 +6,14 @@ const event = { preventDefault() {} };
 (async () => {
   const f = await h.fixture();
   try {
+    const { taskScheduleError } = f.appDeps();
+    const future = { dueDate: '2099-12-31' };
     const quick = h.appFunction('addUnscheduledTask');
     const operation = { current: false }, messages = [];
     let writes = 0, refreshes = 0, permissionRequests = 0;
     const notificationPreferences = { taskReminders: false };
     const add = h.bind(quick, {
-      quickTaskOperation: operation,
+      taskScheduleError, quickTaskOperation: operation,
       ensurePrivateStorageBeforeWrite: async () => {},
       notificationPreferences, notificationsEnabled: false,
       askNotificationPermission: async () => { permissionRequests++; return { granted: false }; },
@@ -24,31 +26,32 @@ const event = { preventDefault() {} };
     await assert.rejects(add('   '), /title/);
     await assert.rejects(add('x'.repeat(201)), /title/);
     assert.equal(writes, 0);
-    await assert.doesNotReject(add('  Synthetic unscheduled UI task  '), 'A committed save resolves even if refresh fails, so quick entry clears its draft rather than offering a duplicate retry');
+    await assert.rejects(add('Synthetic missing date'), /due date/);
+    await assert.doesNotReject(add('  Synthetic scheduled UI task  ', future), 'A committed save resolves even if refresh fails, so quick entry clears its draft rather than offering a duplicate retry');
     assert.equal(writes, 1); assert.equal(refreshes, 1); assert.equal(operation.current, false);
     assert.equal(permissionRequests, 0, 'An unscheduled quick task never asks for notification permission');
     const rows = await f.StorageService.tasks.getAll();
-    assert.equal(rows.length, 1); assert.equal(rows[0].title, 'Synthetic unscheduled UI task');
-    assert.equal(rows[0].dueDate, undefined); assert.equal(rows[0].reminderAt, undefined);
+    assert.equal(rows.length, 1); assert.equal(rows[0].title, 'Synthetic scheduled UI task');
+    assert.equal(rows[0].dueDate, future.dueDate); assert.equal(rows[0].reminderAt, undefined);
     const raw = await f.lifeOSDatabase.tasks.get(rows[0].id);
     assert.equal(raw.__lifeosEncrypted, 1); assert.equal(raw.title, undefined);
     assert.match(messages[0].message, /Task saved/); assert.equal(messages[0].type, 'info');
     operation.current = true;
-    await assert.rejects(add('Synthetic blocked double submit'), /already being saved/);
+    await assert.rejects(add('Synthetic blocked double submit', future), /already being saved/);
     assert.equal(writes, 1); operation.current = false;
     const cancelled = h.bind(quick, {
-      quickTaskOperation: operation,
+      taskScheduleError, quickTaskOperation: operation,
       ensurePrivateStorageBeforeWrite: async () => { throw Error('Security setup cancelled'); },
       StorageService: { tasks: { add: async () => { throw Error('Unexpected write'); } } },
     });
-    await assert.rejects(cancelled('Synthetic cancelled task'), /Security setup cancelled/);
+    await assert.rejects(cancelled('Synthetic cancelled task', future), /Security setup cancelled/);
     assert.equal(operation.current, false);
 
     const save = h.appFunction('saveNewRecord');
     function saveHarness(draft, overrides = {}) {
       const state = { setup: 0, permission: 0, writes: [], messages: [], closed: [], operation: { current: false } };
       const handler = h.bind(save, {
-        ...h.noopSetters(save), createKind: 'task', createOperation: state.operation,
+        taskScheduleError, ...h.noopSetters(save), createKind: 'task', createOperation: state.operation,
         createDraft: { title: 'Synthetic form task', priority: 'Medium', recurring: 'None', ...draft },
         editingTaskId: null, editingHabitId: null, editingTransactionId: null, editingGoalId: null, editingContributionId: null,
         ensurePrivateStorageBeforeWrite: async () => { state.setup++; },
@@ -66,17 +69,17 @@ const event = { preventDefault() {} };
       await invalid.handler(event);
       assert.equal(invalid.setup, 0, 'Invalid undated scheduling is rejected before security setup');
       assert.equal(invalid.permission, 0); assert.equal(invalid.writes.length, 0);
-      assert.match(invalid.messages[0], /Add a due date/);
+      assert.match(invalid.messages[0], /Choose a due date/);
       assert.equal(invalid.operation.current, false); assert.deepEqual(invalid.closed, []);
     }
-    for (const date of ['', '2026-11-19']) {
+    for (const date of ['2099-12-31']) {
       const valid = saveHarness({ date });
       await valid.handler(event);
       assert.equal(valid.writes.length, 1); assert.equal(valid.writes[0].dueDate, date || undefined);
       assert.equal(valid.setup, 1); assert.equal(valid.permission, 0); assert.deepEqual(valid.closed, [null]);
       assert.equal(valid.operation.current, false); assert.equal(valid.messages[0], 'Task added');
     }
-    const committed = saveHarness({}, { reloadAllData: async () => { throw Error('Synthetic refresh failure'); } });
+    const committed = saveHarness({ date: future.dueDate }, { reloadAllData: async () => { throw Error('Synthetic refresh failure'); } });
     await committed.handler(event);
     assert.equal(committed.writes.length, 1); assert.deepEqual(committed.closed, [null]);
     assert.match(committed.messages[0], /Saved.*do not submit this item again/);

@@ -50,7 +50,7 @@ assert.equal(CINEMATIC_SECONDS, 5.4);
 assert.ok(REGULAR_LAUNCH_MS >= 200 && REGULAR_LAUNCH_MS <= 350);
 assert.match(bootstrap, /initialBusyDooLaunch\(\) \? 'first' : 'regular'/);
 assert.match(bootstrap, /setItem\('busydoo-harmony-seen', 'yes'\)/);
-assert.match(overlay, />Skip intro<\/button>/);
+assert.doesNotMatch(overlay, /Skip intro|preventDefault\(\)/);
 assert.match(app, /window\.dispatchEvent\(new Event\(REPLAY_BUSYDOO_LAUNCH\)\)/);
 assert.match(app, /lifeos:startup-ready/);
 assert.match(css, /prefers-reduced-motion: reduce/);

@@ -9,6 +9,12 @@ import android.content.res.Configuration;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.view.Gravity;
+import android.view.View;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.widget.TextView;
@@ -63,6 +69,7 @@ public class MainActivity extends BridgeActivity {
         // Start protected for every build. Debug UI may opt into screenshots only
         // after React confirms that the visible surface contains no secrets.
         applyScreenshotProtection();
+        configureSystemBars();
         applySystemFontScale();
         showWebViewUpdateIfRequired();
     }
@@ -92,6 +99,35 @@ public class MainActivity extends BridgeActivity {
 
     public void releaseLaunchSplash() {
         keepLaunchSplash = false;
+    }
+
+    private void configureSystemBars() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
+        final View content = findViewById(android.R.id.content);
+        final boolean dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+            == Configuration.UI_MODE_NIGHT_YES;
+        applySystemBarAppearance(coldLaunch ? "#030303" : dark ? "#101712" : "#FAFAF7", !coldLaunch && !dark);
+        ViewCompat.setOnApplyWindowInsetsListener(content, (view, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            Insets keyboard = insets.getInsets(WindowInsetsCompat.Type.ime());
+            view.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, keyboard.bottom));
+            return WindowInsetsCompat.CONSUMED;
+        });
+        ViewCompat.requestApplyInsets(content);
+    }
+
+    public void applySystemBarAppearance(String color, boolean darkIcons) {
+        if (color == null || !color.matches("#[0-9a-fA-F]{6}")) return;
+        runOnUiThread(() -> {
+            View content = findViewById(android.R.id.content);
+            if (content == null) return;
+            content.setBackgroundColor(Color.parseColor(color));
+            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(getWindow(), content);
+            controller.setAppearanceLightStatusBars(darkIcons);
+            controller.setAppearanceLightNavigationBars(darkIcons);
+        });
     }
 
     static int webTextZoomForFontScale(float fontScale) {

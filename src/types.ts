@@ -229,6 +229,7 @@ export interface Task {
   reminderAt?: string; // Previously saved absolute reminder
   reminderLeadMinutes?: number;
   dueAlertDisabled?: boolean;
+  dateOnlyAlertAnchorAt?: string;
   priority: PriorityLevel;
   category?: string;
   notes?: string;

@@ -25,4 +25,12 @@ public class LaunchExperiencePlugin extends Plugin {
         }
         call.resolve();
     }
+
+    @PluginMethod
+    public void setSystemBarAppearance(PluginCall call) {
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).applySystemBarAppearance(call.getString("color"), Boolean.TRUE.equals(call.getBoolean("darkIcons")));
+        }
+        call.resolve();
+    }
 }

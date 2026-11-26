@@ -1,3 +1,4 @@
+import { cancelSheet, closeSheet, showSheet } from './sheetMotion';
 import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 
@@ -35,7 +36,7 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
   const selected = matched?.[1] ?? (value || 'Choose an option');
   const missing = required && (!value || !matched || matched[2]);
   const showError = invalid && missing;
-  const close = () => dialog.current?.close();
+  const close = () => closeSheet(dialog.current);
   useLayoutEffect(() => {
     if (open) list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
   }, [open]);
@@ -45,7 +46,7 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
     <button ref={trigger} type="button" className={icon ? 'task-option' : variant === 'field' ? 'choice-trigger' : 'preference-row'}
       aria-label={variant !== 'row' ? label : undefined} aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
       aria-invalid={showError || undefined} aria-describedby={variant !== 'row' ? id + '-value' + (showError ? ' ' + id + '-error' : '') : showError ? id + '-error' : undefined} disabled={disabled}
-      onClick={() => { setSearch(''); setFocusKey(value); setOpen(true); dialog.current?.showModal(); }}>
+      onClick={() => { setSearch(''); setFocusKey(value); setOpen(true); showSheet(dialog.current); }}>
       {icon}{icon ? <span><strong>{label}</strong><small id={id + '-value'}>{disabled && disabledHint ? disabledHint : selected}</small></span> : <>
         {variant === 'row' && <span>{label}</span>}
         <span id={id + '-value'} className="choice-current">{disabled && disabledHint ? disabledHint : selected}</span>
@@ -57,7 +58,7 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
       onInvalid={event => { event.preventDefault(); setInvalid(true); trigger.current?.focus(); }} />}
     {showError && <p id={id + '-error'} className="text-xs text-[var(--danger)]" role="alert">Choose an option for {label.toLocaleLowerCase()}.</p>}
     {disabled && !disabledHint && variant === 'row' && <p className="pb-2 text-xs text-secondary">Currency is locked for existing financial records.</p>}
-    <dialog ref={dialog} id={id} className="preference-sheet choice-sheet lifeos-page" data-preference-choice aria-label={label}
+    <dialog data-polish-sheet onCancel={cancelSheet} ref={dialog} id={id} className="preference-sheet choice-sheet lifeos-page" data-preference-choice aria-label={label}
       onClose={() => { setOpen(false); if (trigger.current?.isConnected) trigger.current.focus({ preventScroll: true }); }}
       onClick={event => { if (event.target === event.currentTarget) close(); }}>
       <section className="choice-sheet-layout">
