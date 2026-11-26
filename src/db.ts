@@ -1376,6 +1376,7 @@ const rawStorageService: IDataStorage = {
       validateGoalMeasure(goal);
       const id = createRecordId('g');
       const record: Goal = { ...goal, id, createdAt: new Date().toISOString() };
+      if (record.mode !== undefined && record.status !== 'Paused') record.status = isGoalComplete(record, []) ? 'Completed' : 'In Progress';
       await db.goals.add(record);
       return record;
     },
@@ -1421,8 +1422,14 @@ const rawStorageService: IDataStorage = {
       const id = createRecordId('m');
       const record: Milestone = { ...milestone, id };
       await db.transaction('rw', db.goals, db.milestones, async () => {
-        if (!(await db.goals.get(record.goalId))) throw new Error('Milestone goal does not exist.');
+        const goal = await db.goals.get(record.goalId);
+        if (!goal) throw new Error('Milestone goal does not exist.');
         await db.milestones.add(record);
+        if (goal.mode !== undefined && goal.status !== 'Paused') {
+          const related = await db.milestones.where('goalId').equals(goal.id).toArray();
+          const status = isGoalComplete(goal, related) ? 'Completed' : 'In Progress';
+          if (status !== goal.status) await db.goals.update(goal.id, { status });
+        }
       });
       return record;
     },

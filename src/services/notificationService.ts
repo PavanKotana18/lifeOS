@@ -1,3 +1,4 @@
+import { isGoalComplete } from './goalModes';
 import { reminderCopy, type NotificationTone } from './notificationCopy';
 import { isSampleRecord } from './sampleData';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -733,7 +734,8 @@ export const NotificationService = {
     try {
     await this.ensureChannel();
     await cancelPendingKinds(['milestoneReminder']);
-    const activeGoals = new Set(goals.filter(goal => goal.status === 'In Progress' && !goal.archived && !isSampleRecord(goal.id)).map(goal => goal.id));
+    const activeGoals = new Set(goals.filter(goal => !goal.archived && !isSampleRecord(goal.id) && (goal.mode === undefined ? goal.status === 'In Progress'
+      : goal.status !== 'Paused' && !isGoalComplete(goal, milestones.filter(row => row.goalId === goal.id)))).map(goal => goal.id));
     const activeMilestones = milestones.filter(milestone => !milestone.completed && milestone.targetDate && !isSampleRecord(milestone.id) && activeGoals.has(milestone.goalId));
     const ids = milestones.map(milestone => notificationId(`milestone:${milestone.id}`));
     await cancelIds(ids);

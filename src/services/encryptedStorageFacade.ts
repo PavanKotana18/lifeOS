@@ -822,7 +822,8 @@ export function createEncryptedStorageFacade(
 
       add: async (input: Omit<Goal, 'id' | 'createdAt'>) => {
         validateGoalMeasure(input);
-        return add('goals', { ...input, id: helpers.createRecordId('goal'), createdAt: new Date().toISOString() });
+        const goal = { ...input, id: helpers.createRecordId('goal'), createdAt: new Date().toISOString() };
+        return add('goals', goal.mode === undefined ? goal : reconcileGoal(goal, []));
       },
 
       update: (id: string, changes: Partial<Goal>) => coordinator.run(async ctx => {
@@ -849,9 +850,12 @@ export function createEncryptedStorageFacade(
 
       addMilestone: async (input: Omit<Milestone, 'id'>) =>
         coordinator.run(async ctx => {
-          if (!(await ctx.get<Goal>('goals', input.goalId))) throw new Error('Milestone goal does not exist.');
+          const goal = await ctx.get<Goal>('goals', input.goalId);
+          if (!goal) throw new Error('Milestone goal does not exist.');
           const record = { ...input, id: helpers.createRecordId('milestone') };
+          const related = (await ctx.getAll<Milestone>('milestones')).filter(row => row.goalId === goal.id);
           ctx.add('milestones', record);
+          if (goal.mode !== undefined) ctx.put('goals', reconcileGoal(goal, [...related, record]));
           return record;
         }),
 
