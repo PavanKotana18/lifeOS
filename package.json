@@ -37,6 +37,13 @@
     "dexie": "^4.0.8",
     "lucide-react": "^0.460.0",
     "motion": "14.14.0",
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-history": "1.5.2",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.13",
+    "prosemirror-schema-list": "1.6.1",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-view": "1.44.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.13.3"

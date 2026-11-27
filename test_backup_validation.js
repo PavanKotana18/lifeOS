@@ -179,10 +179,10 @@ function rejects(data, expected) {
   assert.throws(() => validate(data), expected);
 }
 
-test('Accepts a legacy backup with 11 tables and adds empty arrays for the new optional financial tables', () => {
+test('Accepts a legacy backup with 11 tables and adds empty arrays for the optional financial and Notes tables', () => {
   const backup = sample();
-  assert.strictEqual(validate(backup).length, 15);
-  for (const table of ['financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments']) assert.deepStrictEqual(backup[table], []);
+  assert.strictEqual(validate(backup).length, 17);
+  for (const table of ['financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'notes', 'notebooks']) assert.deepStrictEqual(backup[table], []);
 });
 
 test('Rejects missing table arrays', () => {
@@ -193,7 +193,7 @@ test('Rejects missing table arrays', () => {
 test('Backups accept open-ended goals and still reject malformed goal dates', () => {
   const data = sample();
   data.goals[0].targetDate = '';
-  assert.equal(validate(data).length, 15);
+  assert.equal(validate(data).length, 17);
   data.goals[0].targetDate = '2026-02-30';
   rejects(data, /goals.*targetDate/);
 });
@@ -212,9 +212,9 @@ test('Accepts explicit currency and exact minor units while preserving legacy ro
   const d = sample();
   d.transactions[0].currencyCode = 'INR';
   d.transactions[0].amountMinor = '10000';
-  assert.strictEqual(validate(d).length, 15);
+  assert.strictEqual(validate(d).length, 17);
   const legacy = sample();
-  assert.strictEqual(validate(legacy).length, 15);
+  assert.strictEqual(validate(legacy).length, 17);
 });
 
 test('Rejects exact amounts without a currency or with invalid minor-unit values', () => {
@@ -293,7 +293,7 @@ test('Accepts valid recurrence metadata in task backups', () => {
   const d = sample();
   d.tasks[0].recurrenceRootId = 'root-task';
   d.tasks[0].spawnedTaskId = 'rec_root-task_2026-11-03';
-  assert.strictEqual(validate(d).length, 15);
+  assert.strictEqual(validate(d).length, 17);
 });
 
 test('Rejects non-string recurrence metadata in task backups', () => {
@@ -308,7 +308,7 @@ test('Rejects non-string recurrence metadata in task backups', () => {
 test('Accepts optional backward-compatible task subtasks in backups', () => {
   const d = sample();
   d.tasks[0].subtasks = [{ id: 'step-1', title: 'Prepare', completed: false, createdAt: '2026-11-13T10:00:00.000Z' }];
-  assert.strictEqual(validate(d).length, 15);
+  assert.strictEqual(validate(d).length, 17);
 });
 
 test('Rejects malformed task subtask records in backups', () => {
@@ -338,7 +338,7 @@ test('Accepts demo-style Food budget with the seeded cat_food reference', () => 
     monthYear: '2026-11',
     createdAt: '2026-11-01T00:00:00.000Z'
   });
-  assert.strictEqual(validate(d).length, 15);
+  assert.strictEqual(validate(d).length, 17);
 });
 
 console.log(`\nBackup validation tests: ${passed}/23 passed`);

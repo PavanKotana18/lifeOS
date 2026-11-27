@@ -1,3 +1,5 @@
+import type { NotesStorage } from './services/encryptedNotes';
+import { validateNotesBackup, type NoteRecord, type Notebook } from './services/notesDomain';
 import type { InboxChange, InboxEvent } from './services/notificationInbox';
 import { MAX_PHOTO_LENGTH, PROFILE_PHOTO_SETTING } from './services/profilePhoto';
 import { isGoalComplete, validateGoalMeasure } from './services/goalModes';
@@ -45,6 +47,8 @@ export class LifeOSDatabase extends Dexie {
   goals!: Table<Goal, string>;
   milestones!: Table<Milestone, string>;
   tasks!: Table<Task, string>;
+  notes!: Table<NoteRecord, string>;
+  notebooks!: Table<Notebook, string>;
   settings!: Table<{ key: string; value: any }, string>;
 
   constructor(databaseName = 'LifeOS_Database') {
@@ -84,6 +88,8 @@ export class LifeOSDatabase extends Dexie {
       tasks: 'id, dueDate, priority, completed',
       settings: 'key'
     });
+    // Only new identity-keyed stores are declared. Dexie retains all preceding stores.
+    this.version(3).stores({ notes: 'id', notebooks: 'id' });
   }
 }
 
@@ -343,6 +349,7 @@ async function assertTransactionCategory(
 
 // Clean Database Abstraction Layer Interface
 export interface IDataStorage {
+  notes: NotesStorage;
   transactions: {
     getAll(): Promise<Transaction[]>;
     getById(id: string): Promise<Transaction | undefined>;
@@ -451,7 +458,7 @@ export function validateBackupTables(tablesData: any): string[] {
     'savingsContributions', 'habits', 'habitLogs', 'goals',
     'milestones', 'tasks', 'settings'
   ];
-  const addedNames = ['financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments'];
+  const addedNames = ['financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'notes', 'notebooks'];
   const names = [...legacyNames, ...addedNames];
 
   const fail = (table: string, index: number, field: string): never => {
@@ -499,6 +506,7 @@ export function validateBackupTables(tablesData: any): string[] {
   };
 
   if (!obj(tablesData)) throw new Error('Invalid backup tables object');
+  validateNotesBackup(tablesData);
   for (const name of legacyNames) {
     if (!Array.isArray(tablesData[name])) throw new Error(`Invalid backup: ${name} must be an array`);
     ids[name] = unique(tablesData[name], name === 'settings' ? 'key' : 'id', name);
@@ -791,7 +799,15 @@ export function validateBackupTables(tablesData: any): string[] {
   return names;
 }
 
+async function notesRequireEncryption(): Promise<never> {
+  throw new Error('Notes require unlocked encrypted storage.');
+}
+
 const rawStorageService: IDataStorage = {
+  notes: {
+    workspace: notesRequireEncryption, save: notesRequireEncryption, dispose: notesRequireEncryption,
+    saveNotebook: notesRequireEncryption, removeNotebook: notesRequireEncryption, setView: notesRequireEncryption,
+  },
   transactions: {
     async getAll() {
       return db.transactions.reverse().sortBy('date');
@@ -1646,7 +1662,10 @@ const rawStorageService: IDataStorage = {
       }
 
       const tablesData = parsed.tables || parsed.data;
-      const tableNames = validateBackupTables(tablesData);
+      const tableNames = validateBackupTables(tablesData).filter(name => name !== 'notes' && name !== 'notebooks');
+      if (tablesData.notes.length || tablesData.notebooks.length) {
+        throw new Error('Notes backups require encrypted storage.');
+      }
 
       const existingCounts = await Promise.all([
         db.transactions.count(), db.categories.count(), db.budgets.count(), db.savingsGoals.count(), db.savingsContributions.count(),
@@ -1841,6 +1860,7 @@ const READ_OPERATIONS: Record<string, Set<string>> = {
   habits: new Set(['getAll', 'getLogs']),
   goals: new Set(['getAll', 'getAllMilestones', 'getMilestones']),
   tasks: new Set(['getAll']),
+  notes: new Set(['workspace', 'save', 'saveNotebook']),
   settings: new Set(['get']),
   backup: new Set(['hasData', 'exportData'])
 };

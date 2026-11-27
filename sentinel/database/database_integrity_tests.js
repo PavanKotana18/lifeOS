@@ -128,7 +128,7 @@ async function runDatabaseIntegrityTests() {
       const expectedTables = [
         'transactions', 'categories', 'budgets', 'savingsGoals',
         'savingsContributions', 'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'habits', 'habitLogs', 'goals',
-        'milestones', 'tasks', 'settings'
+        'milestones', 'tasks', 'settings', 'notes', 'notebooks'
       ];
       for (const tableName of expectedTables) {
         assert(testDb[tableName], `Table ${tableName} must exist on LifeOSDatabase instance`);

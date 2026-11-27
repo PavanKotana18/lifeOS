@@ -21,7 +21,7 @@ assert.equal(typeof normalizeTaskSchedule, 'function');
 const TABLES = [
   'transactions', 'categories', 'budgets', 'savingsGoals',
   'savingsContributions', 'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'habits', 'habitLogs', 'goals',
-  'milestones', 'tasks', 'settings'
+  'milestones', 'tasks', 'settings', 'notes', 'notebooks'
 ];
 
 const filename = path.resolve('src/services/encryptedStorageFacade.ts');
@@ -178,7 +178,7 @@ async function rejects(fn, pattern) {
     storage = makeEnvironment();
     for (const key of [
       'transactions', 'categories', 'budgets', 'savings',
-      'accounts', 'exchangeRates', 'commitments', 'habits', 'goals', 'tasks', 'settings', 'backup'
+      'accounts', 'exchangeRates', 'commitments', 'habits', 'goals', 'tasks', 'notes', 'settings', 'backup'
     ]) {
       assert.ok(storage[key], `Missing facade domain: ${key}`);
     }
