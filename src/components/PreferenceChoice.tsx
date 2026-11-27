@@ -15,11 +15,12 @@ type Props = {
   required?: boolean;
   icon?: ReactNode;
   disabledHint?: string;
+  profile?: boolean;
   variant?: 'row' | 'field' | 'quick';
 };
 
 export function PreferenceChoice({ label, value, options, onSelect, searchable = options.length > 9,
-  disabled = false, required = false, icon, disabledHint, variant = 'row' }: Props) {
+  disabled = false, required = false, icon, disabledHint, profile = false, variant = 'row' }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -41,24 +42,28 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
     if (open) list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
   }, [open]);
 
-  return <div className={variant === 'field' ? 'choice-field' : 'choice-row'} data-choice-field={variant} data-choice-value={value}>
+  return <div className={variant === 'field' ? 'choice-field' : 'choice-row'} tabIndex={profile ? -1 : undefined} data-choice-field={variant} data-choice-value={value}>
     {variant === 'field' && <span className="choice-field-label">{label}</span>}
-    <button ref={trigger} type="button" className={icon ? 'task-option' : variant === 'field' ? 'choice-trigger' : 'preference-row'}
+    <button ref={trigger} type="button" className={profile ? 'profile-row' : icon ? 'task-option' : variant === 'field' ? 'choice-trigger' : 'preference-row'}
       aria-label={variant !== 'row' ? label : undefined} aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
       aria-invalid={showError || undefined} aria-describedby={variant !== 'row' ? id + '-value' + (showError ? ' ' + id + '-error' : '') : showError ? id + '-error' : undefined} disabled={disabled}
       onClick={() => { setSearch(''); setFocusKey(value); setOpen(true); showSheet(dialog.current); }}>
       {icon}{icon ? <span><strong>{label}</strong><small id={id + '-value'}>{disabled && disabledHint ? disabledHint : selected}</small></span> : <>
-        {variant === 'row' && <span>{label}</span>}
-        <span id={id + '-value'} className="choice-current">{disabled && disabledHint ? disabledHint : selected}</span>
+        {variant === 'row' && <span className={profile ? 'profile-row-copy' : undefined}>{profile ? <strong>{label}</strong> : label}</span>}
+        <span id={id + '-value'} className={profile ? 'choice-current profile-row-value' : 'choice-current'}>{disabled && disabledHint && !profile ? disabledHint : selected}</span>
       </>}
     </button>
     {required && !disabled && <input className="choice-validation" data-choice-validation required tabIndex={-1}
       aria-hidden="true" value={missing ? '' : value} onChange={() => {}}
       onInvalid={event => { event.preventDefault(); setInvalid(true); trigger.current?.focus(); }} />}
     {showError && <p id={id + '-error'} className="text-xs text-[var(--danger)]" role="alert">Choose an option for {label.toLocaleLowerCase()}.</p>}
-    {disabled && !disabledHint && variant === 'row' && <p className="pb-2 text-xs text-secondary">Currency is locked for existing financial records.</p>}
-    <dialog data-polish-sheet onCancel={cancelSheet} ref={dialog} id={id} className="preference-sheet choice-sheet lifeos-page" data-preference-choice aria-label={label}
-      onClose={() => { setOpen(false); if (trigger.current?.isConnected) trigger.current.focus({ preventScroll: true }); }}
+    {profile && disabledHint && <p className="profile-choice-hint">{disabledHint}</p>}
+    <dialog data-polish-sheet onCancel={cancelSheet} ref={dialog} id={id} className={'preference-sheet choice-sheet lifeos-page' + (profile ? ' profile-design profile-choice-sheet' : '')} data-preference-choice aria-label={label}
+      onClose={() => { setOpen(false); if (trigger.current?.isConnected) {
+        const node = trigger.current;
+        if (!node.disabled) node.focus({ preventScroll: true });
+        else if (profile) node.closest<HTMLElement>('.choice-row')?.focus({ preventScroll: true });
+      } }}
       onClick={event => { if (event.target === event.currentTarget) close(); }}>
       <section className="choice-sheet-layout">
         <header className="flex items-center justify-between gap-3"><h2 className="type-section-title">{label}</h2>
@@ -81,7 +86,7 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
             event.preventDefault();
             buttons[target]?.focus();
           }}>
-          {open && choices.map(([key, name, unavailable]) => <button key={key} type="button" className="preference-row choice-option"
+          {open && choices.map(([key, name, unavailable]) => <button key={key} type="button" className={profile ? 'profile-row choice-option' : 'preference-row choice-option'}
             data-option-value={key} role="option" disabled={unavailable} aria-disabled={unavailable || undefined} aria-selected={key === value}
             tabIndex={key === focusable ? 0 : -1} onFocus={() => setFocusKey(key)}
             onClick={() => { if (key !== value) { notify?.(); onSelect(key); } setInvalid(false); close(); }}>

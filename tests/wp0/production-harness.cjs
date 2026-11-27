@@ -226,6 +226,7 @@ async function fixture({ activate = true } = {}) {
     async checkExactNotificationSetting() { return { exact_alarm: 'granted' }; },
     async getPending() { return { notifications: [...pending.values()] }; },
     async getDeliveredNotifications() { return { notifications: [...delivered.values()] }; },
+    async removeDeliveredNotifications({ notifications }) { for (const row of notifications) delivered.delete(row.id); },
     async addListener(eventName, callback) {
       const listeners = notificationListeners.get(eventName) || new Set();
       listeners.add(callback); notificationListeners.set(eventName, listeners);

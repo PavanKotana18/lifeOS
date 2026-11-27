@@ -1,32 +1,47 @@
-import { closeSheet, showSheet } from './sheetMotion';
-import { useRef, useState, type ReactNode } from 'react';
-import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wallet, Camera, Crop, ImagePlus, PencilLine, Trash2 } from 'lucide-react';
+import { useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wallet, Camera, Crop, ImagePlus, PencilLine, Trash2, X, type LucideIcon } from 'lucide-react';
 import { FeatherHeader } from './FeatherHeader';
-import type { LucideIcon } from 'lucide-react';
+import InfoTip from './InfoTip';
+import { closeSheet, showSheet } from './sheetMotion';
 
 export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses' | 'money-imports' | 'legal';
 
 export const PROFILE_TITLES: Record<ProfileSection, string> = {
   home: 'Profile', appearance: 'Appearance', preferences: 'Preferences', notifications: 'Notifications',
   privacy: 'Privacy & security', data: 'Backup & Restore', about: 'About BusyDoo', developer: 'Developer tools',
-  themes: 'Themes', accent: 'Accent color', motion: 'Motion', 'app-lock': 'App lock', recovery: 'Recovery', licenses: 'Open-source licenses', 'money-imports': 'Money & Imports', legal: 'Legal & Privacy',
+  themes: 'Themes', accent: 'Accent color', motion: 'Motion', 'app-lock': 'App lock', recovery: 'Recovery',
+  licenses: 'Open-source licenses', 'money-imports': 'Money & Imports', legal: 'Legal & Privacy',
 };
 
 export function profileParent(section: ProfileSection): ProfileSection {
   if (section === 'themes' || section === 'accent' || section === 'motion') return 'appearance';
-  if (section === 'app-lock' || section === 'recovery') return 'privacy';
-  if (section === 'legal') return 'privacy';
+  if (section === 'app-lock' || section === 'recovery' || section === 'legal') return 'privacy';
   if (section === 'licenses') return 'about';
   return 'home';
 }
 
-export function ProfileGroup({ title, description, children, destructive = false }: {
-  title: string; description?: string; children: ReactNode; destructive?: boolean;
+export function ProfileButton({ tone = 'secondary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & {
+  tone?: 'primary' | 'secondary' | 'danger';
 }) {
-  return <section aria-label={title} className="profile-group" data-destructive={destructive || undefined}>
-    <h3 className="type-section-title">{title}</h3>
-    {description && <p className="profile-detail">{description}</p>}
-    <div className="profile-group-content">{children}</div>
+  return <button type="button" {...props} className={('profile-button ' + className).trim()} data-tone={tone} />;
+}
+
+export function ProfileIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return <span className="profile-icon" aria-hidden="true"><Icon size={21} strokeWidth={1.7} /></span>;
+}
+
+export function ProfileGroup({ title, description, children, destructive = false, topic, icon, variant = 'rows' }: {
+  title: string; description?: string; children?: ReactNode; destructive?: boolean; topic?: string; icon?: LucideIcon;
+  variant?: 'rows' | 'feature' | 'plain';
+}) {
+  const id = useId();
+  return <section aria-labelledby={id} className="profile-group" data-variant={variant} data-destructive={destructive || undefined}>
+    <header className="profile-group-header">
+      {icon && <ProfileIcon icon={icon} />}
+      <div><h2 id={id}>{title}</h2>{description && <p className="profile-description">{description}</p>}</div>
+      {topic && <InfoTip label={topic} variant="profile" />}
+    </header>
+    {children && <div className="profile-group-content">{children}</div>}
   </section>;
 }
 
@@ -34,35 +49,84 @@ export function ProfileToggle({ title, detail, checked, disabled, onChange }: {
   title: string; detail?: string; checked: boolean; disabled?: boolean; onChange: () => void;
 }) {
   return <button type="button" role="switch" aria-label={title} aria-checked={checked}
-    disabled={disabled} className="preference-row profile-toggle-row" onClick={onChange}>
-    <span><strong>{title}</strong>{detail && <small className="profile-detail">{detail}</small>}</span>
+    disabled={disabled} className="profile-row profile-toggle-row" onClick={onChange}>
+    <span className="profile-row-copy"><strong>{title}</strong>{detail && <small>{detail}</small>}</span>
     <span className="preference-toggle" aria-hidden="true" />
   </button>;
 }
 
-export function ProfileStatus({ title, value }: { title: string; value: string }) {
-  return <div className="preference-row profile-status-row"><span>{title}</span><span>{value}</span></div>;
+export function ProfileStatus({ title, value, detail }: { title: string; value: string; detail?: string }) {
+  return <div className="profile-row">
+    <span className="profile-row-copy"><strong>{title}</strong>{detail && <small>{detail}</small>}</span>
+    <span className="profile-row-value">{value}</span>
+  </div>;
 }
 
-export function ProfileSettingRow({ title, value, onClick }: { title: string; value?: string; onClick: () => void }) {
-  return <button type="button" className="preference-row" onClick={onClick}><span>{title}</span>{value && <span className="text-secondary text-right">{value}</span>}</button>;
+export function ProfileSettingRow({ title, value, onClick, detail, icon, disabled }: {
+  title: string; value?: string; onClick: () => void; detail?: string; icon?: LucideIcon; disabled?: boolean;
+}) {
+  const id = useId();
+  return <button type="button" className="profile-row" disabled={disabled} aria-labelledby={id + '-title'}
+    aria-describedby={[detail && id + '-detail', value && id + '-value'].filter(Boolean).join(' ') || undefined} onClick={onClick}>
+    {icon && <ProfileIcon icon={icon} />}
+    <span className="profile-row-copy"><strong id={id + '-title'}>{title}</strong>{detail && <small id={id + '-detail'}>{detail}</small>}</span>
+    {value && <span className="profile-row-value" id={id + '-value'}>{value}</span>}
+  </button>;
 }
 
-const profileLinks = [
-  { section: 'appearance', title: 'Appearance', detail: 'Theme, color and display mode', Icon: Palette },
-  { section: 'preferences', title: 'Preferences', detail: 'Currency, dates, time and units', Icon: SlidersHorizontal },
-  { section: 'notifications', title: 'Notifications', detail: 'Choose which reminders BusyDoo sends', Icon: Bell },
-  { section: 'money-imports', title: 'Money & Imports', detail: 'Review a pasted or shared bank alert', Icon: Wallet },
-  { section: 'privacy', title: 'Privacy & Security', detail: 'App lock and recovery status', Icon: Shield },
-  { section: 'data', title: 'Backup & Restore', detail: 'Encrypted backup and local records', Icon: Database },
-  { section: 'about', title: 'About', detail: 'Version and privacy information', Icon: Info },
+export function ProfileNavigationRow({ title, detail, icon, onClick, value }: {
+  title: string; detail: string; icon: LucideIcon; onClick: () => void; value?: string;
+}) {
+  return <ProfileSettingRow title={title} detail={detail} icon={icon} value={value} onClick={onClick} />;
+}
+
+export function ProfileReader({ title, children, buttonTitle = title, detail, icon = Info }: {
+  title: string; children: ReactNode; buttonTitle?: string; detail?: string; icon?: LucideIcon;
+}) {
+  const panel = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const [open, setOpen] = useState(false);
+  return <div ref={opener}>
+    <ProfileSettingRow title={buttonTitle} detail={detail} icon={icon} onClick={() => { setOpen(true); showSheet(panel.current); }} />
+    <dialog ref={panel} className="profile-design profile-reader" data-profile-editor aria-labelledby={titleId}
+      onCancel={event => { event.preventDefault(); closeSheet(panel.current); }}
+      onClose={() => { setOpen(false); opener.current?.querySelector('button')?.focus({ preventScroll: true }); }}>
+      <header className="profile-reader-header"><h2 id={titleId}>{title}</h2>
+        <button className="profile-icon-button" autoFocus aria-label={'Close ' + title} onClick={() => closeSheet(panel.current)}><X size={21} aria-hidden="true" /></button>
+      </header>
+      {open && <div className="profile-reading" data-selectable-text>{children}</div>}
+    </dialog>
+  </div>;
+}
+
+const profileGroups = [
+  { title: 'Personalize', entries: [
+    ['appearance', 'Appearance', 'Theme, accent color and motion', Palette],
+    ['preferences', 'Preferences', 'Formats, currency and measurements', SlidersHorizontal],
+    ['notifications', 'Notifications', 'Reminders, delivery and inbox history', Bell],
+  ] },
+  { title: 'Your workspace', entries: [
+    ['money-imports', 'Money & Imports', 'Paste or share a bank alert for review', Wallet],
+    ['privacy', 'Privacy & Security', 'Device protection and recovery', Shield],
+    ['data', 'Backup & Restore', 'Encrypted copies, exports and local data', Database],
+  ] },
+  { title: 'BusyDoo', entries: [
+    ['about', 'About', 'Installed version, launch film and licenses', Info],
+  ] },
 ] as const;
 
-export function ProfileAvatar({ photo }: { photo?: string | null; initial?: string }) {
-  return photo ? <img className="profile-avatar-image" src={photo} alt="" draggable={false} /> : <span className="profile-avatar-placeholder" aria-hidden="true"><UserRound size="56%" strokeWidth={1.55} /></span>;
+export function ProfileAvatar({ photo, initial }: { photo?: string | null; initial?: string }) {
+  return photo ? <img className="profile-avatar-image" src={photo} alt="" draggable={false} /> :
+    <span className="profile-avatar-placeholder" aria-hidden="true">{initial || <UserRound size="50%" strokeWidth={1.6} />}</span>;
 }
 
-export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoError, onPhotoChange, onEditPhoto, onChange }: { name: string; initial: string; photo?: string | null; photoBusy?: boolean; photoError?: string; onPhotoChange?: (remove?: boolean) => Promise<void>; onEditPhoto?: () => void; onChange: (name: string) => Promise<void> }) {
+type IdentityProps = {
+  name: string; initial: string; photo?: string | null; photoBusy?: boolean; photoError?: string; securityStatus?: string;
+  onPhotoChange?: (remove?: boolean) => Promise<void>; onEditPhoto?: () => void; onChange: (name: string) => Promise<void>;
+};
+
+export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoError, securityStatus, onPhotoChange, onEditPhoto, onChange }: IdentityProps) {
   const photoSheet = useRef<HTMLDialogElement>(null);
   const nameSheet = useRef<HTMLDialogElement>(null);
   const avatar = useRef<HTMLButtonElement>(null);
@@ -72,98 +136,85 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
   const savingName = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  return <section className="profile-identity-card lifeos-panel rounded-2xl border" aria-labelledby="profile-identity-title">
-    <div className="profile-identity-row flex items-center gap-3">
+  return <section className="profile-identity-card" aria-labelledby="profile-identity-title">
+    <div className="profile-identity-row">
       {onPhotoChange ? <button type="button" ref={avatar} aria-label="Profile photo options" aria-haspopup="dialog"
-        className="profile-avatar profile-avatar-trigger lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl"
-        disabled={photoBusy} onClick={() => showSheet(photoSheet.current)}>
+        className="profile-avatar-trigger" disabled={photoBusy} onClick={() => showSheet(photoSheet.current)}>
         <span className="profile-avatar-picture"><ProfileAvatar photo={photo} initial={initial} /></span>
-        <span className="profile-avatar-camera" aria-hidden="true"><Camera size={15} strokeWidth={1.8} /></span>
-      </button> : <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl" aria-hidden="true"><ProfileAvatar photo={photo} initial={initial} /></div>}
-      <h2 id="profile-identity-title" className="min-w-0 flex-1 safe-wrap text-xl font-semibold">{name.trim() || 'Your profile'}</h2>
-      <button type="button" ref={pencil} aria-label="Edit name" aria-haspopup="dialog" className="feather-icon-button profile-name-edit" onClick={() => {
-        setDraft(name); setError(''); showSheet(nameSheet.current);
-      }}><PencilLine size={17} strokeWidth={1.8} aria-hidden="true" /></button>
+        <span className="profile-avatar-camera" aria-hidden="true"><Camera size={16} strokeWidth={1.75} /></span>
+      </button> : <span className="profile-avatar-picture"><ProfileAvatar photo={photo} initial={initial} /></span>}
+      <div className="profile-identity-copy">
+        <h2 id="profile-identity-title">{name.trim() || 'Your profile'}</h2>
+        {securityStatus && <p className="profile-security-label"><Shield size={15} aria-hidden="true" />{securityStatus}</p>}
+        <button type="button" ref={pencil} aria-label="Edit name" aria-haspopup="dialog" className="profile-edit-name" onClick={() => {
+          setDraft(name); setError(''); showSheet(nameSheet.current);
+        }}><PencilLine size={17} aria-hidden="true" />Edit name</button>
+      </div>
     </div>
-    {photoBusy && <p role="status" className="profile-detail">Working on your profile photo...</p>}
-    {photoError && <p role="alert" className="text-xs text-[var(--danger)]">{photoError}</p>}
+    {photoBusy && <p role="status" className="profile-description">Preparing your profile photo…</p>}
+    {photoError && <p role="alert" className="profile-error">{photoError}</p>}
     {onPhotoChange && <dialog ref={photoSheet} data-polish-sheet data-profile-editor aria-label="Profile photo"
-      className="profile-editor-sheet lifeos-page" onCancel={event => { event.preventDefault(); closeSheet(photoSheet.current); }}
+      className="profile-design profile-editor-sheet" onCancel={event => { event.preventDefault(); closeSheet(photoSheet.current); }}
       onClick={event => { if (event.target === event.currentTarget) closeSheet(photoSheet.current); }}
       onClose={() => {
         avatar.current?.focus({ preventScroll: true });
         if (remove.current) { remove.current = false; void onPhotoChange(true); }
       }}>
-      <h3 className="type-section-title">Profile photo</h3>
-      <p className="profile-detail">Choose and crop an image for your profile. BusyDoo saves a protected copy without the original photo metadata.</p>
-      <button type="button" className="profile-editor-action" onClick={() => { photoSheet.current?.close(); void onPhotoChange(); }}>
-        <ImagePlus size={19} aria-hidden="true" />{photo ? 'Replace photo' : 'Choose photo'}
-      </button>
-      {photo && <><button type="button" className="profile-editor-action" onClick={() => { photoSheet.current?.close(); onEditPhoto?.(); }}><Crop size={19} aria-hidden="true" />Edit photo</button>
-        <button type="button" className="profile-editor-action is-destructive" onClick={() => { remove.current = true; closeSheet(photoSheet.current); }}><Trash2 size={19} aria-hidden="true" />Remove photo</button></>}
-      <button type="button" className="feather-secondary" onClick={() => closeSheet(photoSheet.current)}>Cancel</button>
+      <div className="profile-sheet-body">
+        <header className="profile-sheet-heading"><h2>Profile photo</h2><p>BusyDoo keeps a cropped, protected copy and discards the original photo metadata.</p></header>
+        <div className="profile-row-list"><ProfileSettingRow title={photo ? 'Replace photo' : 'Choose photo'} icon={ImagePlus} onClick={() => { photoSheet.current?.close(); void onPhotoChange(); }} />
+          {photo && <><ProfileSettingRow title="Edit photo" icon={Crop} onClick={() => { photoSheet.current?.close(); onEditPhoto?.(); }} />
+            <ProfileSettingRow title="Remove photo" icon={Trash2} onClick={() => { remove.current = true; closeSheet(photoSheet.current); }} /></>}
+        </div>
+        <div className="profile-actions"><ProfileButton onClick={() => closeSheet(photoSheet.current)}>Cancel</ProfileButton></div>
+      </div>
     </dialog>}
-    <dialog ref={nameSheet} data-polish-sheet data-profile-editor aria-label="Edit name" className="profile-editor-sheet lifeos-page"
-      onCancel={event => { event.preventDefault(); if (!busy) closeSheet(nameSheet.current); }}
-      onClick={event => { if (!busy && event.target === event.currentTarget) closeSheet(nameSheet.current); }}
+    <dialog ref={nameSheet} data-polish-sheet data-profile-editor aria-label="Edit name" className="profile-design profile-editor-sheet"
+      onCancel={event => { event.preventDefault(); if (!savingName.current) closeSheet(nameSheet.current); }}
+      onClick={event => { if (!savingName.current && event.target === event.currentTarget) closeSheet(nameSheet.current); }}
       onClose={() => pencil.current?.focus({ preventScroll: true })}>
-      <form className="space-y-3" onSubmit={async event => {
+      <form className="profile-sheet-body" onSubmit={async event => {
         event.preventDefault();
         if (!draft.trim() || savingName.current) return;
-        savingName.current = true;
-        setBusy(true); setError('');
+        savingName.current = true; setBusy(true); setError('');
         try { await onChange(draft); closeSheet(nameSheet.current); }
         catch { setError('Could not save your name. Your previous name is still saved.'); }
         finally { savingName.current = false; setBusy(false); }
       }}>
-        <h3 className="type-section-title">Edit name</h3>
-        <label className="block text-sm font-medium">Display name<input autoFocus required maxLength={48} value={draft} disabled={busy} autoComplete="nickname"
-          onChange={event => setDraft(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
-        {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
-        <div className="flex justify-end gap-2"><button type="button" disabled={busy} className="feather-secondary" onClick={() => closeSheet(nameSheet.current)}>Cancel</button>
-          <button type="submit" disabled={busy || !draft.trim()} className="feather-primary">Save name</button></div>
+        <header className="profile-sheet-heading"><h2>Edit name</h2><p>BusyDoo uses this name in your greeting and profile.</p></header>
+        <label className="profile-field">Display name<input autoFocus required maxLength={48} value={draft} disabled={busy} autoComplete="nickname"
+          onChange={event => setDraft(event.target.value)} /></label>
+        {error && <p role="alert" className="profile-error">{error}</p>}
+        <div className="profile-actions"><ProfileButton disabled={busy} onClick={() => closeSheet(nameSheet.current)}>Cancel</ProfileButton>
+          <ProfileButton type="submit" tone="primary" disabled={busy || !draft.trim()}>{busy ? 'Saving…' : 'Save name'}</ProfileButton></div>
       </form>
     </dialog>
   </section>;
 }
 
-export function ProfileNavigationRow({ title, detail, icon: Icon, onClick, value }: { title: string; detail: string; value?: string; icon: LucideIcon; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="profile-navigation-row lifeos-panel group flex min-h-14 w-full items-center gap-3 border-b px-3 py-2 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)] active:scale-[.995]">
-    <span className="lifeos-tint flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lifeos-accent-text" aria-hidden="true"><Icon size={17} strokeWidth={1.9} /></span>
-    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><small className="profile-detail">{detail}</small></span>{value && <span className="profile-row-value">{value}</span>}
-  </button>;
-}
-
-export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPhotoChange, onEditPhoto, onNameChange, onOpen, onBack, sharedHeader = false, developerAllowed = false, securityStatus }: {
-  name: string;
-  initial: string;
-  photo?: string | null;
-  photoBusy?: boolean;
-  photoError?: string;
-  onPhotoChange?: (remove?: boolean) => Promise<void>; onEditPhoto?: () => void;
-  onNameChange: (name: string) => Promise<void>;
-  onOpen: (section: typeof profileLinks[number]['section'] | 'developer') => void;
-  onBack: () => void;
-  sharedHeader?: boolean;
-  developerAllowed?: boolean;
-  securityStatus?: string;
+export function ProfileHome({ onNameChange, onOpen, onBack, sharedHeader = false, developerAllowed = false, ...identity }: Omit<IdentityProps, 'onChange'> & {
+  onNameChange: IdentityProps['onChange']; onOpen: (section: ProfileSection) => void; onBack: () => void;
+  sharedHeader?: boolean; developerAllowed?: boolean;
 }) {
-  return <div className="profile-settings mx-auto w-full max-w-xl space-y-5" data-testid="profile-settings-home">
+  return <div className="profile-design profile-settings" data-testid="profile-settings-home">
     {!sharedHeader && <FeatherHeader title="Profile" heading="h1" back={{ label: 'Back from profile', onClick: onBack }} />}
-    <ProfileIdentityCard name={name} initial={initial} photo={photo} photoBusy={photoBusy} photoError={photoError} onPhotoChange={onPhotoChange} onEditPhoto={onEditPhoto} onChange={onNameChange} />
-    <nav aria-label="Profile settings" className="profile-settings-list space-y-4">
-      {[profileLinks.slice(0, 3), profileLinks.slice(3)].map((group, index) =>
-        <section key={index} aria-label={index === 0 ? "Personal preferences" : "Security and information"} className="profile-link-group lifeos-panel rounded-2xl border">
-          {group.map(({ section, title, detail, Icon }) => <ProfileNavigationRow key={section} title={title} detail={detail} icon={Icon}
-            value={section === "privacy" ? securityStatus : undefined} onClick={() => onOpen(section)} />)}
-        </section>)}
-      {developerAllowed && <section className="profile-link-group lifeos-panel rounded-2xl border"><ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} /></section>}
+    <ProfileIdentityCard {...identity} onChange={onNameChange} />
+    <nav aria-label="Profile settings" className="profile-settings-list">
+      {profileGroups.map(group => <ProfileGroup key={group.title} title={group.title}>
+        {group.entries.map(([section, title, detail, icon]) => <ProfileNavigationRow key={section} title={title} detail={detail}
+          icon={icon} onClick={() => onOpen(section)} />)}
+      </ProfileGroup>)}
+      {developerAllowed && <ProfileGroup title="Development">
+        <ProfileNavigationRow title="Developer tools" detail="Diagnostics and isolated demonstration data" icon={Info} onClick={() => onOpen('developer')} />
+      </ProfileGroup>}
     </nav>
   </div>;
 }
 
-export function ProfileSubpage({ title, description, onBack, backLabel = 'Back to Profile', embedded = false, children }: { title: string; description?: string; backLabel?: string; embedded?: boolean; onBack: () => void; children: ReactNode }) {
-  return <section className="profile-settings profile-subpage mx-auto w-full max-w-xl space-y-4" data-testid="profile-settings-subpage">
+export function ProfileSubpage({ title, description, onBack, backLabel = 'Back to Profile', embedded = false, children }: {
+  title: string; description?: string; onBack: () => void; backLabel?: string; embedded?: boolean; children: ReactNode;
+}) {
+  return <section className="profile-design profile-settings profile-subpage" data-testid="profile-settings-subpage">
     {!embedded && <FeatherHeader title={title} heading="h2" back={{ label: backLabel, onClick: onBack }} />}
     {description && <p className="profile-intro">{description}</p>}
     {children}

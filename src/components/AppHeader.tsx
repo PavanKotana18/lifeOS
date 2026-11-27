@@ -11,7 +11,7 @@ export default function AppHeader({ title, brand, action, back, backLabel = "Bac
   profile?: boolean;
   notification?: { unread: number; open: () => void };
 }) {
-  return <header data-profile-background={profile ? undefined : true} data-record-background className="app-header app-header-shell primary-masthead sticky top-0 z-40">
+  return <header data-profile-masthead={profile || undefined} data-profile-background={profile ? undefined : true} data-record-background className="app-header app-header-shell primary-masthead sticky top-0 z-40">
     <h1 id="primary-route-title" tabIndex={-1} className={brand ? 'primary-route-title app-wordmark' : 'primary-route-title'}>{title}</h1>
     <div className="app-header-actions">
     {action}

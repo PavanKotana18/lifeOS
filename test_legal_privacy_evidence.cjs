@@ -22,21 +22,26 @@ async function syntheticReset() {
     assert.ok(reminder);
     const deliveredOnly = { ...reminder, id: reminder.id + 1 };
     f.delivered.set(deliveredOnly.id, deliveredOnly);
+    const legacy = { ...deliveredOnly, id: deliveredOnly.id + 1, extra: undefined };
+    f.delivered.set(legacy.id, legacy);
+    await f.StorageService.settings.set('biometricLockEnabled', true);
     const keyBefore = await f.native.getKeyState();
     const snapshot = await f.StorageService.backup.exportData();
     await f.NotificationService.cancelAllRecordReminders();
-    await f.StorageService.backup.clearAll();
+    await f.StorageService.backup.clearAll({ preserveAppLock: true });
     assert.equal((await f.StorageService.tasks.getAll()).length, 0);
     for (const key of ['onboardingNameDraft', 'displayName', 'profilePhoto']) {
       assert.equal(await f.StorageService.settings.get(key, null), null);
       assert.equal(await f.lifeOSDatabase.settings.get(key), undefined);
     }
     assert.equal(f.pending.has(reminder.id), false);
-    assert.equal(f.delivered.has(deliveredOnly.id), true);
+    assert.equal(f.delivered.has(deliveredOnly.id), false, 'known BusyDoo reminders are removed');
+    assert.equal(f.delivered.has(legacy.id), true, 'older alerts without routing metadata can remain');
+    assert.equal(await f.StorageService.settings.get('biometricLockEnabled', false), true);
     assert.equal(typeof localStorage.getItem('lifeos.notificationDiagnostics'), 'string');
     assert.deepEqual(await f.native.getKeyState(), keyBefore);
     assert.ok(snapshot.length > 0, 'Separately captured export is unaffected by local reset');
-    console.log('A03 PASS Dexie synthetic reset and simulated notifications/keys. Delivered notification and diagnostic retained; separate export unaffected.');
+    console.log('A03 PASS Dexie synthetic reset and simulated notifications/keys. Recognized alerts removed; older alerts, app-lock choice and diagnostics retained; separate export unaffected.');
   } finally { await f.dispose(); }
 }
 

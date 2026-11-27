@@ -1,3 +1,4 @@
+import { ProfileButton } from './ProfileSettings';
 import { useEffect, useRef } from 'react';
 
 export type ConfirmationOptions = {
@@ -6,6 +7,8 @@ export type ConfirmationOptions = {
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
+  profile?: boolean;
+  profileDetails?: readonly { title: string; body: string }[];
 };
 
 type Props = ConfirmationOptions & {
@@ -14,12 +17,13 @@ type Props = ConfirmationOptions & {
 };
 
 /** Shared in-app confirmation. Security prompts continue to use their native flows. */
-export default function ConfirmationDialog({ title, message, confirmLabel = 'Continue', cancelLabel = 'Cancel', destructive = false, onConfirm, onCancel }: Props) {
+export default function ConfirmationDialog({ title, message, confirmLabel = 'Continue', cancelLabel = 'Cancel', destructive = false, profile = false, profileDetails, onConfirm, onCancel }: Props) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const cancelAction = useRef(onCancel);
   cancelAction.current = onCancel;
 
   useEffect(() => {
+    const opener = document.activeElement;
     cancelRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -37,8 +41,21 @@ export default function ConfirmationDialog({ title, message, confirmLabel = 'Con
       }
     };
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      if (profile && opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
+    };
   }, []);
+
+  if (profile) return <div className="ui-dialog-backdrop profile-design profile-confirmation-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onCancel(); }}>
+    <section className="profile-confirmation" role="alertdialog" aria-modal="true" aria-labelledby="lifeos-confirmation-title" aria-describedby="lifeos-confirmation-message">
+      <header className="profile-sheet-heading"><h2 id="lifeos-confirmation-title">{title}</h2><p id="lifeos-confirmation-message">{message}</p></header>
+      {profileDetails && <ul className="profile-reset-review">{profileDetails.map(item =>
+        <li key={item.title}><strong>{item.title}</strong><span>{item.body}</span></li>)}</ul>}
+      <div className="profile-actions"><button ref={cancelRef} type="button" className="profile-button" onClick={onCancel}>{cancelLabel}</button>
+        <ProfileButton tone={destructive ? 'danger' : 'primary'} onClick={onConfirm}>{confirmLabel}</ProfileButton></div>
+    </section>
+  </div>;
 
   return <div className="ui-dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onCancel(); }}>
     <section className="ui-confirmation-dialog lifeos-panel" role="alertdialog" aria-modal="true" aria-labelledby="lifeos-confirmation-title" aria-describedby="lifeos-confirmation-message">

@@ -5,7 +5,7 @@ import { APP_NAME } from '../config/appBrand';
 
 export type InfoContent = { definition: string; example: string; use: string; details?: string; learnMore?: string };
 
-export default function InfoSheet({ label, content, triggerText }: { label: string; content: InfoContent; triggerText?: string }) {
+export default function InfoSheet({ label, content, triggerText, variant }: { label: string; content: InfoContent; triggerText?: string; variant?: 'profile' }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -13,13 +13,13 @@ export default function InfoSheet({ label, content, triggerText }: { label: stri
   const sections = [['Simple example', content.example], [`How ${APP_NAME} uses it`, content.use], ['Important details', content.details], ['Learn more', content.learnMore]];
 
   return <>
-    <button ref={trigger} type="button" className={triggerText ? 'money-text-action' : 'lifeos-info-trigger'} aria-label={triggerText || 'About ' + label}
+    <button ref={trigger} type="button" className={variant === 'profile' ? 'profile-info-trigger' : triggerText ? 'money-text-action' : 'lifeos-info-trigger'} aria-label={triggerText || 'About ' + label}
       aria-haspopup="dialog" aria-expanded={open} aria-controls={id}
       onClick={() => {
         const sheet = dialog.current;
         if (sheet && !sheet.open) { showSheet(sheet); setOpen(true); }
       }}>{triggerText || <Info size={17} aria-hidden="true" />}</button>
-    <dialog data-polish-sheet onCancel={cancelSheet} ref={dialog} id={id} className="lifeos-info-dialog lifeos-info-sheet" data-contextual-info="true"
+    <dialog data-polish-sheet onCancel={cancelSheet} ref={dialog} id={id} className={'lifeos-info-dialog lifeos-info-sheet' + (variant === 'profile' ? ' profile-design profile-info-sheet' : '')} data-contextual-info="true"
       aria-labelledby={id + '-title'} aria-describedby={id + '-definition'}
       onClose={() => { setOpen(false); trigger.current?.focus({ preventScroll: true }); }}
       onClick={event => { if (event.target === event.currentTarget) closeSheet(dialog.current); }}>

@@ -40,7 +40,7 @@ assert.equal(buildCustomAccentOverrides('#416B51', 'soft-ivory-sage', 'light')['
 const markup = renderToStaticMarkup(React.createElement(Picker, { value: '#FFFF00', onChange: () => {} }));
 assert.match(markup, /Pick accent color/);
 assert.match(markup, /Hex color/);
-assert.match(markup, /Readable accent:/);
+assert.match(markup, /Readable shade in this mode:/);
 assert.match(markup, /Apply accent/);
 assert.match(markup, /Use palette accent/);
 assert.match(markup, /aria-describedby=/);

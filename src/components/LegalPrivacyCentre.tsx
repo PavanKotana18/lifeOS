@@ -1,28 +1,26 @@
 import { useRef, useState } from 'react';
 import { policy, previewReceipt, previewTerms } from '../legal/policyPreview';
-import { ProfileSettingRow } from './ProfileSettings';
+import { ProfileButton, ProfileGroup, ProfileReader, ProfileSettingRow } from './ProfileSettings';
 
 export default function LegalPrivacyCentre({ onData, onNotices }: { onData(): void; onNotices(): void }) {
   const [preview, setPreview] = useState(false);
-  return <div className="space-y-4">
-    <p className="text-sm text-secondary">Internal review draft {policy.version}. These documents have no effective date. Publisher: {policy.publisher}.</p>
-    {policy.documents.map(document => <details key={document.id} className="lifeos-panel rounded-2xl p-4">
-      <summary className="min-h-11 content-center cursor-pointer font-semibold">{document.title}</summary>
-      <div data-selectable-text className="space-y-3 text-sm leading-6">
+  return <div className="profile-stack">
+    <ProfileGroup title="Internal review draft" variant="feature" description={policy.version + " · No effective date · " + policy.publisher} />
+    <ProfileGroup title="Document library">
+    {policy.documents.map(document => <ProfileReader key={document.id} title={document.title} detail={policy.version + " · Internal draft"}>
         {document.blocks.map((block, index) => block.heading
           ? <h3 key={index} className="font-semibold">{block.heading}</h3>
           : <p key={index}>{block.text}</p>)}
-      </div>
-    </details>)}
-    <section className="lifeos-panel space-y-2 rounded-2xl p-4">
-      <h3 className="type-section-title">Your records and privacy rights</h3>
-      <p className="text-sm text-secondary">Open Backup &amp; Restore to export or erase supported records on this device. You can edit individual records and remove your profile photo in the app. Requests about any information previously shared with the developer are separate from local deletion.</p>
-      <p data-selectable-text className="text-sm text-secondary">A support address is pending. When support opens, share the app version and a short description. Hide private details in screenshots and keep recovery codes, passwords, OTPs and backups private.</p>
+    </ProfileReader>)}
+    </ProfileGroup>
+    <ProfileGroup title="Your records and privacy rights" variant="plain">
+      <p className="profile-description">Open Backup &amp; Restore to export or erase supported records on this device. You can edit individual records and remove your profile photo in the app. Requests about any information previously shared with the developer are separate from local deletion.</p>
+      <p data-selectable-text className="profile-description">A support address is pending. When support opens, share the app version and a short description. Hide private details in screenshots and keep recovery codes, passwords, OTPs and backups private.</p>
       <ProfileSettingRow title="Backup & Restore" onClick={onData} />
       <ProfileSettingRow title="Open-source notices" onClick={onNotices} />
-    </section>
+    </ProfileGroup>
     {preview ? <LegalPreview onClose={() => setPreview(false)} /> :
-      <button className="feather-secondary" type="button" onClick={() => setPreview(true)}>Preview acceptance with sample data</button>}
+      <div className="profile-actions"><ProfileButton onClick={() => setPreview(true)}>Preview acceptance with sample data</ProfileButton></div>}
   </div>;
 }
 
@@ -49,17 +47,17 @@ function LegalPreview({ onClose }: { onClose(): void }) {
     finally { pending.current = false; }
   };
 
-  return <section className="lifeos-panel space-y-3 rounded-2xl p-4" aria-label="Sample legal acceptance">
-    <div className="flex items-center justify-between gap-3">
-      <h3 className="type-section-title">Acceptance preview</h3>
+  return <section className="profile-legal-preview" aria-label="Sample legal acceptance">
+    <div className="profile-actions">
+      <h3 className="profile-inline-heading">Acceptance preview</h3>
       <button type="button" className="feather-secondary" onClick={onClose}>Close</button>
     </div>
-    <p className="text-sm text-secondary">This uses invented records and keeps its sample receipt in memory. It cannot save an agreement or change your records.</p>
+    <p className="profile-description">This uses invented records and keeps its sample receipt in memory. It cannot save an agreement or change your records.</p>
     {(step === 'initial' || step === 'updated') && <>
       <h4 className="font-semibold">{step === 'updated' ? 'Material update' : 'Before using BusyDoo'}</h4>
-      <p className="text-sm text-secondary">{step === 'updated' ? 'Example change: the export section now explains which copies remain after reset. Sample records remain available if you decline.' : 'Review the draft Terms and privacy information above. The privacy notice is available without accepting the Terms.'}</p>
-      <label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={adult} onChange={event => setAdult(event.target.checked)} />Sample person is 18 or older</label>
-      <label className="flex min-h-11 items-center gap-3"><input type="checkbox" checked={terms} onChange={event => setTerms(event.target.checked)} />Sample person agrees to the Terms</label>
+      <p className="profile-description">{step === 'updated' ? 'Example change: the export section now explains which copies remain after reset. Sample records remain available if you decline.' : 'Review the draft Terms and privacy information above. The privacy notice is available without accepting the Terms.'}</p>
+      <label ><input type="checkbox" checked={adult} onChange={event => setAdult(event.target.checked)} />Sample person is 18 or older</label>
+      <label ><input type="checkbox" checked={terms} onChange={event => setTerms(event.target.checked)} />Sample person agrees to the Terms</label>
       <div className="flex flex-wrap gap-2">
         <button type="button" className="feather-primary" disabled={!adult || !terms} onClick={() => void accept()}>Create sample receipt</button>
         <button type="button" className="feather-secondary" onClick={() => { if (!pending.current) setStep('declined'); }}>Decline in preview</button>

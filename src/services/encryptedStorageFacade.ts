@@ -1051,8 +1051,10 @@ export function createEncryptedStorageFacade(
         return { success: true, counts };
       },
 
-      clearAll: async () => coordinator.run(async ctx => {
+      clearAll: async options => coordinator.run(async ctx => {
+        const lock = options?.preserveAppLock ? await ctx.get<{ key: string; value: unknown }>('settings', 'biometricLockEnabled') : undefined;
         for (const table of TABLES) ctx.clear(table);
+        if (lock) ctx.add('settings', lock);
         for (const category of DEFAULT_CATEGORIES) ctx.add('categories', category);
       }),
 

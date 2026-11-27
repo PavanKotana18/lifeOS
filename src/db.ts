@@ -413,7 +413,7 @@ export interface IDataStorage {
     hasData(): Promise<boolean>;
     exportData(): Promise<string>;
     importData(jsonData: string, options?: { replaceExisting?: boolean }): Promise<{ success: boolean; counts: Record<string, number> }>;
-    clearAll(): Promise<void>;
+    clearAll(options?: { preserveAppLock?: boolean }): Promise<void>;
     seedDemoData(): Promise<void>;
     removeSampleData(): Promise<void>;
   };

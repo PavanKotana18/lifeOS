@@ -24,8 +24,10 @@ assert.match(service, /setAndAllowWhileIdle|approximate/, 'denied exact-alarm ac
 assert.match(service, /allowWhileIdle: plan\.kind === 'dueTime' \|\| plan\.kind === 'taskReminders'/, 'due-time and early task notifications use idle-aware scheduling');
 assert.match(service, /lifeos\.notificationLifecycle\.v1/, 'per-reminder request/acceptance/observation evidence survives pending-row removal');
 assert.match(service, /reminderLifecycle: readReminderLifecycleSummary\(\)/, 'diagnostics expose a bounded content-free reminder lifecycle');
-assert.match(app, /developerToolsEnabled && notificationDiagnostics\.reminderLifecycle\.length/, 'the delivery timeline is limited to developer diagnostics');
-assert.match(app, /Android posted:/, 'the timeline displays the OS post timestamp separately from schedule acceptance');
+const developer = fs.readFileSync('src/components/ProfileDeveloper.tsx', 'utf8');
+assert.match(app, /developerToolsEnabled && profileSection === 'developer'[\s\S]*?<ProfileDeveloper/, 'the delivery timeline is limited to developer diagnostics');
+assert.match(developer, /diagnostics\.reminderLifecycle\.length/);
+assert.match(developer, /'Android posted': item\.androidPostedAt/, 'the timeline displays the OS post timestamp separately from schedule acceptance');
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationDeliveryDiagnosticsPlugin.java', 'utf8'), /getPostTime\(\)/, 'the reminder timeline uses Android post time for actual OS delivery evidence');
 assert.match(service, /delivery-unconfirmed/, 'an elapsed reminder without active delivery evidence remains unconfirmed');
 assert.match(service, /localNotificationReceived/, 'native plugin receipt events are recorded separately from schedule acceptance');
@@ -67,7 +69,7 @@ assert.match(app, /if \(safeFirstRunState\)[\s\S]*?setAppReady\(true\);\s*return
 assert.match(app, /useEffect\(\(\) => \{\s*if \(!appReady\) return;\s*void refreshNotificationDiagnostics\(\);/, 'capability is refreshed asynchronously once the React app is available');
 assert.match(service, /for \(let attempt = 0; attempt < 5; attempt\+\+\)/, 'native registration probe is bounded');
 assert.match(service, /lastScheduleAttempt|lastScheduleResult|lastActionEvent/, 'diagnostics persist schedule and tap evidence without private record content');
-assert.match(app, /Copy privacy-safe diagnostics/);
+assert.match(developer, /Copy privacy-safe diagnostics/);
 assert.match(fs.readFileSync('src/services/buildInfo.ts', 'utf8'), /LIFEOS_BUILD_INFO/);
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/MainActivity.java', 'utf8'), /registerPlugin\(RuntimeInfoPlugin\.class\)/);
 assert.match(fs.readFileSync('android/app/src/androidTest/java/com/lifeos/personal/LocalNotificationBridgeAcceptanceTest.java', 'utf8'), /registeredPluginCanScheduleAndReadBackSyntheticTaskReminder/);

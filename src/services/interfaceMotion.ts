@@ -92,6 +92,12 @@ export function createMotionPreferenceController(settings: MotionSettings, cache
       })();
       return hydration;
     },
+    adoptStored(value: unknown) {
+      revision++;
+      const preset = normalizeMotionPreset(value);
+      cachePreset(preset);
+      emit({ preset, error: null });
+    },
     async setPreset(value: MotionPresetId): Promise<boolean> {
       if (value !== 'silky' && value !== 'snappy' && value !== 'oil') {
         emit({ error: 'Choose Silky, Snappy or Oil.' });

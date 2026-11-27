@@ -18,17 +18,17 @@ const profile = fs.readFileSync('src/components/ProfileSettings.tsx', 'utf8');
 const preferences = fs.readFileSync('src/components/ProfilePreferences.tsx', 'utf8');
 const settings = app.slice(app.indexOf('        {/* VIEW 6: SETTINGS */}'), app.indexOf('      {createKind && ('));
 for (const section of ['appearance', 'preferences', 'notifications', 'privacy', 'data', 'about']) {
-  assert.ok(profile.includes(`section: '${section}'`), `Profile links to ${section}`);
+  assert.ok(profile.includes(`['${section}',`), `Profile links to ${section}`);
   assert.ok(settings.includes(`profileSection === '${section}'`), `${section} has an independent destination`);
 }
 assert.doesNotMatch(profile, /Your information stays on this device/);
 assert.match(profile, /aria-label="Profile settings"/);
 assert.match(settings, /onBack=\{\(\) => navigateProfileSection\('home'\)\}/);
-assert.match(preferences, /onClick=\{\(\) => onChange\('swipeNavigationEnabled', !preferences\.swipeNavigationEnabled\)\}/);
+assert.match(preferences, /onChange=\{\(\) => onChange\('swipeNavigationEnabled', !preferences\.swipeNavigationEnabled\)\}/);
 const profileData = fs.readFileSync('src/components/ProfileData.tsx', 'utf8');
 assert.match(settings, /<ProfileData/);
 assert.match(profileData, /Export encrypted backup/);
-assert.match(preferences, /Currency and locale/);
+assert.match(preferences, /Region and money/);
 assert.match(preferences, /disabled=\{hasFinancialRecords \|\| saving\}/);
 assert.match(profileData, /Erase local records/);
 const fresh = mergeUserPreferences({}, 'INR');
@@ -44,13 +44,13 @@ assert.match(homeMarkup, /aria-label="Profile settings"/);
 const subpageMarkup = renderToStaticMarkup(React.createElement(ProfileSubpage, { title: 'Appearance', description: 'Theme settings', onBack: () => {}, children: React.createElement('p', null, 'Preview') }));
 assert.ok(subpageMarkup.includes('Appearance') && subpageMarkup.includes('Theme settings') && subpageMarkup.includes('Preview') && subpageMarkup.includes('Profile'));
 const preferenceMarkup = renderToStaticMarkup(React.createElement(ProfilePreferences, { preferences: DEFAULT_USER_PREFERENCES, hasFinancialRecords: true, onChange: () => {} }));
-assert.match(preferenceMarkup, /Currency and locale/);
+assert.match(preferenceMarkup, /Region and money/);
 const choiceSource = fs.readFileSync('src/components/PreferenceChoice.tsx', 'utf8');
 assert.match(choiceSource, /open && searchable[\s\S]*Search currencies/);
 assert.match(choiceSource, /Search by name or code/);
 assert.doesNotMatch(preferenceMarkup, /type="search"/, 'closed choice sheet does not mount its search input');
 assert.match(preferenceMarkup, /disabled=""/);
-assert.match(preferenceMarkup, /Existing financial records keep their original currency/);
+assert.match(preferenceMarkup, /Existing amounts keep their recorded currency/);
 assert.match(preferenceMarkup, /Swipe between tabs/);
 
 console.log('PROFILE SETTINGS: routes, live server rendering, currency safety, local profile copy, preserved data actions and preference hydration checks passed.');

@@ -15,6 +15,7 @@ declare const __BUSYDOO_LEGAL_DRAFT__: boolean;
 
 interface ImportMetaEnv {
   readonly DEV: boolean;
+  readonly BASE_URL: string;
 }
 
 interface ImportMeta {
