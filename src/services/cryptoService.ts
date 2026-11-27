@@ -86,7 +86,9 @@ const RECORD_TABLES = new Set([
   'goals',
   'milestones',
   'tasks',
-  'settings'
+  'settings',
+  'notes',
+  'notebooks'
 ]);
 
 function assertNativeCryptoAvailable(): void {
