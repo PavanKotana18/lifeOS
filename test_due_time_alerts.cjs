@@ -18,12 +18,23 @@ const { fixture } = require('./tests/wp0/production-harness.cjs');
     ]);
     assert.deepEqual(buildTaskNotificationPlan({ ...task, reminderAt: due.toISOString() }, prefs, now), [{ kind: 'dueTime', at: due }]);
     assert.deepEqual(buildTaskNotificationPlan({ ...task, dueAlertDisabled: true }, prefs, now), []);
-    for (const variant of [{ completed: true }, { dueDate: undefined }, { dueTime: undefined }, { id: 'lifeos-demo-v2:task:1' }, { recurrenceRootId: 'lifeos-demo-v2:task:1' }]) {
+    for (const variant of [{ completed: true }, { dueDate: undefined }, { id: 'lifeos-demo-v2:task:1' }, { recurrenceRootId: 'lifeos-demo-v2:task:1' }]) {
       assert.deepEqual(buildTaskNotificationPlan({ ...task, ...variant }, prefs, now), []);
     }
     assert.deepEqual(buildTaskNotificationPlan(task, f.DEFAULT_NOTIFICATION_PREFERENCES, now), []);
     assert.deepEqual(buildTaskNotificationPlan(task, { ...prefs, overdueAlerts: true }, new Date(+due + 1000)), []);
-    assert.deepEqual(buildTaskNotificationPlan({ ...task, dueTime: undefined }, prefs, now, '09:00'), [{ kind: 'dueTime', at: new Date(2030, 3, 22, 9) }]);
+    const dateOnly = { ...task, dueTime: undefined };
+    const atNine = [{ kind: 'dueTime', at: new Date(2030, 3, 22, 9) }];
+    assert.deepEqual(buildTaskNotificationPlan(dateOnly, prefs, now), atNine);
+    assert.deepEqual(buildTaskNotificationPlan(dateOnly, prefs, now, '09:00'), atNine);
+    assert.deepEqual(buildTaskNotificationPlan(dateOnly, { ...prefs, upcomingDeadlines: true }, now), atNine);
+    assert.deepEqual(buildTaskNotificationPlan(dateOnly, prefs, now, ''), []);
+    const savedAfterNine = new Date(2030, 3, 22, 10);
+    const savedDateOnly = { ...dateOnly, dateOnlyAlertAnchorAt: savedAfterNine.toISOString() };
+    const fallback = [{ kind: 'dueTime', at: new Date(2030, 3, 22, 10, 1) }];
+    assert.deepEqual(buildTaskNotificationPlan(savedDateOnly, prefs, savedAfterNine), fallback);
+    assert.deepEqual(buildTaskNotificationPlan(savedDateOnly, prefs, new Date(+savedAfterNine + 30_000)), fallback);
+    assert.deepEqual(buildTaskNotificationPlan(savedDateOnly, prefs, new Date(+savedAfterNine + 60_000)), []);
     const rows = f.StorageService.tasks;
     const saved = await rows.add({ ...task, recurring: 'Daily', reminderLeadMinutes: 15 });
     await f.NotificationService.syncTasks(await rows.getAll(), prefs);
