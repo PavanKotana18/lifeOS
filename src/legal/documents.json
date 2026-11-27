@@ -1,0 +1,233 @@
+{
+  "version": "0.3-draft",
+  "publisher": "Pavan Kumar, individual developer",
+  "effectiveDate": null,
+  "supportEmail": null,
+  "documents": [
+    {
+      "id": "terms",
+      "title": "Terms and End User License Agreement",
+      "blocks": [
+        {
+          "heading": "1. Agreement and eligibility"
+        },
+        {
+          "text": "These Terms govern your use of BusyDoo, a personal planning, routine, goal and budgeting application. Please read them before using the application. By affirmatively accepting these Terms, you agree to them. If you do not agree, do not begin using the application. If an updated agreement is presented after you have created records, you may decline it and use available protected export and deletion options before stopping ordinary use. You must be at least 18 years old and legally competent to enter into this agreement. The application is intended for personal use, initially in India. The Privacy Policy explains information handling separately; acceptance of these Terms does not replace any legally required privacy consent or optional device permission."
+        },
+        {
+          "heading": "2. What BusyDoo provides"
+        },
+        {
+          "text": "BusyDoo helps you organize tasks, track habits and goals, and maintain personal financial records. Its core features are designed for use on your device without a BusyDoo online account. Some activities, such as installing updates, purchasing premium features, contacting support or using a storage provider, may require connectivity or a third-party service. The application is not a bank, payment service, lender, investment adviser, tax adviser or financial institution. Recording an amount or a transfer in BusyDoo does not itself move money."
+        },
+        {
+          "heading": "3. Software license and ownership"
+        },
+        {
+          "text": "Subject to these Terms, you receive a limited, non-exclusive, non-transferable license to install and use BusyDoo for your own personal purposes, including any devices permitted by the applicable distribution terms. The software and BusyDoo branding remain the property of their respective rights holders. Third-party open-source components remain governed by their applicable licenses; nothing here restricts rights granted by those licenses or applicable law. You retain your rights in the content you enter. BusyDoo does not acquire ownership of your personal records. The app may process that content on your device to perform functions you request."
+        },
+        {
+          "heading": "4. Responsible use"
+        },
+        {
+          "text": "Use BusyDoo lawfully and only with information you are entitled to use. Do not misuse the app to violate another person's rights, distribute malware, circumvent security or purchase controls, or redistribute proprietary software without permission. This does not prevent lawful research, accessibility, interoperability or activities expressly permitted by law or applicable open-source licenses. Avoid entering another person's confidential information without authority, or storing bank passwords, card security codes, OTPs or other secrets in free-text fields."
+        },
+        {
+          "heading": "5. Financial information and calculations"
+        },
+        {
+          "text": "BusyDoo's totals, charts, budgets, estimates, exchange rates, forecasts and import suggestions are personal recordkeeping tools. Outputs depend on your inputs, settings, assumptions and the software's implementation. Review information imported from messages or other sources before saving. BusyDoo does not verify your bank balance or execute actual financial transactions. Consult original statements and appropriately qualified professionals when making significant financial, tax or investment decisions. Do not use BusyDoo as your sole authoritative financial record. Nothing here removes remedies for defective software under applicable law."
+        },
+        {
+          "heading": "6. Reminders and reliability"
+        },
+        {
+          "text": "Reminders depend on device time, permissions, Android scheduling, battery restrictions and other device conditions. BusyDoo may be unable to deliver a reminder at the expected time. Date-only tasks may use a configurable alert time distinct from the deadline. You are responsible for checking important obligations independently. Do not rely on the app as the sole reminder for medical, safety-critical, emergency or legally time-sensitive obligations."
+        },
+        {
+          "heading": "7. Your device, data and recovery"
+        },
+        {
+          "text": "BusyDoo is designed to store private records on your device and use device-based security protections. Keep your device secure and maintain appropriate backups. Store backup passphrases and recovery material separately and securely. Loss of the device, app data, encryption keys, passphrase or recovery material may make records unrecoverable. The developer cannot promise to recover data it does not possess. New JSON backups are encrypted by the app; transaction CSV exports are readable files and should be protected separately. Files saved to other apps or cloud providers are subject to their practices. Restoring a backup may replace existing records; review the confirmation before proceeding. See the Privacy Policy for details."
+        },
+        {
+          "heading": "8. Free and paid features"
+        },
+        {
+          "text": "BusyDoo offers the free features identified in the application without a subscription. The separate Purchases and Refunds Policy applies only when a paid feature is offered. Where premium is offered, the price, included features, entitlement conditions and applicable purchase terms will be shown before payment. A one-time purchase does not create an automatically renewing subscription. Payments and refunds are subject to the applicable store terms and statutory rights as well as the Purchases and Refunds Policy. No payment is required unless you choose an offered paid feature."
+        },
+        {
+          "heading": "9. Updates and availability"
+        },
+        {
+          "text": "The app may be updated to improve functionality, fix errors, address security issues or comply with law. Device or operating-system compatibility may change. We will not use this clause to avoid obligations regarding paid features, statutory conformity or remedies. We will provide reasonable notice of material changes where practicable, explain their effect and obtain renewed agreement where required. Any discontinuation or substantial reduction in purchased functionality will be handled under applicable consumer law and store rules. We will not intentionally hold your existing records or ordinary export and deletion controls behind a new payment requirement. Access may still depend on your device, compatible software and successful authentication."
+        },
+        {
+          "heading": "10. Third-party services"
+        },
+        {
+          "text": "Android, app stores, document providers and email services are separately operated. Their terms and privacy policies may apply to services you choose to use. We remain responsible for our own conduct and obligations. A third party's terms do not override your non-waivable rights against BusyDoo."
+        },
+        {
+          "heading": "11. Warranty and liability"
+        },
+        {
+          "text": "We aim to provide a reliable and reasonably secure application but cannot promise uninterrupted, error-free operation or absolute security. To the extent permitted by law, BusyDoo is supplied without additional implied promises beyond those expressly made and those required by law. Responsibility for losses is determined under applicable law, including causation, foreseeability and the circumstances of the loss. No term excludes liability for fraud, wilful misconduct, negligence or other liability where exclusion is unlawful, or limits mandatory consumer remedies."
+        },
+        {
+          "heading": "12. Termination and records"
+        },
+        {
+          "text": "You may stop using the application at any time. You can use available export and deletion controls and uninstall it. Uninstalling may make local records unrecoverable. External copies remain under your control. We may withdraw a license for material unlawful misuse after reasonable notice and opportunity to remedy where appropriate; this does not permit us to remotely seize your personal records. Accrued payment and consumer rights remain unaffected."
+        },
+        {
+          "heading": "13. Changes to these Terms"
+        },
+        {
+          "text": "The current version will be available in the app and on the official policy webpage. Material changes will be clearly identified. Changes will not retroactively remove mandatory rights or alter a completed purchase unfairly. Where acceptance is required, we will ask you to accept the updated terms separately."
+        },
+        {
+          "heading": "14. Governing law and complaints"
+        },
+        {
+          "text": "Indian law governs these Terms, subject to mandatory protections applicable to you. A complaint may also be raised through the applicable consumer grievance channels, including the National Consumer Helpline. Please contact the support address once available for assistance or complaints. Nothing requires you to waive access to a competent court, consumer commission, regulator or other lawful remedy. No exclusive venue or compulsory arbitration is imposed in this draft."
+        },
+        {
+          "heading": "15. Contact"
+        },
+        {
+          "text": "Pavan Kumar, individual developer of BusyDoo. A support address is pending."
+        }
+      ]
+    },
+    {
+      "id": "privacy",
+      "title": "Privacy policy",
+      "blocks": [
+        {
+          "heading": "1. Overview"
+        },
+        {
+          "text": "BusyDoo is designed as an offline-first personal planning and budgeting application. Its core features work with records on your device and do not require a BusyDoo online account. Our product policy is not to display advertising, use developer-operated usage tracking, sell personal information, or synchronize your private records to a BusyDoo cloud service. Local calculations and device diagnostics are not developer-operated tracking. This policy describes app processing separately from information you choose to send to external services or to us."
+        },
+        {
+          "heading": "2. Information processed by the application"
+        },
+        {
+          "text": "- Profile: display name and optional selected photograph, used for personalization. Selected photos are cropped and re-encoded on your device to remove source metadata before saving. A temporary onboarding name draft and some startup settings can exist outside the encrypted private-record store."
+        },
+        {
+          "text": "- Planning and routine data: task titles, notes, due dates, priorities, subtasks, recurring schedules, habit logs, goals and milestones, used to organize your activities and show progress. Information you choose to enter may be sensitive, including health-related notes or personal circumstances."
+        },
+        {
+          "text": "- Financial records: income, expenses, dates, descriptions, budgets, savings, account labels, transfers, exchange rates and commitments, used to calculate and display personal financial information."
+        },
+        {
+          "text": "- Bank-alert imports: when you paste a message or deliberately share text with BusyDoo, the app parses it on your device, suggests a transaction and uses derived fingerprints to help detect duplicates. You review what to save. Standard does not request access to your SMS inbox. Do not paste passwords, OTPs or unnecessary confidential details. Derived fingerprints and confirmed records may remain after the original text is consumed or dismissed. A fingerprint is a duplicate-detection identifier, not a guarantee of anonymization."
+        },
+        {
+          "text": "- Device preferences and reminder metadata: appearance, notification preferences, scheduling identifiers, timing and local delivery diagnostics, used for operation and troubleshooting. These are distinct from developer usage tracking. Some metadata is stored outside the encrypted record store. Notification schedules and delivery records may contain identifiers and timing information even though notification text is designed to be generic."
+        },
+        {
+          "text": "- Device authentication: Android performs biometric or device-credential authentication on supported devices. BusyDoo uses the result and protected cryptographic facilities; it does not receive biometric templates through its authentication interface."
+        },
+        {
+          "heading": "3. Purposes and choices"
+        },
+        {
+          "text": "The app processes the information you provide to deliver features you choose: organizing records, personalization, calculations, local reminders, data protection and backup/restore. Optional profile photos, bank-alert imports and notification permissions are controlled by you. You may decline optional permissions or stop using optional features. Refusing notifications may prevent reminders from appearing. Where we separately receive personal information, we use it for the specific requested support, purchase administration, security or applicable legal purpose, relying on a lawful basis appropriate to that processing. Where consent is required, we will request it separately and provide a means to withdraw it. Withdrawal does not affect processing that was lawful before withdrawal."
+        },
+        {
+          "heading": "4. Storage and security"
+        },
+        {
+          "text": "Private app records are designed to use encrypted local storage and native Android security mechanisms. This does not mean every app setting, identifier, temporary input or operating-system diagnostic is encrypted by BusyDoo. Information may be visible in memory during authorized use. We use device authentication, protected keys and security safeguards appropriate to the application. No security measure is absolute. Keep your device, backups and recovery information secure. We cannot promise recovery of data when the necessary keys or backup credentials are lost."
+        },
+        {
+          "heading": "5. Backups, exports and external destinations"
+        },
+        {
+          "text": "You may export a new encrypted JSON backup with a passphrase. Transaction CSV exports are not encrypted by BusyDoo. The file can contain sensitive financial information. Before exporting a CSV, consider whether the selected destination is private and whether another application can access it. Android lets you select a destination, which may be a local folder, another app or a cloud storage provider you use. BusyDoo does not control that provider's retention or synchronization. Files and recovery material you export are separate from the app database. Deleting records in BusyDoo does not automatically delete those copies. Legacy backups may be unencrypted; review warnings before importing them. Restoring may replace existing records."
+        },
+        {
+          "heading": "6. Information received by the developer"
+        },
+        {
+          "text": "You do not need to send us your app records to use the core application. If you email support, we receive your email address, message, and any information or attachment you choose to include. Use redacted screenshots or synthetic examples whenever possible. Never email a backup passphrase, recovery key, bank password, OTP or full financial backup. We use the information to respond, investigate problems, maintain security and meet applicable legal obligations. Our dedicated email service provider processes messages to deliver and store them."
+        },
+        {
+          "text": "If premium purchases are enabled, the applicable app store or authorized billing service will process your payment. The developer may receive information needed to verify entitlement, administer refunds and comply with recordkeeping obligations. The store and device platform may process information independently under their own privacy policies."
+        },
+        {
+          "text": "Our public policy webpage may be hosted by a third party that processes ordinary connection or security logs. We do not intend to add advertising or usage-tracking code to that website."
+        },
+        {
+          "heading": "7. Sharing and transfers"
+        },
+        {
+          "text": "BusyDoo is not designed to provide your local records to a developer-operated synchronization service. User-directed exports and voluntary support messages can transfer information outside your device. The destination provider's practices apply. Where information is actually held by us, we may use necessary service providers for support and purchase administration, or disclose limited information if lawfully required or necessary to respond to a security incident, subject to applicable law. Some providers may process information outside India; relevant locations, safeguards and restrictions will be assessed for each provider. We do not promise all external processing remains in India solely because the app launches in India."
+        },
+        {
+          "heading": "8. Retention and deletion"
+        },
+        {
+          "text": "Local personal records are retained as needed for the features you use, generally until you delete them or use the application's data reset controls. Archived or completed records may remain until deleted. You can edit your profile, remove a photo and delete supported records. The Backup & Restore area provides an erase option for personal database records and reminder cancellation. Some settings, diagnostics, device security material and external exported copies may require separate removal. Uninstalling or clearing application storage may delete local records irreversibly; keep a backup first if needed. We do not claim forensic erasure of every physical storage trace."
+        },
+        {
+          "text": "For information we receive through support, our routine retention is 90 days after a request is resolved, unless longer retention is reasonably required for legal, security or unresolved dispute purposes. Purchase records, if any, will be retained according to applicable legal and platform requirements and only as needed for administration. External providers have their own retention practices."
+        },
+        {
+          "heading": "9. Your privacy choices and rights"
+        },
+        {
+          "text": "You can access, correct, export or delete supported information through app controls. Ordinary protected export and deletion of existing records will not be subject to a new payment requirement. To ask about information held by the developer, request correction or erasure, withdraw consent where applicable, exercise any other applicable right (including nomination where provided by law), or raise a grievance, email the support address once available. For requests about developer-held correspondence, we may verify control of the relevant email address or request other proportionate verification. We will not ask you to send a local recovery secret to prove your identity. Do not send unnecessary identification or encryption secrets. We cannot retrieve your local private records remotely if we do not have them. We will respond within the applicable legal deadlines and explain any lawful reason we cannot fulfill a request. A local reset and a request to erase support correspondence are separate actions. Complaints will be acknowledged within 48 hours of receipt, with a target to resolve them within one calendar month of receipt or earlier where legally required. You may approach the appropriate authority or use other lawful remedies when available."
+        },
+        {
+          "heading": "10. Children"
+        },
+        {
+          "text": "BusyDoo is intended for people aged 18 and above and is not directed at children. If you believe a child has provided personal information to us, contact our privacy address. We will assess and take appropriate action under applicable law. We do not need a child's or adult's identity documents simply to use the app's ordinary features."
+        },
+        {
+          "heading": "11. Security incidents and changes"
+        },
+        {
+          "text": "If we identify a security incident affecting information for which we are responsible, we will assess it and notify affected individuals and authorities as required by applicable law. We will maintain an accessible current version of this policy and explain material changes. New purposes, tracking, cloud synchronization or other material changes will require reassessment, appropriate notice and any necessary consent before implementation."
+        },
+        {
+          "heading": "12. Contact"
+        },
+        {
+          "text": "Pavan Kumar, individual developer of BusyDoo. The privacy and grievance contact is pending."
+        }
+      ]
+    },
+    {
+      "id": "support",
+      "title": "Purchases, refunds and support",
+      "blocks": [
+        {
+          "heading": "Purchases and refunds"
+        },
+        {
+          "text": "BusyDoo is planned to provide free essential features and an optional one-time premium purchase, with an intended initial Indian price of ₹69. The applicable price, taxes, included features, purchase conditions and any supported restoration mechanism must be disclosed before checkout. A one-time purchase does not renew automatically. Do not advertise an unlimited lifetime service or every future paid feature unless that entitlement is actually defined, supported and approved."
+        },
+        {
+          "text": "Where available, purchases will use the billing method permitted by the distribution platform. The store or authorized provider will present payment details and provide the applicable transaction record. If a purchase fails or access is not delivered, contact support with the order reference and a description; do not send payment credentials. Restoration after reinstall, device replacement or changes to store account must follow the confirmed entitlement and platform rules shown before purchase."
+        },
+        {
+          "text": "Refund requests may be made through the applicable store or by contacting BusyDoo support, subject to store processes and applicable law. We will assess issues such as duplicate charges, failure to deliver a paid feature, or defective functionality and facilitate appropriate remedies. This policy does not exclude any mandatory refund, repair, replacement, compensation or other consumer remedy. Refund approval and processing time may depend on the payment provider and facts of the request. Do not promise a particular refund window unless operationally supported and lawful."
+        },
+        {
+          "heading": "Support and grievances"
+        },
+        {
+          "text": "Users may contact the support address once available about functionality, purchases, privacy, security or complaints. Include the app version, a concise description and, if necessary, a redacted screenshot. Do not provide recovery secrets, passwords, OTPs, private keys, full bank statements or backups. Owner-approved operating standard: acknowledge complaints within 48 hours and aim to redress them within one calendar month from receipt, or sooner where legally required. Send the complainant a copy or accurate record of their complaint when required. An interim update does not replace a mandatory resolution deadline. A complaint does not waive access to consumer authorities, courts or regulators."
+        },
+        {
+          "text": "Privacy requests: confirm the scope of information actually held by the developer; verify proportionately; respond within applicable deadlines; document disposition and deletion where appropriate. Report security vulnerabilities privately via the same contact, with reproducible steps and minimal non-sensitive evidence. Do not access other users' data or disrupt systems. No paid bug bounty is promised. Handle credible reports promptly and assess statutory incident-reporting requirements."
+        }
+      ]
+    }
+  ]
+}

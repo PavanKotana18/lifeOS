@@ -328,7 +328,7 @@ const cases = [
       h.check(![...f.pending.values()].some(n => n.body?.includes('WP0')), 'Notification copy does not disclose record titles');
       h.check([...f.pending.values()].some(n => n.extra.kind === 'milestoneReminder'), 'Real service scheduled fixture milestone');
       f.pending.set(-7, { id: -7, extra: { kind: 'unrelated-fixture' } });
-      const expression = h.buttonHandler('Clear All Application Data');
+      const expression = h.buttonHandler('Erase local records');
       await h.bind(expression, f.appDeps())();
       h.equal(await f.lifeOSDatabase.habits.count(), 0, 'Actual reset cleared habit data');
       h.equal(await f.lifeOSDatabase.milestones.count(), 0, 'Actual reset cleared milestone data');
@@ -342,13 +342,21 @@ const cases = [
       const expression = h.buttonHandler('Export transactions CSV');
       const payloads = ['=1+1', '+1+1', '-1+1', '@SUM(1)', '\t=1+1', '\r=1+1'];
       const descriptions = [...payloads, 'literal, "quotes"\nsecond line'];
-      let contents;
+      let contents, confirmation;
+      let cancelledExports = 0;
+      const cancelled = h.bind(expression, { ...f.appDeps(), async confirmAction() { return false; },
+        async exportBackupFile() { cancelledExports++; return { status: 'cancelled' }; } });
+      await cancelled();
+      h.equal(cancelledExports, 0, 'Cancelling the warning does not invoke the file bridge');
       await h.bind(expression, { ...f.appDeps(),
+        async confirmAction(options) { confirmation = options; return true; },
         transactions: descriptions.map((description, i) => ({ id: `wp0-${i}`, type: 'expense',
           description, amount: 1, category: 'Food', date: '2026-11-06',
           createdAt: '2026-11-06T06:30:00.000Z', paymentMethod: 'Cash' })),
         async exportBackupFile(options) { contents = options.contents; return { status: 'saved', bytesWritten: Buffer.byteLength(contents) }; }
       })();
+      h.equal(confirmation?.confirmLabel, 'Export CSV', 'CSV export requires an affirmative choice');
+      h.check(confirmation?.message.includes('does not encrypt CSV') && confirmation.message.includes('encrypted backup'), 'CSV disclosure explains plaintext and the encrypted alternative');
       h.check(typeof contents === 'string', 'Actual UI export must invoke file bridge');
       const rows = parseCsv(contents), column = rows[0].indexOf('description');
       h.check(column >= 0 && rows.length === descriptions.length + 1, 'CSV header and row counts');

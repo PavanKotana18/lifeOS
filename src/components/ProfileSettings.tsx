@@ -4,17 +4,18 @@ import { Bell, Palette, SlidersHorizontal, Shield, UserRound, Database, Info, Wa
 import { FeatherHeader } from './FeatherHeader';
 import type { LucideIcon } from 'lucide-react';
 
-export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses' | 'money-imports';
+export type ProfileSection = 'home' | 'appearance' | 'preferences' | 'notifications' | 'privacy' | 'data' | 'about' | 'developer' | 'themes' | 'accent' | 'motion' | 'app-lock' | 'recovery' | 'licenses' | 'money-imports' | 'legal';
 
 export const PROFILE_TITLES: Record<ProfileSection, string> = {
   home: 'Profile', appearance: 'Appearance', preferences: 'Preferences', notifications: 'Notifications',
   privacy: 'Privacy & security', data: 'Backup & Restore', about: 'About BusyDoo', developer: 'Developer tools',
-  themes: 'Themes', accent: 'Accent color', motion: 'Motion', 'app-lock': 'App lock', recovery: 'Recovery', licenses: 'Open-source licenses', 'money-imports': 'Money & Imports',
+  themes: 'Themes', accent: 'Accent color', motion: 'Motion', 'app-lock': 'App lock', recovery: 'Recovery', licenses: 'Open-source licenses', 'money-imports': 'Money & Imports', legal: 'Legal & Privacy',
 };
 
 export function profileParent(section: ProfileSection): ProfileSection {
   if (section === 'themes' || section === 'accent' || section === 'motion') return 'appearance';
   if (section === 'app-lock' || section === 'recovery') return 'privacy';
+  if (section === 'legal') return 'privacy';
   if (section === 'licenses') return 'about';
   return 'home';
 }

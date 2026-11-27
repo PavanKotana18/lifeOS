@@ -28,7 +28,7 @@ assert.match(preferences, /onClick=\{\(\) => onChange\('swipeNavigationEnabled',
 assert.match(settings, /Export encrypted backup/);
 assert.match(preferences, /Currency and locale/);
 assert.match(preferences, /disabled=\{hasFinancialRecords\}/);
-assert.match(settings, /Clear All Application Data/);
+assert.match(settings, /Erase local records/);
 const fresh = mergeUserPreferences({}, 'INR');
 assert.equal(fresh.swipeNavigationEnabled, true);
 assert.equal(mergeUserPreferences({ ...fresh, swipeNavigationEnabled: false }, 'INR').swipeNavigationEnabled, false, 'explicit opt-out survives hydration');

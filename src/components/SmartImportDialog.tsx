@@ -46,6 +46,7 @@ export default function SmartImportDialog({ initialText, onTextConsumed, onDismi
       <header className="flex items-center justify-between gap-3"><h2 id={id} className="type-section-title">Smart Import</h2>
         <button type="button" className="feather-secondary" onClick={() => dialog.current?.close()}>Close</button></header>
       {!suggestion ? <>
+        <p className="text-sm text-secondary">Paste or share one transaction alert and check the suggested details before saving. Leave out passwords, OTPs and payment credentials.</p>
         <label className="smart-import-field">Bank alert
           <textarea className="lifeos-input" rows={4} maxLength={2000} autoComplete="off" spellCheck={false} value={text}
             onChange={event => setText(event.target.value)} placeholder="Paste one transaction alert" />
