@@ -3256,10 +3256,10 @@ export default function App() {
                       })}
                       {filteredTransactions.filter(row => !date || row.date === date).map(t => (
                         <article key={t.id} className="transaction-history-item">
-                          <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={'View transaction ' + (t.description || t.category)} className="transaction-entry">
+                          <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={'View ' + (t.type === 'income' ? 'income' : 'expense') + ' transaction ' + (t.description || t.category)} className="transaction-entry">
                             <span className={'transaction-icon is-' + t.type} aria-hidden="true">{t.type === 'income' ? <CirclePlus size={18} /> : <ReceiptText size={18} />}</span>
-                            <span className="transaction-copy"><strong>{t.description || t.category}</strong><small>{[!date && formatDate(t.date), t.category !== t.description && t.category, t.accountId && (financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'), t.occurredAt && formatTime(new Date(t.occurredAt))].filter(Boolean).join(' ? ')}</small></span>
-                            <span className={'transaction-value is-' + t.type}><strong>{t.type === 'income' ? '+' : '?'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : t.currencyCode ? formatMoney(t.amount, t.currencyCode) : t.amount}</strong><small>{t.type === 'income' ? 'Income' : 'Expense'} &middot; {t.currencyCode || 'Currency unknown'}</small></span>
+                            <span className="transaction-copy"><strong>{t.description || t.category}</strong><small>{[!date && formatDate(t.date), t.category !== t.description && t.category, t.accountId && (financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'), t.occurredAt && formatTime(new Date(t.occurredAt))].filter(Boolean).join(' · ')}</small></span>
+                            <span className={'transaction-value is-' + t.type}><strong>{t.type === 'income' ? '+' : '−'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : t.currencyCode ? formatMoney(t.amount, t.currencyCode) : t.amount}</strong><small>{t.type === 'income' ? 'Income' : 'Expense'} &middot; {t.currencyCode || 'Currency unknown'}</small></span>
                           </button>
                         </article>
                       ))}
