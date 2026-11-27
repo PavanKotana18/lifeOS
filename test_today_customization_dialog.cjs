@@ -48,7 +48,11 @@ backdrop({ target: surface, currentTarget: surface }); assert.equal(closes, 1, '
 close(); assert.equal(closes, 2);
 
 const backExpression = h.appFunction('navigateBack');
-const navigation = { swipePointer: { current: null }, cancelProfileAdmission: () => false, navigationMotion: { cancelPending() {} } };
+const navigation = {
+  document: { querySelector: () => null, querySelectorAll: () => [] },
+  notificationCentreDialog: { current: false },
+  swipePointer: { current: null }, cancelProfileAdmission: () => false, navigationMotion: { cancelPending() {} },
+};
 const state = { appReady: true, isLocked: false, activeTab: 'dashboard', todayCustomizationOpen: true, onboardingRequired: false, onboardingComplete: true };
 h.bind(backExpression, { ...navigation, backState: { current: state }, confirmationResolver: { current: null }, firstRecordSecurityResolver: { current: null },
   closeTodayCustomization: close, resolveBackAction: () => { throw new Error('Customization must close before navigation'); },
@@ -60,6 +64,17 @@ h.bind(backExpression, { ...navigation, backState: { current: state }, confirmat
   closeTodayCustomization: () => { throw new Error('Nested confirmation owns Back'); },
 })();
 assert.equal(confirmationDismissed, true);
+let protectedDismissed = false;
+h.bind(backExpression, {
+  ...navigation,
+  backState: { current: state },
+  document: { querySelector(selector) {
+    assert.equal(selector, '[data-profile-protected-close]');
+    return { click() { protectedDismissed = true; } };
+  } },
+  closeTodayCustomization: () => { throw new Error('Protected Profile dialog owns Back'); },
+})();
+assert.equal(protectedDismissed, true);
 for (const [activeTab, isLocked, expected] of [['dashboard', false, 0], ['finance', false, 1], ['dashboard', true, 1]]) {
   let changes = 0;
   h.bind(closeEffect, { activeTab, isLocked, setTodayCustomizationOpen: value => { assert.equal(value, false); changes++; } })();
