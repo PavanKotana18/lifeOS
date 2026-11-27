@@ -1,3 +1,4 @@
+import type { InboxChange, InboxEvent } from './services/notificationInbox';
 import { MAX_PHOTO_LENGTH, PROFILE_PHOTO_SETTING } from './services/profilePhoto';
 import { isGoalComplete, validateGoalMeasure } from './services/goalModes';
 import type { ImportDuplicateOptions } from './services/smartImport';
@@ -402,6 +403,8 @@ export interface IDataStorage {
     toggleCompleted(id: string, completed: boolean): Promise<void>;
   };
   settings: {
+    setNotificationSelection(preferences: import('./types').NotificationPreferences, enabled: boolean): Promise<void>;
+    updateNotificationInbox(change: InboxChange): Promise<InboxEvent[]>;
     get<T>(key: string, defaultValue: T): Promise<T>;
     set(key: string, value: any): Promise<void>;
     delete(key: string): Promise<void>;
@@ -410,7 +413,7 @@ export interface IDataStorage {
     hasData(): Promise<boolean>;
     exportData(): Promise<string>;
     importData(jsonData: string, options?: { replaceExisting?: boolean }): Promise<{ success: boolean; counts: Record<string, number> }>;
-    clearAll(): Promise<void>;
+    clearAll(options?: { preserveAppLock?: boolean }): Promise<void>;
     seedDemoData(): Promise<void>;
     removeSampleData(): Promise<void>;
   };
@@ -1565,6 +1568,10 @@ const rawStorageService: IDataStorage = {
     }
   },
   settings: {
+    async setNotificationSelection(preferences, enabled) {
+      await db.settings.bulkPut([{ key: 'notificationPreferences', value: preferences }, { key: 'notificationsEnabled', value: enabled }]);
+    },
+    async updateNotificationInbox() { throw new Error("Notification history requires encrypted storage."); },
     async get<T>(key: string, defaultValue: T): Promise<T> {
       const record = await db.settings.get(key);
       return record ? (record.value as T) : defaultValue;

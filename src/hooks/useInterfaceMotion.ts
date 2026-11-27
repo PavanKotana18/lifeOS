@@ -40,5 +40,5 @@ export function useInterfaceMotion() {
     root.dataset.motionPreset = state.preset;
     Object.entries(getMotionCssVariables(state.preset, reducedMotion)).forEach(([key, value]) => root.style.setProperty(key, value));
   }, [state.preset, reducedMotion]);
-  return { ...state, setPreset: controller.setPreset, reducedMotion };
+  return { ...state, setPreset: controller.setPreset, adoptStored: controller.adoptStored, reducedMotion };
 }

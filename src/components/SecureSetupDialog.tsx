@@ -7,8 +7,9 @@ import RecoveryProgress from './RecoveryProgress';
 import type { PreparedRecovery } from '../services/cryptoService.ts';
 
 /** Recovery secrets live only in this mounted dialog and native pending state. */
-export default function SecureSetupDialog({ inline = false, cancelLabel, prepared, onDecision, onRecoveryExportStart, recoveryExportResumeReady = true, onRetryRecoveryExportResume }: {
+export default function SecureSetupDialog({ inline = false, premium = false, cancelLabel, prepared, onDecision, onRecoveryExportStart, recoveryExportResumeReady = true, onRetryRecoveryExportResume }: {
   inline?: boolean;
+  premium?: boolean;
   cancelLabel?: string;
   prepared?: PreparedRecovery;
   onDecision(accepted: boolean): void;
@@ -43,13 +44,13 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
     onDecision(accepted);
   };
 
-  if (prepared && !recoveryExportResumeReady) return <main className="lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6">
-    <section role="dialog" aria-modal="true" aria-labelledby="secure-setup-locked-title" className="lifeos-panel mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 rounded-3xl border p-5 shadow-xl sm:p-6">
+  if (prepared && !recoveryExportResumeReady) return <main className={premium ? "profile-design profile-overlay" : "lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6"}>
+    <section role="dialog" aria-modal="true" aria-labelledby="secure-setup-locked-title" className={premium ? "profile-protected-form" : "lifeos-panel mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 rounded-3xl border p-5 shadow-xl sm:p-6"}>
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-tint)] text-[var(--accent)]" aria-hidden="true"><ShieldCheck size={24} strokeWidth={1.8} /></div>
       <h1 id="secure-setup-locked-title" className="text-center text-2xl font-semibold">Unlock to continue</h1>
       <p className="text-center text-sm leading-6 text-secondary">{exportBusy ? 'Choose where to save your recovery file. Your recovery code stays hidden while you save it.' : 'Unlock BusyDoo to see your recovery code again.'}</p>
       {!exportBusy && onRetryRecoveryExportResume && <button type="button" onClick={onRetryRecoveryExportResume} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Unlock and continue</button>}
-      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{cancelLabel || 'Cancel and keep data locked'}</button>
+      <button type="button" data-profile-protected-close={!inline || undefined} disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{cancelLabel || 'Cancel and keep data locked'}</button>
     </section>
   </main>;
 
@@ -114,7 +115,7 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
     }
   };
 
-  const content = <section role={inline ? undefined : "dialog"} aria-modal={inline ? undefined : true} aria-labelledby={inline ? undefined : "secure-setup-title"} className={inline ? "onboarding-step recovery-stage mt-4" : "lifeos-panel mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 rounded-3xl border p-5 shadow-xl sm:p-6"}>
+  const content = <section role={inline ? undefined : "dialog"} aria-modal={inline ? undefined : true} aria-labelledby={inline ? undefined : "secure-setup-title"} className={inline ? "onboarding-step recovery-stage mt-4" : premium ? "profile-protected-form" : "lifeos-panel mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 rounded-3xl border p-5 shadow-xl sm:p-6"}>
       {!inline && <>
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-tint)] text-[var(--accent)]" aria-hidden="true">
         <ShieldCheck size={24} strokeWidth={1.8} />
@@ -123,7 +124,7 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
       <h1 id="secure-setup-title" className="text-center text-2xl font-semibold">{prepared ? 'Recovery setup' : 'Protect your local BusyDoo data'}</h1>
       </>}
       {prepared ? <>
-        {!inline && <RecoveryProgress step={2} />}
+        {!inline && <RecoveryProgress profile={premium} labels={premium ? ['Prepare', 'Save file', 'Confirm code'] : undefined} step={kitExported ? 3 : 2} />}
         {!kitExported ? <div className="recovery-stage space-y-3">
           <p className="text-sm text-secondary">Save your recovery file somewhere you can access if you lose this device.</p>
           <button type="button" data-testid="save-complete-recovery-kit" onClick={() => void saveKit()} disabled={exportBusy}
@@ -165,7 +166,7 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
         <p className="text-sm leading-6 text-secondary">BusyDoo encrypts your records on this device using an Android Keystore key protected by strong biometrics. Continue to authenticate and create your private recovery kit. Existing local records will be verified before encrypted copies replace them.</p>
         <button type="button" onClick={() => void finish(true)} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Set up secure storage</button>
       </>}
-      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{inline ? 'Cancel recovery setup' : 'Cancel and keep data locked'}</button>
+      <button type="button" data-profile-protected-close={!inline || undefined} disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{inline ? 'Cancel recovery setup' : (premium ? 'Cancel recovery setup' : 'Cancel and keep data locked')}</button>
     </section>;
-  return inline ? content : <main className="lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6">{content}</main>;
+  return inline ? content : <main className={premium ? "profile-design profile-overlay" : "lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6"}>{content}</main>;
 }

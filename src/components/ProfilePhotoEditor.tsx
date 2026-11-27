@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { RotateCw, RotateCcw } from 'lucide-react';
+import { ProfileButton } from './ProfileSettings';
 import { clampPhotoCrop, encodeProfileCrop, INITIAL_PHOTO_CROP, photoCropGeometry, photoObjectUrl } from '../services/profilePhoto';
 
 export default function ProfilePhotoEditor({ source, onCancel, onSave }: {
@@ -43,7 +45,6 @@ export default function ProfilePhotoEditor({ source, onCancel, onSave }: {
     setError('');
     try {
       const encoded = encodeProfileCrop(image, crop);
-      dialog.current?.close();
       await onSave(encoded);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save the crop.');
@@ -52,17 +53,14 @@ export default function ProfilePhotoEditor({ source, onCancel, onSave }: {
     finally { saving.current = false; setBusy(false); }
   };
 
-  return <dialog ref={dialog} className="profile-crop-editor lifeos-page" data-profile-editor aria-label="Crop profile photo"
+  return <dialog ref={dialog} className="profile-design profile-crop-editor" data-profile-editor aria-label="Crop profile photo"
     onCancel={event => { event.preventDefault(); if (!saving.current) onCancel(); }}>
     <header className="profile-crop-toolbar">
       <h2>Crop photo</h2>
-      <button type="button" className="profile-crop-cancel" disabled={busy} onClick={onCancel}>Cancel</button>
-      <button type="button" className="feather-back-text" aria-label="Reset crop" title="Reset crop" disabled={busy || !image} onClick={() => setCrop(INITIAL_PHOTO_CROP)}>Reset</button>
-      <button type="button" className="feather-back-text" aria-label="Rotate photo clockwise" title="Rotate photo clockwise" disabled={busy || !image}
-        onClick={() => image && setCrop(current => clampPhotoCrop(image, { ...current, x: 1 - current.y, y: current.x, turns: (current.turns + 1) % 4 }))}>Rotate</button>
-      <button type="button" className="feather-primary" disabled={busy || !image} onClick={() => void confirm()}>{busy ? 'Saving…' : 'Done'}</button>
+      <p className="profile-description">Drag to position the photo or pinch to zoom. The circle shows how it will appear in Profile.</p>
     </header>
-    <div className="profile-crop-preview">
+    <div className="profile-crop-layout">
+    {!ready && !error && <p role="status" className="profile-description">Preparing your photo…</p>}
     <div className="profile-crop-stage" onPointerDown={event => {
       if (busy || !ready || points.current.size >= 2) return;
       points.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -95,17 +93,27 @@ export default function ProfilePhotoEditor({ source, onCancel, onSave }: {
         transform: 'translate(-50%, -50%) rotate(' + crop.turns * 90 + 'deg)',
       } : { visibility: 'hidden' }} />}
     </div>
-    </div>
-    {error && <p role="alert" className="profile-crop-error">{error}</p>}
-    <details className="profile-crop-adjust">
-      <summary>Fine adjustments</summary>
-      <div className="profile-crop-adjust-controls">
-        <label>Zoom <input type="range" min="1" max="8" step=".05" value={crop.zoom} disabled={!image || busy}
-          onChange={event => move(0, 0, Number(event.target.value) / crop.zoom, 1, 0, 0)} /></label>
-        <div role="group" aria-label="Move photo">{([['Left', -1, 0], ['Right', 1, 0], ['Up', 0, -1], ['Down', 0, 1]] as const).map(([direction, x, y]) =>
-          <button type="button" className="feather-back-text" aria-label={'Move photo ' + direction.toLowerCase()} key={direction} disabled={!image || busy}
-            onClick={() => move(x * .06, y * .06, 1, 1, 0, 0)}>{direction}</button>)}</div>
+    {error && <p role="alert" className="profile-error">{error}</p>}
+    <div className="profile-crop-adjust">
+      <div className="profile-actions">
+        <ProfileButton aria-label="Rotate photo clockwise" disabled={busy || !image}
+          onClick={() => image && setCrop(current => clampPhotoCrop(image, { ...current, x: 1 - current.y, y: current.x, turns: (current.turns + 1) % 4 }))}>
+          <RotateCw size={18} aria-hidden="true" />Rotate</ProfileButton>
+        <ProfileButton aria-label="Reset crop" disabled={busy || !image} onClick={() => setCrop(INITIAL_PHOTO_CROP)}>
+          <RotateCcw size={18} aria-hidden="true" />Reset</ProfileButton>
       </div>
-    </details>
+      <label className="profile-field">Zoom <input type="range" min="1" max="8" step=".05" value={crop.zoom} disabled={!image || busy}
+        onChange={event => move(0, 0, Number(event.target.value) / crop.zoom, 1, 0, 0)} /></label>
+      <details className="profile-disclosure"><summary>Fine adjustments</summary>
+        <div role="group" className="profile-actions" aria-label="Move photo">{([['Left', -1, 0], ['Right', 1, 0], ['Up', 0, -1], ['Down', 0, 1]] as const).map(([direction, x, y]) =>
+          <ProfileButton aria-label={'Move photo ' + direction.toLowerCase()} key={direction} disabled={!image || busy}
+            onClick={() => move(x * .06, y * .06, 1, 1, 0, 0)}>{direction}</ProfileButton>)}</div>
+      </details>
+    </div>
+    </div>
+    <footer className="profile-actions profile-crop-footer">
+      <ProfileButton disabled={busy} onClick={onCancel}>Cancel</ProfileButton>
+      <ProfileButton tone="primary" disabled={busy || !image} onClick={() => void confirm()}>{busy ? 'Saving…' : 'Done'}</ProfileButton>
+    </footer>
   </dialog>;
 }

@@ -328,8 +328,9 @@ const cases = [
       h.check(![...f.pending.values()].some(n => n.body?.includes('WP0')), 'Notification copy does not disclose record titles');
       h.check([...f.pending.values()].some(n => n.extra.kind === 'milestoneReminder'), 'Real service scheduled fixture milestone');
       f.pending.set(-7, { id: -7, extra: { kind: 'unrelated-fixture' } });
-      const expression = h.buttonHandler('Erase local records');
-      await h.bind(expression, f.appDeps())();
+      h.check(/resetProfileData\(\)/.test(h.componentHandler('ProfileData', 'onReset')), 'Profile reset uses the production handler');
+      const expression = h.appFunction('resetProfileData');
+      await h.bind(expression, { ...f.appDeps(), ...h.noopSetters(expression) })();
       h.equal(await f.lifeOSDatabase.habits.count(), 0, 'Actual reset cleared habit data');
       h.equal(await f.lifeOSDatabase.milestones.count(), 0, 'Actual reset cleared milestone data');
       h.check(f.pending.has(-7), 'Unrelated native alarm must be retained');
@@ -339,16 +340,18 @@ const cases = [
   },
   { id: 'LOS-010', category: 'Production AST-extracted export handler; simulated file export/browser', known: false,
     async run() { await usingFixture(async f => {
-      const expression = h.buttonHandler('Export transactions CSV');
+      h.check(/exportProfileCsv\(\)/.test(h.componentHandler('ProfileData', 'onCsv')), 'Profile CSV action uses the production handler');
+      const expression = h.appFunction('exportProfileCsv');
+      const deps = { ...f.appDeps(), ...h.noopSetters(expression) };
       const payloads = ['=1+1', '+1+1', '-1+1', '@SUM(1)', '\t=1+1', '\r=1+1'];
       const descriptions = [...payloads, 'literal, "quotes"\nsecond line'];
       let contents, confirmation;
       let cancelledExports = 0;
-      const cancelled = h.bind(expression, { ...f.appDeps(), async confirmAction() { return false; },
+      const cancelled = h.bind(expression, { ...deps, async confirmAction() { return false; },
         async exportBackupFile() { cancelledExports++; return { status: 'cancelled' }; } });
       await cancelled();
       h.equal(cancelledExports, 0, 'Cancelling the warning does not invoke the file bridge');
-      await h.bind(expression, { ...f.appDeps(),
+      await h.bind(expression, { ...deps,
         async confirmAction(options) { confirmation = options; return true; },
         transactions: descriptions.map((description, i) => ({ id: `wp0-${i}`, type: 'expense',
           description, amount: 1, category: 'Food', date: '2026-11-06',

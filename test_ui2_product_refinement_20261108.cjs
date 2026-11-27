@@ -53,7 +53,10 @@ assert.match(styles, /\.ui-dialog-backdrop/, 'in-app confirmations have a shared
 assert.match(styles, /prefers-reduced-motion: reduce/, 'the existing reduced-motion policy remains in place');
 
 const componentPath = path.join(root, 'src/components/ConfirmationDialog.tsx');
-const transformed = esbuild.transformSync(fs.readFileSync(componentPath, 'utf8'), { loader: 'tsx', format: 'cjs', jsx: 'automatic', target: 'es2020' }).code;
+const transformed = esbuild.buildSync({
+  entryPoints: [componentPath], bundle: true, packages: 'external', write: false,
+  platform: 'node', format: 'cjs', jsx: 'automatic', target: 'es2020',
+}).outputFiles[0].text;
 const componentModule = new Module(componentPath, module);
 componentModule.filename = componentPath;
 componentModule.paths = Module._nodeModulePaths(path.dirname(componentPath));

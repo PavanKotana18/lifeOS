@@ -1,3 +1,11 @@
+import { NotificationCentre } from './components/NotificationCentre';
+import { ProfileNotifications } from './components/ProfileNotifications';
+import { useNotificationInbox } from './hooks/useNotificationInbox';
+import { inboxSourceKey, nativeInboxEvent, type InboxEvent } from './services/notificationInbox';
+import { buildInboxSnapshot, matchesTaskReminder, DEFAULT_INBOX_PREFERENCES, INBOX_PREFERENCES_KEY, LAST_BACKUP_KEY, type InboxPreferences } from './services/notificationInboxProducers';
+import ProfileData from './components/ProfileData';
+import './styles/profile-centre.css';
+import './styles/premium-profile.css';
 import { useTodayCardDrag } from './hooks/useTodayCardDrag';
 import { BusyDooBrand } from './components/BusyDooBrand';
 import { PlanSectionHeader, PlanSectionEmpty } from './components/PlanSection';
@@ -69,12 +77,14 @@ import AppHeader from './components/AppHeader';
 import TransactionSummary from './components/TransactionSummary';
 import MoneyPeriod from './components/MoneyPeriod';
 import { animateRoute } from './services/aliveMotion';
-import LicenseText from './components/LicenseText';
+import LicenseLibrary from './components/LicenseText';
+import { ProfileAbout, ProfileAppLock, ProfileMoneyImports, ProfilePrivacy, ProfileRecovery } from './components/ProfileWorkspace';
+import ProfileDeveloper from './components/ProfileDeveloper';
 import LifeDoodle from './components/LifeDoodle';
 import SavingsGoalProgress from './components/SavingsGoalProgress';
 import ConfirmationDialog, { type ConfirmationOptions } from './components/ConfirmationDialog';
 import { pickProfilePhoto, PROFILE_PHOTO_SETTING, readProfilePhoto } from './services/profilePhoto';
-import { ProfileAvatar, ProfileHome, ProfileSettingRow, ProfileSubpage, PROFILE_TITLES, profileParent, type ProfileSection } from './components/ProfileSettings';
+import { ProfileAvatar, ProfileHome, ProfileSubpage, PROFILE_TITLES, profileParent, type ProfileSection } from './components/ProfileSettings';
 import ProfilePreferences, { PreferenceChoice } from './components/ProfilePreferences';
 import RetainedScreen from './components/RetainedScreen';
 import ReminderStatusSummary from './components/ReminderStatusSummary';
@@ -84,7 +94,7 @@ import { PRIMARY_NAVIGATION, primaryDestinationForTab, resolvePlanPath, type Mai
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
 import { screenScrollKey } from './services/uiNavigation';
-import { normalizeNotificationTone, NOTIFICATION_TONES, reminderCopy, type NotificationTone } from './services/notificationCopy';
+import { normalizeNotificationTone, type NotificationTone } from './services/notificationCopy';
 import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics, type ReminderAction } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
@@ -118,14 +128,6 @@ const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME
   }
   document.documentElement.style.colorScheme = theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeTokens.background);
-};
-
-const notificationLabels: Record<keyof NotificationPreferences, string> = {
-  taskReminders: 'Due-time and early task alerts',
-  upcomingDeadlines: 'Upcoming task deadlines',
-  overdueAlerts: 'Overdue task alerts',
-  habitReminders: 'Habit reminders',
-  milestoneReminders: 'Goal milestone reminders',
 };
 
 type AppearancePreference = 'dark' | 'light' | 'system';
@@ -210,9 +212,18 @@ export default function App() {
   const taskDetailReturnFocusRef = useRef<HTMLElement | null>(null);
   const taskDetailReturnTabRef = useRef<MainTab | null>(null);
   const plannerHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const pendingNotification = useRef<ReminderAction | null>(null);
+  const pendingNotification = useRef<ReminderAction[]>([]);
+  const handleNotificationTapRef = useRef<(action: ReminderAction) => void>(() => {});
+  const drainNotificationTapsRef = useRef<() => Promise<void>>(async () => {});
+  const [notificationCentreOpen, setNotificationCentreOpen] = useState(false);
+  const [notificationCentreSettings, setNotificationCentreSettings] = useState(false);
+  const [inboxPreferences, setInboxPreferences] = useState(DEFAULT_INBOX_PREFERENCES);
+  const [lastBackupAt, setLastBackupAt] = useState(0);
+  const [inboxSettingsLoaded, setInboxSettingsLoaded] = useState(false);
+  const notificationSettingsWrite = useRef(false);
+  const [savingNotificationSettings, setSavingNotificationSettings] = useState(false);
   const reminderProcessing = useRef(false);
-  const handledNotificationIds = useRef(new Set<number>());
+  const handledNotificationIds = useRef(new Map<string, number>());
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
   const profileOpen = activeTab === 'settings';
   const profilePage = useRef<HTMLDivElement>(null);
@@ -339,6 +350,11 @@ export default function App() {
   const backupPassphraseResolver = useRef<((value: string | null) => void) | null>(null);
   const backupOperation = useRef(false);
   const [backupOperationInProgress, setBackupOperationInProgress] = useState(false);
+  const [profileDataStage, setProfileDataStage] = useState('');
+  const [profileLockSaving, setProfileLockSaving] = useState(false);
+  const profileLockWrite = useRef(false);
+  const [profileRecoveryPreparing, setProfileRecoveryPreparing] = useState(false);
+  const profileRecoveryOperation = useRef(false);
   const requestBackupPassphrase = async (purpose: 'export' | 'import'): Promise<string | null> => {
     await setSensitiveScreenshotState(true);
     if (backupPassphraseResolver.current) return Promise.reject(new Error('A backup prompt is already open.'));
@@ -444,7 +460,7 @@ export default function App() {
 
   const [smartImportOpen, setSmartImportOpen] = useState(false);
   const [protectedImportComposer, setProtectedImportComposer] = useState(false);
-  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === 'settings' || isSensitiveScreenshotState({
+  const sensitiveScreenshot = notificationCentreOpen || activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === 'settings' || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -732,7 +748,7 @@ export default function App() {
         Boolean((activeTab === 'planner' && plannerDetailTaskId) || ((activeTab === 'habits' || activeTab === 'goals') && lifeDetail)) ||
         (profileOpen && (profileSection !== 'home' || Boolean(document.querySelector('#screen-settings form[data-no-tab-swipe]')))),
       modalOpen: Boolean(createKind || modalContent || confirmation || firstRecordSecurityOpen || secureSetup || showExitConfirmation
-        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || financeDialogOpen
+        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || financeDialogOpen || notificationCentreOpen
         || document.querySelector('dialog[open]') || keyboardOwnsViewport()),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
@@ -900,6 +916,8 @@ export default function App() {
     if (swipePointer.current) cancelPrimaryGesture('navigation-back');
     if (cancelProfileAdmission()) return;
     navigationMotion.cancelPending();
+    const protectedClose = document.querySelector<HTMLButtonElement>('[data-profile-protected-close]');
+    if (protectedClose) { protectedClose.click(); return; }
     if (typeof document !== 'undefined') {
       const contextualInfo = document.querySelector<HTMLDialogElement>('dialog[data-contextual-info="true"][open]');
       if (contextualInfo) { closeSheet(contextualInfo); return; }
@@ -915,6 +933,7 @@ export default function App() {
       if (filterSheet) { filterSheet.close(); return; }
     }
     if (confirmationResolver.current) { settleConfirmation(false); return; }
+    if (notificationCentreDialog.current) { closeNotificationCentre(); return; }
     if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(state.activeTab === 'settings').catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
     if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
       void requestCloseFinanceDraft(); return;
@@ -1059,7 +1078,7 @@ export default function App() {
         // never resumes or advances the removed multi-page onboarding wizard.
         await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
           effectiveNotificationPreferences(prefs, master));
-        if (!disposed && typeof processPendingTaskNotification === 'function') await processPendingTaskNotification();
+        if (!disposed) await drainNotificationTapsRef.current();
         if (!disposed) await refreshNotificationDiagnostics();
         if (!disposed) {
           await confirmScreenshotResume();
@@ -1332,9 +1351,48 @@ export default function App() {
   const sharedReviewAvailable = appReady && onboardingComplete && !onboardingRequired && !isLocked &&
     !activityResumeGuard && !biometricAuthActive && !secureSetup && !recoveryOpen &&
     !firstRecordSecurityOpen && !backupPrompt && !backupOperationInProgress;
+  const inboxAvailable = sharedReviewAvailable && isEncryptedStorageActivated();
+  const inboxSnapshot = useMemo(() => buildInboxSnapshot({
+    now: clockNow, preferences: inboxPreferences, reminderPreferences: notificationPreferences, dateOnlyAlertTime,
+    tasks, habits, habitLogs, goals, milestones, commitments: plannedCommitments, savings: savingsGoals,
+    budgets, transactions, categories, recoveryPending: recoveryDeferred && !recoveryProvisioned, lastBackup: lastBackupAt,
+  }), [clockNow, inboxPreferences, notificationPreferences, dateOnlyAlertTime, tasks, habits, habitLogs, goals, milestones,
+    plannedCommitments, savingsGoals, budgets, transactions, categories, recoveryDeferred, recoveryProvisioned, lastBackupAt]);
+  const inbox = useNotificationInbox(inboxAvailable && inboxSettingsLoaded, inboxSnapshot,
+    () => showToast('Could not update notification history.', 'danger'));
+  const notificationCentreDialog = useRef(false);
+  notificationCentreDialog.current = notificationCentreOpen && sharedReviewAvailable;
+  const closeNotificationCentre = () => {
+    if (notificationCentreSettings) setNotificationCentreSettings(false);
+    else setNotificationCentreOpen(false);
+  };
+  useRecordDialog(notificationCentreDialog.current, closeNotificationCentre, 'notification-centre');
+  useEffect(() => {
+    if (inboxAvailable) {
+      void refreshInboxSettings().catch(() => showToast('Could not load notification settings.', 'danger'));
+      void drainNotificationTapsRef.current();
+    } else setInboxSettingsLoaded(false);
+  }, [inboxAvailable]);
+  useEffect(() => {
+    if (isLocked) { setNotificationCentreOpen(false); setNotificationCentreSettings(false); }
+  }, [isLocked]);
+  const openNotificationCentre = async () => {
+    if (!sharedReviewAvailable || (isEncryptedStorageActivated() && !sessionManager.isUnlocked())) return;
+    const token = sessionManager.getGeneration();
+    try {
+      cancelPrimaryGesture('notification-centre');
+      await setSensitiveScreenshotState(true);
+      if (sessionManager.getGeneration() !== token) return;
+      setNotificationCentreSettings(false);
+      setNotificationCentreOpen(true);
+      void inbox.inspectDelivery();
+      void inbox.apply();
+    } catch { if (sessionManager.isCurrent(token)) showToast('Could not open Notification Centre securely.', 'danger'); }
+  };
+
   const sharedAlert = useSharedBankAlert({
     available: sharedReviewAvailable,
-    busy: smartImportOpen || Boolean(createKind || modalContent || confirmation || accountFormDraft ||
+    busy: smartImportOpen || notificationCentreOpen || Boolean(createKind || modalContent || confirmation || accountFormDraft ||
       transferFormDraft || plannerDetailTaskId || lifeDetail || todayCustomizationOpen || showExitConfirmation || tabTransition),
     open: () => setSmartImportOpen(true),
   });
@@ -1353,12 +1411,18 @@ export default function App() {
     setFinanceSubtab(next);
   };
 
+  const preferenceWrite = useRef(false);
+  const [savingProfilePreferences, setSavingProfilePreferences] = useState(false);
   const saveUserPreference = async <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
-    const updated = { ...userPrefs, [key]: value };
+    if (preferenceWrite.current) return;
+    preferenceWrite.current = true;
+    setSavingProfilePreferences(true);
     try {
+      const updated = { ...userPrefs, [key]: value };
       await StorageService.settings.set('userPreferences', updated);
       setUserPrefs(updated);
-    } catch { showToast('Could not save this preference.', 'danger'); }
+    } catch { showToast('Could not save this preference. Your previous choice is still saved.', 'danger'); }
+    finally { preferenceWrite.current = false; setSavingProfilePreferences(false); }
   };
 
   const initApp = async () => {
@@ -1681,8 +1745,11 @@ export default function App() {
   };
 
   const saveNotificationSelection = async (preferences: NotificationPreferences, enabled = Object.values(preferences).some(Boolean)) => {
-    await StorageService.settings.set('notificationPreferences', preferences);
-    await StorageService.settings.set('notificationsEnabled', enabled);
+    if (isEncryptedStorageActivated()) await StorageService.settings.setNotificationSelection(preferences, enabled);
+    else {
+      await StorageService.settings.set('notificationPreferences', preferences);
+      await StorageService.settings.set('notificationsEnabled', enabled);
+    }
     setNotificationPreferences(preferences);
     setNotificationsEnabled(enabled);
   };
@@ -1705,14 +1772,15 @@ export default function App() {
   };
 
   const updateDisplayName = async (name: string) => {
-    const normalized = name.slice(0, 48).trim();
+    const normalized = name.trim().slice(0, 48);
+    if (!normalized || /[\u0000-\u001f\u007f-\u009f]/.test(normalized)) throw new Error('Enter a readable display name.');
     await StorageService.settings.set('displayName', normalized);
     setDisplayName(normalized);
   };
 
   const toggleNotificationCategory = async (key: keyof NotificationPreferences) => {
     const enabled = !notificationPreferences[key];
-    if (enabled) {
+    if (enabled && notificationsEnabled) {
       const permission = await askNotificationPermission();
       if (!permission.granted) { showToast(permission.message || `Notification permission: ${permission.status}`, 'danger'); return; }
     }
@@ -1722,6 +1790,15 @@ export default function App() {
       const synchronized = await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(next, notificationsEnabled));
       if (!synchronized) showToast('Saved, but Android could not update some alerts.', 'danger');
     } catch { showToast('Could not save this notification preference.', 'danger'); }
+  };
+
+  const saveDateOnlyAlertTime = async (time: string) => {
+    if (time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) return;
+    try {
+      await StorageService.settings.set('dateOnlyAlertTime', time);
+      setDateOnlyAlertTime(time);
+      if (!await syncNotificationSchedules(tasks, habits, goals, milestones)) showToast('Saved, but Android could not update some alerts.', 'danger');
+    } catch { showToast('Could not save alert time.', 'danger'); }
   };
 
   const setNotificationsMaster = async (enabled: boolean) => {
@@ -1776,10 +1853,10 @@ export default function App() {
       }
       if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
       if (!isEncryptedStorageActivated()) sessionManager.unlock();
+      await StorageService.settings.set('biometricLockEnabled', true);
       setBiometricEnabled(true); setBiometricVerified(true);
       biometricAuthenticated.current = true;
       authCoordinator.markAuthenticated();
-      await StorageService.settings.set('biometricLockEnabled', true);
       return { success: true };
     } catch (error) {
       return { success: false, message: error instanceof Error ? error.message : 'Device authentication could not be completed.' };
@@ -1883,6 +1960,9 @@ export default function App() {
       showToast('Unlock BusyDoo before setting up a recovery kit.', 'danger');
       return;
     }
+    if (profileRecoveryOperation.current) return;
+    profileRecoveryOperation.current = true;
+    setProfileRecoveryPreparing(true);
     try {
       const state = await CryptoService.getKeyState();
       if (state.recoveryProvisioned) {
@@ -1893,7 +1973,10 @@ export default function App() {
       }
       if (!state.recoveryDeferred) throw new Error('Recovery setup is unavailable for this encryption state. Your data remains protected.');
       const prepared = await CryptoService.prepareRecovery();
-      if (!(await requestSecureSetup(prepared))) return;
+      if (!(await requestSecureSetup(prepared))) {
+        await CryptoService.cancelPendingRecovery();
+        return;
+      }
       await CryptoService.confirmRecovery();
       const verified = await CryptoService.getKeyState();
       if (!verified.metadataConsistent || !verified.recoveryProvisioned || verified.recoveryDeferred) {
@@ -1904,6 +1987,9 @@ export default function App() {
       showToast('Recovery kit confirmed for this device.', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not set up a recovery kit.', 'danger');
+    } finally {
+      profileRecoveryOperation.current = false;
+      setProfileRecoveryPreparing(false);
     }
   };
 
@@ -1953,18 +2039,33 @@ export default function App() {
   };
 
   const processPendingTaskNotification = async () => {
-    const action = pendingNotification.current;
-    if (!action || reminderProcessing.current || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
+    const action = pendingNotification.current[0];
+    if (!action || reminderProcessing.current || !inboxAvailable || !sessionManager.isUnlocked()) return;
+    const token = sessionManager.capture();
     reminderProcessing.current = true;
+    let consume = false;
     const extra = action.notification.extra || {};
     try {
       let opened = false;
-      if (typeof extra.taskId === 'string') {
+      if (extra.kind === 'test') {
+        navigateTo('settings');
+        navigateProfileSection('notifications');
+        opened = true;
+      } else if (typeof extra.taskId === 'string') {
         const task = (await StorageService.tasks.getAll()).find(item => item.id === extra.taskId);
+        sessionManager.assertCurrent(token);
+        const event = nativeInboxEvent(extra, 'opened');
+        if (task && event && event.occurrence.includes('T') &&
+            !matchesTaskReminder(task, event.kind, event.at, dateOnlyAlertTime)) {
+          showToast('That reminder is no longer current.', 'info');
+          consume = true;
+          return;
+        }
         if (task) {
           opened = true;
           if (action.actionId === 'lifeos-task-done') {
             if (!task.completed) await StorageService.tasks.toggleCompleted(task.id, true);
+            consume = true;
             const records = await reloadAllData();
             const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
             const master = await StorageService.settings.get('notificationsEnabled', Object.values(preferences).some(Boolean));
@@ -1977,6 +2078,7 @@ export default function App() {
             const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
             if (!enabled || !preferences.taskReminders) throw new Error('Turn on task reminders before snoozing.');
             const tone = normalizeNotificationTone(await StorageService.settings.get('notificationTone', 'warm'));
+            sessionManager.assertCurrent(token);
             if (await NotificationService.snoozeTask(task, tone)) showToast('Reminder snoozed for 10 minutes', 'success');
           } else {
             taskDetailReturnTabRef.current = activeTabRef.current === 'planner' ? null : activeTabRef.current;
@@ -1988,28 +2090,47 @@ export default function App() {
         }
       } else if (typeof extra.habitId === 'string') {
         const habit = (await StorageService.habits.getAll()).find(item => item.id === extra.habitId);
-        if (habit) { setHabitsSelectedDate(formatLocalDate(new Date())); setLifeDetail({ kind: 'habit', id: habit.id }); navigateTo('habits'); opened = true; }
+        sessionManager.assertCurrent(token);
+        if (habit && !habit.archived) { setHabitsSelectedDate(formatLocalDate(new Date())); setLifeDetail({ kind: 'habit', id: habit.id }); navigateTo('habits'); opened = true; }
       } else if (extra.kind === 'milestoneReminder') {
         const milestone = (await StorageService.goals.getAllMilestones()).find(item => item.id === extra.milestoneId);
-        if (milestone && (await StorageService.goals.getAll()).some(goal => goal.id === milestone.goalId)) {
+        const goal = milestone && (await StorageService.goals.getAll()).find(goal => goal.id === milestone.goalId && !goal.archived);
+        sessionManager.assertCurrent(token);
+        if (goal && milestone) {
           setLifeDetail({ kind: 'goal', id: milestone.goalId }); navigateTo('goals'); opened = true;
         }
       }
       if (!opened) showToast('That reminder no longer has an available record.', 'info');
-      await NotificationService.acknowledgeInitialTapAction(action.notification.id);
+      consume = true;
     } catch (error) {
-      handledNotificationIds.current.delete(action.notification.id);
-      showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger');
+      if (sessionManager.isCurrent(token)) {
+        consume = true;
+        showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger');
+      }
     } finally {
+      if (consume && pendingNotification.current[0] === action) {
+        const key = notificationTapKey(action);
+        try {
+          if (action.notification.id >= 0) await NotificationService.acknowledgeInitialTapAction(action.notification.id, key);
+        } catch { /* A return to the foreground reconciles the native queue. */ }
+        handledNotificationIds.current.set(key, Date.now());
+        pendingNotification.current.shift();
+      }
       reminderProcessing.current = false;
-      if (pendingNotification.current === action) pendingNotification.current = null;
-      else if (pendingNotification.current) void processPendingTaskNotification();
+      if (consume && pendingNotification.current.length) void drainNotificationTapsRef.current();
     }
   };
 
-  useEffect(() => {
-    if (appReady && !isLocked && typeof processPendingTaskNotification === 'function') void processPendingTaskNotification();
-  }, [appReady, isLocked]);
+  const notificationTapKey = ({ actionId, notification, tapKey }: ReminderAction) => {
+    const extra = notification.extra || {};
+    const verb = actionId === 'lifeos-task-done' || actionId === 'lifeos-task-snooze' ? actionId : 'tap';
+    return tapKey ?? [notification.id, verb, extra.occurrenceAt || extra.originalReminderAt || (extra.kind === 'habitReminder' ? formatLocalDate(new Date()) : '')].join(':');
+  };
+
+  const drainNotificationTaps = async () => {
+    await processPendingTaskNotification();
+  };
+  drainNotificationTapsRef.current = drainNotificationTaps;
 
   const diagnosePlannerTaskReminder = async (task: Task) => {
     let synchronizationFailed = false;
@@ -2033,61 +2154,249 @@ export default function App() {
     }
   };
 
+  handleNotificationTapRef.current = action => {
+    const key = notificationTapKey(action);
+    const now = Date.now();
+    for (const [id, at] of handledNotificationIds.current) if (now - at > 24 * 60 * 60_000) handledNotificationIds.current.delete(id);
+    if (handledNotificationIds.current.has(key) || pendingNotification.current.some(row => notificationTapKey(row) === key)) return;
+    if (pendingNotification.current.length >= 64) return; // Native FIFO remains available for another drain.
+    if (action.notification.id >= 0) inbox.observe(action.notification.extra, 'opened');
+    pendingNotification.current.push(action);
+    void drainNotificationTapsRef.current();
+  };
+  const notificationReceiptRef = useRef<(extra?: Record<string, unknown>) => void>(() => {});
+  notificationReceiptRef.current = extra => { inbox.observe(extra, 'receiver'); void refreshNotificationDiagnostics(); };
+
   useEffect(() => {
     let disposed = false;
     let listener: { remove: () => Promise<void> } | null = null;
     let receivedListener: { remove: () => Promise<void> } | null = null;
-    const handleAction = (action: ReminderAction) => {
-      const extra = action.notification.extra || {};
-      const id = action.notification.id;
-      if (handledNotificationIds.current.has(id)) return;
-      handledNotificationIds.current.add(id);
-      window.setTimeout(() => handledNotificationIds.current.delete(id), 10_000);
-      if (extra.kind === 'test') {
-        navigateTo('settings');
-        navigateProfileSection('notifications');
-        void NotificationService.acknowledgeInitialTapAction(id);
-        return;
-      }
-      pendingNotification.current = action;
-      if (!isLocked && sessionManager.isUnlocked() && isEncryptedStorageActivated()) {
-        void processPendingTaskNotification().catch(error => showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger'));
-      }
+    const loadPending = async () => {
+      const rows = await NotificationService.getPendingTapActions();
+      if (!disposed) rows.forEach(row => handleNotificationTapRef.current(row));
     };
-    void NotificationService.addActionListener(handleAction).then(async handle => {
+    const reconcile = () => void loadPending().catch(() => undefined);
+    void NotificationService.addActionListener(action => { if (!disposed) handleNotificationTapRef.current(action); }).then(async handle => {
       if (disposed) { await handle.remove(); return; }
       listener = handle;
-      // The Capacitor listener receives onNewIntent; this native one-shot also
-      // covers notification taps that cold-start the Activity via onCreate.
-      const initialAction = await NotificationService.getInitialTapAction();
-      if (initialAction) handleAction(initialAction);
-    }).catch(error => console.warn('Notification tap listener could not start.', error));
-    void NotificationService.addReceivedListener(() => { void refreshNotificationDiagnostics(); }).then(async handle => {
+      await loadPending();
+    }).catch(() => console.warn('Notification tap listener could not start.'));
+    void NotificationService.addReceivedListener(notification => {
+      if (!disposed) notificationReceiptRef.current(notification.extra);
+    }).then(async handle => {
       if (disposed) { await handle.remove(); return; }
       receivedListener = handle;
-    }).catch(error => console.warn('Notification delivery listener could not start.', error));
-    return () => { disposed = true; if (listener) void listener.remove(); if (receivedListener) void receivedListener.remove(); };
-  }, [isLocked]);
+    }).catch(() => console.warn('Notification delivery listener could not start.'));
+    window.addEventListener('lifeos:activity-resumed', reconcile);
+    return () => {
+      disposed = true;
+      window.removeEventListener('lifeos:activity-resumed', reconcile);
+      if (listener) void listener.remove();
+      if (receivedListener) void receivedListener.remove();
+    };
+  }, []);
+
+  const clearNotificationRouting = async () => {
+    await NotificationService.clearPendingTapActions();
+    pendingNotification.current = [];
+    handledNotificationIds.current.clear();
+    inbox.forget();
+  };
+
+  const refreshInboxSettings = async () => {
+    const token = sessionManager.capture();
+    const [preferences, backup] = await Promise.all([
+      StorageService.settings.get(INBOX_PREFERENCES_KEY, DEFAULT_INBOX_PREFERENCES),
+      StorageService.settings.get(LAST_BACKUP_KEY, 0),
+    ]);
+    sessionManager.assertCurrent(token);
+    setInboxPreferences({ ...DEFAULT_INBOX_PREFERENCES, ...preferences });
+    setLastBackupAt(Number.isFinite(backup) ? backup : 0);
+    setInboxSettingsLoaded(true);
+  };
+
+  const exportProfileBackup = async () => {
+    if (backupOperation.current) return;
+    backupOperation.current = true;
+    setBackupOperationInProgress(true);
+    setProfileDataStage('Preparing encrypted backup…');
+    try {
+      await setSensitiveScreenshotState(true);
+      const passphrase = await requestBackupPassphrase('export');
+      if (passphrase === null) return;
+      const token = sessionManager.capture();
+      setProfileDataStage('Encrypting your records…');
+      const json = await encryptBackup(await StorageService.backup.exportData(), passphrase);
+      sessionManager.assertCurrent(token);
+      setProfileDataStage('Choose where to save the encrypted backup.');
+      const result = await exportBackupFile({
+        contents: json,
+        fileName: `busydoo-backup-${formatLocalDate(new Date())}.json`,
+        mimeType: 'application/json'
+      });
+
+      if (result.status === 'saved') {
+        if (sessionManager.isCurrent(token)) {
+          const at = Date.now();
+          try { await StorageService.settings.set(LAST_BACKUP_KEY, at); setLastBackupAt(at); }
+          catch { /* The confirmed export succeeds independently of reminder tracking. */ }
+        }
+        showToast(`Backup saved successfully (${result.bytesWritten} bytes).`, 'success');
+      } else if (result.status === 'cancelled') {
+        showToast('Backup export cancelled. No file was saved.', 'info');
+      } else {
+        showToast('Backup download started. Check your browser downloads.', 'success');
+      }
+    } catch (error) {
+      console.error('BusyDoo backup export failed.');
+      showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); setProfileDataStage(''); }
+  };
+
+  const exportProfileCsv = async () => {
+    if (backupOperation.current) return;
+    backupOperation.current = true;
+    setBackupOperationInProgress(true);
+    setProfileDataStage('Preparing transaction CSV…');
+    try {
+      if (!isEncryptedStorageActivated()) { showToast('There are no protected records to export yet.', 'info'); return; }
+      const token = sessionManager.capture();
+      if (!(await confirmAction({ profile: true, title: 'Export readable CSV?', message: 'This CSV contains readable financial records. BusyDoo does not encrypt CSV files. Save it somewhere you trust, or cancel and choose Export encrypted backup.', confirmLabel: 'Export CSV', cancelLabel: 'Cancel' }))) return;
+      sessionManager.assertCurrent(token);
+      const rows = transactions.map(tx => [tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);
+      const quote = quoteCsvCell;
+      const csv = [['type', 'description', 'amount', 'category', 'date', 'entry_time', 'payment_method'], ...rows].map(row => row.map(quote).join(',')).join('\n');
+
+      const result = await exportBackupFile({
+        contents: csv,
+        fileName: `busydoo-transactions-${formatLocalDate(new Date())}.csv`,
+        mimeType: 'text/csv'
+      });
+
+      if (result.status === 'saved') {
+        showToast(`Transactions CSV saved (${result.bytesWritten} bytes).`, 'success');
+      } else if (result.status === 'cancelled') {
+        showToast('CSV export cancelled. No file was saved.', 'info');
+      } else {
+        showToast('CSV download started. Check your browser downloads.', 'success');
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Transactions CSV export failed.', 'danger');
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); setProfileDataStage(''); }
+  };
+
+  const refreshProfileIdentity = async () => {
+    const session = sessionManager.capture();
+    const [name, photo, prefs, currency, savedAppearance, palette, accent, motion, tone, timing, layout,
+      savedLock, journey, permissionRequested] = await Promise.all([
+      StorageService.settings.get('displayName', ''),
+      StorageService.settings.get<unknown>(PROFILE_PHOTO_SETTING, null),
+      StorageService.settings.get<Partial<UserPreferences>>('userPreferences', DEFAULT_USER_PREFERENCES),
+      StorageService.settings.get<string>('currency', DEFAULT_USER_PREFERENCES.currency),
+      StorageService.settings.get<AppearancePreference>('theme', 'system'),
+      StorageService.settings.get<unknown>('visualTheme', DEFAULT_THEME_ID),
+      StorageService.settings.get<unknown>('customAccent', null),
+      StorageService.settings.get<unknown>('motionPreset', null),
+      StorageService.settings.get<unknown>('notificationTone', 'warm'),
+      StorageService.settings.get<string>('dateOnlyAlertTime', DEFAULT_DATE_ONLY_ALERT_TIME),
+      StorageService.settings.get<unknown>('todayLayout', DEFAULT_TODAY_LAYOUT),
+      StorageService.settings.get<boolean>('biometricLockEnabled', false),
+      StorageService.settings.get<unknown>('onboardingJourney', null),
+      StorageService.settings.get<boolean>('notificationPermissionRequested', false),
+    ]);
+    sessionManager.assertCurrent(session);
+    profilePhotoVersion.current++;
+    setDisplayName(name);
+    setProfilePhoto(readProfilePhoto(photo));
+    setUserPrefs(mergeUserPreferences(prefs, currency));
+    setBiometricEnabled(savedLock);
+    if (!savedLock) setBiometricVerified(false);
+    setOnboardingJourney(normalizeOnboardingJourney(journey));
+    setNotificationPermissionRequested(permissionRequested);
+    const safeAppearance = savedAppearance === 'dark' || savedAppearance === 'light' ? savedAppearance : 'system';
+    const safePalette = resolveThemeId(palette);
+    const safeAccent = normalizeCustomAccent(accent);
+    setAppearancePreference(safeAppearance);
+    setTheme(resolveAppearance(safeAppearance, systemDarkPreference()));
+    setVisualThemeId(safePalette);
+    setThemePreviewId(null);
+    setCustomAccent(safeAccent);
+    interfaceMotion.adoptStored(motion);
+    setNotificationTone(normalizeNotificationTone(tone));
+    setDateOnlyAlertTime(timing);
+    const safeLayout = normalizeTodayLayout(layout);
+    todayLayoutRef.current = safeLayout;
+    setTodayLayout(safeLayout);
+    try {
+      localStorage.setItem('lifeos-appearance', safeAppearance);
+      localStorage.setItem('lifeos-theme-id', safePalette);
+      if (safeAccent) localStorage.setItem('lifeos-custom-accent', safeAccent);
+      else localStorage.removeItem('lifeos-custom-accent');
+    } catch { /* Persisted preferences remain authoritative. */ }
+  };
+
+  const resetProfileData = async () => {
+    if (backupOperation.current) return;
+    backupOperation.current = true;
+    setBackupOperationInProgress(true);
+    setProfileDataStage('Review the data reset.');
+    let erased = false;
+    try {
+      if (!isEncryptedStorageActivated() || !sessionManager.isUnlocked()) {
+        showToast('There are no protected records to erase yet.', 'info');
+        return;
+      }
+      if (!(await confirmAction({
+        profile: true, title: 'Erase local records?', message: 'This action is permanent. Export a backup first if you want to restore your records later.',
+        profileDetails: [
+          { title: 'Erased', body: 'Local records, profile photo, app preferences and encrypted notification history.' },
+          { title: 'Retained', body: 'Android device protection, your app-lock choice, recovery key material and all files already exported outside BusyDoo.' },
+          { title: 'Android reminders', body: 'Scheduled record reminders are cancelled. Older Android alerts and content-free diagnostics may remain.' },
+        ],
+        confirmLabel: 'Erase local records', cancelLabel: 'Keep my data', destructive: true,
+      }))) return;
+      setProfileDataStage('Erasing encrypted records…');
+      await NotificationService.cancelAllRecordReminders();
+      await clearNotificationRouting();
+      await StorageService.backup.clearAll({ preserveAppLock: true });
+      erased = true;
+      await reloadAllData();
+      await refreshProfileIdentity();
+      await refreshInboxSettings();
+      setNotificationPreferences(DEFAULT_NOTIFICATION_PREFERENCES);
+      setNotificationsEnabled(false);
+      showToast('All personal records erased', 'info');
+    } catch {
+      showToast(erased ? 'Records were erased. Reopen BusyDoo to refresh the display.' :
+        'Reset did not complete. Reminder cleanup must succeed before records are erased.', 'danger');
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); setProfileDataStage(''); }
+  };
 
   const importBackupFile = async (file?: File) => {
     if (!file || backupOperation.current) return;
     backupOperation.current = true;
     setBackupOperationInProgress(true);
+    setProfileDataStage('Validating the backup file…');
     let restored = false;
     try {
       await setSensitiveScreenshotState(true);
       if (file.size > MAX_BACKUP_FILE_BYTES) throw new Error('Backup file exceeds the supported size.');
       const text = await decodeBackupForRestore(await file.text(), {
         requestPassphrase: () => requestBackupPassphrase('import'),
-        confirmLegacy: () => confirmAction({ title: 'Import a legacy backup?', message: 'This older backup is not encrypted. BusyDoo will validate it before restoring. New exports are encrypted.', confirmLabel: 'Validate and continue', cancelLabel: 'Cancel' }),
+        confirmLegacy: () => confirmAction({ profile: true, title: 'Import a legacy backup?', message: 'This older backup is not encrypted. BusyDoo will validate it before restoring. New exports are encrypted.', confirmLabel: 'Validate and continue', cancelLabel: 'Cancel' }),
         validateTables: validateBackupTables,
       });
       if (text === null) return;
       const hasRecords = await StorageService.backup.hasData();
-      if (hasRecords && !(await confirmAction({ title: 'Replace existing BusyDoo data?', message: 'Restoring this backup replaces the records currently on this device. Export a backup first if you may need a copy.', confirmLabel: 'Replace and restore', cancelLabel: 'Keep current data', destructive: true }))) return;
+      if (hasRecords && !(await confirmAction({ profile: true, title: 'Replace existing BusyDoo data?', message: 'Restoring this backup replaces the records currently on this device. Export a backup first if you may need a copy.', confirmLabel: 'Replace and restore', cancelLabel: 'Keep current data', destructive: true }))) return;
+      await NotificationService.cancelAllRecordReminders();
+      await clearNotificationRouting();
+      setProfileDataStage('Replacing local records…');
       await StorageService.backup.importData(text, { replaceExisting: hasRecords });
       restored = true;
       const records = await reloadAllData();
+      await refreshProfileIdentity();
+      await refreshInboxSettings();
       const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
       const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
       setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...prefs });
@@ -2096,7 +2405,7 @@ export default function App() {
       showToast('Backup restored successfully', 'success');
     } catch (error) {
       showToast(restored ? 'Backup restored, but the screen could not refresh. Reopen BusyDoo to verify.' : error instanceof Error ? error.message : 'Could not restore this backup', 'danger');
-    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); setProfileDataStage(''); }
   };
 
   const triggerBiometricAuth = async () => {
@@ -2123,7 +2432,7 @@ export default function App() {
         // cancelled; native unlock alone never marks the application ready.
         if (!startupComplete.current) await initApp();
         else await reloadAllData();
-        if (typeof processPendingTaskNotification === 'function') await processPendingTaskNotification();
+        await drainNotificationTapsRef.current();
         return true;
       } catch (error) {
         sessionManager.lock();
@@ -2845,7 +3154,7 @@ export default function App() {
   );
 
   const recoveryInline = onboardingRequired && !onboardingComplete && onboardingStep === 2 && Boolean(secureSetup?.prepared);
-  const recoverySetup = secureSetup && <SecureSetupDialog prepared={secureSetup.prepared} inline={recoveryInline}
+  const recoverySetup = secureSetup && <SecureSetupDialog prepared={secureSetup.prepared} inline={recoveryInline} premium={profileOpen && !recoveryInline}
     onRecoveryExportStart={beginRecoveryExportActivity}
     recoveryExportResumeReady={recoveryExportResumeReady}
     cancelLabel={onboardingRequired && !onboardingComplete && secureSetup.prepared ? 'Back to recovery options' : undefined}
@@ -2926,8 +3235,119 @@ export default function App() {
     );
   }
 
+  const bellVisible = sharedReviewAvailable && !createKind && !financeDialogOpen && !modalContent && !confirmation &&
+    !pendingProfilePhoto && !smartImportOpen && !todayCustomizationOpen && !showExitConfirmation &&
+    (activeTab === 'dashboard' || activeTab === 'plan' || (activeTab === 'settings' && profileSection === 'home') ||
+      (activeTab === 'finance' && financeSubtab === 'overview'));
+  const centerVisible = notificationCentreOpen && sharedReviewAvailable;
+  const withNotificationSettingsWrite = async (save: () => Promise<void>) => {
+    if (notificationSettingsWrite.current) return;
+    notificationSettingsWrite.current = true;
+    setSavingNotificationSettings(true);
+    try { await save(); }
+    finally { notificationSettingsWrite.current = false; setSavingNotificationSettings(false); }
+  };
+  const renderNotificationSettings = (inCentre: boolean) => <ProfileNotifications master={notificationsEnabled} categories={notificationPreferences}
+    dateOnly={dateOnlyAlertTime} tone={notificationTone} diagnostics={notificationDiagnostics} inbox={inboxPreferences}
+    historyAvailable={inboxAvailable && inboxSettingsLoaded} busy={savingNotificationSettings}
+    onMaster={() => void withNotificationSettingsWrite(() => setNotificationsMaster(!notificationsEnabled))}
+    onCategory={key => void withNotificationSettingsWrite(() => toggleNotificationCategory(key))}
+    onDate={value => void withNotificationSettingsWrite(() => saveDateOnlyAlertTime(value))}
+    onTone={value => void withNotificationSettingsWrite(async () => {
+      const tone = normalizeNotificationTone(value);
+      try {
+        await StorageService.settings.set('notificationTone', tone);
+        setNotificationTone(tone);
+        if (!await syncNotificationSchedules(tasks, habits, goals, milestones)) showToast('Tone saved. Some reminders could not refresh.', 'danger');
+      } catch { showToast('Could not save notification tone.', 'danger'); }
+    })}
+    onAndroid={() => void openNotificationSettings()} onExact={() => void requestExactAlarmAccess()}
+    onInbox={change => void withNotificationSettingsWrite(async () => {
+      if (!inboxAvailable) return;
+      const token = sessionManager.capture();
+      const next = { ...inboxPreferences, ...change };
+      try {
+        await StorageService.settings.set(INBOX_PREFERENCES_KEY, next);
+        if (sessionManager.isCurrent(token)) setInboxPreferences(next);
+      } catch { if (sessionManager.isCurrent(token)) showToast('Could not save the inbox setting.', 'danger'); }
+    })}
+    onOpen={inCentre ? undefined : () => void openNotificationCentre()}
+    onClear={() => void (async () => {
+      if (!await confirmAction({ title: 'Clear notification history?', message: 'This removes inbox entries from view on this device. Outstanding Android reminders and your records stay as they are.', confirmLabel: 'Clear history', destructive: true })) return;
+      await inbox.apply({ kind: 'clear' }, true);
+    })()} />;
+  const openInboxEvent = async (event: InboxEvent, verb = 'tap') => {
+    if (!inboxAvailable || event.resolvedAt || !inbox.sourceActive(event.source, event.sourceId)) return;
+    const token = sessionManager.capture();
+    if (!await inbox.apply({ kind: 'read', key: event.key }, true) || !sessionManager.isCurrent(token)) return;
+    setNotificationCentreOpen(false);
+    if (event.source === 'task' || event.source === 'habit' || event.source === 'milestone') {
+      handleNotificationTapRef.current({ actionId: verb, tapKey: event.key + ':' + verb, notification: {
+        id: -1, extra: { kind: event.kind, [event.source + 'Id']: event.sourceId },
+      } });
+    } else if (event.source === 'backup' || event.source === 'recovery') {
+      navigateTo('settings');
+      navigateProfileSection(event.source === 'backup' ? 'data' : 'recovery');
+    } else if (event.source !== 'note') {
+      navigateTo('finance');
+      navigateFinanceSubtab(event.source === 'commitment' ? 'planning' : event.source === 'budget' ? 'budgets' : 'savings');
+    }
+  };
+
   const primarySection = primaryDestinationForTab(activeTab);
   const todayBack = todayOrigin.current?.destination === activeTab;
+  const toggleProfileLock = async () => {
+    if (profileLockWrite.current) return;
+    profileLockWrite.current = true;
+    setProfileLockSaving(true);
+    try {
+      if (biometricEnabled) {
+        await StorageService.settings.set('biometricLockEnabled', false);
+        setBiometricEnabled(false);
+        setBiometricVerified(false);
+        showToast('App lock disabled', 'success');
+      } else {
+        const result = await handleEnableBiometric();
+        showToast(result.success ? 'App lock enabled' : result.message || 'Could not enable app lock', result.success ? 'success' : 'danger');
+      }
+    } catch { showToast('Could not change app lock. Your previous choice is still saved.', 'danger'); }
+    finally { profileLockWrite.current = false; setProfileLockSaving(false); }
+  };
+  const runDeveloperTest = async (immediate: boolean) => {
+    if (!developerToolsEnabled) return;
+    try {
+      const at = immediate ? await NotificationService.sendImmediateTestNotification() : await NotificationService.testNotification();
+      await refreshNotificationDiagnostics();
+      showToast((immediate ? 'Immediate test requested at ' : 'Test scheduled for ') + at.toLocaleTimeString() + '. Check Android for delivery.', 'success');
+    } catch (error) {
+      await refreshNotificationDiagnostics();
+      showToast(error instanceof Error ? error.message : 'Test notification failed.', 'danger');
+    }
+  };
+  const resetDeveloperTour = async () => {
+    if (!developerToolsEnabled || !await confirmAction({ profile: true, title: 'Reset onboarding for testing?',
+      message: 'Your records stay in place. Choices made during the tour can change your appearance, name, security and notification settings.', confirmLabel: 'Restart tour' })) return;
+    try {
+      await StorageService.settings.set('onboardingCompleted', false);
+      await StorageService.settings.set('onboardingStarted', true);
+      await StorageService.settings.set('onboardingStep', 0);
+      setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true);
+    } catch { showToast('Could not reset the tour.', 'danger'); }
+  };
+  const changeSampleData = async (remove: boolean) => {
+    if (!developerToolsEnabled || !isEncryptedStorageActivated() || isLocked || !await confirmAction({
+      profile: true, title: remove ? 'Remove sample data?' : 'Add six months of sample data?',
+      message: remove ? 'Removes the sample set and its linked activity.' : 'Sample records appear alongside records in this Debug workspace. You can remove them here.',
+      confirmLabel: remove ? 'Remove sample data' : 'Add sample data', destructive: remove,
+    })) return;
+    try {
+      if (remove) await StorageService.backup.removeSampleData();
+      else await StorageService.backup.seedDemoData();
+      await reloadAllData();
+      showToast(remove ? 'Sample data removed' : 'Sample data is ready', 'success');
+    } catch (error) { showToast(error instanceof Error ? error.message : 'Could not change sample data.', 'danger'); }
+  };
+
   const sectionTitle = profileOpen ? PROFILE_TITLES[profileSection] : PRIMARY_NAVIGATION.find(item => item.tab === primarySection)?.label;
 
   return (
@@ -2937,6 +3357,7 @@ export default function App() {
       <AppHeader profile={profileOpen} title={primarySection === 'dashboard' ? APP_NAME : sectionTitle || APP_NAME} brand={primarySection === 'dashboard'}
         back={profileOpen && profileSection !== 'home' ? backFromProfile : todayBack && activeTab !== 'finance' ? navigateBack : undefined}
         backLabel={todayBack && activeTab !== 'finance' ? 'Back to Today' : profileSection === 'home' ? 'Back from profile' : 'Back to ' + PROFILE_TITLES[profileParent(profileSection)]}
+        notification={bellVisible ? { unread: inbox.unread, open: () => void openNotificationCentre() } : undefined}
         action={activeTab === 'finance' && financeSubtab === 'overview' && <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />} />
 
       {!isOnline && (
@@ -3571,222 +3992,79 @@ export default function App() {
           <div className="profile-track-page" role="region" aria-label="Profile and settings" data-android-profile={Capacitor.getPlatform() === "android" || undefined}>
             <div className="profile-track-preview" aria-hidden="true"><p>Appearance</p><p>Preferences</p><p>Notifications</p><p>Money &amp; Imports</p><p>Privacy &amp; security</p></div>
           <div ref={profilePage} className="profile-page" data-profile-section={profileSection}>
-            {profileSection === 'home' && <ProfileHome sharedHeader onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onEditPhoto={() => { if (profilePhoto) setPendingProfilePhoto(profilePhoto); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
+            {profileSection === 'home' && <ProfileHome sharedHeader onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={isEncryptedStorageActivated() ? (recoveryProvisioned ? 'Encrypted · Recovery kit confirmed' : 'Encrypted on this device') : 'Protected storage not set up'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onEditPhoto={() => { if (profilePhoto) setPendingProfilePhoto(profilePhoto); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
             {profileSection === 'privacy' && <ProfileSubpage embedded title="Privacy & security" onBack={() => navigateProfileSection('home')}>
-              <div className="flex items-center gap-2">Device protection <InfoTip label="Device protection" /></div>
-              <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
-                <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} />
-                {legalDraftEnabled && developerToolsEnabled && <ProfileSettingRow title="Legal & Privacy" value="Draft" onClick={() => navigateProfileSection('legal')} />}</div>
+              <ProfilePrivacy protectedStorage={isEncryptedStorageActivated()} biometric={biometricEnabled} recovery={recoveryProvisioned}
+                legal={legalDraftEnabled && developerToolsEnabled} onOpen={navigateProfileSection} />
             </ProfileSubpage>}
             {LegalPrivacyCentre && developerToolsEnabled && profileSection === 'legal' &&
-              <ProfileSubpage embedded title="Legal & Privacy" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+              <ProfileSubpage embedded title="Legal & Privacy" description="Internal draft documents for review. Legal acceptance is disabled." onBack={() => navigateProfileSection('privacy')}>
                 <Suspense fallback={<ScreenLoading label="Opening legal documents" />}>
                   <LegalPrivacyCentre onData={() => navigateProfileSection('data')} onNotices={() => navigateProfileSection('licenses')} />
                 </Suspense>
               </ProfileSubpage>}
-            {profileSection === 'app-lock' && <ProfileSubpage embedded title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
-              <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. BusyDoo does not store your fingerprint.</InfoTip></div>
-              <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
-              {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
-
-              </div>
+            {profileSection === 'app-lock' && <ProfileSubpage embedded title="App lock" onBack={() => navigateProfileSection('privacy')}>
+              <ProfileAppLock enabled={biometricEnabled} verified={biometricVerified} busy={profileLockSaving}
+                availability={deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability} onToggle={() => void toggleProfileLock()} />
             </ProfileSubpage>}
-            {profileSection === 'recovery' && <ProfileSubpage embedded title="Recovery" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
-              <p className="text-sm text-secondary">Keep your recovery file and backup passphrase safe. Without the information needed to unlock your records, BusyDoo may be unable to restore them.</p>
-              <div className="preference-group py-3">
-              {onboardingJourney.recoveryName && <p className="text-xs text-secondary">Recovery name: <strong>{onboardingJourney.recoveryName}</strong>. This label cannot restore data without your separate recovery kit.</p>}
-              {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
-
-                {!recoveryProvisioned && !recoveryDeferred && <p className="py-2 text-sm">Set up device protection before preparing a recovery file.</p>}
-              </div>
+            {profileSection === 'recovery' && <ProfileSubpage embedded title="Recovery" onBack={() => navigateProfileSection('privacy')}>
+              <ProfileRecovery ready={recoveryProvisioned} deferred={recoveryDeferred} label={onboardingJourney.recoveryName}
+                busy={profileRecoveryPreparing} onSetup={() => void setupRecoveryFromSettings()} onBackup={() => navigateProfileSection('data')} />
             </ProfileSubpage>}
 
-            {profileSection === 'appearance' && <ProfileSubpage embedded title="Appearance" onBack={() => navigateProfileSection('home')}>
-              <AppearanceStudio theme={visualThemeId} mode={appearance} accent={customAccent}
+            {profileSection === 'appearance' && <ProfileSubpage embedded title="Appearance" description="Preview and personalize BusyDoo without changing your records." onBack={() => navigateProfileSection('home')}>
+              <AppearanceStudio theme={visualThemeId} resolved={theme} mode={appearance} accent={customAccent}
                 motion={interfaceMotion.preset} onOpen={navigateProfileSection} />
             </ProfileSubpage>}
-            {profileSection === 'themes' && <ProfileSubpage embedded title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
-              <ThemeStudio current={visualThemeId} preview={themePreviewId} appearance={appearance} resolved={theme}
+            {profileSection === 'themes' && <ProfileSubpage embedded title="Themes" description="Try a palette before applying it. Display mode follows your selection." backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+              <ThemeStudio current={visualThemeId} preview={themePreviewId} appearance={appearance} resolved={theme} accent={customAccent}
                 saving={savingVisualTheme} onAppearance={value => void applyAppearance(value)} onPreview={previewVisualTheme}
                 onApply={() => void applyVisualTheme()} onCancel={cancelVisualThemePreview} />
             </ProfileSubpage>}
-            {profileSection === 'motion' && <ProfileSubpage embedded title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'motion' && <ProfileSubpage embedded title="Motion" description="Preview the movement style. Your device reduced-motion preference takes priority." backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <MotionPreferences value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
             </ProfileSubpage>}
-            {profileSection === 'accent' && <ProfileSubpage embedded title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
-              <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
+            {profileSection === 'accent' && <ProfileSubpage embedded title="Accent color" description="Preview an accent with readable text and controls." backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+              <CustomAccentPicker value={customAccent} onChange={applyCustomAccent} themeId={themePreviewId || visualThemeId} mode={theme} />
             </ProfileSubpage>}
 
             {profileSection === 'preferences' && <ProfileSubpage embedded title="Preferences" description="Choose how BusyDoo displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}>
-              <div className="flex items-center gap-2">Profile preferences <InfoTip label="Profile preferences" /></div><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
-              try {
-                await StorageService.settings.set('dateOnlyAlertTime', time);
-                setDateOnlyAlertTime(time);
-                if (!await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled))) showToast('Saved, but Android could not update some alerts.', 'danger');
-              } catch { showToast('Could not save alert time.', 'danger'); }
-            }} preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
-
-            {profileSection === 'notifications' && <ProfileSubpage embedded title="Notifications" onBack={() => navigateProfileSection('home')}>
-              <section className="preference-group">
-                <button type="button" className="preference-row" role="switch" aria-label="All notifications" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)}><span>All notifications</span><span className="preference-toggle" aria-hidden="true" /></button>
-                {(notificationDiagnostics.permission === 'denied' || notificationDiagnostics.appNotifications === 'disabled' || notificationDiagnostics.channel.startsWith('blocked')) ?
-                  <ProfileSettingRow title="Notifications blocked by Android" value="Resolve" onClick={() => void openNotificationSettings()} />
-                  : notificationsEnabled && notificationDiagnostics.permission === 'granted' && (notificationDiagnostics.exactAlarm !== 'granted' ?
-                    <ProfileSettingRow title="Precise reminders are off" value="Enable" onClick={() => void requestExactAlarmAccess()} />
-                    : <p className="preference-row">Precise reminders <span className="text-secondary">Enabled</span></p>)}
-              </section>
-              <section className="preference-group" aria-label="Reminder style">
-                <PreferenceChoice label="Notification tone" value={notificationTone} options={NOTIFICATION_TONES.map(tone => [tone, tone[0].toUpperCase() + tone.slice(1)])} onSelect={async value => {
-                  const tone = normalizeNotificationTone(value);
-                  try {
-                    await StorageService.settings.set('notificationTone', tone);
-                    setNotificationTone(tone);
-                    if (!await syncNotificationSchedules(tasks, habits, goals, milestones)) showToast('Tone saved. Some reminders could not refresh.', 'danger');
-                  } catch { showToast('Could not save notification tone.', 'danger'); }
-                }} />
-                <p className="pb-3 text-sm text-secondary">{reminderCopy('habitReminder', notificationTone, 0).body}</p>
-                <ProfileSettingRow title="Sound and vibration" value="Android settings" onClick={() => void openNotificationSettings()} />
-              </section>
-              <section className="preference-group" aria-label="Notification categories">
-                {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <button type="button" key={key} role="switch" aria-label={notificationLabels[key]} aria-checked={notificationsEnabled && notificationPreferences[key]} disabled={!notificationsEnabled} onClick={() => void toggleNotificationCategory(key)} className="preference-row"><span>{notificationLabels[key]}</span><span className="preference-toggle" aria-hidden="true" /></button>)}
-              </section>
+              <ProfilePreferences preferences={userPrefs} saving={savingProfilePreferences}
+                hasFinancialRecords={!!(transactions.length || budgets.length || savingsGoals.length || savingsContributions.length ||
+                  financialAccounts.length || accountTransfers.length || plannedCommitments.length)}
+                onChange={(key, value) => { void saveUserPreference(key, value); }} />
             </ProfileSubpage>}
 
-            {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage embedded title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
-              <section className="lifeos-panel rounded-xl border p-4 space-y-3"><h2 className="text-sm font-semibold">Notification diagnostics</h2>
-                <div className="space-y-1 rounded-xl border border-[var(--stroke)] p-3 text-xs text-secondary"><p>Capability: {notificationDiagnostics.capability} · {notificationDiagnostics.platform}</p><p>Build: {notificationDiagnostics.versionName || notificationDiagnostics.build.appVersion} ({notificationDiagnostics.build.commit}) · API {notificationDiagnostics.androidApi ?? 'unknown'}</p><p>Capacitor: {notificationDiagnostics.build.capacitor.core} / {notificationDiagnostics.build.capacitor.localNotifications}</p><p>Android permission: {notificationDiagnostics.permission} · App notifications: {notificationDiagnostics.appNotifications}</p><p>Exact alarms: {notificationDiagnostics.exactAlarm} · Channel: {notificationDiagnostics.channel}</p><p>Pending records: {notificationDiagnostics.pendingCount} · Visible: {notificationDiagnostics.visibleNotificationCount} · IDs {notificationDiagnostics.visibleNotificationIds.join(', ') || 'none'}</p><p>Last schedule: {notificationDiagnostics.lastScheduleAttempt || 'unknown'} · {notificationDiagnostics.lastScheduleResult}</p><p>Last cancellation: {notificationDiagnostics.lastCancellationReason || 'none'} · Last action: {notificationDiagnostics.lastActionEvent ? `${notificationDiagnostics.lastActionEvent.kind}, ${notificationDiagnostics.lastActionEvent.at}` : 'unknown'}</p><p>Last scheduling error: {notificationDiagnostics.lastError || 'none'}</p></div>
-                {developerToolsEnabled && notificationDiagnostics.reminderLifecycle.length > 0 && <details className="rounded-xl border border-[var(--stroke)] p-3"><summary className="min-h-11 cursor-pointer text-xs font-semibold">Reminder timeline · no task titles</summary><ol className="mt-2 space-y-2">{notificationDiagnostics.reminderLifecycle.map(item => <li key={item.notificationId} className="border-t border-[var(--stroke)] pt-2 text-[10px] leading-5 text-secondary"><strong>Reminder {item.notificationId}</strong> · {item.deliveryState}<br />Scheduled: {item.reminderAt}<br />Accepted: {item.nativeAcceptedAt || 'not observed'} · Pending: {item.pendingObservedAt || 'not observed'}<br />Android posted: {item.androidPostedAt || 'not observed'} · Receiver event: {item.receiverEventAt || 'not observed'} · Tapped: {item.tappedAt || 'not observed'}</li>)}</ol></details>}
-                <div className="grid grid-cols-2 gap-2"><button onClick={async () => { try { const at = await NotificationService.testNotification(); await refreshNotificationDiagnostics(); showToast(`Scheduled test for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Test notification failed', 'danger'); } }} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-xs font-semibold">Schedule test · 10 sec</button><button onClick={async () => { try { const at = await NotificationService.sendImmediateTestNotification(); await refreshNotificationDiagnostics(); showToast(`Immediate test requested for ${at.toLocaleTimeString()}; check whether it arrives.`, 'success'); } catch (error) { await refreshNotificationDiagnostics(); showToast(error instanceof Error ? error.message : 'Immediate test failed', 'danger'); } }} className="lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Immediate test</button><button onClick={() => void openNotificationSettings()} className="col-span-2 lifeos-panel min-h-11 rounded-xl border px-3 text-xs font-semibold">Android notification settings</button></div>
-                <button onClick={() => void refreshNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Refresh diagnostics</button><button onClick={() => void copyNotificationDiagnostics()} className="min-h-11 w-full rounded-xl border border-[var(--stroke)] text-xs font-medium text-secondary">Copy privacy-safe diagnostics</button>
-              </section>
-<button onClick={async () => { if (!(await confirmAction({ title: 'Reset onboarding for testing?', message: 'Your records will remain untouched. Choices made during onboarding may update your name, appearance, security, and notification preferences.', confirmLabel: 'Restart tour' }))) return; await StorageService.settings.set('onboardingCompleted', false); await StorageService.settings.set('onboardingStarted', true); await StorageService.settings.set('onboardingStep', 0); setOnboardingStep(0); setOnboardingComplete(false); setOnboardingRequired(true); }} className="min-h-11 rounded-xl border border-[var(--stroke)] px-3 text-xs font-medium">Reset onboarding for testing</button>
-              <section className="lifeos-panel rounded-xl p-4 space-y-3">
-                <h2 className="text-sm font-semibold">Sample data</h2>
-                <p className="text-xs text-secondary">Six months of activity for exploring BusyDoo. Sample task reminders are silent.</p>
-                <button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => {
-                  if (!await confirmAction({ title: 'Add six months of sample data?', message: 'Sample records will appear alongside records in this Debug workspace. You can remove them here.', confirmLabel: 'Add sample data' })) return;
-                  try { await StorageService.backup.seedDemoData(); await reloadAllData(); showToast('Sample data is ready', 'success'); }
-                  catch (error) { showToast(error instanceof Error ? error.message : 'Could not add sample data', 'danger'); }
-                }} className="lifeos-accent-button min-h-11 w-full rounded-xl px-3 text-sm disabled:opacity-50">Add sample data</button>
-                <button disabled={!isEncryptedStorageActivated() || isLocked} onClick={async () => {
-                  if (!await confirmAction({ title: 'Remove sample data?', message: 'Removes the sample set and activity linked to its habits and goals.', confirmLabel: 'Remove sample data' })) return;
-                  try { await StorageService.backup.removeSampleData(); await reloadAllData(); showToast('Sample data removed', 'success'); }
-                  catch (error) { showToast(error instanceof Error ? error.message : 'Could not remove sample data', 'danger'); }
-                }} className="lifeos-input min-h-11 w-full rounded-xl px-3 text-sm disabled:opacity-50">Remove sample data</button>
-              </section>
+            {profileSection === 'notifications' && <ProfileSubpage embedded title="Notifications"
+              description="Manage Android delivery, reminder categories and your encrypted inbox." onBack={() => navigateProfileSection('home')}>
+              {!notificationCentreSettings && renderNotificationSettings(false)}
             </ProfileSubpage>}
 
-            {profileSection === 'data' && <ProfileSubpage embedded title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
-              <div className="flex items-center gap-2">Encrypted backups <InfoTip label="Encrypted backups" /></div>
-            {/* Backup & Restore */}
-            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Backup & Restore</h3>
-              <p className="text-xs text-secondary">Export a passphrase-encrypted backup, or restore a validated encrypted or legacy JSON backup.</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    if (backupOperation.current) return;
-                    backupOperation.current = true;
-                    setBackupOperationInProgress(true);
-                    try {
-                      await setSensitiveScreenshotState(true);
-                      const passphrase = await requestBackupPassphrase('export');
-                      if (passphrase === null) return;
-                      const token = sessionManager.capture();
-                      const json = await encryptBackup(await StorageService.backup.exportData(), passphrase);
-                      sessionManager.assertCurrent(token);
-                      const result = await exportBackupFile({
-                        contents: json,
-                        fileName: `busydoo-backup-${formatLocalDate(new Date())}.json`,
-                        mimeType: 'application/json'
-                      });
-
-                      if (result.status === 'saved') {
-                        showToast(`Backup saved successfully (${result.bytesWritten} bytes).`, 'success');
-                      } else if (result.status === 'cancelled') {
-                        showToast('Backup export cancelled. No file was saved.', 'info');
-                      } else {
-                        showToast('Backup download started. Check your browser downloads.', 'success');
-                      }
-                    } catch (error) {
-                      console.error('BusyDoo backup export failed.');
-                      showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
-                    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
-                  }}
-                  className="lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold"
-                >
-                  Export encrypted backup
-                </button>
-                <button onClick={() => document.getElementById('lifeos-backup-import')?.click()} className="lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold">Restore JSON</button>
-              </div>
-              <input id="lifeos-backup-import" type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackupFile(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} />
-              <button onClick={async () => {
-                try {
-                  if (!isEncryptedStorageActivated()) { showToast('There are no protected records to export yet.', 'info'); return; }
-                  const token = sessionManager.capture();
-                  if (!(await confirmAction({ title: 'Export readable CSV?', message: 'This CSV contains readable financial records. BusyDoo does not encrypt CSV files. Save it somewhere you trust, or cancel and choose Export encrypted backup.', confirmLabel: 'Export CSV', cancelLabel: 'Cancel' }))) return;
-                  sessionManager.assertCurrent(token);
-                  const rows = transactions.map(tx => [tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);
-                  const quote = quoteCsvCell;
-                  const csv = [['type', 'description', 'amount', 'category', 'date', 'entry_time', 'payment_method'], ...rows].map(row => row.map(quote).join(',')).join('\n');
-
-                  const result = await exportBackupFile({
-                    contents: csv,
-                    fileName: `busydoo-transactions-${formatLocalDate(new Date())}.csv`,
-                    mimeType: 'text/csv'
-                  });
-
-                  if (result.status === 'saved') {
-                    showToast(`Transactions CSV saved (${result.bytesWritten} bytes).`, 'success');
-                  } else if (result.status === 'cancelled') {
-                    showToast('CSV export cancelled. No file was saved.', 'info');
-                  } else {
-                    showToast('CSV download started. Check your browser downloads.', 'success');
-                  }
-                } catch (error) {
-                  showToast(error instanceof Error ? error.message : 'Transactions CSV export failed.', 'danger');
-                }
-              }} className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold">Export transactions CSV</button>
-            </div>
-
-            {/* Danger Zone */}
-            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-[var(--danger)]">Data Reset</h3>
-              <p className="text-xs text-secondary">Erase your records and stored app settings on this device. BusyDoo keeps its device security setup, and some reminder history or display preferences may remain. Files you exported stay wherever you saved them.</p>
-              <button
-                onClick={async () => {
-                  if (!(await confirmAction({ title: 'Erase local records?', message: 'This removes local records and stored settings and cancels scheduled record reminders. Already displayed reminders and some diagnostic history may remain. Your device security setup and exported files are kept. Export a backup first if you want to keep your records.', confirmLabel: 'Erase local records', cancelLabel: 'Keep my data', destructive: true }))) return;
-                  try {
-                    await NotificationService.cancelAllRecordReminders();
-                    await StorageService.backup.clearAll();
-                    await reloadAllData();
-                    showToast('All personal records erased', 'info');
-                  } catch {
-                    showToast('Reset did not complete. Please retry; reminder cleanup must succeed before records are erased.', 'danger');
-                  }
-                }}
-                className="lifeos-danger min-h-11 w-full rounded-xl border px-3 text-xs font-semibold"
-              >
-                Erase local records
-              </button>
-            </div>
+            {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage embedded title="Developer tools" onBack={() => navigateProfileSection('home')}>
+              <ProfileDeveloper diagnostics={notificationDiagnostics} canUseSamples={isEncryptedStorageActivated() && !isLocked}
+                onTest={immediate => void runDeveloperTest(immediate)} onAndroid={() => void openNotificationSettings()}
+                onRefresh={() => void refreshNotificationDiagnostics()} onCopy={() => void copyNotificationDiagnostics()}
+                onResetTour={() => void resetDeveloperTour()} onSamples={remove => void changeSampleData(remove)} />
             </ProfileSubpage>}
-            {profileSection === 'money-imports' && <ProfileSubpage embedded title="Money &amp; Imports" onBack={() => navigateProfileSection('home')}>
-              <p className="text-sm text-secondary">Paste a bank alert or share it from another Android app to review the transaction before saving it.</p>
-              <button type="button" className="feather-primary" onClick={async () => {
+
+            {profileSection === 'data' && <ProfileSubpage embedded title="Backup & Restore" onBack={() => navigateProfileSection('home')}>
+              <ProfileData busy={backupOperationInProgress} stage={profileDataStage} lastBackup={lastBackupAt > 0 ? formatDate(formatLocalDate(new Date(lastBackupAt))) : undefined}
+                onBackup={() => void exportProfileBackup()} onRestore={file => void importBackupFile(file)}
+                onCsv={() => void exportProfileCsv()} onReset={() => void resetProfileData()} />
+            </ProfileSubpage>}
+            {profileSection === 'money-imports' && <ProfileSubpage embedded title="Money & Imports" onBack={() => navigateProfileSection('home')}>
+              <ProfileMoneyImports onImport={() => void (async () => {
                 try { await setSensitiveScreenshotState(true); setSmartImportOpen(true); }
                 catch { showToast('Could not open Smart Import securely.', 'danger'); }
-              }}>Import alert</button>
+              })()} />
             </ProfileSubpage>}
             {profileSection === 'about' && <ProfileSubpage embedded title="About BusyDoo" onBack={() => navigateProfileSection('home')}>
-              <div className="preference-group"><div className="preference-row"><span>Version</span><span className="text-secondary">{packageInfo.version}</span></div>
-                <ProfileSettingRow title="Replay A Life in Harmony" onClick={() => window.dispatchEvent(new Event(REPLAY_BUSYDOO_LAUNCH))} />
-                <ProfileSettingRow title="Open-source licenses" onClick={() => navigateProfileSection('licenses')} /></div>
+              <ProfileAbout version={notificationDiagnostics.versionName || packageInfo.version}
+                onReplay={() => window.dispatchEvent(new Event(REPLAY_BUSYDOO_LAUNCH))} onLicenses={() => navigateProfileSection('licenses')} />
             </ProfileSubpage>}
-            {profileSection === 'licenses' && <ProfileSubpage embedded title="Open-source licenses" backLabel="About BusyDoo" onBack={() => navigateProfileSection('about')}>
-              <LicenseText title="Web libraries and Inter font" source="./licenses/web-and-font.txt" />
-              <LicenseText title="Android libraries" source="./licenses/android.txt" />
+            {profileSection === 'licenses' && <ProfileSubpage embedded title="Open-source licenses" description="Read the notices and attribution included in this installation." onBack={() => navigateProfileSection('about')}>
+              <LicenseLibrary />
             </ProfileSubpage>}
           </div>
           </div>
@@ -4064,6 +4342,14 @@ export default function App() {
 
       {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 
+      {centerVisible && <NotificationCentre rows={inbox.rows} loading={inbox.loading} failed={inbox.failed}
+        enabled={inboxAvailable && inboxPreferences.enabled} settings={notificationCentreSettings ? renderNotificationSettings(true) : null}
+        onShowSettings={() => { setNotificationCentreSettings(true); void refreshNotificationDiagnostics(); }} onClose={closeNotificationCentre}
+        onApply={action => inbox.apply(action, true)} onOpen={event => void openInboxEvent(event)}
+        onTaskAction={(event, action) => void openInboxEvent(event, action)}
+        actions={{ snooze: notificationsEnabled && notificationPreferences.taskReminders && notificationDiagnostics.permission === 'granted' }}
+        formatDate={date => formatDate(formatLocalDate(date))}
+        recordLabel={event => inboxSnapshot.labels.get(inboxSourceKey(event.source, event.sourceId))} />}
       {profileOpen && pendingProfilePhoto && !activityResumeGuard && <ProfilePhotoEditor source={pendingProfilePhoto} onCancel={() => setPendingProfilePhoto(null)} onSave={saveProfilePhoto} />}
       <AnimatePresence>{toast && <Snackbar notice={toast} key="app-snackbar" onDismiss={() => setToast(null)} reduced={interfaceMotion.reducedMotion} />}</AnimatePresence>
     </div>

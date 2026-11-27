@@ -93,3 +93,25 @@ if (!patchedManager.includes('LifeOS: reject elapsed schedules before changing a
     .replace(cancelFlags, cancelFlags.replace('int flags = 0', 'int flags = PendingIntent.FLAG_NO_CREATE').replace('flags = PendingIntent.FLAG_MUTABLE', 'flags |= PendingIntent.FLAG_MUTABLE'))
     .replace('            alarmManager.cancel(pi);', '            alarmManager.cancel(pi);\n            pi.cancel();'));
 }
+
+
+const inboxManager = fs.readFileSync(manager, 'utf8').replace(/\r\n/g, '\n');
+if (!inboxManager.includes('LifeOS: expose only opaque reminder references in Android delivery observations.')) {
+  const marker = '        createActionIntents(localNotification, mBuilder);';
+  if (!inboxManager.includes(marker)) throw new Error('Capacitor Android notification builder changed.');
+  fs.writeFileSync(manager, inboxManager.replace(marker, [
+    '        // LifeOS: expose only opaque reminder references in Android delivery observations.',
+    '        JSObject reminderExtra = localNotification.getExtra();',
+    '        if (reminderExtra != null && reminderExtra.has("kind")) {',
+    '            android.os.Bundle routing = new android.os.Bundle();',
+    '            for (String field : new String[] {"kind", "taskId", "habitId", "milestoneId", "occurrenceAt", "originalReminderAt"}) {',
+    '                Object value = reminderExtra.opt(field);',
+    '                if (value instanceof String && ((String) value).length() <= 160) {',
+    '                    routing.putString("busydoo.reminder." + field, (String) value);',
+    '                }',
+    '            }',
+    '            mBuilder.addExtras(routing);',
+    '        }',
+    marker,
+  ].join('\n')));
+}

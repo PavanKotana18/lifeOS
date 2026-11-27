@@ -115,6 +115,14 @@ function buttonHandler(label) {
     'Production handler missing');
   return attr.initializer.expression.getText(ast);
 }
+function componentHandler(component, prop) {
+  const { ast, app } = appSource();
+  const node = one(walk(app, n => ts.isJsxSelfClosingElement(n) && n.tagName.getText(ast) === component), component);
+  const attr = one(node.attributes.properties.filter(n => ts.isJsxAttribute(n) && n.name.getText(ast) === prop),
+    `${component} ${prop}`);
+  assert.ok(ts.isJsxExpression(attr.initializer) && attr.initializer.expression, 'Production handler missing');
+  return attr.initializer.expression.getText(ast);
+}
 function bind(expression, deps, prelude = '') {
   const names = Object.keys(deps);
   const source = `module.exports = function({${names.join(',')}}) { ${prelude}\nreturn (${expression}); };`;
@@ -226,6 +234,7 @@ async function fixture({ activate = true } = {}) {
     async checkExactNotificationSetting() { return { exact_alarm: 'granted' }; },
     async getPending() { return { notifications: [...pending.values()] }; },
     async getDeliveredNotifications() { return { notifications: [...delivered.values()] }; },
+    async removeDeliveredNotifications({ notifications }) { for (const row of notifications) delivered.delete(row.id); },
     async addListener(eventName, callback) {
       const listeners = notificationListeners.get(eventName) || new Set();
       listeners.add(callback); notificationListeners.set(eventName, listeners);
@@ -285,6 +294,17 @@ async function fixture({ activate = true } = {}) {
       backupPassphraseResolver: { current: null }, secureSetupResolver: { current: null },
       authCoordinator: { resetForBackground() {} }, notificationsEnabled: false,
       confirmScreenshotResume: async () => {},
+      // The lifecycle fixture covers secure admission and reload. Notification
+      // routing has its own production callback and delivery contract tests.
+      drainNotificationTapsRef: { current: async () => {} },
+      backupOperation: { current: false },
+      ...load('src/services/profilePhoto.ts'),
+      profilePhotoVersion: { current: 0 },
+      interfaceMotion: { adoptStored() {} },
+      LAST_BACKUP_KEY: 'notificationInboxLastBackupAt.v1',
+      ...load('src/services/notificationInboxProducers.ts'),
+      pendingNotification: { current: [] }, handledNotificationIds: { current: new Set() },
+      inbox: { forget() {} },
       notificationPreferences: notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
       effectiveNotificationPreferences: (p, master = false) => master ? p : notificationModule.DEFAULT_NOTIFICATION_PREFERENCES,
       async triggerBiometricAuth() { throw new Error('Unexpected optional biometric UI call'); },
@@ -294,6 +314,10 @@ async function fixture({ activate = true } = {}) {
       ...deps, ...noopSetters(reload), ...load('src/services/profilePhoto.ts'),
       profilePhotoVersion: { current: 0 },
     });
+    for (const name of ['clearNotificationRouting', 'refreshProfileIdentity', 'refreshInboxSettings']) {
+      const expression = appFunction(name);
+      deps[name] = bind(expression, { ...deps, ...noopSetters(expression) });
+    }
     const sync = appFunction('syncNotificationSchedules');
     deps.syncNotificationSchedules = bind(sync, deps);
     return deps;
@@ -319,5 +343,5 @@ async function fixture({ activate = true } = {}) {
   };
 }
 module.exports = { ROOT, TABLES, check, equal, contract, ContractFailure, fixture,
-  appFunction, lifecycleCallback, buttonHandler, bind, noopSetters, compile,
+  appFunction, lifecycleCallback, buttonHandler, componentHandler, bind, noopSetters, compile,
   assertions: () => checks };

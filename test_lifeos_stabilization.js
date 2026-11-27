@@ -120,6 +120,7 @@ function financeRows(rows, sort = 'date-desc', filters = {}) {
       DEFAULT_NOTIFICATION_PREFERENCES: f.DEFAULT_NOTIFICATION_PREFERENCES,
       async refreshNotificationDiagnostics() { f.native.calls.push('refreshPermissionDiagnostics'); },
       async confirmScreenshotResume() { f.native.calls.push('screenshot-resume-confirmed'); },
+      drainNotificationTapsRef: { current: async () => {} },
       reconcileNotificationOnboardingOnResume,
       NotificationService: {
         async checkPermission() { f.native.calls.push('checkDisplayPermission'); return 'granted'; },
