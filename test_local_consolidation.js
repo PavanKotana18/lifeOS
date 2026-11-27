@@ -284,7 +284,7 @@ async function fixture(action) { const f = await h.fixture(); try { await action
  await test('Reset cancellation failure preserves database records and reports failure', async () => fixture(async f => {
   await f.lifeOSDatabase.tasks.add({id:'keep',title:'Synthetic fixture',completed:false,createdAt:'2026-11-06T00:00:00Z'});
   f.NotificationService.cancelAllRecordReminders=async()=>{throw Error('SIMULATED_NATIVE_CANCEL_FAILURE');};
-  const messages=[];const reset=h.bind(h.buttonHandler('Clear All Application Data'),{...f.appDeps(),showToast:(...args)=>messages.push(args)});
+  const messages=[];const reset=h.bind(h.buttonHandler('Erase local records'),{...f.appDeps(),showToast:(...args)=>messages.push(args)});
   await reset();assert.equal(await f.lifeOSDatabase.tasks.count(),1);assert.equal(messages.at(-1)[1],'danger');
  }));
  console.log(`LOCAL CONSOLIDATION: ${passed}/16 passed (native simulated)`);
