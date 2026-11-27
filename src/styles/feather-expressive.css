@@ -24,6 +24,7 @@
 .feather-header-main { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .feather-header-main > :is(h1,h2,h3) { overflow-wrap: anywhere; line-height: 1.15; letter-spacing: -.045em; font-weight: 640; }
 .feather-header-action { flex: none; max-width: 100%; }
+.feather-header-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .feather-icon-button {
   display: inline-grid;
   place-items: center;
@@ -650,23 +651,25 @@ dialog[data-polish-sheet][data-sheet-closing]::backdrop { animation: feather-she
 .today-reorder-hint { margin-top: .3rem; color: var(--ink-secondary); font-size: .8rem; }
 .feather-expressive[data-reduced="true"] .today-sections > [data-today-card] { scale: 1; transition: none; }
 @supports not (scale: 1) {
-  .feather-expressive:not([data-reduced="true"]) .today-sections > [data-today-card]:not([data-today-lifted]) {
+  .feather-expressive:not([data-reduced="true"]) .today-sections > [data-today-card]:not([data-today-lifted]):not([data-today-settling]) {
     transition-property: transform;
   }
-  .feather-expressive:not([data-reduced="true"]) .today-sections > [data-today-pressed]:not([data-today-lifted]) {
+  .feather-expressive:not([data-reduced="true"]) .today-sections > [data-today-pressed]:not([data-today-lifted]):not([data-today-settling]) {
     transform: scale(.98);
   }
 }
 .today-sections [data-today-card] :is(.today-routine-row, .lifeos-raised) { background: transparent; }
 .today-sections [data-today-lifted] {
-  transform: translate(var(--today-drag-x, 0px), var(--today-drag-y, 0px)) scale(1.025);
+  transform: translate3d(var(--today-drag-x, 0px), var(--today-drag-y, 0px), 0) scale(1.025);
+  transform-origin: var(--today-grab-x, 50%) var(--today-grab-y, 50%);
+  will-change: transform;
   outline: 1px solid var(--focus-color);
   box-shadow: 0 14px 34px rgb(0 0 0 / .22);
   z-index: 4;
   user-select: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .today-sections [data-today-lifted] { transform: translate(var(--today-drag-x, 0px), var(--today-drag-y, 0px)); }
+  .today-sections [data-today-lifted] { transform: translate3d(var(--today-drag-x, 0px), var(--today-drag-y, 0px), 0); }
 }
 
 /* Shared geometry for the three Plan destinations. The screen track supplies the page gutter. */

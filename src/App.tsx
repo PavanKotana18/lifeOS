@@ -26,7 +26,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { Activity, Check, Flag, Target, CirclePlus, Layers, ReceiptText, Tag, CalendarDays, SlidersHorizontal, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
+import { Activity, Check, X, Flag, Target, CirclePlus, Layers, ReceiptText, Tag, CalendarDays, SlidersHorizontal, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -1293,9 +1293,9 @@ export default function App() {
       else if (section === 'habits' || section === 'goals') openFromToday(section, trigger);
       else if (section === 'upcoming') { setPlannerFilter('upcoming'); openFromToday('planner', trigger); }
       else openFromToday('plan', trigger);
-    });
+    }, interfaceMotion.preset);
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
-    order: todayCards.order.indexOf(id) + 2,
+    order: 'var(--today-sort-order, ' + (todayLayout.order.indexOf(id) + 2) + ')',
     display: todayLayout.hidden.includes(id) ? 'none' : undefined,
   });
 
@@ -3359,7 +3359,7 @@ export default function App() {
 
         {/* VIEW 3: HABITS */}
         <RetainedScreen active={activeTab === 'habits'} id="screen-habits" {...transitionPropsFor('habits')} render={() => (
-          <div className="feather-plan-page">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}>Back to list</button>}
+          <div className="feather-plan-page">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && Capacitor.getPlatform() !== 'android' && <button type="button" className="feather-icon-button" aria-label="Close habit details" onClick={() => showLifeDetail(null)}><X size={20} aria-hidden="true" /></button>}
             {!lifeDetail && <><PlanSectionHeader id="plan-habits-title" title="Habits" topic="Habit consistency" action="Add habit" onAdd={() => openCreateForm('habit')} />
               {habits.length > 0 && <p className="feather-plan-summary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>}</>}
             {lifeDetail?.kind === 'habit' && <label className="life-history block text-sm text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => { setHabitsSelectedDate(e.target.value); setHistoricalQuantityUnit(''); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>}
@@ -3429,7 +3429,7 @@ export default function App() {
 
         {/* VIEW 4: GOALS */}
         <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
-          <div className="feather-plan-page">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}>Back to list</button>}
+          <div className="feather-plan-page">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && Capacitor.getPlatform() !== 'android' && <button type="button" className="feather-icon-button" aria-label="Close goal details" onClick={() => setLifeDetail(null)}><X size={20} aria-hidden="true" /></button>}
             <PlanSectionHeader id="plan-goals-title" title="Goals" topic="Goal progress" action="Add goal" onAdd={() => openCreateForm('goal')} />
             {!lifeDetail && goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
             <div className="feather-plan-segments" role="group" aria-label="Goal status">{(['active', 'paused', 'completed', 'archived'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className="capitalize">{tab}</button>)}</div>

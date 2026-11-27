@@ -19,24 +19,39 @@ export function buildSpringSettle(startOffsetPx: number, initialVelocityPxPerSec
   if (Math.abs(start) < 0.001) {
     return { duration: 0, keyframes: [{ offset: 0, transform: 'translateX(0px)' }, { offset: 1, transform: 'translateX(0px)' }] };
   }
+  const spring = offsetSpring(start, initialVelocityPxPerSecond, presetId);
+  return { duration: spring.duration, keyframes: spring.values.map((value, index) => ({
+    offset: index / 30, transform: transformFor(value),
+  })) };
+}
+
+function offsetSpring(start: number, initialVelocity: number, presetId: MotionPresetId) {
   const preset = getMotionPreset(presetId);
-  const velocity = clamp(finite(initialVelocityPxPerSecond), Math.min(preset.velocityLimit, Math.abs(start) * 10));
+  const velocity = clamp(finite(initialVelocity), Math.min(preset.velocityLimit, Math.abs(start) * 10));
   const duration = preset.duration;
-  const frequency = preset.frequency; // radians / second, unit mass
-  const dampingRatio = preset.dampingRatio;
-  const decay = dampingRatio * frequency;
-  const dampedFrequency = frequency * Math.sqrt(1 - dampingRatio ** 2);
-  const velocityTerm = (velocity + decay * start) / dampedFrequency;
-  const keyframes = Array.from({ length: 31 }, (_, index) => {
-    const offset = index / 30;
-    const time = offset * duration / 1000;
-    const position = Math.exp(-decay * time) * (
-      start * Math.cos(dampedFrequency * time) + velocityTerm * Math.sin(dampedFrequency * time)
-    );
-    // A bounded rubber-band release must never fling a screen off its track.
-    return { offset, transform: transformFor(index === 30 ? 0 : clamp(position, Math.abs(start) * 1.15)) };
+  const decay = preset.dampingRatio * preset.frequency;
+  const damped = preset.frequency * Math.sqrt(1 - preset.dampingRatio ** 2);
+  const term = (velocity + decay * start) / damped;
+  const values = Array.from({ length: 31 }, (_, index) => {
+    const time = index / 30 * duration / 1000;
+    const position = Math.exp(-decay * time) * (start * Math.cos(damped * time) + term * Math.sin(damped * time));
+    return index === 30 ? 0 : clamp(position, Math.abs(start) * 1.15);
   });
-  return { keyframes, duration };
+  return { duration, values };
+}
+
+export function buildCardSpring(x: number, y: number, vx: number, vy: number, preset: MotionPresetId, scale: number) {
+  const horizontal = offsetSpring(x, vx, preset);
+  const vertical = offsetSpring(y, vy, preset);
+  const lift = offsetSpring(scale - 1, 0, preset);
+  const samples = horizontal.values.map((left, index) => ({ x: left, y: vertical.values[index] }));
+  return {
+    duration: horizontal.duration,
+    samples,
+    frames: samples.map((sample, index) => ({
+      transform: `translate3d(${sample.x}px, ${sample.y}px, 0) scale(${1 + lift.values[index]})`,
+    })),
+  };
 }
 
 /** Read only the horizontal translation from a computed CSS transform. */

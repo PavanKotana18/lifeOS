@@ -165,7 +165,7 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
         <p className="text-sm leading-6 text-secondary">BusyDoo encrypts your records on this device using an Android Keystore key protected by strong biometrics. Continue to authenticate and create your private recovery kit. Existing local records will be verified before encrypted copies replace them.</p>
         <button type="button" onClick={() => void finish(true)} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Set up secure storage</button>
       </>}
-      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{inline ? 'Back to recovery options' : 'Cancel and keep data locked'}</button>
+      <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{inline ? 'Cancel recovery setup' : 'Cancel and keep data locked'}</button>
     </section>;
   return inline ? content : <main className="lifeos-page fixed inset-0 z-[110] overflow-y-auto p-4 sm:p-6">{content}</main>;
 }

@@ -98,44 +98,63 @@ assert.equal(replacementOrigin.current, null);
 assert.equal(replacementFocus.current, null);
 
 function cardHook(reduced = false) {
-  let timer, captured, sorts = 0, opens = 0;
+  let timer, frame, captured, sorts = 0, opens = 0, measurements = 0, committed;
   const listeners = new Map();
   const mockWindow = {
     setTimeout: handler => { timer = handler; return 1; }, addEventListener: (name, handler) => listeners.set(name, handler),
-    removeEventListener() {},
+    removeEventListener() {}, innerHeight: 600, scrollX: 0, scrollY: 0,
+    scrollBy: ({ top }) => { mockWindow.scrollY = Math.max(0, mockWindow.scrollY + top); },
   };
   const document = { addEventListener() {}, removeEventListener() {} };
   const order = ['focus', 'money'];
-  const card = {
-    dataset: { todayCard: 'focus' },
-    getBoundingClientRect: () => ({ top: 10, left: 10 }),
-    removeAttribute: name => { delete card.dataset[name.replace('data-today-', 'today').replace(/(pressed|lifted)/, match => match[0].toUpperCase() + match.slice(1))]; },
-    style: { getPropertyValue: () => '0px', removeProperty() {} },
-  };
+  const elements = order.map((id, index) => {
+    const styles = new Map(), animations = [];
+    return {
+      dataset: { todayCard: id }, styles, animations,
+      get offsetTop() {
+        const ordered = Number(styles.get('--today-sort-order') || index + 2);
+        return ordered === 2 ? 0 : index === 0 ? 120 : 100;
+      },
+      offsetLeft: 0, offsetWidth: 240, offsetHeight: index === 0 ? 100 : 120,
+      getClientRects: () => [{}],
+      removeAttribute: name => { delete elements[index].dataset[name.replace(/^data-/, '').replace(/-([a-z])/g, (_, char) => char.toUpperCase())]; },
+      style: { getPropertyValue: name => styles.get(name) || '', setProperty: (name, value) => styles.set(name, value),
+        removeProperty: name => styles.delete(name) },
+      animate: frames => {
+        const animation = { currentTime: 0, cancel() { this.cancelled = true; }, frames };
+        animations.push(animation);
+        return animation;
+      },
+    };
+  });
+  const card = elements[0];
   const root = { contains: () => true, setPointerCapture: () => { captured = true; }, hasPointerCapture: () => captured,
-    releasePointerCapture: () => { captured = false; } };
+    releasePointerCapture: () => { captured = false; }, querySelectorAll: () => elements,
+    getBoundingClientRect: () => { measurements++; return { left: 10, top: 10 - mockWindow.scrollY }; } };
   const target = interactive => ({ closest: selector => selector === '[data-today-card]' ? card : (interactive ? {} : null) });
-  const event = { target: target(false), currentTarget: root, pointerId: 1, button: 0, isPrimary: true, clientX: 12, clientY: 12,
+  const event = { target: target(false), currentTarget: root, pointerId: 1, button: 0, isPrimary: true, clientX: 35, clientY: 45,
     preventDefault() {}, stopPropagation() {} };
-  const react = { useRef: ref, useEffect: fn => { fn(); }, useState: initial => [initial, () => {}] };
+  const react = { useRef: ref, useEffect: fn => { fn(); }, useLayoutEffect: fn => { fn(); } };
   const compiled = ts.transpileModule(fs.readFileSync('src/hooks/useTodayCardDrag.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
   const output = {};
   new Function('exports', 'require', 'window', 'document', 'navigator', 'requestAnimationFrame', 'cancelAnimationFrame', 'clearTimeout', compiled)(
-    output, name => name === 'react' ? react : { flushSync: callback => callback() }, mockWindow, document, {},
-    () => 1, () => {}, () => { timer = undefined; },
+    output, name => name === 'react' ? react : require('./src/services/springMotion.ts'), mockWindow, document, {},
+    callback => { frame = callback; return 1; }, () => {}, () => { timer = undefined; },
   );
-  const hook = output.useTodayCardDrag(order, true, reduced, () => {}, next => { assert.equal(next, order); sorts++; },
+  const hook = output.useTodayCardDrag(order, true, reduced, () => {}, next => { sorts++; committed = next; },
     (id, trigger) => { assert.equal(id, 'focus'); assert.equal(trigger, card); opens++; });
-  return { card, event, handlers: hook.handlers, listeners, child: target(true), beginDrag: () => timer(), isDragging: hook.isDragging,
+  return { card, peer: elements[1], event, handlers: hook.handlers, listeners, child: target(true),
+    beginDrag: () => timer(), frame: now => frame(now), isDragging: hook.isDragging,
+    get measurements() { return measurements; }, get scrollY() { return mockWindow.scrollY; }, get committed() { return committed; },
     get opens() { return opens; }, get sorts() { return sorts; } };
 }
 
 const press = cardHook();
 press.handlers.onPointerDown(press.event);
 assert.equal(press.card.dataset.todayPressed, 'true');
-press.handlers.onPointerMove({ ...press.event, clientY: 30 });
+press.handlers.onPointerMove({ ...press.event, clientY: 70 });
 assert.equal(press.card.dataset.todayPressed, undefined);
 press.handlers.onPointerDown(press.event);
 press.listeners.get('scroll')();
@@ -150,15 +169,52 @@ press.handlers.onPointerDown(press.event);
 press.beginDrag();
 assert.equal(press.isDragging(), true);
 assert.equal(press.card.dataset.todayPressed, undefined);
+press.frame(0);
+press.handlers.onPointerMove({ ...press.event, clientY: 176 });
+press.frame(16);
+assert.equal(press.measurements, 1, 'Midpoint dead zone and pointer frames do not read layout');
+assert.equal(press.card.styles.get('--today-drag-y'), '131px');
+press.handlers.onPointerMove({ ...press.event, clientY: 195 });
+press.frame(32);
+assert.equal(press.measurements, 2, 'Only a confirmed reorder takes a new snapshot');
+assert.equal(press.card.styles.get('--today-sort-order'), '3');
+assert.equal(press.card.styles.get('--today-drag-y'), '30px');
+assert.equal(press.peer.animations.length, 1);
+press.frame(48);
+press.frame(64);
+assert.equal(press.measurements, 2);
+assert.equal(press.peer.animations.length, 1);
+assert.equal(press.sorts, 0);
+press.handlers.onPointerUp(press.event);
 press.handlers.onPointerUp(press.event);
 assert.equal(press.isDragging(), false);
 assert.equal(press.sorts, 1);
+assert.deepEqual(press.committed, ['money', 'focus']);
+assert.equal(press.card.animations.at(-1).frames[0].transform, 'translate3d(0px, 30px, 0) scale(1.025)');
 press.handlers.onClick(press.event);
 assert.equal(press.opens, 1, 'release from a reorder cannot navigate');
+
+const scrolled = cardHook();
+scrolled.handlers.onPointerDown(scrolled.event);
+scrolled.beginDrag();
+scrolled.frame(0);
+scrolled.handlers.onPointerMove({ ...scrolled.event, clientY: 595 });
+scrolled.frame(16);
+const firstScroll = scrolled.scrollY;
+scrolled.frame(32);
+assert.ok(firstScroll > 0 && scrolled.scrollY - firstScroll > firstScroll, 'Edge scroll ramps up');
+assert.equal(parseFloat(scrolled.card.styles.get('--today-drag-y')), 550 + scrolled.scrollY);
+assert.equal(scrolled.measurements, 1, 'Autoscroll compensates using viewport scroll without remeasuring slots');
+scrolled.handlers.onPointerCancel();
+assert.equal(scrolled.sorts, 0);
 const reduced = cardHook(true);
 reduced.handlers.onPointerDown(reduced.event);
 assert.equal(reduced.card.dataset.todayPressed, undefined);
+reduced.beginDrag();
+reduced.frame(0);
 reduced.handlers.onPointerCancel();
+assert.equal(reduced.card.animations.length, 0);
+assert.equal(reduced.sorts, 0);
 
 assert.equal(formatHabitQuantity(2, 'L'), '2 L');
 assert.equal(formatHabitProgress(3, undefined, 2, 'L'), 'Recorded 3 (unit unknown) · Target 2 L');

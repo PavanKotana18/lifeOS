@@ -117,7 +117,7 @@ export default function Onboarding(props: Props) {
           </> : reviewDeferral ? <>
             <p className="initial-setup-description">Without a recovery file, losing access to this device can mean losing your saved records. You can set up recovery later in Privacy &amp; Security.</p>
             <button type="button" disabled={busy} className="lifeos-accent-button" onClick={() => void run(props.onFinish)}>Do this later</button>
-            {props.protectionReady && <button type="button" disabled={busy} className="initial-setup-secondary" onClick={() => setReviewDeferral(false)}>Back</button>}
+            {props.protectionReady && <button type="button" disabled={busy} className="initial-setup-secondary" onClick={() => setReviewDeferral(false)}>Cancel</button>}
           </> : <>
             <p className="initial-setup-description">{props.protectionReady ? 'Prepare a recovery file to regain access if you lose this device.' : 'Device protection is needed before you can prepare a recovery file.'}</p>
             <button type="button" disabled={busy} className="lifeos-accent-button" onClick={() => props.protectionReady ? void run(async () => { await props.onRecover(); }) : setReviewDeferral(true)}>{props.protectionReady ? 'Prepare recovery' : 'Review deferral'}</button>
