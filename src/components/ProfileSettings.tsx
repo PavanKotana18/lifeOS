@@ -20,6 +20,30 @@ export function profileParent(section: ProfileSection): ProfileSection {
   return 'home';
 }
 
+export function ProfileGroup({ title, description, children, destructive = false }: {
+  title: string; description?: string; children: ReactNode; destructive?: boolean;
+}) {
+  return <section aria-label={title} className="profile-group" data-destructive={destructive || undefined}>
+    <h3 className="type-section-title">{title}</h3>
+    {description && <p className="profile-detail">{description}</p>}
+    <div className="profile-group-content">{children}</div>
+  </section>;
+}
+
+export function ProfileToggle({ title, detail, checked, disabled, onChange }: {
+  title: string; detail?: string; checked: boolean; disabled?: boolean; onChange: () => void;
+}) {
+  return <button type="button" role="switch" aria-label={title} aria-checked={checked}
+    disabled={disabled} className="preference-row profile-toggle-row" onClick={onChange}>
+    <span><strong>{title}</strong>{detail && <small className="profile-detail">{detail}</small>}</span>
+    <span className="preference-toggle" aria-hidden="true" />
+  </button>;
+}
+
+export function ProfileStatus({ title, value }: { title: string; value: string }) {
+  return <div className="preference-row profile-status-row"><span>{title}</span><span>{value}</span></div>;
+}
+
 export function ProfileSettingRow({ title, value, onClick }: { title: string; value?: string; onClick: () => void }) {
   return <button type="button" className="preference-row" onClick={onClick}><span>{title}</span>{value && <span className="text-secondary text-right">{value}</span>}</button>;
 }
@@ -45,6 +69,7 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
   const pencil = useRef<HTMLButtonElement>(null);
   const remove = useRef(false);
   const [draft, setDraft] = useState('');
+  const savingName = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   return <section className="profile-identity-card lifeos-panel rounded-2xl border" aria-labelledby="profile-identity-title">
@@ -60,6 +85,7 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
         setDraft(name); setError(''); showSheet(nameSheet.current);
       }}><PencilLine size={17} strokeWidth={1.8} aria-hidden="true" /></button>
     </div>
+    {photoBusy && <p role="status" className="profile-detail">Working on your profile photo...</p>}
     {photoError && <p role="alert" className="text-xs text-[var(--danger)]">{photoError}</p>}
     {onPhotoChange && <dialog ref={photoSheet} data-polish-sheet data-profile-editor aria-label="Profile photo"
       className="profile-editor-sheet lifeos-page" onCancel={event => { event.preventDefault(); closeSheet(photoSheet.current); }}
@@ -69,6 +95,7 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
         if (remove.current) { remove.current = false; void onPhotoChange(true); }
       }}>
       <h3 className="type-section-title">Profile photo</h3>
+      <p className="profile-detail">Choose and crop an image for your profile. BusyDoo saves a protected copy without the original photo metadata.</p>
       <button type="button" className="profile-editor-action" onClick={() => { photoSheet.current?.close(); void onPhotoChange(); }}>
         <ImagePlus size={19} aria-hidden="true" />{photo ? 'Replace photo' : 'Choose photo'}
       </button>
@@ -82,14 +109,15 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
       onClose={() => pencil.current?.focus({ preventScroll: true })}>
       <form className="space-y-3" onSubmit={async event => {
         event.preventDefault();
-        if (!draft.trim() || busy) return;
+        if (!draft.trim() || savingName.current) return;
+        savingName.current = true;
         setBusy(true); setError('');
         try { await onChange(draft); closeSheet(nameSheet.current); }
-        catch { setError('Could not save your name.'); }
-        finally { setBusy(false); }
+        catch { setError('Could not save your name. Your previous name is still saved.'); }
+        finally { savingName.current = false; setBusy(false); }
       }}>
         <h3 className="type-section-title">Edit name</h3>
-        <label className="block text-sm font-medium">Display name<input autoFocus required maxLength={48} value={draft}
+        <label className="block text-sm font-medium">Display name<input autoFocus required maxLength={48} value={draft} disabled={busy} autoComplete="nickname"
           onChange={event => setDraft(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-xl px-3" /></label>
         {error && <p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
         <div className="flex justify-end gap-2"><button type="button" disabled={busy} className="feather-secondary" onClick={() => closeSheet(nameSheet.current)}>Cancel</button>
@@ -99,10 +127,10 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
   </section>;
 }
 
-export function ProfileNavigationRow({ title, icon: Icon, onClick, value }: { title: string; detail: string; value?: string; icon: LucideIcon; onClick: () => void }) {
+export function ProfileNavigationRow({ title, detail, icon: Icon, onClick, value }: { title: string; detail: string; value?: string; icon: LucideIcon; onClick: () => void }) {
   return <button type="button" onClick={onClick} className="profile-navigation-row lifeos-panel group flex min-h-14 w-full items-center gap-3 border-b px-3 py-2 text-left transition-colors hover:border-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-color)] active:scale-[.995]">
     <span className="lifeos-tint flex h-9 w-9 shrink-0 items-center justify-center rounded-lg lifeos-accent-text" aria-hidden="true"><Icon size={17} strokeWidth={1.9} /></span>
-    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span>{value && <span className="block text-xs text-secondary">{value}</span>}</span>
+    <span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><small className="profile-detail">{detail}</small></span>{value && <span className="profile-row-value">{value}</span>}
   </button>;
 }
 
@@ -134,9 +162,10 @@ export function ProfileHome({ name, initial, photo, photoBusy, photoError, onPho
   </div>;
 }
 
-export function ProfileSubpage({ title, onBack, backLabel = 'Back to Profile', embedded = false, children }: { title: string; description?: string; backLabel?: string; embedded?: boolean; onBack: () => void; children: ReactNode }) {
+export function ProfileSubpage({ title, description, onBack, backLabel = 'Back to Profile', embedded = false, children }: { title: string; description?: string; backLabel?: string; embedded?: boolean; onBack: () => void; children: ReactNode }) {
   return <section className="profile-settings profile-subpage mx-auto w-full max-w-xl space-y-4" data-testid="profile-settings-subpage">
     {!embedded && <FeatherHeader title={title} heading="h2" back={{ label: backLabel, onClick: onBack }} />}
+    {description && <p className="profile-intro">{description}</p>}
     {children}
   </section>;
 }

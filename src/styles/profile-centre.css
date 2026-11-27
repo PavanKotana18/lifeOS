@@ -1,0 +1,25 @@
+.profile-group, .profile-intro {
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--feather-grouped, var(--surface));
+}
+
+.profile-group { display: grid; gap: var(--space-2); }
+.profile-group-content { display: grid; gap: var(--space-2); min-inline-size: 0; }
+.profile-group-content > button { justify-self: start; max-inline-size: 100%; }
+.profile-group[data-destructive] { margin-block-start: var(--space-6); border: 1px solid var(--stroke); }
+.profile-group[data-destructive] h3 { color: var(--danger); }
+.profile-intro, .profile-detail { color: var(--ink-secondary); line-height: 1.5; }
+.profile-intro { font-size: .9rem; }
+.profile-detail { display: block; font-size: .8rem; font-weight: 450; }
+.profile-navigation-row { flex-wrap: wrap; }
+.profile-navigation-row .profile-detail { margin-block-start: .15rem; }
+.profile-row-value { max-inline-size: min(35%, 9rem); text-align: end; color: var(--accent-text); font-size: .75rem; }
+.profile-toggle-row > span:first-child, .profile-status-row > span { min-inline-size: 0; overflow-wrap: anywhere; }
+.profile-status-row > span:last-child { color: var(--ink-secondary); text-align: end; }
+.profile-identity-card { background: var(--feather-highlight, var(--surface)); border-color: var(--stroke); }
+.profile-editor-sheet, .profile-crop-editor { padding-block-end: max(var(--space-4), env(safe-area-inset-bottom)); }
+
+@media (max-width: 360px) {
+  .profile-row-value { margin-inline-start: 3rem; max-inline-size: 100%; text-align: start; }
+}

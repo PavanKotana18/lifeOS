@@ -6,20 +6,19 @@ import { formatCurrencyChoice } from '../services/financeCore';
 
 type Props = {
   preferences: UserPreferences;
-  dateOnlyAlertTime?: string;
-  onDateOnlyAlertTime?: (time: string) => void;
+  saving?: boolean;
   hasFinancialRecords: boolean;
   onChange: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void;
 };
 
-export default function ProfilePreferences({ preferences, hasFinancialRecords, onChange, dateOnlyAlertTime, onDateOnlyAlertTime }: Props) {
+export default function ProfilePreferences({ preferences, hasFinancialRecords, onChange, saving = false }: Props) {
   const locale = preferences.locale === 'system' ? undefined : preferences.locale;
   const currencyOptions = useMemo(() => CURRENCY_CODES.map(code => [code, formatCurrencyChoice(code, locale)] as const), [locale]);
   const choice = <K extends keyof UserPreferences>(key: K, label: string, options: readonly ChoiceOption[]) => <PreferenceChoice
-    label={label} value={String(preferences[key])} options={options} onSelect={value => onChange(key, value as UserPreferences[K])} />;
+    label={label} disabled={saving} value={String(preferences[key])} options={options} onSelect={value => onChange(key, value as UserPreferences[K])} />;
   return <div className="profile-preferences space-y-4" data-testid="profile-preferences">
     <section className="preference-group" aria-label="Currency and locale">
-      <PreferenceChoice label="Currency" searchable disabled={hasFinancialRecords} value={preferences.currency}
+      <PreferenceChoice label="Currency" searchable disabled={hasFinancialRecords || saving} disabledHint={hasFinancialRecords ? "Existing financial records keep their original currency. Changing the display currency would not convert them." : undefined} value={preferences.currency}
         options={currencyOptions} onSelect={code => onChange('currency', code)} />
       {choice('locale', 'Number locale', [['system', 'Automatic'], ['en-IN', 'English (India)'], ['en-US', 'English (US)'], ['en-GB', 'English (UK)'], ['de-DE', 'German (Germany)']])}
     </section>
@@ -27,9 +26,6 @@ export default function ProfilePreferences({ preferences, hasFinancialRecords, o
       {choice('dateFormat', 'Date format', [['DMY', 'DD/MM/YYYY'], ['MDY', 'MM/DD/YYYY'], ['YMD', 'YYYY-MM-DD']])}
       {choice('firstDayOfWeek', 'First day of week', [['monday', 'Monday'], ['sunday', 'Sunday']])}
       {choice('timeFormat', 'Time format', [['12h', '12-hour'], ['24h', '24-hour']])}
-      {onDateOnlyAlertTime && <div className="preference-row"><label htmlFor="date-only-alert-time">Date-only task alerts</label>
-        <div className="flex flex-wrap justify-end gap-2">{!dateOnlyAlertTime && <span className="self-center text-secondary">Off</span>}<input className="lifeos-input min-h-11 rounded-lg px-2" id="date-only-alert-time" type="time" value={dateOnlyAlertTime || ''} onChange={event => onDateOnlyAlertTime(event.target.value)} /></div></div>}
-      {dateOnlyAlertTime && onDateOnlyAlertTime && <button type="button" className="min-h-11 text-sm lifeos-accent-text" onClick={() => onDateOnlyAlertTime('')}>Turn off date-only alerts</button>}
     </section>
     <section className="preference-group" aria-label="Measurement units">
       {choice('distance', 'Distance', [['km', 'Kilometres'], ['mi', 'Miles']])}
@@ -37,9 +33,10 @@ export default function ProfilePreferences({ preferences, hasFinancialRecords, o
       {choice('volume', 'Volume', [['L', 'Litres'], ['mL', 'Millilitres'], ['US gal', 'US gallons'], ['Imp gal', 'Imperial gallons']])}
     </section>
     <section className="preference-group" aria-label="Navigation preferences">
-      <button type="button" className="preference-row" role="switch" aria-checked={preferences.swipeNavigationEnabled} aria-label="Swipe between tabs" onClick={() => onChange('swipeNavigationEnabled', !preferences.swipeNavigationEnabled)}>
+      <button type="button" className="preference-row" role="switch" disabled={saving} aria-checked={preferences.swipeNavigationEnabled} aria-label="Swipe between tabs" onClick={() => onChange('swipeNavigationEnabled', !preferences.swipeNavigationEnabled)}>
         <span>Swipe between tabs</span><span className="preference-toggle" aria-hidden="true" />
       </button>
     </section>
+  {saving && <p role="status" className="profile-detail">Saving preferences...</p>}
   </div>;
 }

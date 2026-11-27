@@ -1,3 +1,5 @@
+import ProfileData from './components/ProfileData';
+import './styles/profile-centre.css';
 import { useTodayCardDrag } from './hooks/useTodayCardDrag';
 import { BusyDooBrand } from './components/BusyDooBrand';
 import { PlanSectionHeader, PlanSectionEmpty } from './components/PlanSection';
@@ -1353,12 +1355,18 @@ export default function App() {
     setFinanceSubtab(next);
   };
 
+  const preferenceWrite = useRef(false);
+  const [savingProfilePreferences, setSavingProfilePreferences] = useState(false);
   const saveUserPreference = async <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
-    const updated = { ...userPrefs, [key]: value };
+    if (preferenceWrite.current) return;
+    preferenceWrite.current = true;
+    setSavingProfilePreferences(true);
     try {
+      const updated = { ...userPrefs, [key]: value };
       await StorageService.settings.set('userPreferences', updated);
       setUserPrefs(updated);
-    } catch { showToast('Could not save this preference.', 'danger'); }
+    } catch { showToast('Could not save this preference. Your previous choice is still saved.', 'danger'); }
+    finally { preferenceWrite.current = false; setSavingProfilePreferences(false); }
   };
 
   const initApp = async () => {
@@ -1705,7 +1713,8 @@ export default function App() {
   };
 
   const updateDisplayName = async (name: string) => {
-    const normalized = name.slice(0, 48).trim();
+    const normalized = name.trim().slice(0, 48);
+    if (!normalized || /[\u0000-\u001f\u007f-\u009f]/.test(normalized)) throw new Error('Enter a readable display name.');
     await StorageService.settings.set('displayName', normalized);
     setDisplayName(normalized);
   };
@@ -1722,6 +1731,15 @@ export default function App() {
       const synchronized = await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(next, notificationsEnabled));
       if (!synchronized) showToast('Saved, but Android could not update some alerts.', 'danger');
     } catch { showToast('Could not save this notification preference.', 'danger'); }
+  };
+
+  const saveDateOnlyAlertTime = async (time: string) => {
+    if (time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) return;
+    try {
+      await StorageService.settings.set('dateOnlyAlertTime', time);
+      setDateOnlyAlertTime(time);
+      if (!await syncNotificationSchedules(tasks, habits, goals, milestones)) showToast('Saved, but Android could not update some alerts.', 'danger');
+    } catch { showToast('Could not save alert time.', 'danger'); }
   };
 
   const setNotificationsMaster = async (enabled: boolean) => {
@@ -1776,10 +1794,10 @@ export default function App() {
       }
       if (!result.success) return { success: false, message: result.message || 'Authentication was not completed.' };
       if (!isEncryptedStorageActivated()) sessionManager.unlock();
+      await StorageService.settings.set('biometricLockEnabled', true);
       setBiometricEnabled(true); setBiometricVerified(true);
       biometricAuthenticated.current = true;
       authCoordinator.markAuthenticated();
-      await StorageService.settings.set('biometricLockEnabled', true);
       return { success: true };
     } catch (error) {
       return { success: false, message: error instanceof Error ? error.message : 'Device authentication could not be completed.' };
@@ -2069,6 +2087,101 @@ export default function App() {
     return () => { disposed = true; if (listener) void listener.remove(); if (receivedListener) void receivedListener.remove(); };
   }, [isLocked]);
 
+  const exportProfileBackup = async () => {
+    if (backupOperation.current) return;
+    backupOperation.current = true;
+    setBackupOperationInProgress(true);
+    try {
+      await setSensitiveScreenshotState(true);
+      const passphrase = await requestBackupPassphrase('export');
+      if (passphrase === null) return;
+      const token = sessionManager.capture();
+      const json = await encryptBackup(await StorageService.backup.exportData(), passphrase);
+      sessionManager.assertCurrent(token);
+      const result = await exportBackupFile({
+        contents: json,
+        fileName: `busydoo-backup-${formatLocalDate(new Date())}.json`,
+        mimeType: 'application/json'
+      });
+
+      if (result.status === 'saved') {
+        showToast(`Backup saved successfully (${result.bytesWritten} bytes).`, 'success');
+      } else if (result.status === 'cancelled') {
+        showToast('Backup export cancelled. No file was saved.', 'info');
+      } else {
+        showToast('Backup download started. Check your browser downloads.', 'success');
+      }
+    } catch (error) {
+      console.error('BusyDoo backup export failed.');
+      showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
+  };
+
+  const exportProfileCsv = async () => {
+    if (backupOperation.current) return;
+    backupOperation.current = true;
+    setBackupOperationInProgress(true);
+    try {
+      if (!isEncryptedStorageActivated()) { showToast('There are no protected records to export yet.', 'info'); return; }
+      const token = sessionManager.capture();
+      if (!(await confirmAction({ title: 'Export readable CSV?', message: 'This CSV contains readable financial records. BusyDoo does not encrypt CSV files. Save it somewhere you trust, or cancel and choose Export encrypted backup.', confirmLabel: 'Export CSV', cancelLabel: 'Cancel' }))) return;
+      sessionManager.assertCurrent(token);
+      const rows = transactions.map(tx => [tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);
+      const quote = quoteCsvCell;
+      const csv = [['type', 'description', 'amount', 'category', 'date', 'entry_time', 'payment_method'], ...rows].map(row => row.map(quote).join(',')).join('\n');
+
+      const result = await exportBackupFile({
+        contents: csv,
+        fileName: `busydoo-transactions-${formatLocalDate(new Date())}.csv`,
+        mimeType: 'text/csv'
+      });
+
+      if (result.status === 'saved') {
+        showToast(`Transactions CSV saved (${result.bytesWritten} bytes).`, 'success');
+      } else if (result.status === 'cancelled') {
+        showToast('CSV export cancelled. No file was saved.', 'info');
+      } else {
+        showToast('CSV download started. Check your browser downloads.', 'success');
+      }
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Transactions CSV export failed.', 'danger');
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
+  };
+
+  const refreshProfileIdentity = async () => {
+    const [name, photo, prefs, currency] = await Promise.all([
+      StorageService.settings.get('displayName', ''),
+      StorageService.settings.get<unknown>(PROFILE_PHOTO_SETTING, null),
+      StorageService.settings.get<Partial<UserPreferences>>('userPreferences', DEFAULT_USER_PREFERENCES),
+      StorageService.settings.get<string>('currency', DEFAULT_USER_PREFERENCES.currency),
+    ]);
+    profilePhotoVersion.current++;
+    setDisplayName(name);
+    setProfilePhoto(readProfilePhoto(photo));
+    setUserPrefs(mergeUserPreferences(prefs, currency));
+  };
+
+  const resetProfileData = async () => {
+    if (backupOperation.current) return;
+    backupOperation.current = true;
+    setBackupOperationInProgress(true);
+    let erased = false;
+    try {
+      if (!(await confirmAction({ title: 'Erase local records?', message: 'This removes local records and stored settings and cancels scheduled record reminders. Already displayed reminders and some diagnostic history may remain. Your device security setup and exported files are kept. Export a backup first if you want to keep your records.', confirmLabel: 'Erase local records', cancelLabel: 'Keep my data', destructive: true }))) return;
+      await NotificationService.cancelAllRecordReminders();
+      await StorageService.backup.clearAll();
+      erased = true;
+      await reloadAllData();
+      await refreshProfileIdentity();
+      setNotificationPreferences(DEFAULT_NOTIFICATION_PREFERENCES);
+      setNotificationsEnabled(false);
+      showToast('All personal records erased', 'info');
+    } catch {
+      showToast(erased ? 'Records were erased. Reopen BusyDoo to refresh the display.' :
+        'Reset did not complete. Reminder cleanup must succeed before records are erased.', 'danger');
+    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
+  };
+
   const importBackupFile = async (file?: File) => {
     if (!file || backupOperation.current) return;
     backupOperation.current = true;
@@ -2088,6 +2201,7 @@ export default function App() {
       await StorageService.backup.importData(text, { replaceExisting: hasRecords });
       restored = true;
       const records = await reloadAllData();
+      await refreshProfileIdentity();
       const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
       const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
       setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...prefs });
@@ -3573,21 +3687,24 @@ export default function App() {
           <div ref={profilePage} className="profile-page" data-profile-section={profileSection}>
             {profileSection === 'home' && <ProfileHome sharedHeader onBack={backFromProfile} name={displayName} initial={profileInitial(displayName)} developerAllowed={developerToolsEnabled} securityStatus={recoveryProvisioned ? 'Recovery ready' : biometricEnabled ? 'App lock enabled' : 'Review protection'} onNameChange={updateDisplayName} photo={profilePhoto} photoBusy={profilePhotoBusy} photoError={profilePhotoError} onPhotoChange={changeProfilePhoto} onEditPhoto={() => { if (profilePhoto) setPendingProfilePhoto(profilePhoto); }} onOpen={section => { navigateProfileSection(section); if (section === 'notifications' || section === 'developer') void refreshNotificationDiagnostics(); }} />}
 
-            {profileSection === 'privacy' && <ProfileSubpage embedded title="Privacy & security" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'privacy' && <ProfileSubpage embedded title="Privacy & security" description="Manage device protection and recovery." onBack={() => navigateProfileSection('home')}>
               <div className="flex items-center gap-2">Device protection <InfoTip label="Device protection" /></div>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
                 <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} />
                 {legalDraftEnabled && developerToolsEnabled && <ProfileSettingRow title="Legal & Privacy" value="Draft" onClick={() => navigateProfileSection('legal')} />}</div>
             </ProfileSubpage>}
             {LegalPrivacyCentre && developerToolsEnabled && profileSection === 'legal' &&
-              <ProfileSubpage embedded title="Legal & Privacy" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+              <ProfileSubpage embedded title="Legal & Privacy" description="Internal draft documents for review. Legal acceptance is disabled." backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
                 <Suspense fallback={<ScreenLoading label="Opening legal documents" />}>
                   <LegalPrivacyCentre onData={() => navigateProfileSection('data')} onNotices={() => navigateProfileSection('licenses')} />
                 </Suspense>
               </ProfileSubpage>}
-            {profileSection === 'app-lock' && <ProfileSubpage embedded title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+            {profileSection === 'app-lock' && <ProfileSubpage embedded title="App lock" description="Use the device credential or biometrics to verify access on this device." backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
               <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. BusyDoo does not store your fingerprint.</InfoTip></div>
-              <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
+              <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { try {
+                await StorageService.settings.set('biometricLockEnabled', false);
+                setBiometricEnabled(false); setBiometricVerified(false); showToast('Biometric lock disabled', 'success');
+              } catch { showToast('Could not change app lock. Your previous choice is still saved.', 'danger'); } return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
 
               </div>
@@ -3602,30 +3719,28 @@ export default function App() {
               </div>
             </ProfileSubpage>}
 
-            {profileSection === 'appearance' && <ProfileSubpage embedded title="Appearance" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'appearance' && <ProfileSubpage embedded title="Appearance" description="Preview and personalize BusyDoo without changing your records." onBack={() => navigateProfileSection('home')}>
               <AppearanceStudio theme={visualThemeId} mode={appearance} accent={customAccent}
                 motion={interfaceMotion.preset} onOpen={navigateProfileSection} />
             </ProfileSubpage>}
-            {profileSection === 'themes' && <ProfileSubpage embedded title="Themes" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'themes' && <ProfileSubpage embedded title="Themes" description="Try a palette before applying it. Display mode follows your selection." backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <ThemeStudio current={visualThemeId} preview={themePreviewId} appearance={appearance} resolved={theme}
                 saving={savingVisualTheme} onAppearance={value => void applyAppearance(value)} onPreview={previewVisualTheme}
                 onApply={() => void applyVisualTheme()} onCancel={cancelVisualThemePreview} />
             </ProfileSubpage>}
-            {profileSection === 'motion' && <ProfileSubpage embedded title="Motion" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'motion' && <ProfileSubpage embedded title="Motion" description="Preview the movement style. Your device reduced-motion preference takes priority." backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <MotionPreferences value={interfaceMotion.preset} onChange={interfaceMotion.setPreset} saving={interfaceMotion.saving} error={interfaceMotion.error} reducedMotion={interfaceMotion.reducedMotion} />
             </ProfileSubpage>}
-            {profileSection === 'accent' && <ProfileSubpage embedded title="Accent color" backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
+            {profileSection === 'accent' && <ProfileSubpage embedded title="Accent color" description="Preview an accent with readable text and controls." backLabel="Appearance" onBack={() => navigateProfileSection('appearance')}>
               <CustomAccentPicker value={customAccent} onChange={color => { void applyCustomAccent(color); }} themeId={themePreviewId || visualThemeId} mode={theme} />
             </ProfileSubpage>}
 
             {profileSection === 'preferences' && <ProfileSubpage embedded title="Preferences" description="Choose how BusyDoo displays dates, amounts and measurements." onBack={() => navigateProfileSection('home')}>
-              <div className="flex items-center gap-2">Profile preferences <InfoTip label="Profile preferences" /></div><ProfilePreferences dateOnlyAlertTime={dateOnlyAlertTime} onDateOnlyAlertTime={async time => {
-              try {
-                await StorageService.settings.set('dateOnlyAlertTime', time);
-                setDateOnlyAlertTime(time);
-                if (!await syncNotificationSchedules(tasks, habits, goals, milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled))) showToast('Saved, but Android could not update some alerts.', 'danger');
-              } catch { showToast('Could not save alert time.', 'danger'); }
-            }} preferences={userPrefs} hasFinancialRecords={transactions.length > 0 || budgets.length > 0 || savingsGoals.length > 0} onChange={(key, value) => { void saveUserPreference(key, value); }} /></ProfileSubpage>}
+              <ProfilePreferences preferences={userPrefs} saving={savingProfilePreferences}
+                hasFinancialRecords={!!(transactions.length || budgets.length || savingsGoals.length || savingsContributions.length ||
+                  financialAccounts.length || accountTransfers.length || plannedCommitments.length)}
+                onChange={(key, value) => { void saveUserPreference(key, value); }} />
+            </ProfileSubpage>}
 
             {profileSection === 'notifications' && <ProfileSubpage embedded title="Notifications" onBack={() => navigateProfileSection('home')}>
               <section className="preference-group">
@@ -3635,6 +3750,12 @@ export default function App() {
                   : notificationsEnabled && notificationDiagnostics.permission === 'granted' && (notificationDiagnostics.exactAlarm !== 'granted' ?
                     <ProfileSettingRow title="Precise reminders are off" value="Enable" onClick={() => void requestExactAlarmAccess()} />
                     : <p className="preference-row">Precise reminders <span className="text-secondary">Enabled</span></p>)}
+              </section>
+              <section className="preference-group" aria-label="Reminder timing">
+                <div className="preference-row"><label htmlFor="date-only-alert-time">Date-only task alerts</label>
+                  <input className="lifeos-input min-h-11 rounded-lg px-2" id="date-only-alert-time" type="time" value={dateOnlyAlertTime || ''} onChange={event => void saveDateOnlyAlertTime(event.target.value)} /></div>
+                {!dateOnlyAlertTime ? <p className="profile-detail">Off. Tasks with their own time still follow their reminder settings.</p> :
+                  <button type="button" className="feather-secondary" onClick={() => void saveDateOnlyAlertTime('')}>Turn off date-only alerts</button>}
               </section>
               <section className="preference-group" aria-label="Reminder style">
                 <PreferenceChoice label="Notification tone" value={notificationTone} options={NOTIFICATION_TONES.map(tone => [tone, tone[0].toUpperCase() + tone.slice(1)])} onSelect={async value => {
@@ -3678,99 +3799,8 @@ export default function App() {
             </ProfileSubpage>}
 
             {profileSection === 'data' && <ProfileSubpage embedded title="Backup & Restore" description="Manage encrypted copies and local records." onBack={() => navigateProfileSection('home')}>
-              <div className="flex items-center gap-2">Encrypted backups <InfoTip label="Encrypted backups" /></div>
-            {/* Backup & Restore */}
-            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Backup & Restore</h3>
-              <p className="text-xs text-secondary">Export a passphrase-encrypted backup, or restore a validated encrypted or legacy JSON backup.</p>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    if (backupOperation.current) return;
-                    backupOperation.current = true;
-                    setBackupOperationInProgress(true);
-                    try {
-                      await setSensitiveScreenshotState(true);
-                      const passphrase = await requestBackupPassphrase('export');
-                      if (passphrase === null) return;
-                      const token = sessionManager.capture();
-                      const json = await encryptBackup(await StorageService.backup.exportData(), passphrase);
-                      sessionManager.assertCurrent(token);
-                      const result = await exportBackupFile({
-                        contents: json,
-                        fileName: `busydoo-backup-${formatLocalDate(new Date())}.json`,
-                        mimeType: 'application/json'
-                      });
-
-                      if (result.status === 'saved') {
-                        showToast(`Backup saved successfully (${result.bytesWritten} bytes).`, 'success');
-                      } else if (result.status === 'cancelled') {
-                        showToast('Backup export cancelled. No file was saved.', 'info');
-                      } else {
-                        showToast('Backup download started. Check your browser downloads.', 'success');
-                      }
-                    } catch (error) {
-                      console.error('BusyDoo backup export failed.');
-                      showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
-                    } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
-                  }}
-                  className="lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold"
-                >
-                  Export encrypted backup
-                </button>
-                <button onClick={() => document.getElementById('lifeos-backup-import')?.click()} className="lifeos-raised min-h-11 flex-1 rounded-xl px-3 text-xs font-semibold">Restore JSON</button>
-              </div>
-              <input id="lifeos-backup-import" type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackupFile(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} />
-              <button onClick={async () => {
-                try {
-                  if (!isEncryptedStorageActivated()) { showToast('There are no protected records to export yet.', 'info'); return; }
-                  const token = sessionManager.capture();
-                  if (!(await confirmAction({ title: 'Export readable CSV?', message: 'This CSV contains readable financial records. BusyDoo does not encrypt CSV files. Save it somewhere you trust, or cancel and choose Export encrypted backup.', confirmLabel: 'Export CSV', cancelLabel: 'Cancel' }))) return;
-                  sessionManager.assertCurrent(token);
-                  const rows = transactions.map(tx => [tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);
-                  const quote = quoteCsvCell;
-                  const csv = [['type', 'description', 'amount', 'category', 'date', 'entry_time', 'payment_method'], ...rows].map(row => row.map(quote).join(',')).join('\n');
-
-                  const result = await exportBackupFile({
-                    contents: csv,
-                    fileName: `busydoo-transactions-${formatLocalDate(new Date())}.csv`,
-                    mimeType: 'text/csv'
-                  });
-
-                  if (result.status === 'saved') {
-                    showToast(`Transactions CSV saved (${result.bytesWritten} bytes).`, 'success');
-                  } else if (result.status === 'cancelled') {
-                    showToast('CSV export cancelled. No file was saved.', 'info');
-                  } else {
-                    showToast('CSV download started. Check your browser downloads.', 'success');
-                  }
-                } catch (error) {
-                  showToast(error instanceof Error ? error.message : 'Transactions CSV export failed.', 'danger');
-                }
-              }} className="lifeos-raised min-h-11 w-full rounded-xl px-3 text-xs font-semibold">Export transactions CSV</button>
-            </div>
-
-            {/* Danger Zone */}
-            <div className="lifeos-panel rounded-xl border p-4 space-y-3">
-              <h3 className="text-sm font-semibold text-[var(--danger)]">Data Reset</h3>
-              <p className="text-xs text-secondary">Erase your records and stored app settings on this device. BusyDoo keeps its device security setup, and some reminder history or display preferences may remain. Files you exported stay wherever you saved them.</p>
-              <button
-                onClick={async () => {
-                  if (!(await confirmAction({ title: 'Erase local records?', message: 'This removes local records and stored settings and cancels scheduled record reminders. Already displayed reminders and some diagnostic history may remain. Your device security setup and exported files are kept. Export a backup first if you want to keep your records.', confirmLabel: 'Erase local records', cancelLabel: 'Keep my data', destructive: true }))) return;
-                  try {
-                    await NotificationService.cancelAllRecordReminders();
-                    await StorageService.backup.clearAll();
-                    await reloadAllData();
-                    showToast('All personal records erased', 'info');
-                  } catch {
-                    showToast('Reset did not complete. Please retry; reminder cleanup must succeed before records are erased.', 'danger');
-                  }
-                }}
-                className="lifeos-danger min-h-11 w-full rounded-xl border px-3 text-xs font-semibold"
-              >
-                Erase local records
-              </button>
-            </div>
+              <ProfileData busy={backupOperationInProgress} onBackup={() => void exportProfileBackup()} onRestore={file => void importBackupFile(file)}
+                onCsv={() => void exportProfileCsv()} onReset={() => void resetProfileData()} />
             </ProfileSubpage>}
             {profileSection === 'money-imports' && <ProfileSubpage embedded title="Money &amp; Imports" onBack={() => navigateProfileSection('home')}>
               <p className="text-sm text-secondary">Paste a bank alert or share it from another Android app to review the transaction before saving it.</p>
@@ -3779,12 +3809,12 @@ export default function App() {
                 catch { showToast('Could not open Smart Import securely.', 'danger'); }
               }}>Import alert</button>
             </ProfileSubpage>}
-            {profileSection === 'about' && <ProfileSubpage embedded title="About BusyDoo" onBack={() => navigateProfileSection('home')}>
+            {profileSection === 'about' && <ProfileSubpage embedded title="About BusyDoo" description="Find the installed version and software notices." onBack={() => navigateProfileSection('home')}>
               <div className="preference-group"><div className="preference-row"><span>Version</span><span className="text-secondary">{packageInfo.version}</span></div>
                 <ProfileSettingRow title="Replay A Life in Harmony" onClick={() => window.dispatchEvent(new Event(REPLAY_BUSYDOO_LAUNCH))} />
                 <ProfileSettingRow title="Open-source licenses" onClick={() => navigateProfileSection('licenses')} /></div>
             </ProfileSubpage>}
-            {profileSection === 'licenses' && <ProfileSubpage embedded title="Open-source licenses" backLabel="About BusyDoo" onBack={() => navigateProfileSection('about')}>
+            {profileSection === 'licenses' && <ProfileSubpage embedded title="Open-source licenses" description="Read notices packaged with BusyDoo." backLabel="About BusyDoo" onBack={() => navigateProfileSection('about')}>
               <LicenseText title="Web libraries and Inter font" source="./licenses/web-and-font.txt" />
               <LicenseText title="Android libraries" source="./licenses/android.txt" />
             </ProfileSubpage>}

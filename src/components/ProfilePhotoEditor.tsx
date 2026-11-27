@@ -62,6 +62,7 @@ export default function ProfilePhotoEditor({ source, onCancel, onSave }: {
         onClick={() => image && setCrop(current => clampPhotoCrop(image, { ...current, x: 1 - current.y, y: current.x, turns: (current.turns + 1) % 4 }))}>Rotate</button>
       <button type="button" className="feather-primary" disabled={busy || !image} onClick={() => void confirm()}>{busy ? 'Saving…' : 'Done'}</button>
     </header>
+    {!ready && !error && <p role="status" className="profile-detail">Preparing your photo...</p>}
     <div className="profile-crop-preview">
     <div className="profile-crop-stage" onPointerDown={event => {
       if (busy || !ready || points.current.size >= 2) return;
