@@ -18,7 +18,7 @@ assert.match(app, /role="progressbar" aria-label=\{g\.title \+ ' progress'\}/);
 assert.match(app, /className="lifeos-progress-fill h-full rounded-full"/);
 assert.match(app, /<PlanSectionHeader[^>]*title="Goals"[^>]*action="Add goal" onAdd=\{\(\) => openCreateForm\('goal'\)\}/);
 const planSection = fs.readFileSync("src/components/PlanSection.tsx", "utf8");
-assert.match(planSection, /<button type="button" className="feather-primary" onClick=\{onAdd\}>\{action\}<\/button>/);
+assert.match(planSection, /<button type="button" className="feather-plan-create" aria-label=\{action\} title=\{action\} onClick=\{onAdd\}>/);
 assert.match(app, /className="flex min-h-12 cursor-pointer items-center gap-3 py-2"/);
 assert.match(app, /aria-pressed=\{goalsSubtab === tab\}/);
 

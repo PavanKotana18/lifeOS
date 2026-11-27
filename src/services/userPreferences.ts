@@ -58,12 +58,20 @@ export function normalizeHabitUnit(unit: string) {
   return singularUnits[trimmed.toLocaleLowerCase()] || trimmed;
 }
 export function formatHabitQuantity(quantity: number, unit?: string) {
-  if (!unit) return `${quantity} · unit unknown`;
-  const normalized = normalizeHabitUnit(unit);
-  const displayed = quantity === 1 ? normalized
+  const normalized = normalizeHabitUnit(unit || '');
+  if (!normalized) return `${quantity} (unit unknown)`;
+  const isSymbol = /^(l|ml|cl|dl|km|mi|m|cm|mm|kg|g|mg|oz|lb|km\/h|mph|s|min|h)$/i.test(normalized);
+  const displayed = quantity === 1 || isSymbol ? normalized
     : /(?:s|x|z|ch|sh)$/i.test(normalized) ? `${normalized}es`
       : /[^aeiou]y$/i.test(normalized) ? `${normalized.slice(0, -1)}ies` : `${normalized}s`;
   return `${quantity} ${displayed}`;
+}
+
+export function formatHabitProgress(quantity: number | undefined, recordedUnit: string | undefined, target: number, targetUnit?: string) {
+  const goal = formatHabitQuantity(target, targetUnit);
+  if (quantity === undefined) return targetUnit ? `0 / ${goal}` : `Target ${goal}`;
+  const recorded = formatHabitQuantity(quantity, recordedUnit);
+  return recordedUnit && recordedUnit === targetUnit ? `${quantity} / ${goal}` : `Recorded ${recorded} · Target ${goal}`;
 }
 
 export function formatCurrency(value: number, currency: CurrencyCode, locale: UserPreferences['locale'] = 'system') {

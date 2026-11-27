@@ -10,8 +10,8 @@ assert.ok(!/\b(?:text|bg|border)-(?:slate|indigo|emerald|amber|rose|sky|violet)-
 assert.match(today, /role="progressbar" aria-label=\{`\$\{goal\.title\} progress`\}/);
 assert.match(today, /aria-pressed=\{completed\}/);
 assert.match(today, /aria-label=\{`Mark \$\{t\.title\}/);
-assert.match(today, /data-today-card="habits"[\s\S]*onClick=\{\(\) => navigateTo\('habits'\)\}[^>]*>View habits/);
-assert.equal((today.match(/>View habits <ChevronRight/g) || []).length, 1);
+assert.match(today, /data-today-card="habits"[\s\S]*onClick=\{event => openFromToday\('habits', event\.currentTarget\)\}[^>]*>View habits/);
+assert.equal((today.match(/>View habits<\/button>/g) || []).length, 1);
 const focusStart = today.indexOf('className="today-focus');
 const focusEnd = today.indexOf('</section>', focusStart);
 assert.ok(focusStart >= 0 && focusEnd > focusStart && !today.slice(focusStart, focusEnd).includes("openCreateForm('habit')"),

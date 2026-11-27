@@ -305,6 +305,8 @@ body {
 .money-tools summary { cursor: pointer; list-style: none; }
 .money-tools summary::-moz-list-bullet { list-style-type: none; }
 .money-tools summary::-webkit-details-marker { display: none; }
+summary::after { content: '+'; margin-inline-start: .45em; color: var(--ink-secondary); }
+details[open] > summary::after { content: '\2212'; }
 .money-tools-hint { color: var(--ink-secondary); font-size: 0.75rem; }
 .money-tools[open] summary { margin-bottom: 0.6rem; }
 .transaction-history-item { min-width: 0; }
@@ -1267,3 +1269,12 @@ html.dark .text-amber-400 { color: var(--warning); }
   :is(.appearance-choice, .profile-navigation-row, .appearance-choice-label > svg, .motion-studio-select > svg) { transition: none; }
   :is(.appearance-choice, .profile-navigation-row):active { transform: none; }
 }
+
+/* App chrome and read-only values should not open the Android selection toolbar. */
+body { -webkit-user-select: none; user-select: none; }
+:where(input, textarea, select, [contenteditable]:not([contenteditable="false"]), [data-selectable-text], [data-sensitive-recovery-code]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+summary { list-style: none; }
+summary::-webkit-details-marker { display: none; }

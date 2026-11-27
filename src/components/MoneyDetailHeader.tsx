@@ -7,13 +7,13 @@ const titles: Record<MoneyDetail, string> = {
   savings: 'Savings', planning: 'Schedule', analytics: 'Insights', projection: 'Savings projection',
 };
 
-export default function MoneyDetailHeader({ section, month, onMonthChange, onBack }: {
-  section: MoneyDetail; month: string; onMonthChange: (month: string) => void; onBack: () => void;
+export default function MoneyDetailHeader({ section, month, onMonthChange, onBack, fromToday = false }: {
+  section: MoneyDetail; month: string; onMonthChange: (month: string) => void; onBack: () => void; fromToday?: boolean;
 }) {
   const title = titles[section];
   const hasPeriod = ['monthly', 'transactions', 'budgets', 'planning', 'analytics'].includes(section);
   return <div className="money-detail-heading"><FeatherHeader title={title} focusable
-    back={{ label: section === 'projection' ? 'Savings' : 'Money overview', onClick: onBack }}
+    back={{ label: fromToday ? 'Back to Today' : section === 'projection' ? 'Savings' : 'Money overview', onClick: onBack }}
     action={hasPeriod && <MoneyPeriod label={section === 'analytics' ? 'Trends through' : title} month={month} onChange={onMonthChange} />} />
   </div>;
 }

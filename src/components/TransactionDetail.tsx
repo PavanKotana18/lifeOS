@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Ellipsis, Copy, Pencil, Trash2, X } from 'lucide-react';
+import { CirclePlus, WalletCards, ReceiptText, Ellipsis, Copy, Pencil, Trash2, X } from 'lucide-react';
 
 type Props = {
   kind: 'income' | 'expense' | 'transfer';
@@ -19,7 +19,7 @@ export default function TransactionDetail({ kind, title, amount, currency, conte
   const detail = useRef<HTMLDialogElement>(null);
   const actions = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  const Icon = kind === 'transfer' ? ArrowLeftRight : kind === 'income' ? ArrowDownLeft : ArrowUpRight;
+  const Icon = kind === 'transfer' ? WalletCards : kind === 'income' ? CirclePlus : ReceiptText;
   useEffect(() => {
     const dialog = detail.current;
     if (dialog && !dialog.open) dialog.showModal();

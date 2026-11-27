@@ -1,5 +1,4 @@
 import { useId, useState, type ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
 
 export function AliveReveal({ id, open, children }: { id?: string; open: boolean; children: ReactNode }) {
   return <div id={id} className="alive-disclosure-grid" data-open={open}
@@ -13,7 +12,7 @@ export function AliveDisclosure({ label, children, defaultOpen = false }: { labe
   const [open, setOpen] = useState(defaultOpen);
   return <section className="alive-disclosure" data-open={open} onInvalidCapture={() => setOpen(true)}>
     <button type="button" aria-controls={id} aria-expanded={open} onClick={() => setOpen(value => !value)}>
-      <span>{label}</span><ChevronDown size={18} aria-hidden="true" />
+      <span>{label}</span><span aria-hidden="true">{open ? '−' : '+'}</span>
     </button>
     <AliveReveal id={id} open={open}>{children}</AliveReveal>
   </section>;

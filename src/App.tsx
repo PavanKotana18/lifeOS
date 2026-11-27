@@ -26,7 +26,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { Activity, Check, Flag, Target, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Tag, CalendarDays, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
+import { Activity, Check, Flag, Target, CirclePlus, Layers, ReceiptText, Tag, CalendarDays, SlidersHorizontal, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -46,7 +46,7 @@ import { exportBackupFile } from './services/backupExportService';
 import { confirmScreenshotResume, isSensitiveScreenshotState, setSensitiveScreenshotState } from './services/screenshotProtection';
 import { BiometricService } from './services/biometricService';
 import { createAuthCoordinator } from './services/authCoordinator';
-import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, formatHabitQuantity, normalizeHabitUnit, type UserPreferences } from './services/userPreferences';
+import { CURRENCY_CODES, DEFAULT_USER_PREFERENCES, buildTransactionUpdate, canonicalUnit, convertMeasurement, formatCurrency, formatDatePreference, formatTimePreference, mergeUserPreferences, resolveSystemDark, formatHabitQuantity, formatHabitProgress, normalizeHabitUnit, type UserPreferences } from './services/userPreferences';
 import { createMoneyRecordAmount, decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, getCurrencyMetadata, minorUnitsToDecimal } from './services/financeCore';
 import { buildFinanceAnalytics } from './services/financeAnalytics';
 import { getExactBudgetDisplayStatus } from './services/budgetDisplay';
@@ -197,6 +197,8 @@ export default function App() {
     });
   };
   const navigationHistory = useRef<MainTab[]>([]);
+  const todayOrigin = useRef<{ destination: MainTab; history: MainTab[]; trigger?: HTMLElement } | null>(null);
+  const todayReturnFocus = useRef<HTMLElement | null>(null);
   const [showExitConfirmation, setShowExitConfirmation] = useState(false);
   const [todayLayout, setTodayLayout] = useState<TodayLayout>(DEFAULT_TODAY_LAYOUT);
   const todayLayoutRef = useRef<TodayLayout>(DEFAULT_TODAY_LAYOUT);
@@ -552,6 +554,11 @@ export default function App() {
   backState.current = { createKind, modalContent, plannerDetailTaskId, profileSection, activeTab, financeSubtab, habitsSubtab, goalsSubtab, appReady, onboardingRequired, onboardingComplete, isLocked, showExitConfirmation, accountFormDraft, accountFormDirty, transferFormDraft, transferFormDirty, planningDrafts, todayCustomizationOpen, lifeDetail };
 
   const navigateTo = (tab: MainTab, direction?: 'left' | 'right', velocity = 0) => {
+    const current = activeTabRef.current;
+    if (current !== 'dashboard' && (direction || primaryDestinationForTab(current) !== primaryDestinationForTab(tab))) {
+      todayOrigin.current = null;
+      todayReturnFocus.current = null;
+    }
     if (activeTabRef.current === tab) { cancelProfileAdmission(); return; }
     transitionToTab(tab, direction, velocity, (previous, scrollBefore) => {
       scrollPositions.current[screenKeyForTab(previous)] = scrollBefore;
@@ -575,6 +582,7 @@ export default function App() {
   planPathHandler.current = path => {
     const destination = resolvePlanPath(path);
     if (!destination) return;
+    todayOrigin.current = null;
     setLifeDetail(null);
     navigateTo(destination);
   };
@@ -592,6 +600,7 @@ export default function App() {
         {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }] as const).map(({ tab, label }) =>
           <button key={tab} type="button" aria-current={selected === tab ? 'page' : undefined} onClick={() => {
             if (tab === selected) return;
+            todayOrigin.current = null;
             setLifeDetail(null);
             setHabitsSubtab('checklist');
             setGoalsSubtab('active');
@@ -650,7 +659,13 @@ export default function App() {
       if (window.getSelection()?.isCollapsed === false) cancelPrimaryGesture('text-selection');
     };
     document.addEventListener('selectionchange', cancelForSelection);
-    const cancelForContextMenu = () => cancelPrimaryGesture('context-menu');
+    const cancelForContextMenu = (event: MouseEvent) => {
+      cancelPrimaryGesture('context-menu');
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('.app-shell, .ui-sheet-backdrop') && !target.closest(
+        'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [data-selectable-text], [data-sensitive-recovery-code]'
+      )) event.preventDefault();
+    };
     window.addEventListener('contextmenu', cancelForContextMenu);
     window.addEventListener('resize', cancelForEnvironmentChange, { passive: true });
     window.visualViewport?.addEventListener('resize', cancelForEnvironmentChange, { passive: true });
@@ -914,6 +929,17 @@ export default function App() {
     if (action === 'dismiss-dialog') { requestCloseForm(); setModalContent(null); return; }
     if (action === 'dismiss-exit-dialog') { setShowExitConfirmation(false); return; }
     if (action === 'close-task-details') { closeTaskDetail(); return; }
+    const origin = todayOrigin.current;
+    if (origin?.destination === state.activeTab &&
+      (state.activeTab !== 'finance' || (state.financeSubtab === 'monthly' && financeSubtabHistory.current.length === 0))) {
+      todayOrigin.current = null;
+      todayReturnFocus.current = origin.trigger || null;
+      rememberActiveScroll();
+      if (state.activeTab === 'finance') setFinanceSubtab('overview');
+      navigationHistory.current = origin.history;
+      transitionToTab('dashboard');
+      return;
+    }
     if (action === 'close-child-view') {
       if (state.activeTab === 'finance') {
         rememberActiveScroll();
@@ -927,6 +953,7 @@ export default function App() {
       return;
     }
     const history = popTabHistory(navigationHistory.current, 'dashboard');
+    if (history.next === 'dashboard' || action === 'home') todayOrigin.current = null;
     navigationHistory.current = history.history;
     const previous = history.next;
     if (action === 'previous-tab' && previous) {
@@ -1227,13 +1254,45 @@ export default function App() {
     if (activeTab !== 'dashboard' || isLocked) setTodayCustomizationOpen(false);
   }, [activeTab, isLocked]);
 
+  const [showTodayReorderHint, setShowTodayReorderHint] = useState(() => {
+    try { return localStorage.getItem('busydoo-today-reordered') !== 'yes'; } catch { return true; }
+  });
+  const openFromToday = (destination: 'finance' | 'plan' | 'habits' | 'goals' | 'planner', trigger?: HTMLElement) => {
+    todayOrigin.current = { destination, history: navigationHistory.current, trigger };
+    if (destination === 'finance') {
+      financeSubtabHistory.current = [];
+      setFinanceSubtab('monthly');
+    }
+    if (destination === 'planner') {
+      setPlannerDetailTaskId(null);
+      taskDetailReturnTabRef.current = null;
+      taskDetailReturnFocusRef.current = null;
+    }
+    if (destination === 'habits' || destination === 'goals') {
+      setLifeDetail(null);
+      if (destination === 'habits') setHabitsSubtab('checklist');
+      else setGoalsSubtab('active');
+    }
+    navigateTo(destination);
+  };
+  useLayoutEffect(() => {
+    if (activeTab !== 'dashboard' || tabTransition || !todayReturnFocus.current) return;
+    const trigger = todayReturnFocus.current;
+    todayReturnFocus.current = null;
+    if (trigger.isConnected) trigger.focus({ preventScroll: true });
+  }, [activeTab, tabTransition]);
+
   const todayCards = useTodayCardDrag(todayLayout.order, activeTab === 'dashboard' && !isLocked && !activityResumeGuard,
-    interfaceMotion.reducedMotion, () => cancelPrimaryGesture('today-reorder'), order => persistTodayLayout({ ...todayLayoutRef.current, order }),
-    section => {
-      if (section === 'money') { navigateTo('finance'); navigateFinanceSubtab('monthly'); }
-      else if (section === 'habits' || section === 'goals') navigateTo(section);
-      else if (section === 'upcoming') { setPlannerFilter('upcoming'); navigateTo('planner'); }
-      else navigateTo('plan');
+    interfaceMotion.reducedMotion, () => cancelPrimaryGesture('today-reorder'), next => {
+      if (next.every((id, index) => id === todayLayoutRef.current.order[index])) return;
+      persistTodayLayout({ ...todayLayoutRef.current, order: next });
+      setShowTodayReorderHint(false);
+      try { localStorage.setItem('busydoo-today-reordered', 'yes'); } catch { /* Hint still closes for this session. */ }
+    }, (section, trigger) => {
+      if (section === 'money') openFromToday('finance', trigger);
+      else if (section === 'habits' || section === 'goals') openFromToday(section, trigger);
+      else if (section === 'upcoming') { setPlannerFilter('upcoming'); openFromToday('planner', trigger); }
+      else openFromToday('plan', trigger);
     });
   const todaySectionStyle = (id: TodaySectionId): React.CSSProperties => ({
     order: todayCards.order.indexOf(id) + 2,
@@ -1586,7 +1645,7 @@ export default function App() {
       let status = await NotificationService.checkPermission();
       if (status !== 'granted') {
         if (status !== 'prompt' && status !== 'prompt-with-rationale') {
-          return { granted: false, status, message: 'Notifications remain off. You can allow them later in Settings → Notifications.' };
+          return { granted: false, status, message: 'Notifications remain off. You can allow them later in Notifications in Profile.' };
         }
         // Android owns prior-denial policy. Only request while the native plugin
         // reports a promptable state; never persist an unsafe pre-encryption flag.
@@ -1594,7 +1653,7 @@ export default function App() {
         await NotificationService.requestPermission();
         status = await NotificationService.checkPermission();
         if (status !== 'granted') {
-          return { granted: false, status, message: 'Notifications remain off. You can allow them later in Settings → Notifications.' };
+          return { granted: false, status, message: 'Notifications remain off. You can allow them later in Notifications in Profile.' };
         }
       }
 
@@ -2868,6 +2927,7 @@ export default function App() {
   }
 
   const primarySection = primaryDestinationForTab(activeTab);
+  const todayBack = todayOrigin.current?.destination === activeTab;
   const sectionTitle = profileOpen ? PROFILE_TITLES[profileSection] : PRIMARY_NAVIGATION.find(item => item.tab === primarySection)?.label;
 
   return (
@@ -2875,7 +2935,8 @@ export default function App() {
     <div ref={gestureSurfaceElement} className="lifeos-page app-shell feather-expressive" data-reduced={interfaceMotion.reducedMotion} onPointerDownCapture={handleContentPointerDown} onClickCapture={handleContentClickCapture}>
       <span className="lifeos-safe-area-probe" aria-hidden="true" />
       <AppHeader profile={profileOpen} title={primarySection === 'dashboard' ? APP_NAME : sectionTitle || APP_NAME} brand={primarySection === 'dashboard'}
-        back={profileOpen && profileSection !== "home" ? backFromProfile : undefined} backLabel={profileSection === 'home' ? 'Back from profile' : 'Back to ' + PROFILE_TITLES[profileParent(profileSection)]}
+        back={profileOpen && profileSection !== 'home' ? backFromProfile : todayBack && activeTab !== 'finance' ? navigateBack : undefined}
+        backLabel={todayBack && activeTab !== 'finance' ? 'Back to Today' : profileSection === 'home' ? 'Back from profile' : 'Back to ' + PROFILE_TITLES[profileParent(profileSection)]}
         action={activeTab === 'finance' && financeSubtab === 'overview' && <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />} />
 
       {!isOnline && (
@@ -2901,20 +2962,21 @@ export default function App() {
         {/* VIEW 1: DASHBOARD */}
         <RetainedScreen active={activeTab === 'dashboard'} retainInactive id="screen-dashboard" {...transitionPropsFor('dashboard')} render={() => (
           <div className="today-sections command-centre" data-testid="today-dashboard" {...todayCards.handlers}>
-            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><p className="today-greeting font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</p></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" aria-label="Today layout" className="feather-icon-button"><SlidersHorizontal size={19} aria-hidden="true" /></button></div>
+            <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><p className="today-greeting font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</p>
+              {showTodayReorderHint && <p className="today-reorder-hint">Touch and hold a card to rearrange.</p>}</div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" aria-label="Today layout" className="feather-icon-button"><SlidersHorizontal size={19} aria-hidden="true" /></button></div>
 
             {todayCustomizationOpen && createPortal(<div className="ui-sheet-backdrop today-customization-layer" onMouseDown={dismissTodayCustomizationBackdrop}>
             <section id="today-customization" role="dialog" aria-modal="true" aria-labelledby="today-customization-title" aria-describedby="today-customization-description" className="today-customization ui-sheet-motion ui-bottom-sheet lifeos-panel">
               <div className="today-customization-heading"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p id="today-customization-description" className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order. Changes save as you make them.</p></div>
               <div className="today-customization-scroll"><ul className="today-customization-list">{todayLayout.order.map((id, index) => <li key={id}>
                 <label className="today-section-toggle"><input type="checkbox" checked={!todayLayout.hidden.includes(id)} disabled={id === 'focus'} onChange={event => persistTodayLayout(setTodaySectionVisible(todayLayoutRef.current, id, event.target.checked))} /><span>{TODAY_SECTION_LABELS[id]}</span></label>
-                <div className="today-order-actions"><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} up`} disabled={index === 0} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, -1))}>↑</button><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} down`} disabled={index === todayLayout.order.length - 1} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, 1))}>↓</button></div>
+                <div className="today-order-actions"><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} up`} disabled={index === 0} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, -1))}>Up</button><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} down`} disabled={index === todayLayout.order.length - 1} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, 1))}>Down</button></div>
               </li>)}</ul></div>
               <div className="ui-form-actions today-customization-actions"><button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="min-h-11 flex-1 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button><button type="button" onClick={closeTodayCustomization} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold">Done</button></div>
             </section></div>, document.body)}
 
             {/* Keep the first panel focused: one useful progress cue and fast ways to act. */}
-            <section className="today-focus lifeos-panel rounded-2xl border p-4" data-today-card="focus" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
+            <section className="today-focus lifeos-panel rounded-2xl border p-4" data-today-card="focus" tabIndex={-1} style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h3 id="today-overview-title" className="today-summary-title">Due today</h3>
@@ -2926,20 +2988,20 @@ export default function App() {
                 </div>
               </div>
               {todayOverview.tasksDue > 0 && <div className="today-focus-progress mt-3" role="progressbar" aria-label="Today’s tasks complete" aria-valuemin={0} aria-valuemax={todayOverview.tasksDue} aria-valuenow={todayOverview.tasksCompleted}><span style={{ width: `${Math.min(100, (todayOverview.tasksCompleted / todayOverview.tasksDue) * 100)}%` }} /></div>}
-              {tasks.some(task => getTaskStatus(task, clockNow) === 'Overdue') && <button type="button" className="today-attention-link" onClick={() => { setPlannerFilter('overdue'); navigateTo('planner'); }}>Review overdue tasks </button>}
+              {tasks.some(task => getTaskStatus(task, clockNow) === 'Overdue') && <button type="button" className="today-attention-link" onClick={event => { setPlannerFilter('overdue'); openFromToday('planner', event.currentTarget); }}>Review overdue tasks </button>}
             </section>
 
             {/* Active Goals Summary */}
-            <section className="today-section-goals lifeos-panel rounded-2xl border p-4" data-today-card="goals" style={todaySectionStyle('goals')}>
+            <section className="today-section-goals lifeos-panel rounded-2xl border p-4" data-today-card="goals" tabIndex={-1} style={todaySectionStyle('goals')}>
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-[10px] font-bold uppercase tracking-wider lifeos-accent-text">Goals</p><h3 className="text-sm font-semibold">{goals.filter(goal => goal.status === 'In Progress' && !goal.archived).length} active goals</h3></div>
-                <button onClick={() => navigateTo('goals')} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all</button>
+                <button onClick={event => openFromToday('goals', event.currentTarget)} className="rounded-lg px-2 py-1 text-xs font-semibold lifeos-accent-text" aria-label="Open Goals">View all</button>
               </div>
               {goals.filter(goal => goal.status === 'In Progress' && !goal.archived).length === 0 ? (
-                <div className="today-inline-empty"><p>No active goals yet.</p><button onClick={() => { navigateTo('goals'); openCreateForm('goal'); }} className="min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
+                <div className="today-inline-empty"><p>No active goals yet.</p><button onClick={event => { openFromToday('goals', event.currentTarget); openCreateForm('goal'); }} className="min-h-11 font-semibold lifeos-accent-text">Create your first goal</button></div>
               ) : <div className="space-y-3">{goals.filter(goal => goal.status === 'In Progress' && !goal.archived).slice(0, 1).map(goal => {
                 const progress = goalProgress(goal);
-                return <button key={goal.id} onClick={() => navigateTo('goals')} className="lifeos-raised block min-h-11 w-full rounded-xl p-3 text-left">
+                return <button key={goal.id} onClick={event => openFromToday('goals', event.currentTarget)} className="lifeos-raised block min-h-11 w-full rounded-xl p-3 text-left">
                   <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold">{goal.title}</span><span className="shrink-0 text-xs font-bold lifeos-accent-text">{progress}%</span></div>
                   <div className="lifeos-progress-track my-2 h-1.5 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${progress}%` }} /></div>
                   <div className="flex justify-between gap-2 text-[10px] text-secondary"><span>{goalProgressLabel(goal)}</span><span>{formatDate(goal.targetDate)} · {getDaysRemainingText(goal.targetDate)}</span></div>
@@ -2948,10 +3010,10 @@ export default function App() {
             </section>
 
             {/* Financial Overview Card */}
-            <div className="today-money-summary today-section-money lifeos-panel rounded-2xl border p-4" data-today-card="money" style={todaySectionStyle('money')}>
+            <div className="today-money-summary today-section-money lifeos-panel rounded-2xl border p-4" data-today-card="money" tabIndex={-1} style={todaySectionStyle('money')}>
               <div className="flex justify-between items-center mb-3">
                 <h3 className="type-section-title">Money this month</h3>
-                <button onClick={() => { navigateTo('finance'); navigateFinanceSubtab('monthly'); }} className="min-h-11 text-xs lifeos-accent-text font-semibold">See breakdown</button>
+                <button onClick={event => openFromToday('finance', event.currentTarget)} className="min-h-11 text-xs lifeos-accent-text font-semibold">See breakdown</button>
               </div>
               <div className="grid grid-cols-2 gap-2.5 mb-3">
                 <div className="p-3 rounded-xl lifeos-raised">
@@ -2969,7 +3031,7 @@ export default function App() {
               </div>
             </div>
 
-            <section className="today-habit-summary" data-today-card="habits" style={todaySectionStyle("habits")} aria-labelledby="today-routines-title">
+            <section className="today-habit-summary" data-today-card="habits" tabIndex={-1} style={todaySectionStyle("habits")} aria-labelledby="today-routines-title">
               <h3 id="today-routines-title" className="today-summary-title">Daily routines</h3>
               {todayOverview.routinesDue > 0 && <>
                 <p className="today-summary-copy"><strong className="tabular-nums">{todayOverview.routinesCompleted} of {todayOverview.routinesDue}</strong> complete today</p>
@@ -2983,11 +3045,8 @@ export default function App() {
                   const completed = getHabitStreaks(habit.id, todayKey).completedToday;
                   const quantity = habit.trackingMode === "quantity";
                   const log = quantity ? habitLogs.find(row => row.habitId === habit.id && row.date === todayKey && row.quantity !== undefined) : undefined;
-                  const target = formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit);
                   const increment = formatHabitQuantity(1, habit.quantityUnit);
-                  const status = quantity ? log && log.quantityUnit !== habit.quantityUnit
-                    ? formatHabitQuantity(log.quantity || 0, log.quantityUnit) + ' · target ' + target
-                    : formatHabitQuantity(log?.quantity || 0) + ' / ' + target
+                  const status = quantity ? formatHabitProgress(log?.quantity, log?.quantityUnit, habit.targetPerDay || 0, habit.quantityUnit)
                     : completed ? 'Completed today' : 'Not done yet';
                   return <li key={habit.id} className="today-routine-row">
                     {!quantity && <button type="button" className="today-routine-toggle" aria-pressed={completed}
@@ -3001,18 +3060,18 @@ export default function App() {
                   </li>;
                 })}</ul>}
               {habits.length > 0 && !habits.some(habit => routineDueToday(habit)) && <p className="today-routines-empty">No routines scheduled for today.</p>}
-              <button type="button" className="today-summary-action" onClick={() => navigateTo('habits')}>View habits <ChevronRight size={16} aria-hidden="true" /></button>
+              <button type="button" className="today-summary-action" onClick={event => openFromToday('habits', event.currentTarget)}>View habits</button>
             </section>
-            <section className="today-upcoming-section lifeos-panel rounded-2xl border p-4" data-today-card="upcoming" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
-              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
-              {dashboardUpcomingTasks.length === 0 ? <p className="today-inline-empty">No upcoming tasks. Add a date to a task to plan ahead.</p> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={() => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); navigateTo('planner'); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
+            <section className="today-upcoming-section lifeos-panel rounded-2xl border p-4" data-today-card="upcoming" tabIndex={-1} style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
+              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={event => { setPlannerFilter('upcoming'); openFromToday('planner', event.currentTarget); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
+              {dashboardUpcomingTasks.length === 0 ? <p className="today-inline-empty">No upcoming tasks. Add a date to a task to plan ahead.</p> : <ul className="space-y-2">{dashboardUpcomingTasks.map(task => <li key={task.id}><button type="button" onClick={event => { setPlannerSelectedDate(task.dueDate); setPlannerFilter('all'); openFromToday('planner', event.currentTarget); }} className="lifeos-raised flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left"><span className="min-w-0"><strong className="block truncate text-sm font-medium">{task.title}</strong><span className="block text-xs text-secondary">{formatDate(task.dueDate)}{task.dueTime ? ` · ${formatClockTime(task.dueTime)}` : ''}</span></span><span className="shrink-0 text-xs font-medium text-secondary">{task.priority}</span></button></li>)}</ul>}
             </section>
 
             {/* Pending Tasks */}
-            <section className="today-agenda lifeos-panel rounded-2xl border p-4" data-today-card="agenda" style={todaySectionStyle('agenda')} aria-labelledby="today-agenda-title">
+            <section className="today-agenda lifeos-panel rounded-2xl border p-4" data-today-card="agenda" tabIndex={-1} style={todaySectionStyle('agenda')} aria-labelledby="today-agenda-title">
               <div className="today-summary-header">
                 <h3 id="today-agenda-title" className="today-summary-title">Your tasks</h3>
-                <button type="button" onClick={() => navigateTo('plan')} className="today-summary-action">Open Plan <ChevronRight size={16} aria-hidden="true" /></button>
+                <button type="button" onClick={event => openFromToday('plan', event.currentTarget)} className="today-summary-action">Open Plan</button>
               </div>
               {dashboardTasks.length === 0 ? (
                 <p className="today-summary-copy">No tasks to show.</p>
@@ -3036,7 +3095,7 @@ export default function App() {
                           />
                           <svg className="alive-task-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9" pathLength="1" /></svg>
                         </label>
-                        <button type="button" onClick={event => { taskDetailReturnTabRef.current = 'dashboard'; taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
+                        <button type="button" onClick={event => { todayOrigin.current = null; taskDetailReturnTabRef.current = 'dashboard'; taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
                           <span className={`today-task-title${t.completed ? ' is-complete' : ''}`}>{t.title}</span>
                           <span className="today-task-meta">
                             {t.dueDate !== todayKey && <span>{formatDate(t.dueDate)}</span>}
@@ -3080,7 +3139,8 @@ export default function App() {
 
         <RetainedScreen active={activeTab === 'finance'} retainInactive id="screen-finance" prepare={primaryPrepared} {...transitionPropsFor('finance')} render={() => (
           <div ref={moneyPageRef} className="money-page space-y-5" data-detail={financeSubtab}>
-            {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} onBack={() => { if (financeSubtab === 'projection') { navigateBack(); return; } rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }} />}
+            {financeSubtab !== 'overview' && <MoneyDetailHeader section={financeSubtab} month={financeMonth} onMonthChange={setFinanceMonth} fromToday={todayBack && financeSubtab === 'monthly'}
+                onBack={() => { if (todayBack || financeSubtab === 'projection') { navigateBack(); return; } rememberActiveScroll(); financeSubtabHistory.current = []; setFinanceSubtab('overview'); }} />}
 
             {/* Money home: recorded cash flow, never an inferred account balance. */}
             {(financeSubtab === 'overview' || financeSubtab === 'monthly') && (
@@ -3188,7 +3248,7 @@ export default function App() {
                         const to = financialAccounts.find(account => account.id === row.toAccountId)?.name || 'Archived account';
                         return <article className="transaction-history-item" key={row.id}>
                           <button type="button" onClick={() => setTransferDetailId(row.id)} className="transaction-entry">
-                            <span className="transaction-icon" aria-hidden="true"><ArrowLeftRight size={18} /></span>
+                            <span className="transaction-icon" aria-hidden="true"><Layers size={18} /></span>
                             <span className="transaction-copy"><strong>{row.reversalOfId ? 'Transfer reversal' : 'Transfer'}</strong><small>{from} to {to}</small></span>
                             <span className="transaction-value"><strong>{formatMinorUnits(BigInt(row.fromAmountMinor), row.fromCurrencyCode, locale)}</strong><small>{row.fromCurrencyCode === row.toCurrencyCode ? row.fromCurrencyCode : 'To ' + formatMinorUnits(BigInt(row.toAmountMinor), row.toCurrencyCode, locale)}</small></span>
                           </button>
@@ -3197,7 +3257,7 @@ export default function App() {
                       {filteredTransactions.filter(row => !date || row.date === date).map(t => (
                         <article key={t.id} className="transaction-history-item">
                           <button type="button" onClick={() => setTransactionDetailId(t.id)} aria-label={'View transaction ' + (t.description || t.category)} className="transaction-entry">
-                            <span className={'transaction-icon is-' + t.type} aria-hidden="true">{t.type === 'income' ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}</span>
+                            <span className={'transaction-icon is-' + t.type} aria-hidden="true">{t.type === 'income' ? <CirclePlus size={18} /> : <ReceiptText size={18} />}</span>
                             <span className="transaction-copy"><strong>{t.description || t.category}</strong><small>{[!date && formatDate(t.date), t.category !== t.description && t.category, t.accountId && (financialAccounts.find(account => account.id === t.accountId)?.name || 'Archived account'), t.occurredAt && formatTime(new Date(t.occurredAt))].filter(Boolean).join(' ? ')}</small></span>
                             <span className={'transaction-value is-' + t.type}><strong>{t.type === 'income' ? '+' : '?'}{t.amountMinor !== undefined && t.currencyCode ? formatMinorUnits(BigInt(t.amountMinor), t.currencyCode, userPrefs.locale === 'system' ? undefined : userPrefs.locale) : t.currencyCode ? formatMoney(t.amount, t.currencyCode) : t.amount}</strong><small>{t.type === 'income' ? 'Income' : 'Expense'} &middot; {t.currencyCode || 'Currency unknown'}</small></span>
                           </button>
@@ -3299,7 +3359,7 @@ export default function App() {
 
         {/* VIEW 3: HABITS */}
         <RetainedScreen active={activeTab === 'habits'} id="screen-habits" {...transitionPropsFor('habits')} render={() => (
-          <div className="feather-plan-page">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
+          <div className="feather-plan-page">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}>Back to list</button>}
             {!lifeDetail && <><PlanSectionHeader id="plan-habits-title" title="Habits" topic="Habit consistency" action="Add habit" onAdd={() => openCreateForm('habit')} />
               {habits.length > 0 && <p className="feather-plan-summary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>}</>}
             {lifeDetail?.kind === 'habit' && <label className="life-history block text-sm text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => { setHabitsSelectedDate(e.target.value); setHistoricalQuantityUnit(''); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>}
@@ -3310,10 +3370,10 @@ export default function App() {
               const weekly = calculateWeeklyHabitRate(habitLogs, habit.id, clockNow, habit.frequency, habit);
               const quantityLog = habitLogs.find(log => log.habitId === habit.id && log.date === habitsSelectedDate && log.quantity !== undefined);
               const quantity = quantityLog?.quantity ?? 0;
-              return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="habit-detail-title">
+              return <section className="lifeos-panel feather-plan-detail rounded-2xl border" aria-labelledby="habit-detail-title">
                 <div><h3 id="habit-detail-title" className="type-page-title safe-wrap">{habit.name}</h3>{habit.description && <p className="mt-1 text-sm text-secondary">{habit.description}</p>}</div>
                 <div className="grid grid-cols-2 gap-3"><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">Current streak</p><p className="mt-1 text-xl font-semibold">{stats.currentStreak} days</p></div><div className="lifeos-tint rounded-xl p-3"><p className="text-xs text-secondary">This week</p><p className="mt-1 text-xl font-semibold">{weekly.completed}/{weekly.scheduled} · {weekly.rate}%</p></div></div>
-                {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{quantityLog?.quantityUnit ? `${formatHabitQuantity(quantity, quantityLog.quantityUnit)}${quantityLog.quantityUnit === habit.quantityUnit ? ' / ' : ' - target '}${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : quantityLog ? `${formatHabitQuantity(quantity)} · target ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}` : `0 / ${formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit)}`}</p>{quantityLog && !quantityLog.quantityUnit && <div className="mt-3 rounded-xl border border-[var(--stroke)] p-3"><p className="text-xs text-secondary">This older entry has no saved unit. Choose the unit it used before displaying it with a unit.</p><div className="mt-2 flex gap-2"><select aria-label="Historical quantity unit" value={historicalQuantityUnit} onChange={event => setHistoricalQuantityUnit(event.target.value)} className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm"><option value="">Choose unit…</option>{[...new Set([habit.quantityUnit, 'glass', 'litre', 'minute', 'page', 'item'].filter(Boolean) as string[])].map(unit => <option key={unit} value={unit}>{unit}</option>)}</select><button type="button" disabled={!historicalQuantityUnit} onClick={async () => { try { await StorageService.habits.setQuantityLogUnit(quantityLog.id, historicalQuantityUnit); setHistoricalQuantityUnit(''); await reloadAllData(); showToast('Historical unit saved', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Could not update this entry.', 'danger'); } }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Save unit</button></div></div>}<div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
+                {habit.trackingMode === 'quantity' ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs text-secondary">{formatDate(habitsSelectedDate)} progress</p><p className="mt-1 text-lg font-semibold tabular-nums">{formatHabitProgress(quantityLog?.quantity, quantityLog?.quantityUnit, habit.targetPerDay || 0, habit.quantityUnit)}</p>{quantityLog && !quantityLog.quantityUnit && <div className="mt-3 rounded-xl border border-[var(--stroke)] p-3"><p className="text-xs text-secondary">This older entry has no saved unit. Choose the unit it used before displaying it with a unit.</p><div className="feather-habit-row mt-2"><select aria-label="Historical quantity unit" value={historicalQuantityUnit} onChange={event => setHistoricalQuantityUnit(event.target.value)} className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm"><option value="">Choose unit…</option>{[...new Set([habit.quantityUnit, 'glass', 'litre', 'minute', 'page', 'item'].filter(Boolean) as string[])].map(unit => <option key={unit} value={unit}>{unit}</option>)}</select><button type="button" disabled={!historicalQuantityUnit} onClick={async () => { try { await StorageService.habits.setQuantityLogUnit(quantityLog.id, historicalQuantityUnit); setHistoricalQuantityUnit(''); await reloadAllData(); showToast('Historical unit saved', 'success'); } catch (error) { showToast(error instanceof Error ? error.message : 'Could not update this entry.', 'danger'); } }} className="lifeos-raised min-h-11 rounded-xl px-3 text-xs font-semibold disabled:opacity-50">Save unit</button></div></div>}<div className="mt-2 flex gap-2"><button type="button" disabled={quantity <= 0} aria-label={`Decrease ${habit.name} quantity`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, -1)} className="min-h-11 min-w-14 rounded-xl border border-[var(--stroke)] px-3 text-lg disabled:opacity-50">−</button><button type="button" aria-label={`Add one ${habit.quantityUnit} to ${habit.name}`} onClick={() => void handleHabitQuantity(habit, habitsSelectedDate, 1)} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-3 text-sm font-semibold">Add 1 {habit.quantityUnit}</button></div></div> : <button type="button" aria-pressed={stats.completedToday} aria-label={`Mark ${habit.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(habit.id, habit.name, habitsSelectedDate, stats.completedToday)} className="lifeos-accent-button min-h-12 w-full rounded-xl px-4 text-sm font-semibold">{stats.completedToday ? `Completed on ${formatDate(habitsSelectedDate)} · Undo` : `Mark complete for ${formatDate(habitsSelectedDate)}`}</button>}
                 {!isHabitEligible(habit, habitsSelectedDate) && <p role="status" className="text-sm text-secondary">No session scheduled for this date.</p>}
                 {habit.schedule?.filter(revision => revision.from > todayKey).map(revision =>
                   <p key={revision.from} className="text-sm text-secondary">Schedule changes on {formatDate(revision.from)}</p>)}
@@ -3347,20 +3407,18 @@ export default function App() {
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
                       <div key={h.id} className="lifeos-panel feather-plan-card">
-                      <div className="flex items-center gap-3">
+                      <div className="feather-habit-row">
                         <button type="button" className="min-h-11 min-w-0 flex-1 text-left" onClick={() => { setHistoricalQuantityUnit(''); setHabitsSelectedDate(todayKey); showLifeDetail({ kind: 'habit', id: h.id }); }}>
                           <span className="feather-plan-record-title safe-wrap">{h.name}</span>
-                                                    <span className="feather-plan-record-meta">{h.trackingMode === 'quantity' ?
-                            (logged?.quantityUnit && logged.quantityUnit !== h.quantityUnit ? formatHabitQuantity(logged.quantity || 0, logged.quantityUnit) :
-                              logged && !logged.quantityUnit ? formatHabitQuantity(logged.quantity || 0) :
-                              formatHabitQuantity(logged?.quantity || 0, h.quantityUnit) + ' / ' + formatHabitQuantity(h.targetPerDay || 0, h.quantityUnit))
+                          <span className="feather-plan-record-meta">{h.trackingMode === 'quantity' ?
+                            formatHabitProgress(logged?.quantity, logged?.quantityUnit, h.targetPerDay || 0, h.quantityUnit)
                             : stats.completedToday ? 'Checked in today' : 'Ready to check in'}</span>
                           {stats.currentStreak > 0 && <span className="flex items-center gap-1 text-xs text-secondary">{stats.currentStreak} day streak{stats.currentStreak >= 7 && <LifeDoodle key={Math.floor(stats.currentStreak / 7)} kind="habit-streak" compact />}</span>}
                         </button>
                         {h.trackingMode === 'quantity' ? <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-label={`Add one ${h.quantityUnit} to ${h.name}`} onClick={() => void handleHabitQuantity(h, todayStr, 1)}>Record {formatHabitQuantity(1, h.quantityUnit)}</button>
                           : <button type="button" className="lifeos-raised min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={stats.completedToday} aria-label={`Mark ${h.name} ${stats.completedToday ? 'incomplete' : 'complete'}`} onClick={() => void handleHabitCompletion(h.id, h.name, todayStr, stats.completedToday)}>{stats.completedToday ? 'Done' : 'Check in'}</button>}
                       </div>
-                      <div className="mt-3 flex items-center justify-between gap-2 text-[10px] text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" data-checked={done} className="alive-habit-day h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-secondary"><span>Weekly completion</span><span className="tabular-nums">{weekly.completed}/{weekly.scheduled} days · {weekly.rate}%</span></div><div role="img" aria-label={`${weekly.completed} of ${weekly.scheduled} scheduled habit days complete this week`} className="mt-1 flex gap-1">{historyDays.map(day => { const dayKey = formatLocalDate(day); const done = habitLogs.some(log => log.habitId === h.id && log.date === dayKey && log.completed); return <span key={dayKey} title={`${dayKey}: ${done ? 'complete' : 'missed'}`} aria-hidden="true" data-checked={done} className="alive-habit-day h-2 flex-1 rounded-full" style={{ backgroundColor: done ? 'var(--success)' : 'var(--surface-raised)' }} />; })}</div>
                     </div>
                   );
                 })
@@ -3371,12 +3429,12 @@ export default function App() {
 
         {/* VIEW 4: GOALS */}
         <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
-          <div className="feather-plan-page">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
+          <div className="feather-plan-page">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}>Back to list</button>}
             <PlanSectionHeader id="plan-goals-title" title="Goals" topic="Goal progress" action="Add goal" onAdd={() => openCreateForm('goal')} />
             {!lifeDetail && goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
             <div className="feather-plan-segments" role="group" aria-label="Goal status">{(['active', 'paused', 'completed', 'archived'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className="capitalize">{tab}</button>)}</div>
             <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input feather-plan-filter"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
-            {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-secondary">{goal.category} &middot; {goal.status}</p><h3 id="goal-detail-title" className="type-page-title safe-wrap">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div><p className="text-sm font-medium">{goalProgressLabel(goal)}</p><div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{goal.targetDate ? formatDate(goal.targetDate) : 'Open-ended'}</p><p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p></div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button>{goal.mode !== 'milestone' && <button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button>}<button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Add milestone</button>              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, goal.status === 'Paused' ? 'In Progress' : 'Paused')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Paused' ? 'Resume goal' : 'Pause goal'}</button>}
+            {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel feather-plan-detail rounded-2xl border" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-secondary">{goal.category} &middot; {goal.status}</p><h3 id="goal-detail-title" className="type-page-title safe-wrap">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div><p className="text-sm font-medium">{goalProgressLabel(goal)}</p><div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{goal.targetDate ? formatDate(goal.targetDate) : 'Open-ended'}</p><p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p></div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button>{goal.mode !== 'milestone' && <button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button>}<button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Add milestone</button>              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, goal.status === 'Paused' ? 'In Progress' : 'Paused')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Paused' ? 'Resume goal' : 'Pause goal'}</button>}
               {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, 'Completed')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">Complete goal</button>}
               <button type="button" className="lifeos-raised min-h-11 rounded-xl px-4 text-sm" onClick={async () => {
                 try {
@@ -3425,7 +3483,7 @@ export default function App() {
                 await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones, effectiveNotificationPreferences(notificationPreferences, notificationsEnabled));
                 showToast('Task removed', 'info');
               } catch { showToast('Could not finish removing the task. Refresh your plan before retrying.', 'danger'); }
-            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. BusyDoo will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Settings → Notifications.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}</AnimatePresence>
+            }} onToggle={async () => { await StorageService.tasks.toggleCompleted(plannerDetailTask.id, !plannerDetailTask.completed); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); }} onSubtasks={async subtasks => { await StorageService.tasks.update(plannerDetailTask.id, { subtasks }); await reloadAllData(); }} reminderContent={developerToolsEnabled && <details className="task-reminder-details"><summary>Reminder help</summary><p className="text-xs text-secondary">Android may delay reminders when the device is idle. BusyDoo will not change your task when you check its status.</p>{plannerDetailTask.reminderAt ? <button type="button" onClick={() => void diagnosePlannerTaskReminder(plannerDetailTask)} className="mt-2 min-h-11 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Check reminder status</button> : <p className="mt-2 text-xs text-secondary">No scheduled reminder is set. Automatic overdue alerts are separate and can be changed in Notifications in Profile.</p>}{taskReminderDiagnostics?.taskReference === plannerDetailTask.id && <ReminderStatusSummary report={taskReminderDiagnostics} reminderAt={plannerDetailTask.reminderAt} />}</details>} />}</AnimatePresence>
           <div className="space-y-4">
 
             <div className="flex items-end justify-between gap-3"><div><p className="type-eyebrow">PLANNER</p><h2 ref={plannerHeadingRef} tabIndex={-1} className="type-page-title">Tasks by date</h2></div><button onClick={() => openCreateForm('task', undefined, plannerFilter === 'unscheduled' ? undefined : plannerSelectedDate)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition active:scale-[.98]">Add task</button></div>
@@ -3436,7 +3494,7 @@ export default function App() {
               <summary><span>Calendar</span><span>{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span></summary>
             <section className="lifeos-panel rounded-2xl border p-3.5 shadow-sm" aria-label="Monthly task calendar" data-no-tab-swipe>
               <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1"><button aria-label="Previous month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronLeft size={19} className="mx-auto" /></button><h3 className="min-w-32 text-center text-sm font-semibold">{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3><button aria-label="Next month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95"><ChevronRight size={19} className="mx-auto" /></button></div>
+                <div className="refinement-period"><button aria-label="Previous month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() - 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95">Previous</button><h3 className="min-w-0 text-center text-sm font-semibold">{plannerDisplayedMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</h3><button aria-label="Next month" onClick={() => setPlannerDisplayedMonth(month => new Date(month.getFullYear(), month.getMonth() + 1, 1))} className="min-h-11 min-w-11 rounded-lg text-secondary transition hover:bg-[var(--surface-raised)] active:scale-95">Next</button></div>
                 <button onClick={() => { setPlannerSelectedDate(todayKey); setPlannerDisplayedMonth(new Date(clockNow.getFullYear(), clockNow.getMonth(), 1)); setPlannerFilter('all'); }} className="min-h-11 rounded-lg px-3 text-xs font-semibold lifeos-accent-text transition active:scale-95">Today</button>
               </div>
               <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-medium text-secondary">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <span key={day} className="py-1">{day}</span>)}</div>
@@ -3813,7 +3871,7 @@ export default function App() {
             {createKind === 'transaction' && <>
               <label className="feather-composer-lead">Amount · {createDraft.currencyCode || userPrefs.currency}<input required type="number" min={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} step={10 ** -getCurrencyMetadata(createDraft.currencyCode || userPrefs.currency).fractionDigits} inputMode="decimal" value={createDraft.amount} onChange={e => setCreateDraft({ ...createDraft, amount: e.target.value })} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-3 text-sm" /></label>
               <div className="task-quick-actions" role="group" aria-label="Transaction options">
-              <PreferenceChoice variant="quick" icon={<ArrowLeftRight size={18} aria-hidden="true" />} label="Type" value={createDraft.type}
+              <PreferenceChoice variant="quick" icon={<Layers size={18} aria-hidden="true" />} label="Type" value={createDraft.type}
                 options={[["expense", "Expense"], ["income", "Income"]]} onSelect={e => {
                 const type = e as 'income' | 'expense';
                 const category = categories.find(item => item.type === type)?.name || '';
@@ -3978,6 +4036,8 @@ export default function App() {
             data-tab={tab}
             id={tab === "settings" ? "profile-opener" : undefined}
             onClick={() => {
+              todayOrigin.current = null;
+              todayReturnFocus.current = null;
               if (isSelected) {
                 navigationMotion.cancelPending();
                 if (activeTab !== tab) { navigateTo(tab); return; }

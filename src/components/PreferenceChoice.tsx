@@ -1,6 +1,6 @@
 import { cancelSheet, closeSheet, showSheet } from './sheetMotion';
 import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check } from 'lucide-react';
 
 export type ChoiceOption = readonly [value: string, label: string, disabled?: boolean];
 export const ChoiceCommitContext = createContext<(() => void) | undefined>(undefined);
@@ -50,7 +50,6 @@ export function PreferenceChoice({ label, value, options, onSelect, searchable =
       {icon}{icon ? <span><strong>{label}</strong><small id={id + '-value'}>{disabled && disabledHint ? disabledHint : selected}</small></span> : <>
         {variant === 'row' && <span>{label}</span>}
         <span id={id + '-value'} className="choice-current">{disabled && disabledHint ? disabledHint : selected}</span>
-        {variant === 'field' && <ChevronDown size={16} aria-hidden="true" />}
       </>}
     </button>
     {required && !disabled && <input className="choice-validation" data-choice-validation required tabIndex={-1}

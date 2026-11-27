@@ -1,5 +1,5 @@
 import { FeatherHeader } from './FeatherHeader';
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, CalendarDays, ChartNoAxesCombined, Landmark, PiggyBank, Receipt, WalletCards } from 'lucide-react';
+import { CirclePlus, ReceiptText, CalendarDays, ChartNoAxesCombined, Landmark, PiggyBank, Receipt, WalletCards } from 'lucide-react';
 import type { Transaction } from '../types';
 import { formatMinorUnits } from '../services/financeCore';
 import MoneyPeriod from './MoneyPeriod';
@@ -55,7 +55,7 @@ export default function MoneyHome({ month, monthly = false, showHeader = true, o
     {!monthly && showHeader && <FeatherHeader title="Money" heading="h1" action={<MoneyPeriod label="Money" month={month} onChange={onMonthChange} />} />}
 
     <section className="money-cashflow" aria-labelledby="money-cashflow-title">
-      <div className="money-cashflow-top justify-start"><h3 id="money-cashflow-title" className="type-section-title">Net cash flow</h3><InfoTip label="Net cash flow">Income received minus spending recorded in this period. Planned bills, transfers and savings contributions are separate.</InfoTip><InfoTip label="Personal finance" /></div>
+      <div className="money-cashflow-top justify-start"><h3 id="money-cashflow-title" className="type-section-title">Net cash flow</h3><InfoTip label="Net cash flow">Income received minus spending recorded in this period. Planned bills, transfers and savings contributions are separate.</InfoTip></div>
       <p className="type-display-amount" data-testid="money-net-cashflow">{cashNet}</p>
       <div className="money-flow-split" role="group" aria-label={`Recorded cash flow: income ${cashIncome}; expenses ${cashExpenses}`}>
         <div><span>Income</span><strong>{cashIncome}</strong></div>
@@ -64,6 +64,8 @@ export default function MoneyHome({ month, monthly = false, showHeader = true, o
       {excludedCurrencyCount > 0 && <p className="money-empty-note" role="status">{excludedCurrencyCount} financial item{excludedCurrencyCount === 1 ? '' : 's'} with another currency or no saved currency are excluded from these totals.</p>}
       {!monthly && onMonthly && <button type="button" onClick={onMonthly} className="money-text-action">View monthly summary</button>}
     </section>
+
+    <div className="money-guidance"><InfoTip label="Personal finance" triggerText="Financial information" /></div>
 
     {!monthly && <nav className="money-destinations" aria-label="Money destinations">{moneyDestinations.map(item => {
       const Icon = item.icon;
@@ -74,8 +76,8 @@ export default function MoneyHome({ month, monthly = false, showHeader = true, o
     {monthSavings && <section className="money-context"><h3 className="type-section-title">Savings contributions</h3><p className="mt-2 text-lg font-semibold tabular-nums">{monthSavings}</p></section>}
     {expenseChange != null && <section className="money-context"><h3 className="type-section-title">Spending trend</h3><p className="mt-2 text-sm">{expenseChange === 0 ? 'Unchanged from the previous month' : Math.abs(expenseChange).toFixed(1) + '% ' + (expenseChange > 0 ? 'higher' : 'lower') + ' than the previous month'}</p></section>}
     <section className="money-context" aria-label="Budget progress">
-      <div className="money-context-heading"><div><h3 className="type-section-title">Budget progress</h3></div><div className="flex items-center gap-2"><InfoTip label="Budget remaining">Remaining is the plan limit minus posted spending in that category for this month. A negative amount means spending is above the limit.</InfoTip><button type="button" onClick={onBudgets} className="money-text-action">Budgets <ArrowRight size={15} aria-hidden="true" /></button></div></div>
-      {budgetRows.length ? <ul className="money-budget-list">{budgetRows.slice(0, 2).map((row, index) => <li key={`${row.category}-${index}`}><div><strong>{row.category === 'Overall' ? 'Overall plan' : `${row.category} plan`}</strong><span>{exact(row.spentMinor, row.spent)} recorded of {exact(row.allocatedMinor, row.allocated)}</span></div><span className={row.remaining < 0 ? 'money-budget-over' : 'money-budget-remaining'}>{row.remaining < 0 ? `${exact(row.remainingMinor?.replace(/^-/, ''), Math.abs(row.remaining))} over` : `${exact(row.remainingMinor, row.remaining)} left`}</span></li>)}</ul> : <button type="button" className="money-context-empty" onClick={onBudgets}>No budget added for this month <span>Create a plan <ArrowRight size={14} aria-hidden="true" /></span></button>}
+      <div className="money-context-heading"><div><h3 className="type-section-title">Budget progress</h3></div><div className="flex items-center gap-2"><InfoTip label="Budget remaining">Remaining is the plan limit minus posted spending in that category for this month. A negative amount means spending is above the limit.</InfoTip><button type="button" onClick={onBudgets} className="money-text-action">Budgets</button></div></div>
+      {budgetRows.length ? <ul className="money-budget-list">{budgetRows.slice(0, 2).map((row, index) => <li key={`${row.category}-${index}`}><div><strong>{row.category === 'Overall' ? 'Overall plan' : `${row.category} plan`}</strong><span>{exact(row.spentMinor, row.spent)} recorded of {exact(row.allocatedMinor, row.allocated)}</span></div><span className={row.remaining < 0 ? 'money-budget-over' : 'money-budget-remaining'}>{row.remaining < 0 ? `${exact(row.remainingMinor?.replace(/^-/, ''), Math.abs(row.remaining))} over` : `${exact(row.remainingMinor, row.remaining)} left`}</span></li>)}</ul> : <button type="button" className="money-context-empty" onClick={onBudgets}>No budget added for this month <span>Create a plan</span></button>}
     </section>
 
 
@@ -91,7 +93,7 @@ export default function MoneyHome({ month, monthly = false, showHeader = true, o
         const details = [formatDate(transaction.date), transaction.occurredAt ? formatTime(new Date(transaction.occurredAt)) : '', transaction.category && transaction.category !== title ? transaction.category : ''].filter(Boolean).join(' · ');
         return <li key={transaction.id}>
           <button type="button" aria-label={`View ${title}, ${transaction.type === 'income' ? 'income' : 'expense'} ${amount}${details ? `, ${details}` : ''}`} onClick={() => onEditTransaction(transaction)} className="money-transaction-row ui-interactive-row">
-            <span className={`money-transaction-sign ${transaction.type === 'income' ? 'is-income' : 'is-expense'}`} aria-hidden="true">{transaction.type === 'income' ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}</span>
+            <span className={`money-transaction-sign ${transaction.type === 'income' ? 'is-income' : 'is-expense'}`} aria-hidden="true">{transaction.type === 'income' ? <CirclePlus size={17} /> : <ReceiptText size={17} />}</span>
             <span className="money-transaction-copy"><strong>{title}</strong><small>{details}</small></span>
             <span className={`money-transaction-amount ${transaction.type === 'income' ? 'is-income' : 'is-expense'}`} aria-hidden="true">{transaction.type === 'income' ? '+' : '−'}{amount}</span>
           </button>

@@ -8,11 +8,14 @@
         <item name="colorAccent">@color/colorAccent</item>
         <item name="android:windowBackground">@color/windowBackground</item>
         <item name="android:forceDarkAllowed">false</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">@integer/busydoo_cutout_mode</item>
         <item name="android:statusBarColor">@color/colorPrimaryDark</item>
     </style>
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:windowLayoutInDisplayCutoutMode">@integer/busydoo_cutout_mode</item>
+        <item name="android:statusBarColor">@color/lifeos_splash_background</item>
+        <item name="android:windowLightStatusBar">false</item>
         <item name="windowSplashScreenBackground">@color/lifeos_splash_background</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/lifeos_splash_mark</item>
         <item name="windowSplashScreenAnimationDuration">500</item>

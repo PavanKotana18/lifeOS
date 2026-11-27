@@ -31,7 +31,7 @@ export function presentReminderStatus(report: ReminderStatusInput): ReminderStat
     return { title: 'No reminder set', message: 'Add a reminder time while editing this task if you want an alert.', tone: 'neutral' };
   }
   if (reason === 'category-disabled' || report.categoryEnabled === false) {
-    return { title: 'Task reminders are off', message: 'Turn on task reminders in Profile → Notifications to receive alerts.', tone: 'attention' };
+    return { title: 'Task reminders are off', message: 'Turn on task reminders in Notifications in Profile to receive alerts.', tone: 'attention' };
   }
   if (permission === 'denied' || (typeof reason === 'string' && reason.startsWith('permission-'))) {
     return { title: 'Notifications are not allowed', message: 'Allow BusyDoo notifications in Android settings, then check this reminder again.', tone: 'attention' };

@@ -5,7 +5,7 @@ import type { TodaySectionId } from '../services/todayLayout';
 const interactive = 'button, a, input, label, select, textarea, summary, [role="button"], [role="dialog"]';
 
 export function useTodayCardDrag(order: TodaySectionId[], enabled: boolean, reduced: boolean,
-  onStart: () => void, onFinish: (order: TodaySectionId[]) => void, onOpen: (id: TodaySectionId) => void) {
+  onStart: () => void, onFinish: (order: TodaySectionId[]) => void, onOpen: (id: TodaySectionId, trigger: HTMLElement) => void) {
   const pending = useRef<{ id: TodaySectionId; root: HTMLDivElement; card: HTMLElement; pointer: number; x: number; y: number; initialX: number; initialY: number; initialLeft: number; initialTop: number; frame: number; active: boolean; timer: number } | null>(null);
   const currentOrder = useRef(order);
   const preventClickUntil = useRef(0);
@@ -17,6 +17,7 @@ export function useTodayCardDrag(order: TodaySectionId[], enabled: boolean, redu
     pending.current = null;
     clearTimeout(drag.timer);
     cancelAnimationFrame(drag.frame);
+    drag.card.removeAttribute('data-today-pressed');
     if (!drag.active) return;
     preventClickUntil.current = Date.now() + 350;
     if (drag.root.hasPointerCapture(drag.pointer)) drag.root.releasePointerCapture(drag.pointer);
@@ -41,10 +42,13 @@ export function useTodayCardDrag(order: TodaySectionId[], enabled: boolean, redu
     window.addEventListener('blur', cancel);
     document.addEventListener('visibilitychange', cancel);
     document.addEventListener('touchmove', preventScroll, { passive: false });
+    const cancelPressOnScroll = () => { if (!pending.current?.active) finish(false); };
+    window.addEventListener('scroll', cancelPressOnScroll, { capture: true, passive: true });
     return () => {
       window.removeEventListener('blur', cancel);
       document.removeEventListener('visibilitychange', cancel);
       document.removeEventListener('touchmove', preventScroll);
+      window.removeEventListener('scroll', cancelPressOnScroll, true);
     };
   }, [enabled]);
   useEffect(() => () => {
@@ -53,7 +57,8 @@ export function useTodayCardDrag(order: TodaySectionId[], enabled: boolean, redu
   }, []);
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (!enabled || pending.current || !event.isPrimary || event.button !== 0) return;
+    if (!event.isPrimary) { if (!pending.current?.active) finish(false); return; }
+    if (!enabled || pending.current || event.button !== 0) return;
     const target = event.target as Element;
     const card = target.closest<HTMLElement>('[data-today-card]');
     const id = card?.dataset.todayCard as TodaySectionId | undefined;
@@ -63,11 +68,13 @@ export function useTodayCardDrag(order: TodaySectionId[], enabled: boolean, redu
     const drag = { id, card, root, pointer: event.pointerId, x: event.clientX, y: event.clientY, initialX: event.clientX, initialY: event.clientY, initialLeft: bounds.left, initialTop: bounds.top,
       frame: 0, active: false, timer: 0 };
     pending.current = drag;
+    if (!reduced) card.dataset.todayPressed = 'true';
     currentOrder.current = order;
     drag.timer = window.setTimeout(() => {
       if (pending.current !== drag) return;
       try { root.setPointerCapture(drag.pointer); } catch { finish(false); return; }
       drag.active = true;
+      card.removeAttribute('data-today-pressed');
       onStart();
       card.dataset.todayLifted = 'true';
       navigator.vibrate?.(12);
@@ -128,14 +135,16 @@ export function useTodayCardDrag(order: TodaySectionId[], enabled: boolean, redu
       }
     },
     onPointerUp: (event: PointerEvent<HTMLDivElement>) => { if (pending.current?.pointer === event.pointerId) finish(true); },
+    onPointerLeave: () => { if (!pending.current?.active) finish(false); },
     onPointerCancel: () => finish(false),
     onLostPointerCapture: () => finish(false),
     onClick: (event: MouseEvent<HTMLDivElement>) => {
       if (Date.now() < preventClickUntil.current) { event.preventDefault(); event.stopPropagation(); return; }
       const target = event.target as Element;
       if (target.closest(interactive) || !event.currentTarget.contains(target)) return;
-      const id = target.closest<HTMLElement>('[data-today-card]')?.dataset.todayCard as TodaySectionId | undefined;
-      if (id) onOpen(id);
+      const card = target.closest<HTMLElement>('[data-today-card]');
+      const id = card?.dataset.todayCard as TodaySectionId | undefined;
+      if (card && id) onOpen(id, card);
     },
   } };
 }

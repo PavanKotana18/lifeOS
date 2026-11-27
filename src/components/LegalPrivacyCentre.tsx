@@ -8,7 +8,7 @@ export default function LegalPrivacyCentre({ onData, onNotices }: { onData(): vo
     <p className="text-sm text-secondary">Internal review draft {policy.version}. These documents have no effective date. Publisher: {policy.publisher}.</p>
     {policy.documents.map(document => <details key={document.id} className="lifeos-panel rounded-2xl p-4">
       <summary className="min-h-11 content-center cursor-pointer font-semibold">{document.title}</summary>
-      <div className="space-y-3 text-sm leading-6">
+      <div data-selectable-text className="space-y-3 text-sm leading-6">
         {document.blocks.map((block, index) => block.heading
           ? <h3 key={index} className="font-semibold">{block.heading}</h3>
           : <p key={index}>{block.text}</p>)}
@@ -17,7 +17,7 @@ export default function LegalPrivacyCentre({ onData, onNotices }: { onData(): vo
     <section className="lifeos-panel space-y-2 rounded-2xl p-4">
       <h3 className="type-section-title">Your records and privacy rights</h3>
       <p className="text-sm text-secondary">Open Backup &amp; Restore to export or erase supported records on this device. You can edit individual records and remove your profile photo in the app. Requests about any information previously shared with the developer are separate from local deletion.</p>
-      <p className="text-sm text-secondary">A support address is pending. When support opens, share the app version and a short description. Hide private details in screenshots and keep recovery codes, passwords, OTPs and backups private.</p>
+      <p data-selectable-text className="text-sm text-secondary">A support address is pending. When support opens, share the app version and a short description. Hide private details in screenshots and keep recovery codes, passwords, OTPs and backups private.</p>
       <ProfileSettingRow title="Backup & Restore" onClick={onData} />
       <ProfileSettingRow title="Open-source notices" onClick={onNotices} />
     </section>
@@ -68,7 +68,7 @@ function LegalPreview({ onClose }: { onClose(): void }) {
     {step === 'accepted' && <button type="button" className="feather-secondary" onClick={() => {
       setAdult(false); setTerms(false); setStep('updated');
     }}>Preview a material update</button>}
-    {receipt && <dl className="space-y-1 break-all text-sm">
+    {receipt && <dl data-selectable-text className="space-y-1 break-all text-sm">
       <div><dt>Sample policy version</dt><dd>{receipt.version}</dd></div>
       <div><dt>Sample content SHA-256</dt><dd>{receipt.contentHash}</dd></div>
       <div><dt>Sample acceptance time</dt><dd>{receipt.acceptedAt}</dd></div>
