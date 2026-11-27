@@ -11,6 +11,8 @@ declare const __LIFEOS_BUILD_INFO__: {
   };
 };
 
+declare const __BUSYDOO_LEGAL_DRAFT__: boolean;
+
 interface ImportMetaEnv {
   readonly DEV: boolean;
 }

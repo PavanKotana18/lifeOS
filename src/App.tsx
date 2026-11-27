@@ -91,6 +91,8 @@ import Onboarding from './components/Onboarding';
 import { INITIAL_ONBOARDING_JOURNEY, ONBOARDING_NOTIFICATIONS_STEP, normalizeOnboardingJourney, resumeOnboardingStep, type OnboardingJourney } from './services/onboardingJourney';
 import { DEFAULT_DATE_ONLY_ALERT_TIME, taskScheduleError, parseLocalDateTime, buildFinanceEntry, calculateStreaks, calculateWeeklyHabitRate, formatLocalDate, formatLocalDateTime, getMonthCalendarDays, getTaskStatus, getTasksForDate, getTodayOverview, greetingForHour, habitScheduleOnDate, isHabitEligible, profileInitial, resolveAppearance, resolveBackAction, shouldShowOnboarding, sortTasksByDeadline, sortTransactions, watchSystemTheme } from './services/domainUtils';
 
+const legalDraftEnabled = __BUSYDOO_LEGAL_DRAFT__;
+const LegalPrivacyCentre = legalDraftEnabled ? React.lazy(() => import('./components/LegalPrivacyCentre')) : null;
 const FinanceCharts = React.lazy(() => import('./components/FinanceCharts'));
 const FinanceProjection = React.lazy(() => import('./components/FinanceProjection'));
 const PlanHub = React.lazy(() => import('./components/PlanHub'));
@@ -3516,8 +3518,15 @@ export default function App() {
             {profileSection === 'privacy' && <ProfileSubpage embedded title="Privacy & security" onBack={() => navigateProfileSection('home')}>
               <div className="flex items-center gap-2">Device protection <InfoTip label="Device protection" /></div>
               <div className="preference-group"><ProfileSettingRow title="App lock" value={biometricEnabled ? 'On' : 'Off'} onClick={() => navigateProfileSection('app-lock')} />
-                <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} /></div>
+                <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} />
+                {legalDraftEnabled && developerToolsEnabled && <ProfileSettingRow title="Legal & Privacy" value="Draft" onClick={() => navigateProfileSection('legal')} />}</div>
             </ProfileSubpage>}
+            {LegalPrivacyCentre && developerToolsEnabled && profileSection === 'legal' &&
+              <ProfileSubpage embedded title="Legal & Privacy" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+                <Suspense fallback={<ScreenLoading label="Opening legal documents" />}>
+                  <LegalPrivacyCentre onData={() => navigateProfileSection('data')} onNotices={() => navigateProfileSection('licenses')} />
+                </Suspense>
+              </ProfileSubpage>}
             {profileSection === 'app-lock' && <ProfileSubpage embedded title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
               <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. BusyDoo does not store your fingerprint.</InfoTip></div>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
@@ -3526,6 +3535,7 @@ export default function App() {
               </div>
             </ProfileSubpage>}
             {profileSection === 'recovery' && <ProfileSubpage embedded title="Recovery" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
+              <p className="text-sm text-secondary">Keep your recovery file and backup passphrase safe. Without the information needed to unlock your records, BusyDoo may be unable to restore them.</p>
               <div className="preference-group py-3">
               {onboardingJourney.recoveryName && <p className="text-xs text-secondary">Recovery name: <strong>{onboardingJourney.recoveryName}</strong>. This label cannot restore data without your separate recovery kit.</p>}
               {recoveryProvisioned ? <p className="text-xs text-secondary">Encrypted recovery kit confirmed.</p> : recoveryDeferred ? <div className="lifeos-raised rounded-xl p-3"><p className="text-xs font-medium">Recovery kit not set up</p><p className="mt-1 text-xs text-secondary">Your records remain encrypted on this device. Set up a recovery kit to restore access if this device key is lost.</p><button type="button" onClick={() => void setupRecoveryFromSettings()} className="lifeos-accent-button mt-3 min-h-11 rounded-xl px-4 text-xs font-semibold">Set up recovery kit</button></div> : null}
@@ -3642,7 +3652,7 @@ export default function App() {
                         showToast('Backup download started. Check your browser downloads.', 'success');
                       }
                     } catch (error) {
-                      console.error('BusyDoo backup export failed:', error);
+                      console.error('BusyDoo backup export failed.');
                       showToast(error instanceof Error ? `Backup export failed: ${error.message}` : 'Backup export failed. Your data was not changed.', 'danger');
                     } finally { backupOperation.current = false; setBackupOperationInProgress(false); }
                   }}
@@ -3655,6 +3665,10 @@ export default function App() {
               <input id="lifeos-backup-import" type="file" accept="application/json,.json" className="hidden" onChange={event => { void importBackupFile(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} />
               <button onClick={async () => {
                 try {
+                  if (!isEncryptedStorageActivated()) { showToast('There are no protected records to export yet.', 'info'); return; }
+                  const token = sessionManager.capture();
+                  if (!(await confirmAction({ title: 'Export readable CSV?', message: 'This CSV contains readable financial records. BusyDoo does not encrypt CSV files. Save it somewhere you trust, or cancel and choose Export encrypted backup.', confirmLabel: 'Export CSV', cancelLabel: 'Cancel' }))) return;
+                  sessionManager.assertCurrent(token);
                   const rows = transactions.map(tx => [tx.type, tx.description, tx.amount, tx.category, tx.date, formatLocalDateTime(new Date(tx.occurredAt || tx.createdAt)), tx.paymentMethod || '']);
                   const quote = quoteCsvCell;
                   const csv = [['type', 'description', 'amount', 'category', 'date', 'entry_time', 'payment_method'], ...rows].map(row => row.map(quote).join(',')).join('\n');
@@ -3681,10 +3695,10 @@ export default function App() {
             {/* Danger Zone */}
             <div className="lifeos-panel rounded-xl border p-4 space-y-3">
               <h3 className="text-sm font-semibold text-[var(--danger)]">Data Reset</h3>
-              <p className="text-xs text-secondary">Permanently erase all personal database records.</p>
+              <p className="text-xs text-secondary">Erase your records and stored app settings on this device. BusyDoo keeps its device security setup, and some reminder history or display preferences may remain. Files you exported stay wherever you saved them.</p>
               <button
                 onClick={async () => {
-                  if (!(await confirmAction({ title: 'Erase all BusyDoo data?', message: 'This permanently removes all personal records stored on this device. This cannot be undone.', confirmLabel: 'Erase all data', cancelLabel: 'Keep my data', destructive: true }))) return;
+                  if (!(await confirmAction({ title: 'Erase local records?', message: 'This removes local records and stored settings and cancels scheduled record reminders. Already displayed reminders and some diagnostic history may remain. Your device security setup and exported files are kept. Export a backup first if you want to keep your records.', confirmLabel: 'Erase local records', cancelLabel: 'Keep my data', destructive: true }))) return;
                   try {
                     await NotificationService.cancelAllRecordReminders();
                     await StorageService.backup.clearAll();
@@ -3696,7 +3710,7 @@ export default function App() {
                 }}
                 className="lifeos-danger min-h-11 w-full rounded-xl border px-3 text-xs font-semibold"
               >
-                Clear All Application Data
+                Erase local records
               </button>
             </div>
             </ProfileSubpage>}
@@ -3713,8 +3727,8 @@ export default function App() {
                 <ProfileSettingRow title="Open-source licenses" onClick={() => navigateProfileSection('licenses')} /></div>
             </ProfileSubpage>}
             {profileSection === 'licenses' && <ProfileSubpage embedded title="Open-source licenses" backLabel="About BusyDoo" onBack={() => navigateProfileSection('about')}>
-              <LicenseText />
-              <LicenseText title="Motion" source="./licenses/motion.txt" />
+              <LicenseText title="Web libraries and Inter font" source="./licenses/web-and-font.txt" />
+              <LicenseText title="Android libraries" source="./licenses/android.txt" />
             </ProfileSubpage>}
           </div>
           </div>

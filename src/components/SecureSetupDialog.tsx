@@ -119,6 +119,7 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-tint)] text-[var(--accent)]" aria-hidden="true">
         <ShieldCheck size={24} strokeWidth={1.8} />
       </div>
+      <p className="text-sm text-secondary">Keep your recovery file private. You may need it to open your records again.</p>
       <h1 id="secure-setup-title" className="text-center text-2xl font-semibold">{prepared ? 'Recovery setup' : 'Protect your local BusyDoo data'}</h1>
       </>}
       {prepared ? <>

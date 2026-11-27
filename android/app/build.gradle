@@ -86,6 +86,9 @@ gradle.taskGraph.whenReady { graph ->
         task.project == lifeosAppProject && artifactTaskPrefixes.any { prefix -> task.name.toLowerCase().startsWith(prefix) }
             && task.name.toLowerCase().contains('release')
     }
+    if (requestsRelease && file('src/main/assets/public/busydoo-legal-draft.txt').exists()) {
+        throw new GradleException('Internal BusyDoo legal drafts cannot ship in Release.')
+    }
     if (requestsRelease && !lifeosReleaseSigningReady) {
         throw new GradleException('Release artifacts require the configured production signing identity; debug signing is never used for Release.')
     }

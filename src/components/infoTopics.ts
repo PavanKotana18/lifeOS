@@ -3,6 +3,7 @@ type InfoContent = { definition: string; example: string; use: string; details?:
 const topic = (definition: string, example: string, use: string, details?: string): InfoContent => ({ definition, example, use, details });
 
 export const infoTopics: Record<string, InfoContent> = {
+  'Personal finance': topic('BusyDoo helps you organize your financial records. It does not move money or provide financial advice.', 'Compare a monthly spending total with your bank statement.', 'Check important figures against your original records before acting on them.'),
   'Net cash flow': topic('Net cash flow is money in minus money out.', 'You receive 100 and spend 30. Your net cash flow is 70.', 'BusyDoo uses recorded income and expenses from the selected period.', 'Transfers, planned bills and savings contributions are separate. Totals use the reporting currency.'),
   'Money in and out': topic('Money in is income you recorded. Money out is spending you recorded.', 'A 100 payment and a 30 purchase show 100 in and 30 out.', 'Transactions shows separate totals for each recorded currency in the selected month.', 'Moving money between your own accounts changes their balances. It never counts as income or spending.'),
   'Budget remaining': topic('This is how much is left in a spending plan.', 'A 100 food budget with 35 spent has 65 remaining.', 'BusyDoo subtracts recorded expenses in the budget period and category.', 'A negative amount means spending exceeded the budget.'),

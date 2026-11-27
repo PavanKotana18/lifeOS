@@ -55,7 +55,7 @@ export default function MoneyHome({ month, monthly = false, showHeader = true, o
     {!monthly && showHeader && <FeatherHeader title="Money" heading="h1" action={<MoneyPeriod label="Money" month={month} onChange={onMonthChange} />} />}
 
     <section className="money-cashflow" aria-labelledby="money-cashflow-title">
-      <div className="money-cashflow-top justify-start"><h3 id="money-cashflow-title" className="type-section-title">Net cash flow</h3><InfoTip label="Net cash flow">Income received minus spending recorded in this period. Planned bills, transfers and savings contributions are separate.</InfoTip></div>
+      <div className="money-cashflow-top justify-start"><h3 id="money-cashflow-title" className="type-section-title">Net cash flow</h3><InfoTip label="Net cash flow">Income received minus spending recorded in this period. Planned bills, transfers and savings contributions are separate.</InfoTip><InfoTip label="Personal finance" /></div>
       <p className="type-display-amount" data-testid="money-net-cashflow">{cashNet}</p>
       <div className="money-flow-split" role="group" aria-label={`Recorded cash flow: income ${cashIncome}; expenses ${cashExpenses}`}>
         <div><span>Income</span><strong>{cashIncome}</strong></div>

@@ -2,6 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { readFileSync } from 'node:fs';
 
+if (process.env.VITE_BUSYDOO_LEGAL_ACTIVATE && process.env.VITE_BUSYDOO_LEGAL_ACTIVATE !== '0') {
+  throw new Error('BusyDoo legal activation is blocked pending final policy approval, effective dates, verified support and release evidence.');
+}
+
+const legalDraft = process.env.VITE_BUSYDOO_LEGAL_DRAFT === '1';
 const lock = JSON.parse(readFileSync(new URL('./package-lock.json', import.meta.url), 'utf8'));
 const lockedVersion = (name: string) => lock.packages?.[`node_modules/${name}`]?.version ?? 'unknown';
 const buildInfo = {
@@ -19,8 +24,15 @@ const buildInfo = {
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
-  define: { __LIFEOS_BUILD_INFO__: JSON.stringify(buildInfo) },
+  plugins: [react(), {
+    name: 'busydoo-draft-legal-marker',
+    generateBundle() {
+      if (legalDraft) {
+        this.emitFile({ type: 'asset', fileName: 'busydoo-legal-draft.txt', source: 'Internal draft. No production acceptance.' });
+      }
+    },
+  }],
+  define: { __LIFEOS_BUILD_INFO__: JSON.stringify(buildInfo), __BUSYDOO_LEGAL_DRAFT__: JSON.stringify(legalDraft) },
   build: {
     // Keep the native WebViewCompatibility baseline aligned with emitted syntax.
     target: ['chrome87', 'edge88', 'firefox78', 'safari14'],
