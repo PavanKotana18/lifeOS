@@ -649,6 +649,14 @@ dialog[data-polish-sheet][data-sheet-closing]::backdrop { animation: feather-she
 }
 .today-reorder-hint { margin-top: .3rem; color: var(--ink-secondary); font-size: .8rem; }
 .feather-expressive[data-reduced="true"] .today-sections > [data-today-card] { scale: 1; transition: none; }
+@supports not (scale: 1) {
+  .feather-expressive:not([data-reduced="true"]) .today-sections > [data-today-card]:not([data-today-lifted]) {
+    transition-property: transform;
+  }
+  .feather-expressive:not([data-reduced="true"]) .today-sections > [data-today-pressed]:not([data-today-lifted]) {
+    transform: scale(.98);
+  }
+}
 .today-sections [data-today-card] :is(.today-routine-row, .lifeos-raised) { background: transparent; }
 .today-sections [data-today-lifted] {
   transform: translate(var(--today-drag-x, 0px), var(--today-drag-y, 0px)) scale(1.025);
