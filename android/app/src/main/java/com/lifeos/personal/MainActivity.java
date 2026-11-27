@@ -80,8 +80,8 @@ public class MainActivity extends BridgeActivity {
         intent = SmartImportSharePlugin.consumeShareIntent(intent);
         setIntent(intent);
         android.content.Intent notificationAction = new android.content.Intent(intent);
-        super.onNewIntent(intent);
         NotificationTapLaunchPlugin.captureAction(this, notificationAction);
+        super.onNewIntent(intent);
         if (sharedAlert && bridge != null && bridge.getPlugin("SmartImportShare") != null) {
             SmartImportSharePlugin plugin = (SmartImportSharePlugin) bridge.getPlugin("SmartImportShare").getInstance();
             if (plugin != null) plugin.signalAvailable();

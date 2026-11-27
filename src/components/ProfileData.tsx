@@ -21,7 +21,7 @@ export default function ProfileData({ busy, onBackup, onRestore, onCsv, onReset 
       <button type="button" className="feather-secondary" disabled={busy} onClick={onCsv}>Export transactions CSV</button>
     </ProfileGroup>
     {busy && <p role="status" className="profile-detail">A data operation is in progress...</p>}
-    <ProfileGroup title="Data reset" destructive description="Erase local records and settings. Device protection and exported files stay in place. Already displayed Android notifications may remain.">
+    <ProfileGroup title="Data reset" destructive description="Erase local records and settings. Device protection and exported files stay in place. This clears the local inbox and scheduled record reminders.">
       <button type="button" className="lifeos-danger min-h-11 rounded-xl border px-4 text-sm font-semibold" disabled={busy} onClick={onReset}>Erase local records</button>
     </ProfileGroup>
   </>;

@@ -1,3 +1,4 @@
+import { changeNotificationInbox, NOTIFICATION_INBOX_KEY } from './notificationInbox';
 import { isGoalComplete, validateGoalMeasure } from './goalModes';
 import { PossibleImportDuplicateError, type ImportDuplicateOptions } from './smartImport';
 import { createSampleData, isSampleRecord } from './sampleData';
@@ -969,6 +970,20 @@ export function createEncryptedStorageFacade(
     },
 
     settings: {
+      setNotificationSelection: async (preferences, enabled) => coordinator.run(async ctx => {
+        ctx.put('settings', { key: 'notificationPreferences', value: preferences });
+        ctx.put('settings', { key: 'notificationsEnabled', value: enabled });
+      }),
+
+      updateNotificationInbox: async change => coordinator.run(async ctx => {
+        const previous = await ctx.get<{ key: string; value: unknown }>('settings', NOTIFICATION_INBOX_KEY);
+        const value = changeNotificationInbox(previous?.value, change);
+        if (JSON.stringify(previous?.value ?? []) !== JSON.stringify(value)) {
+          ctx.put('settings', { key: NOTIFICATION_INBOX_KEY, value });
+        }
+        return value;
+      }),
+
       get: async <T>(key: string, defaultValue: T): Promise<T> => {
         const row = await get<{ key: string; value: T }>('settings', key);
         return row ? row.value : defaultValue;
@@ -995,7 +1010,10 @@ export function createEncryptedStorageFacade(
       // Native decryption remains outside any IndexedDB transaction.
       exportData: async () => coordinator.run(async ctx => {
         const entries = await Promise.all(
-          TABLES.map(async table => [table, await ctx.getAll<any>(table)] as const)
+          TABLES.map(async table => {
+            const rows = await ctx.getAll<any>(table);
+            return [table, table === 'settings' ? rows.filter(row => row.key !== NOTIFICATION_INBOX_KEY) : rows] as const;
+          })
         );
         return JSON.stringify({
           version: 1,
@@ -1023,8 +1041,10 @@ export function createEncryptedStorageFacade(
 
           for (const table of TABLES) {
             ctx.clear(table);
-            for (const row of tables[table] ?? []) ctx.add(table, row);
-            counts[table] = (tables[table] ?? []).length;
+            const rows = (tables[table] ?? []).filter((row: { key?: string }) =>
+              table !== 'settings' || row.key !== NOTIFICATION_INBOX_KEY);
+            for (const row of rows) ctx.add(table, row);
+            counts[table] = rows.length;
           }
         });
 

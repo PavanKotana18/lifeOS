@@ -1,0 +1,51 @@
+# BusyDoo Standard Profile and Notification Centre
+
+Baseline `d688f76a2417c9d2741e6c6a80efa668d4a1a157`. Profile checkpoint `d2c4e0a`. Evidence from the browser harness uses disposable synthetic records and crypto through the real React application and encrypted IndexedDB facade. Android OS behaviors are tracked separately.
+
+## Profile audit
+
+Line ranges refer to the candidate implementation.
+
+| Destination and source | Existing behavior and finding | Severity | Correction and validation |
+| --- | --- | --- | --- |
+| Profile home and navigation · `ProfileSettings.tsx` 7–175, `App.tsx` 1169–1200 | Rows received descriptive copy and subpages received an intro, both omitted from rendering. Existing Profile hierarchy and Android Back were established. | Medium | Render descriptions, protection status, and reusable rows and groups. Verify route hierarchy, focus, themes, and actual rendering in the browser journey. |
+| Display name · `ProfileSettings.tsx` 65–128, `App.tsx` 1764–1769 | Name could be submitted twice while the first write was pending. Failure needed visible feedback. | Medium | Single submission, trim and validate, retain previous name on failure, show a persistent error, restore opener focus. Browser uses synthetic name. |
+| Profile photo and crop · `ProfileSettings.tsx` 61–116, `ProfilePhotoEditor.tsx` 4–116, `profilePhoto.ts` 1–85, `App.tsx` 2614–2660 | Original was picked by system/browser, oriented and re-encoded to JPEG, then saved under protected settings. Loading and save states needed clearer feedback. | Medium | Present picker and crop progress and errors, retain native/file-picker behavior and protected persistence. Browser uses synthetic crop and inspects ciphertext marker. |
+| Appearance and Themes · `AppearanceStudio.tsx` 11–107, `App.tsx` 1594–1650, 3894–3902 | Preview, apply and cancel already existed. Page-level guidance was missing and asynchronous saves could leave the visual selection ambiguous. | Low | Render the existing workflow inside the refined hierarchy. Keep preview/cancel, system mode and authoritative stored appearance. Browser explicitly switches light/dark. |
+| Accent · `CustomAccentPicker.tsx` 19–110, theme token contrast helpers, `App.tsx` 3906–3908 | Existing preview and foreground contrast calculation. | Low | Render intro and retain palette and contrast enforcement. Browser renders both themes; focused accent tests cover color validation. |
+| Motion · `MotionPreferences.tsx` 19–80, `useInterfaceMotion.ts` | Existing presets, preview, pending/error states and accessibility override. | Low | Render intro and retain OS reduced-motion precedence. Browser harness requests reduced motion and visits Motion. |
+| Preferences · `ProfilePreferences.tsx` 10–52, `PreferenceChoice.tsx`, `App.tsx` 1405–1436 | A rapid second write could use older state. The currency lock omitted some financial records and offered limited explanation. Date-only alert timing was under display settings. | High | Serialize saves, explain the currency lock, include accounts/transfers/commitments and other financial records, and move timing with its existing setting key. Source and rendered contract tests cover disabled currency and opt-out hydration. |
+| Notifications · `ProfileNotifications.tsx`, `App.tsx` 1680–1820 | The master switch and categories appeared as one combined state. Permission and exact alarm states needed separate explanations. | High | Preserve saved category choices, atomically write encrypted master/category settings, distinguish Android delivery, in-app visibility, timing and tone, and add encrypted history controls. Focused synthetic checks and separate native acceptance. |
+| Money & Imports · `App.tsx` 3950–3956, shared-bank-alert hook | Explicit paste or share with secure preview. No defect requiring a new import path. | None | Preserve the approved Standard workflow and private-preview rules. Browser visits the destination. |
+| Privacy & Security and App lock · `App.tsx` 3862–3882, protected-session and screenshot services | Native device authentication remained authoritative. Disabling a lock changed visual state before persistence. | High | Update the visible state after success and report write errors. Preserve sensitive screenshot protection. Recovery/screenshot policy tests are synthetic or source contracts. |
+| Recovery · `App.tsx` 1948–1980, 3884–3892, recovery controller | Existing deferred setup, recovery file and confirmation rules. The distinctions between backup and key recovery needed clearer copy. | High | Clarify limits, keep keys/codes in the protected workflow, and surface a deferred-recovery inbox entry. Focused synthetic recovery lifecycle checks. |
+| Legal & Privacy · `App.tsx` 101–102, 3866–3872, `vite.config.ts`, Android Gradle | Internal draft with explicit developer/debug guard and a release build marker. | High | Preserve the draft and production activation gates. The browser test enables draft preview to render this route. No evidence of final policy approval is asserted. |
+| Backup & Restore · `ProfileData.tsx` 4–30, `App.tsx` 2192–2328 | Mixed together routine backup, file replacement and destructive controls. Restore picker did not reset its selection reliably. | High | Separate workflows, confirm replacement, allow reselecting a file, refresh visible Profile/inbox settings, and clear the old reminder routing queue. Encrypted export excludes local inbox history. |
+| CSV and data reset · `ProfileData.tsx` 17–30, `App.tsx` 2227–2292 | CSV is plaintext and reset preserves device protection and existing outside exports. Data operations could overlap. | High | Keep a plaintext warning and reset confirmation, serialize file/reset operations, clear encrypted history with reset. Browser captures both warnings, and native file-provider verification remains separate. |
+| About and licenses · `App.tsx` 3957–3965, `public/licenses` | App version, approved animation replay and offline notices were available. | None | Preserve replay/version and both bundled notice sets. Browser visits both routes. |
+| Developer tools · `App.tsx` 279, 3922–3944 | Existing debug-only diagnostics, tests and synthetic data generation. | High | Preserve development/Debug gating and original diagnostics. Synthetic sample records are excluded from inbox producers. |
+| Shared layout and accessibility · `ProfileSettings.tsx`, `profile-centre.css`, `useRecordDialog.ts` | Mixed hierarchy and missing descriptive relationships, narrow screens and large system fonts can cause wrapping. | Medium | Real button names, readable wrapped copy, safe-area insets, keyboard containment and focus return, subpage labels visible in both themes. Browser checks 320 px and 125% font size. |
+
+## From source to inbox action
+
+| Producer | In-app evidence | Android evidence and lifecycle | Action |
+| --- | --- | --- | --- |
+| Task due time and early reminder | Existing schedule and stored date-only time, after the due instant | Foreground receipt, Android visible post or tap; existing task alarm reconciliation and stale schedule resolution | Open task, mark done, snooze when configured |
+| Upcoming deadline and overdue task | Existing opt-in deadline rules, once per occurrence | Same evidence and task reconciliation | Open task, mark done, snooze when configured |
+| Task snooze | No invented occurrence | Real Android receiver/visible post/tap; ten-minute snooze keeps native permission and pending checks | Open task, mark done, snooze again |
+| Habit | Effective local schedule and today's outstanding check-in | Existing repeating or rolling date-specific reminders. Same local occurrence across signals | Open existing habit check-in |
+| Goal milestone | Existing active goal/milestone rules at 09:00 | Existing native milestone scheduling and cancellation | Open parent goal |
+| Scheduled payment or income | Opt-in, active commitment and a due date within three days | In-app only | Open Money planning |
+| Budget threshold | Opt-in, 80% of exact allocated minor units with same-currency records and valid carryover | In-app only, one occurrence per budget/month | Open Budgets |
+| Savings target date | Opt-in, pending dated goal within three days and exact stored currency | In-app only | Open Savings |
+| Encrypted backup | Opt-in, after 30 days from selection or a confirmed native backup export | In-app only | Open Backup & Restore |
+| Deferred recovery | Deferred native recovery state, once until resolved | In-app only | Open Recovery |
+| Notes | Typed event and source contract | No active producer | Future integration |
+
+## Storage and evidence boundaries
+
+Encrypted settings hold at most 250 rows for at most 45 days. This device-local history is filtered out of backup export and import. Reset clears it. Dismissed and cleared rows retain bounded encrypted tombstones to prevent replay. Optional money and backup notices are disabled by default. Existing Android reminder choices and the timing key are preserved. The attention count excludes read, dismissed and resolved entries.
+
+Inbox data distinguishes local eligibility, a native receipt callback, observation in Android's active notification list, and a user action from Android. None is derived from merely registering an alarm. The active notification bridge carries bounded opaque routing references. The authenticated centre resolves a record label from the currently loaded domain record so similar alerts can be distinguished without storing its title in the inbox or sending it to Android. Earlier notifications without occurrence metadata have a local-day matching fallback. Older active notifications without a routable reference are only reflected in the existing content-free diagnostics.
+
+Task actions and routes remain behind the authenticated encrypted session. Native and React queues are bounded and preserve distinct intent/occurrence keys. Native bookkeeping contains routing references with 24-hour retention, without copying notification copy or private payload contents into durable diagnostic history. APK inspection verifies Standard isolation. Real Android timing, reboot, permission revocation, authentication, multiple taps across process death and protected exports require native acceptance.

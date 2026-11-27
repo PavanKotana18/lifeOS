@@ -1,3 +1,8 @@
+import { NotificationCentre } from './components/NotificationCentre';
+import { ProfileNotifications } from './components/ProfileNotifications';
+import { useNotificationInbox } from './hooks/useNotificationInbox';
+import { inboxSourceKey, nativeInboxEvent, type InboxEvent } from './services/notificationInbox';
+import { buildInboxSnapshot, matchesTaskReminder, DEFAULT_INBOX_PREFERENCES, INBOX_PREFERENCES_KEY, LAST_BACKUP_KEY, type InboxPreferences } from './services/notificationInboxProducers';
 import ProfileData from './components/ProfileData';
 import './styles/profile-centre.css';
 import { useTodayCardDrag } from './hooks/useTodayCardDrag';
@@ -86,7 +91,7 @@ import { PRIMARY_NAVIGATION, primaryDestinationForTab, resolvePlanPath, type Mai
 import { popTabHistory, pushTabHistory } from './services/tabHistory';
 import { beginPrimaryGesture, matchesPrimaryGestureClickSuppression, primaryGestureStartBlockReason, recordGestureTrace, resolvePrimaryGestureEnd, shouldCancelPrimaryCaptureLoss, shouldSuppressPrimaryGestureClick, updatePrimaryGesture, type PrimaryGestureSession, type PrimaryGestureTargetKind } from './services/navigationGestures';
 import { screenScrollKey } from './services/uiNavigation';
-import { normalizeNotificationTone, NOTIFICATION_TONES, reminderCopy, type NotificationTone } from './services/notificationCopy';
+import { normalizeNotificationTone, type NotificationTone } from './services/notificationCopy';
 import { DEFAULT_NOTIFICATION_PREFERENCES, FIRST_CONSENT_NOTIFICATION_PREFERENCES, NotificationService, type NotificationDiagnostics, type ReminderAction } from './services/notificationService';
 import type { AccountTransfer, FinancialAccount, ManualExchangeRate, NotificationPreferences, PlannedCommitment, SavingsContribution } from './types';
 import Onboarding from './components/Onboarding';
@@ -120,14 +125,6 @@ const applyDomTheme = (theme: 'dark' | 'light', themeId: ThemeId = DEFAULT_THEME
   }
   document.documentElement.style.colorScheme = theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeTokens.background);
-};
-
-const notificationLabels: Record<keyof NotificationPreferences, string> = {
-  taskReminders: 'Due-time and early task alerts',
-  upcomingDeadlines: 'Upcoming task deadlines',
-  overdueAlerts: 'Overdue task alerts',
-  habitReminders: 'Habit reminders',
-  milestoneReminders: 'Goal milestone reminders',
 };
 
 type AppearancePreference = 'dark' | 'light' | 'system';
@@ -212,9 +209,18 @@ export default function App() {
   const taskDetailReturnFocusRef = useRef<HTMLElement | null>(null);
   const taskDetailReturnTabRef = useRef<MainTab | null>(null);
   const plannerHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const pendingNotification = useRef<ReminderAction | null>(null);
+  const pendingNotification = useRef<ReminderAction[]>([]);
+  const handleNotificationTapRef = useRef<(action: ReminderAction) => void>(() => {});
+  const drainNotificationTapsRef = useRef<() => Promise<void>>(async () => {});
+  const [notificationCentreOpen, setNotificationCentreOpen] = useState(false);
+  const [notificationCentreSettings, setNotificationCentreSettings] = useState(false);
+  const [inboxPreferences, setInboxPreferences] = useState(DEFAULT_INBOX_PREFERENCES);
+  const [lastBackupAt, setLastBackupAt] = useState(0);
+  const [inboxSettingsLoaded, setInboxSettingsLoaded] = useState(false);
+  const notificationSettingsWrite = useRef(false);
+  const [savingNotificationSettings, setSavingNotificationSettings] = useState(false);
   const reminderProcessing = useRef(false);
-  const handledNotificationIds = useRef(new Set<number>());
+  const handledNotificationIds = useRef(new Map<string, number>());
   const [profileSection, setProfileSection] = useState<ProfileSection>('home');
   const profileOpen = activeTab === 'settings';
   const profilePage = useRef<HTMLDivElement>(null);
@@ -446,7 +452,7 @@ export default function App() {
 
   const [smartImportOpen, setSmartImportOpen] = useState(false);
   const [protectedImportComposer, setProtectedImportComposer] = useState(false);
-  const sensitiveScreenshot = activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === 'settings' || isSensitiveScreenshotState({
+  const sensitiveScreenshot = notificationCentreOpen || activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === 'settings' || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -734,7 +740,7 @@ export default function App() {
         Boolean((activeTab === 'planner' && plannerDetailTaskId) || ((activeTab === 'habits' || activeTab === 'goals') && lifeDetail)) ||
         (profileOpen && (profileSection !== 'home' || Boolean(document.querySelector('#screen-settings form[data-no-tab-swipe]')))),
       modalOpen: Boolean(createKind || modalContent || confirmation || firstRecordSecurityOpen || secureSetup || showExitConfirmation
-        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || financeDialogOpen
+        || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || financeDialogOpen || notificationCentreOpen
         || document.querySelector('dialog[open]') || keyboardOwnsViewport()),
       multiplePointers: activeTouchPointers.current.size > 1,
       systemEdge,
@@ -917,6 +923,7 @@ export default function App() {
       if (filterSheet) { filterSheet.close(); return; }
     }
     if (confirmationResolver.current) { settleConfirmation(false); return; }
+    if (notificationCentreDialog.current) { closeNotificationCentre(); return; }
     if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(state.activeTab === 'settings').catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
     if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
       void requestCloseFinanceDraft(); return;
@@ -1061,7 +1068,7 @@ export default function App() {
         // never resumes or advances the removed multi-page onboarding wizard.
         await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones,
           effectiveNotificationPreferences(prefs, master));
-        if (!disposed && typeof processPendingTaskNotification === 'function') await processPendingTaskNotification();
+        if (!disposed) await drainNotificationTapsRef.current();
         if (!disposed) await refreshNotificationDiagnostics();
         if (!disposed) {
           await confirmScreenshotResume();
@@ -1334,9 +1341,48 @@ export default function App() {
   const sharedReviewAvailable = appReady && onboardingComplete && !onboardingRequired && !isLocked &&
     !activityResumeGuard && !biometricAuthActive && !secureSetup && !recoveryOpen &&
     !firstRecordSecurityOpen && !backupPrompt && !backupOperationInProgress;
+  const inboxAvailable = sharedReviewAvailable && isEncryptedStorageActivated();
+  const inboxSnapshot = useMemo(() => buildInboxSnapshot({
+    now: clockNow, preferences: inboxPreferences, reminderPreferences: notificationPreferences, dateOnlyAlertTime,
+    tasks, habits, habitLogs, goals, milestones, commitments: plannedCommitments, savings: savingsGoals,
+    budgets, transactions, categories, recoveryPending: recoveryDeferred && !recoveryProvisioned, lastBackup: lastBackupAt,
+  }), [clockNow, inboxPreferences, notificationPreferences, dateOnlyAlertTime, tasks, habits, habitLogs, goals, milestones,
+    plannedCommitments, savingsGoals, budgets, transactions, categories, recoveryDeferred, recoveryProvisioned, lastBackupAt]);
+  const inbox = useNotificationInbox(inboxAvailable && inboxSettingsLoaded, inboxSnapshot,
+    () => showToast('Could not update notification history.', 'danger'));
+  const notificationCentreDialog = useRef(false);
+  notificationCentreDialog.current = notificationCentreOpen && sharedReviewAvailable;
+  const closeNotificationCentre = () => {
+    if (notificationCentreSettings) setNotificationCentreSettings(false);
+    else setNotificationCentreOpen(false);
+  };
+  useRecordDialog(notificationCentreDialog.current, closeNotificationCentre, 'notification-centre');
+  useEffect(() => {
+    if (inboxAvailable) {
+      void refreshInboxSettings().catch(() => showToast('Could not load notification settings.', 'danger'));
+      void drainNotificationTapsRef.current();
+    } else setInboxSettingsLoaded(false);
+  }, [inboxAvailable]);
+  useEffect(() => {
+    if (isLocked) { setNotificationCentreOpen(false); setNotificationCentreSettings(false); }
+  }, [isLocked]);
+  const openNotificationCentre = async () => {
+    if (!sharedReviewAvailable || (isEncryptedStorageActivated() && !sessionManager.isUnlocked())) return;
+    const token = sessionManager.getGeneration();
+    try {
+      cancelPrimaryGesture('notification-centre');
+      await setSensitiveScreenshotState(true);
+      if (sessionManager.getGeneration() !== token) return;
+      setNotificationCentreSettings(false);
+      setNotificationCentreOpen(true);
+      void inbox.inspectDelivery();
+      void inbox.apply();
+    } catch { if (sessionManager.isCurrent(token)) showToast('Could not open Notification Centre securely.', 'danger'); }
+  };
+
   const sharedAlert = useSharedBankAlert({
     available: sharedReviewAvailable,
-    busy: smartImportOpen || Boolean(createKind || modalContent || confirmation || accountFormDraft ||
+    busy: smartImportOpen || notificationCentreOpen || Boolean(createKind || modalContent || confirmation || accountFormDraft ||
       transferFormDraft || plannerDetailTaskId || lifeDetail || todayCustomizationOpen || showExitConfirmation || tabTransition),
     open: () => setSmartImportOpen(true),
   });
@@ -1689,8 +1735,11 @@ export default function App() {
   };
 
   const saveNotificationSelection = async (preferences: NotificationPreferences, enabled = Object.values(preferences).some(Boolean)) => {
-    await StorageService.settings.set('notificationPreferences', preferences);
-    await StorageService.settings.set('notificationsEnabled', enabled);
+    if (isEncryptedStorageActivated()) await StorageService.settings.setNotificationSelection(preferences, enabled);
+    else {
+      await StorageService.settings.set('notificationPreferences', preferences);
+      await StorageService.settings.set('notificationsEnabled', enabled);
+    }
     setNotificationPreferences(preferences);
     setNotificationsEnabled(enabled);
   };
@@ -1721,7 +1770,7 @@ export default function App() {
 
   const toggleNotificationCategory = async (key: keyof NotificationPreferences) => {
     const enabled = !notificationPreferences[key];
-    if (enabled) {
+    if (enabled && notificationsEnabled) {
       const permission = await askNotificationPermission();
       if (!permission.granted) { showToast(permission.message || `Notification permission: ${permission.status}`, 'danger'); return; }
     }
@@ -1971,18 +2020,33 @@ export default function App() {
   };
 
   const processPendingTaskNotification = async () => {
-    const action = pendingNotification.current;
-    if (!action || reminderProcessing.current || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return;
+    const action = pendingNotification.current[0];
+    if (!action || reminderProcessing.current || !inboxAvailable || !sessionManager.isUnlocked()) return;
+    const token = sessionManager.capture();
     reminderProcessing.current = true;
+    let consume = false;
     const extra = action.notification.extra || {};
     try {
       let opened = false;
-      if (typeof extra.taskId === 'string') {
+      if (extra.kind === 'test') {
+        navigateTo('settings');
+        navigateProfileSection('notifications');
+        opened = true;
+      } else if (typeof extra.taskId === 'string') {
         const task = (await StorageService.tasks.getAll()).find(item => item.id === extra.taskId);
+        sessionManager.assertCurrent(token);
+        const event = nativeInboxEvent(extra, 'opened');
+        if (task && event && event.occurrence.includes('T') &&
+            !matchesTaskReminder(task, event.kind, event.at, dateOnlyAlertTime)) {
+          showToast('That reminder is no longer current.', 'info');
+          consume = true;
+          return;
+        }
         if (task) {
           opened = true;
           if (action.actionId === 'lifeos-task-done') {
             if (!task.completed) await StorageService.tasks.toggleCompleted(task.id, true);
+            consume = true;
             const records = await reloadAllData();
             const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
             const master = await StorageService.settings.get('notificationsEnabled', Object.values(preferences).some(Boolean));
@@ -1995,6 +2059,7 @@ export default function App() {
             const preferences = await StorageService.settings.get('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
             if (!enabled || !preferences.taskReminders) throw new Error('Turn on task reminders before snoozing.');
             const tone = normalizeNotificationTone(await StorageService.settings.get('notificationTone', 'warm'));
+            sessionManager.assertCurrent(token);
             if (await NotificationService.snoozeTask(task, tone)) showToast('Reminder snoozed for 10 minutes', 'success');
           } else {
             taskDetailReturnTabRef.current = activeTabRef.current === 'planner' ? null : activeTabRef.current;
@@ -2006,28 +2071,47 @@ export default function App() {
         }
       } else if (typeof extra.habitId === 'string') {
         const habit = (await StorageService.habits.getAll()).find(item => item.id === extra.habitId);
-        if (habit) { setHabitsSelectedDate(formatLocalDate(new Date())); setLifeDetail({ kind: 'habit', id: habit.id }); navigateTo('habits'); opened = true; }
+        sessionManager.assertCurrent(token);
+        if (habit && !habit.archived) { setHabitsSelectedDate(formatLocalDate(new Date())); setLifeDetail({ kind: 'habit', id: habit.id }); navigateTo('habits'); opened = true; }
       } else if (extra.kind === 'milestoneReminder') {
         const milestone = (await StorageService.goals.getAllMilestones()).find(item => item.id === extra.milestoneId);
-        if (milestone && (await StorageService.goals.getAll()).some(goal => goal.id === milestone.goalId)) {
+        const goal = milestone && (await StorageService.goals.getAll()).find(goal => goal.id === milestone.goalId && !goal.archived);
+        sessionManager.assertCurrent(token);
+        if (goal && milestone) {
           setLifeDetail({ kind: 'goal', id: milestone.goalId }); navigateTo('goals'); opened = true;
         }
       }
       if (!opened) showToast('That reminder no longer has an available record.', 'info');
-      await NotificationService.acknowledgeInitialTapAction(action.notification.id);
+      consume = true;
     } catch (error) {
-      handledNotificationIds.current.delete(action.notification.id);
-      showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger');
+      if (sessionManager.isCurrent(token)) {
+        consume = true;
+        showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger');
+      }
     } finally {
+      if (consume && pendingNotification.current[0] === action) {
+        const key = notificationTapKey(action);
+        try {
+          if (action.notification.id >= 0) await NotificationService.acknowledgeInitialTapAction(action.notification.id, key);
+        } catch { /* A return to the foreground reconciles the native queue. */ }
+        handledNotificationIds.current.set(key, Date.now());
+        pendingNotification.current.shift();
+      }
       reminderProcessing.current = false;
-      if (pendingNotification.current === action) pendingNotification.current = null;
-      else if (pendingNotification.current) void processPendingTaskNotification();
+      if (consume && pendingNotification.current.length) void drainNotificationTapsRef.current();
     }
   };
 
-  useEffect(() => {
-    if (appReady && !isLocked && typeof processPendingTaskNotification === 'function') void processPendingTaskNotification();
-  }, [appReady, isLocked]);
+  const notificationTapKey = ({ actionId, notification, tapKey }: ReminderAction) => {
+    const extra = notification.extra || {};
+    const verb = actionId === 'lifeos-task-done' || actionId === 'lifeos-task-snooze' ? actionId : 'tap';
+    return tapKey ?? [notification.id, verb, extra.occurrenceAt || extra.originalReminderAt || (extra.kind === 'habitReminder' ? formatLocalDate(new Date()) : '')].join(':');
+  };
+
+  const drainNotificationTaps = async () => {
+    await processPendingTaskNotification();
+  };
+  drainNotificationTapsRef.current = drainNotificationTaps;
 
   const diagnosePlannerTaskReminder = async (task: Task) => {
     let synchronizationFailed = false;
@@ -2051,41 +2135,66 @@ export default function App() {
     }
   };
 
+  handleNotificationTapRef.current = action => {
+    const key = notificationTapKey(action);
+    const now = Date.now();
+    for (const [id, at] of handledNotificationIds.current) if (now - at > 24 * 60 * 60_000) handledNotificationIds.current.delete(id);
+    if (handledNotificationIds.current.has(key) || pendingNotification.current.some(row => notificationTapKey(row) === key)) return;
+    if (pendingNotification.current.length >= 64) return; // Native FIFO remains available for another drain.
+    if (action.notification.id >= 0) inbox.observe(action.notification.extra, 'opened');
+    pendingNotification.current.push(action);
+    void drainNotificationTapsRef.current();
+  };
+  const notificationReceiptRef = useRef<(extra?: Record<string, unknown>) => void>(() => {});
+  notificationReceiptRef.current = extra => { inbox.observe(extra, 'receiver'); void refreshNotificationDiagnostics(); };
+
   useEffect(() => {
     let disposed = false;
     let listener: { remove: () => Promise<void> } | null = null;
     let receivedListener: { remove: () => Promise<void> } | null = null;
-    const handleAction = (action: ReminderAction) => {
-      const extra = action.notification.extra || {};
-      const id = action.notification.id;
-      if (handledNotificationIds.current.has(id)) return;
-      handledNotificationIds.current.add(id);
-      window.setTimeout(() => handledNotificationIds.current.delete(id), 10_000);
-      if (extra.kind === 'test') {
-        navigateTo('settings');
-        navigateProfileSection('notifications');
-        void NotificationService.acknowledgeInitialTapAction(id);
-        return;
-      }
-      pendingNotification.current = action;
-      if (!isLocked && sessionManager.isUnlocked() && isEncryptedStorageActivated()) {
-        void processPendingTaskNotification().catch(error => showToast(error instanceof Error ? error.message : 'Could not open that reminder.', 'danger'));
-      }
+    const loadPending = async () => {
+      const rows = await NotificationService.getPendingTapActions();
+      if (!disposed) rows.forEach(row => handleNotificationTapRef.current(row));
     };
-    void NotificationService.addActionListener(handleAction).then(async handle => {
+    const reconcile = () => void loadPending().catch(() => undefined);
+    void NotificationService.addActionListener(action => { if (!disposed) handleNotificationTapRef.current(action); }).then(async handle => {
       if (disposed) { await handle.remove(); return; }
       listener = handle;
-      // The Capacitor listener receives onNewIntent; this native one-shot also
-      // covers notification taps that cold-start the Activity via onCreate.
-      const initialAction = await NotificationService.getInitialTapAction();
-      if (initialAction) handleAction(initialAction);
-    }).catch(error => console.warn('Notification tap listener could not start.', error));
-    void NotificationService.addReceivedListener(() => { void refreshNotificationDiagnostics(); }).then(async handle => {
+      await loadPending();
+    }).catch(() => console.warn('Notification tap listener could not start.'));
+    void NotificationService.addReceivedListener(notification => {
+      if (!disposed) notificationReceiptRef.current(notification.extra);
+    }).then(async handle => {
       if (disposed) { await handle.remove(); return; }
       receivedListener = handle;
-    }).catch(error => console.warn('Notification delivery listener could not start.', error));
-    return () => { disposed = true; if (listener) void listener.remove(); if (receivedListener) void receivedListener.remove(); };
-  }, [isLocked]);
+    }).catch(() => console.warn('Notification delivery listener could not start.'));
+    window.addEventListener('lifeos:activity-resumed', reconcile);
+    return () => {
+      disposed = true;
+      window.removeEventListener('lifeos:activity-resumed', reconcile);
+      if (listener) void listener.remove();
+      if (receivedListener) void receivedListener.remove();
+    };
+  }, []);
+
+  const clearNotificationRouting = async () => {
+    await NotificationService.clearPendingTapActions();
+    pendingNotification.current = [];
+    handledNotificationIds.current.clear();
+    inbox.forget();
+  };
+
+  const refreshInboxSettings = async () => {
+    const token = sessionManager.capture();
+    const [preferences, backup] = await Promise.all([
+      StorageService.settings.get(INBOX_PREFERENCES_KEY, DEFAULT_INBOX_PREFERENCES),
+      StorageService.settings.get(LAST_BACKUP_KEY, 0),
+    ]);
+    sessionManager.assertCurrent(token);
+    setInboxPreferences({ ...DEFAULT_INBOX_PREFERENCES, ...preferences });
+    setLastBackupAt(Number.isFinite(backup) ? backup : 0);
+    setInboxSettingsLoaded(true);
+  };
 
   const exportProfileBackup = async () => {
     if (backupOperation.current) return;
@@ -2105,6 +2214,11 @@ export default function App() {
       });
 
       if (result.status === 'saved') {
+        if (sessionManager.isCurrent(token)) {
+          const at = Date.now();
+          try { await StorageService.settings.set(LAST_BACKUP_KEY, at); setLastBackupAt(at); }
+          catch { /* The confirmed export succeeds independently of reminder tracking. */ }
+        }
         showToast(`Backup saved successfully (${result.bytesWritten} bytes).`, 'success');
       } else if (result.status === 'cancelled') {
         showToast('Backup export cancelled. No file was saved.', 'info');
@@ -2167,12 +2281,14 @@ export default function App() {
     setBackupOperationInProgress(true);
     let erased = false;
     try {
-      if (!(await confirmAction({ title: 'Erase local records?', message: 'This removes local records and stored settings and cancels scheduled record reminders. Already displayed reminders and some diagnostic history may remain. Your device security setup and exported files are kept. Export a backup first if you want to keep your records.', confirmLabel: 'Erase local records', cancelLabel: 'Keep my data', destructive: true }))) return;
+      if (!(await confirmAction({ title: 'Erase local records?', message: 'This removes local records and stored settings and cancels scheduled record reminders. The encrypted notification inbox is also erased. Older Android notifications and content-free diagnostics may remain. Your device security setup and exported files are kept. Export a backup first if you want to keep your records.', confirmLabel: 'Erase local records', cancelLabel: 'Keep my data', destructive: true }))) return;
       await NotificationService.cancelAllRecordReminders();
+      await clearNotificationRouting();
       await StorageService.backup.clearAll();
       erased = true;
       await reloadAllData();
       await refreshProfileIdentity();
+      await refreshInboxSettings();
       setNotificationPreferences(DEFAULT_NOTIFICATION_PREFERENCES);
       setNotificationsEnabled(false);
       showToast('All personal records erased', 'info');
@@ -2198,10 +2314,13 @@ export default function App() {
       if (text === null) return;
       const hasRecords = await StorageService.backup.hasData();
       if (hasRecords && !(await confirmAction({ title: 'Replace existing BusyDoo data?', message: 'Restoring this backup replaces the records currently on this device. Export a backup first if you may need a copy.', confirmLabel: 'Replace and restore', cancelLabel: 'Keep current data', destructive: true }))) return;
+      await NotificationService.cancelAllRecordReminders();
+      await clearNotificationRouting();
       await StorageService.backup.importData(text, { replaceExisting: hasRecords });
       restored = true;
       const records = await reloadAllData();
       await refreshProfileIdentity();
+      await refreshInboxSettings();
       const prefs = await StorageService.settings.get<NotificationPreferences>('notificationPreferences', DEFAULT_NOTIFICATION_PREFERENCES);
       const master = await StorageService.settings.get<boolean>('notificationsEnabled', Object.values(prefs).some(Boolean));
       setNotificationPreferences({ ...DEFAULT_NOTIFICATION_PREFERENCES, ...prefs });
@@ -2237,7 +2356,7 @@ export default function App() {
         // cancelled; native unlock alone never marks the application ready.
         if (!startupComplete.current) await initApp();
         else await reloadAllData();
-        if (typeof processPendingTaskNotification === 'function') await processPendingTaskNotification();
+        await drainNotificationTapsRef.current();
         return true;
       } catch (error) {
         sessionManager.lock();
@@ -3040,6 +3159,65 @@ export default function App() {
     );
   }
 
+  const bellVisible = sharedReviewAvailable && !createKind && !financeDialogOpen && !modalContent && !confirmation &&
+    !pendingProfilePhoto && !smartImportOpen && !todayCustomizationOpen && !showExitConfirmation &&
+    (activeTab === 'dashboard' || activeTab === 'plan' || (activeTab === 'settings' && profileSection === 'home') ||
+      (activeTab === 'finance' && financeSubtab === 'overview'));
+  const centerVisible = notificationCentreOpen && sharedReviewAvailable;
+  const withNotificationSettingsWrite = async (save: () => Promise<void>) => {
+    if (notificationSettingsWrite.current) return;
+    notificationSettingsWrite.current = true;
+    setSavingNotificationSettings(true);
+    try { await save(); }
+    finally { notificationSettingsWrite.current = false; setSavingNotificationSettings(false); }
+  };
+  const renderNotificationSettings = (inCentre: boolean) => <ProfileNotifications master={notificationsEnabled} categories={notificationPreferences}
+    dateOnly={dateOnlyAlertTime} tone={notificationTone} diagnostics={notificationDiagnostics} inbox={inboxPreferences}
+    historyAvailable={inboxAvailable && inboxSettingsLoaded} busy={savingNotificationSettings}
+    onMaster={() => void withNotificationSettingsWrite(() => setNotificationsMaster(!notificationsEnabled))}
+    onCategory={key => void withNotificationSettingsWrite(() => toggleNotificationCategory(key))}
+    onDate={value => void withNotificationSettingsWrite(() => saveDateOnlyAlertTime(value))}
+    onTone={value => void withNotificationSettingsWrite(async () => {
+      const tone = normalizeNotificationTone(value);
+      try {
+        await StorageService.settings.set('notificationTone', tone);
+        setNotificationTone(tone);
+        if (!await syncNotificationSchedules(tasks, habits, goals, milestones)) showToast('Tone saved. Some reminders could not refresh.', 'danger');
+      } catch { showToast('Could not save notification tone.', 'danger'); }
+    })}
+    onAndroid={() => void openNotificationSettings()} onExact={() => void requestExactAlarmAccess()}
+    onInbox={change => void withNotificationSettingsWrite(async () => {
+      if (!inboxAvailable) return;
+      const token = sessionManager.capture();
+      const next = { ...inboxPreferences, ...change };
+      try {
+        await StorageService.settings.set(INBOX_PREFERENCES_KEY, next);
+        if (sessionManager.isCurrent(token)) setInboxPreferences(next);
+      } catch { if (sessionManager.isCurrent(token)) showToast('Could not save the inbox setting.', 'danger'); }
+    })}
+    onOpen={inCentre ? undefined : () => void openNotificationCentre()}
+    onClear={() => void (async () => {
+      if (!await confirmAction({ title: 'Clear notification history?', message: 'This removes inbox entries from view on this device. Outstanding Android reminders and your records stay as they are.', confirmLabel: 'Clear history', destructive: true })) return;
+      await inbox.apply({ kind: 'clear' }, true);
+    })()} />;
+  const openInboxEvent = async (event: InboxEvent, verb = 'tap') => {
+    if (!inboxAvailable || event.resolvedAt || !inbox.sourceActive(event.source, event.sourceId)) return;
+    const token = sessionManager.capture();
+    if (!await inbox.apply({ kind: 'read', key: event.key }, true) || !sessionManager.isCurrent(token)) return;
+    setNotificationCentreOpen(false);
+    if (event.source === 'task' || event.source === 'habit' || event.source === 'milestone') {
+      handleNotificationTapRef.current({ actionId: verb, tapKey: event.key + ':' + verb, notification: {
+        id: -1, extra: { kind: event.kind, [event.source + 'Id']: event.sourceId },
+      } });
+    } else if (event.source === 'backup' || event.source === 'recovery') {
+      navigateTo('settings');
+      navigateProfileSection(event.source === 'backup' ? 'data' : 'recovery');
+    } else if (event.source !== 'note') {
+      navigateTo('finance');
+      navigateFinanceSubtab(event.source === 'commitment' ? 'planning' : event.source === 'budget' ? 'budgets' : 'savings');
+    }
+  };
+
   const primarySection = primaryDestinationForTab(activeTab);
   const todayBack = todayOrigin.current?.destination === activeTab;
   const sectionTitle = profileOpen ? PROFILE_TITLES[profileSection] : PRIMARY_NAVIGATION.find(item => item.tab === primarySection)?.label;
@@ -3051,6 +3229,7 @@ export default function App() {
       <AppHeader profile={profileOpen} title={primarySection === 'dashboard' ? APP_NAME : sectionTitle || APP_NAME} brand={primarySection === 'dashboard'}
         back={profileOpen && profileSection !== 'home' ? backFromProfile : todayBack && activeTab !== 'finance' ? navigateBack : undefined}
         backLabel={todayBack && activeTab !== 'finance' ? 'Back to Today' : profileSection === 'home' ? 'Back from profile' : 'Back to ' + PROFILE_TITLES[profileParent(profileSection)]}
+        notification={bellVisible ? { unread: inbox.unread, open: () => void openNotificationCentre() } : undefined}
         action={activeTab === 'finance' && financeSubtab === 'overview' && <MoneyPeriod label="Money" month={financeMonth} onChange={setFinanceMonth} />} />
 
       {!isOnline && (
@@ -3742,36 +3921,9 @@ export default function App() {
                 onChange={(key, value) => { void saveUserPreference(key, value); }} />
             </ProfileSubpage>}
 
-            {profileSection === 'notifications' && <ProfileSubpage embedded title="Notifications" onBack={() => navigateProfileSection('home')}>
-              <section className="preference-group">
-                <button type="button" className="preference-row" role="switch" aria-label="All notifications" aria-checked={notificationsEnabled} onClick={() => void setNotificationsMaster(!notificationsEnabled)}><span>All notifications</span><span className="preference-toggle" aria-hidden="true" /></button>
-                {(notificationDiagnostics.permission === 'denied' || notificationDiagnostics.appNotifications === 'disabled' || notificationDiagnostics.channel.startsWith('blocked')) ?
-                  <ProfileSettingRow title="Notifications blocked by Android" value="Resolve" onClick={() => void openNotificationSettings()} />
-                  : notificationsEnabled && notificationDiagnostics.permission === 'granted' && (notificationDiagnostics.exactAlarm !== 'granted' ?
-                    <ProfileSettingRow title="Precise reminders are off" value="Enable" onClick={() => void requestExactAlarmAccess()} />
-                    : <p className="preference-row">Precise reminders <span className="text-secondary">Enabled</span></p>)}
-              </section>
-              <section className="preference-group" aria-label="Reminder timing">
-                <div className="preference-row"><label htmlFor="date-only-alert-time">Date-only task alerts</label>
-                  <input className="lifeos-input min-h-11 rounded-lg px-2" id="date-only-alert-time" type="time" value={dateOnlyAlertTime || ''} onChange={event => void saveDateOnlyAlertTime(event.target.value)} /></div>
-                {!dateOnlyAlertTime ? <p className="profile-detail">Off. Tasks with their own time still follow their reminder settings.</p> :
-                  <button type="button" className="feather-secondary" onClick={() => void saveDateOnlyAlertTime('')}>Turn off date-only alerts</button>}
-              </section>
-              <section className="preference-group" aria-label="Reminder style">
-                <PreferenceChoice label="Notification tone" value={notificationTone} options={NOTIFICATION_TONES.map(tone => [tone, tone[0].toUpperCase() + tone.slice(1)])} onSelect={async value => {
-                  const tone = normalizeNotificationTone(value);
-                  try {
-                    await StorageService.settings.set('notificationTone', tone);
-                    setNotificationTone(tone);
-                    if (!await syncNotificationSchedules(tasks, habits, goals, milestones)) showToast('Tone saved. Some reminders could not refresh.', 'danger');
-                  } catch { showToast('Could not save notification tone.', 'danger'); }
-                }} />
-                <p className="pb-3 text-sm text-secondary">{reminderCopy('habitReminder', notificationTone, 0).body}</p>
-                <ProfileSettingRow title="Sound and vibration" value="Android settings" onClick={() => void openNotificationSettings()} />
-              </section>
-              <section className="preference-group" aria-label="Notification categories">
-                {(Object.keys(notificationLabels) as (keyof NotificationPreferences)[]).map(key => <button type="button" key={key} role="switch" aria-label={notificationLabels[key]} aria-checked={notificationsEnabled && notificationPreferences[key]} disabled={!notificationsEnabled} onClick={() => void toggleNotificationCategory(key)} className="preference-row"><span>{notificationLabels[key]}</span><span className="preference-toggle" aria-hidden="true" /></button>)}
-              </section>
+            {profileSection === 'notifications' && <ProfileSubpage embedded title="Notifications"
+              description="Manage Android delivery, reminder categories and your encrypted inbox." onBack={() => navigateProfileSection('home')}>
+              {!notificationCentreSettings && renderNotificationSettings(false)}
             </ProfileSubpage>}
 
             {developerToolsEnabled && profileSection === 'developer' && <ProfileSubpage embedded title="Developer tools" description="Build diagnostics and isolated demonstration tools." onBack={() => navigateProfileSection('home')}>
@@ -4094,6 +4246,14 @@ export default function App() {
 
       {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 
+      {centerVisible && <NotificationCentre rows={inbox.rows} loading={inbox.loading} failed={inbox.failed}
+        enabled={inboxAvailable && inboxPreferences.enabled} settings={notificationCentreSettings ? renderNotificationSettings(true) : null}
+        onShowSettings={() => { setNotificationCentreSettings(true); void refreshNotificationDiagnostics(); }} onClose={closeNotificationCentre}
+        onApply={action => inbox.apply(action, true)} onOpen={event => void openInboxEvent(event)}
+        onTaskAction={(event, action) => void openInboxEvent(event, action)}
+        actions={{ snooze: notificationsEnabled && notificationPreferences.taskReminders && notificationDiagnostics.permission === 'granted' }}
+        formatDate={date => formatDate(formatLocalDate(date))}
+        recordLabel={event => inboxSnapshot.labels.get(inboxSourceKey(event.source, event.sourceId))} />}
       {profileOpen && pendingProfilePhoto && !activityResumeGuard && <ProfilePhotoEditor source={pendingProfilePhoto} onCancel={() => setPendingProfilePhoto(null)} onSave={saveProfilePhoto} />}
       <AnimatePresence>{toast && <Snackbar notice={toast} key="app-snackbar" onDismiss={() => setToast(null)} reduced={interfaceMotion.reducedMotion} />}</AnimatePresence>
     </div>
