@@ -24,7 +24,7 @@ assert.match(app, /aria-controls="today-customization"/);
 assert.match(app, /Move \$\{TODAY_SECTION_LABELS\[id\]\} up/);
 assert.match(app, /Restore default layout/);
 assert.match(app, /tasks\.filter\(task => !task\.completed && Boolean\(task\.dueDate\) && task\.dueDate > todayKey\)/, 'Coming up explicitly excludes undated, completed and non-future tasks');
-assert.match(app, /setPlannerSelectedDate\(task\.dueDate\); setPlannerFilter\('all'\); navigateTo\('planner'\)/, 'Upcoming task opens Planner on its saved date');
+assert.match(app, /setPlannerSelectedDate\(task\.dueDate\); setPlannerFilter\('all'\); openFromToday\('planner', event\.currentTarget\)/, 'Upcoming task opens Planner on its saved date');
 
 (async () => {
   const h = require('./tests/wp0/production-harness.cjs');

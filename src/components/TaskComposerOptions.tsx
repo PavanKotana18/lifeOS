@@ -2,7 +2,7 @@ import { formatLocalDate, parseLocalDateTime, taskDateOnlyAlert } from '../servi
 import type { Goal } from '../types';
 import InfoTip from './InfoTip';
 import { useId, useState, type Dispatch, type SetStateAction } from 'react';
-import { Bell, CalendarDays, Flag, Repeat2 } from 'lucide-react';
+import { Bell, CalendarDays, Flag, CalendarClock } from 'lucide-react';
 import { AliveDisclosure, AliveReveal } from './AliveDisclosure';
 import { PreferenceChoice } from './PreferenceChoice';
 
@@ -61,7 +61,7 @@ export default function TaskComposerOptions({ draft, update, dateOnlyAlertTime, 
       <PreferenceChoice label="Priority" value={draft.priority || 'Medium'} options={priorityChoices}
         onSelect={priority => choose('priority', priority)} icon={<Flag size={18} aria-hidden="true" />} />
       <PreferenceChoice label="Repeat" value={repeat} options={repeatChoices} onSelect={value => choose('recurring', value)}
-        icon={<Repeat2 size={18} aria-hidden="true" />} disabled={!draft.date} disabledHint="Set a date first" />
+        icon={<CalendarClock size={18} aria-hidden="true" />} disabled={!draft.date} disabledHint="Set a date first" />
     </div>
     <AliveReveal id={id + '-schedule'} open={panel === 'schedule'}>
       <div className="task-option-panel grid grid-cols-2 gap-3">

@@ -24,6 +24,7 @@
 .feather-header-main { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
 .feather-header-main > :is(h1,h2,h3) { overflow-wrap: anywhere; line-height: 1.15; letter-spacing: -.045em; font-weight: 640; }
 .feather-header-action { flex: none; max-width: 100%; }
+.feather-header-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
 .feather-icon-button {
   display: inline-grid;
   place-items: center;
@@ -134,7 +135,7 @@
 .feather-expressive .app-main { padding-block-start: var(--space-3); }
 .feather-expressive .today-heading { gap: var(--space-2); }
 .feather-expressive .today-greeting { font-size: var(--type-section-title); color: var(--ink); }
-.feather-expressive .today-focus { border: 0; background: var(--feather-highlight); box-shadow: none; }
+.feather-expressive .today-focus { border: 0; box-shadow: none; }
 .feather-expressive .today-sections { gap: var(--feather-section-gap); }
 .feather-expressive :is(.today-agenda, .today-habit-summary, .today-money-summary) {
   padding-inline: 0;
@@ -614,7 +615,6 @@ dialog[data-polish-sheet][data-sheet-closing]::backdrop { animation: feather-she
   list-style: none; cursor: pointer; color: var(--ink-secondary); font-size: .875rem; font-weight: 550;
 }
 .profile-crop-adjust summary::-webkit-details-marker { display: none; }
-.profile-crop-adjust[open] summary svg { transform: rotate(180deg); }
 .profile-crop-adjust-controls { background: var(--feather-grouped); border-radius: var(--radius-card); padding: .65rem 1rem; }
 .profile-crop-adjust-controls label { display: grid; gap: .4rem; font-size: .875rem; }
 .profile-crop-adjust-controls input { width: 100%; accent-color: var(--accent); }
@@ -626,23 +626,50 @@ dialog[data-polish-sheet][data-sheet-closing]::backdrop { animation: feather-she
   position: relative;
   border: 0;
   border-radius: var(--radius-card);
-  background: var(--feather-grouped);
+  background: var(--feather-highlight);
   padding: var(--space-4);
   cursor: pointer;
+  scale: 1;
+  transition: scale var(--motion-feedback, 140ms) cubic-bezier(.2,.85,.3,1.16);
 }
-.feather-expressive .today-sections > :is([data-today-card="focus"], [data-today-card="money"]) {
-  background: var(--feather-highlight);
+.feather-expressive .today-sections > [data-today-pressed] {
+  scale: .98;
+  transition-timing-function: ease-out;
+}
+.feather-expressive .today-sections > [data-today-card]::before {
+  content: '';
+  position: absolute;
+  inset: 50% .28rem auto auto;
+  width: 6px;
+  height: 18px;
+  transform: translateY(-50%);
+  background: radial-gradient(circle, currentColor 1px, transparent 1.2px) 0 0 / 6px 6px;
+  color: var(--ink-secondary);
+  opacity: .33;
+  pointer-events: none;
+}
+.today-reorder-hint { margin-top: .3rem; color: var(--ink-secondary); font-size: .8rem; }
+.feather-expressive[data-reduced="true"] .today-sections > [data-today-card] { scale: 1; transition: none; }
+@supports not (scale: 1) {
+  .feather-expressive:not([data-reduced="true"]) .today-sections > [data-today-card]:not([data-today-lifted]):not([data-today-settling]) {
+    transition-property: transform;
+  }
+  .feather-expressive:not([data-reduced="true"]) .today-sections > [data-today-pressed]:not([data-today-lifted]):not([data-today-settling]) {
+    transform: scale(.98);
+  }
 }
 .today-sections [data-today-card] :is(.today-routine-row, .lifeos-raised) { background: transparent; }
 .today-sections [data-today-lifted] {
-  transform: translate(var(--today-drag-x, 0px), var(--today-drag-y, 0px)) scale(1.025);
+  transform: translate3d(var(--today-drag-x, 0px), var(--today-drag-y, 0px), 0) scale(1.025);
+  transform-origin: var(--today-grab-x, 50%) var(--today-grab-y, 50%);
+  will-change: transform;
   outline: 1px solid var(--focus-color);
   box-shadow: 0 14px 34px rgb(0 0 0 / .22);
   z-index: 4;
   user-select: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .today-sections [data-today-lifted] { transform: translate(var(--today-drag-x, 0px), var(--today-drag-y, 0px)); }
+  .today-sections [data-today-lifted] { transform: translate3d(var(--today-drag-x, 0px), var(--today-drag-y, 0px), 0); }
 }
 
 /* Shared geometry for the three Plan destinations. The screen track supplies the page gutter. */
@@ -779,4 +806,68 @@ dialog[data-polish-sheet][data-sheet-closing]::backdrop { animation: feather-she
 @media (max-height: 340px) {
   .today-customization.ui-bottom-sheet { overflow-y: auto; }
   .today-customization-scroll { flex: none; overflow: visible; }
+}
+
+.feather-back-text {
+  min-height: 44px;
+  min-width: 44px;
+  padding-inline: .55rem;
+  border-radius: var(--radius-control);
+  color: var(--accent-text, var(--ink));
+  font-size: .875rem;
+  font-weight: 600;
+}
+.feather-back-text:disabled { opacity: .5; }
+.feather-back-text:focus-visible, .feather-plan-create:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 3px;
+}
+.feather-plan-create {
+  display: grid;
+  place-items: center;
+  inline-size: 48px;
+  block-size: 48px;
+  border-radius: var(--radius-control);
+  background: var(--feather-highlight);
+  color: var(--accent-text, var(--ink));
+}
+.feather-plan-goal-icon { display: grid; place-items: center; position: relative; }
+.feather-plan-goal-icon svg + svg {
+  position: absolute; inset: auto -.2rem -.1rem auto;
+  border-radius: 50%; background: var(--feather-highlight);
+}
+.feather-plan-page .feather-plan-detail {
+  display: grid;
+  gap: var(--plan-section-gap);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: var(--space-4);
+}
+.feather-plan-detail > *, .feather-plan-detail .grid > * { min-width: 0; }
+.feather-plan-detail .life-history { padding: var(--space-3); }
+.feather-plan-detail .habit-history-calendar { gap: .3rem; }
+.feather-plan-detail .habit-history-calendar button { min-width: 0; overflow-wrap: anywhere; }
+.feather-plan-detail details > ul { padding-bottom: var(--space-2); }
+.feather-habit-row { display: flex; align-items: center; flex-wrap: wrap; gap: .65rem; min-width: 0; }
+.feather-habit-row > :first-child { flex-basis: min(10rem, 100%); min-width: 0; }
+.feather-habit-row > button:not(:first-child) { max-width: 100%; overflow-wrap: anywhere; }
+.refinement-period {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .35rem;
+}
+.refinement-period > button { padding-inline: .45rem; font-size: .8rem; }
+.money-guidance { display: flex; align-items: center; justify-content: flex-start; }
+.money-guidance .money-text-action { min-height: 44px; }
+.today-customization .today-order-actions button { font-size: .8rem; padding-inline: .3rem; overflow-wrap: anywhere; }
+.today-customization-list li > label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.profile-crop-toolbar > button { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 25rem) {
+  .feather-expressive .feather-plan-page .feather-plan-segments { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .feather-plan-detail .habit-history-calendar { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .feather-plan-detail .habit-history-calendar > [aria-hidden="true"] { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feather-expressive .today-sections > [data-today-card] { scale: 1; transition: none; }
 }

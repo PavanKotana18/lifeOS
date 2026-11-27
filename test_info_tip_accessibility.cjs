@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const component = fs.readFileSync('src/components/InfoSheet.tsx', 'utf8');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 const styles = fs.readFileSync('src/index.css', 'utf8');
-assert.match(component, /type="button"[\s\S]*?aria-label=\{'About ' \+ label\}[\s\S]*?aria-haspopup="dialog"/,
+assert.match(component, /type="button"[\s\S]*?aria-label=\{triggerText \|\| 'About ' \+ label\}[\s\S]*?aria-haspopup="dialog"/,
   'the visible information control is a named keyboard-operable button');
 assert.match(component, /showSheet\(sheet\)/, 'opening the tip uses native modal dialog focus handling');
 assert.match(component, /onClose=\{\(\) => \{ setOpen\(false\)/,

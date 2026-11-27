@@ -34,7 +34,7 @@ export default function TaskDetailScreen({ task, reducedMotion = false, status, 
     animate={{ transform: 'none' }}
     exit={reducedMotion ? undefined : { transform: 'translate3d(100%, 0, 0)', transition: { duration: .25, ease: [.32, 0, .67, 1] } }}
     transition={{ type: 'spring', duration: .31, bounce: .02 }} aria-labelledby="task-detail-title" className="task-detail-screen lifeos-panel">
-    <FeatherHeader title={task.title} id="task-detail-title" back={{ label: 'Back to tasks', onClick: onBack }} />
+    <FeatherHeader title={task.title} id="task-detail-title" back={{ label: 'Close task details', onClick: onBack, dismiss: true }} />
     {(task.description || task.notes) && <section className="task-detail-section"><h3 className="type-caption text-secondary">Description</h3><p className="mt-1 whitespace-pre-wrap text-sm">{task.description || task.notes}</p></section>}
     <dl className="task-detail-meta"><div><dt>Due</dt><dd>{dueLabel}</dd></div><div><dt>Status</dt><dd className={status === 'Overdue' ? 'text-[var(--danger)]' : status === 'Completed' ? 'text-[var(--success)]' : 'lifeos-accent-text'}>{status}</dd></div><div><dt>Priority</dt><dd>{task.priority}</dd></div><div><dt>Reminder</dt><dd>{reminderLabel}</dd></div>{task.recurring && task.recurring !== 'None' && <div><dt>Repeats</dt><dd>{task.recurring}</dd></div>}{task.category && <div><dt>Category</dt><dd>{task.category}</dd></div>}</dl>
     <TaskSubtasks subtasks={task.subtasks} onChange={onSubtasks} />

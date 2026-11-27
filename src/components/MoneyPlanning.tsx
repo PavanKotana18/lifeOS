@@ -4,7 +4,7 @@ import ComposerShell from './ComposerShell';
 import { AliveDisclosure } from './AliveDisclosure';
 import { PreferenceChoice } from './PreferenceChoice';
 import type { Dispatch, FormEvent, SetStateAction } from 'react';
-import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CalendarClock, RefreshCw } from 'lucide-react';
+import { CirclePlus, Layers, ReceiptText, CalendarClock, CalendarRange } from 'lucide-react';
 import type { Category, FinancialAccount, ManualExchangeRate, PlannedCommitment, Transaction } from '../types';
 import { CURRENCY_CODES } from '../services/userPreferences';
 import { decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, minorUnitsToDecimal } from '../services/financeCore';
@@ -109,7 +109,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
     !recordedKeys.has(`${plan.id}:${plan.lastPostedDate}`)) : [];
 
   const renderPlan = (row: PlannedCommitment, featured: boolean) => {
-    const Direction = row.type === 'income' ? ArrowDownLeft : ArrowUpRight;
+    const Direction = row.type === 'income' ? CirclePlus : ReceiptText;
     return <article key={row.id} className="scheduled-plan-row" data-next={featured}>
       <button type="button" className="scheduled-row-open" aria-label={`View ${row.title}`} onClick={() => {
         setError(''); setDetailId(row.id);
@@ -171,8 +171,8 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
         : visiblePlans.some(row => row !== nextPlan) && <div className="scheduled-timeline" aria-label="Commitment timeline">
           {visiblePlans.filter(row => row !== nextPlan).map(row => renderPlan(row, false))}
         </div>}
-    </section> :     <section className="lifeos-panel rounded-2xl border p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div className="flex gap-3"><span className="lifeos-tint flex h-11 w-11 items-center justify-center rounded-xl"><RefreshCw size={19} /></span><div><h3 className="font-semibold">Manual exchange rates</h3><p className="mt-1 text-xs text-secondary">Offline rates you enter yourself. They are not live market quotes.</p></div></div><button type="button" onClick={addRate} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">Add rate</button></div>
-      {!rates.length ? <p className="mt-5 rounded-xl lifeos-raised p-4 text-sm text-secondary">No manual rates saved. Mixed currencies will remain separate until a dated rate is available.</p> : <div className="mt-4 divide-y divide-[var(--stroke)]">{rates.map(row => <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><span className="text-sm"><strong>{row.baseCurrencyCode} → {row.quoteCurrencyCode}</strong><small className="ml-2 text-secondary">{row.effectiveDate}{row.sourceLabel ? ` · ${row.sourceLabel}` : ''}</small></span><span className="font-semibold tabular-nums">1 {row.baseCurrencyCode} = {row.rate} {row.quoteCurrencyCode}</span><span className="flex gap-1"><button type="button" onClick={() => editRate(row)} className="min-h-10 rounded-lg px-2 text-xs lifeos-accent-text">Edit</button><button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this manual rate?', message: `${row.baseCurrencyCode} to ${row.quoteCurrencyCode} at ${row.rate} for ${row.effectiveDate} will be removed.`, confirmLabel: 'Delete rate', destructive: true }))) return; await runAction(() => onDeleteRate(row.id)); }} className="min-h-10 rounded-lg px-2 text-xs text-secondary">Delete</button></span></div>)}</div>}
+    </section> :     <section className="lifeos-panel rounded-2xl border p-4 sm:p-5"><div className="flex items-start justify-between gap-3"><div className="flex gap-3"><span className="lifeos-tint flex h-11 w-11 items-center justify-center rounded-xl"><CalendarRange size={19} /></span><div><h3 className="font-semibold">Manual exchange rates</h3><p className="mt-1 text-xs text-secondary">Offline rates you enter yourself. They are not live market quotes.</p></div></div><button type="button" onClick={addRate} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-3 text-xs font-semibold">Add rate</button></div>
+      {!rates.length ? <p className="mt-5 rounded-xl lifeos-raised p-4 text-sm text-secondary">No manual rates saved. Mixed currencies will remain separate until a dated rate is available.</p> : <div className="mt-4 divide-y divide-[var(--stroke)]">{rates.map(row => <div key={row.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><span className="text-sm"><strong>{row.baseCurrencyCode} to {row.quoteCurrencyCode}</strong><small className="ml-2 text-secondary">{row.effectiveDate}{row.sourceLabel ? ` · ${row.sourceLabel}` : ''}</small></span><span className="font-semibold tabular-nums">1 {row.baseCurrencyCode} = {row.rate} {row.quoteCurrencyCode}</span><span className="flex gap-1"><button type="button" onClick={() => editRate(row)} className="min-h-10 rounded-lg px-2 text-xs lifeos-accent-text">Edit</button><button type="button" onClick={async () => { if (!(await confirmAction({ title: 'Delete this manual rate?', message: `${row.baseCurrencyCode} to ${row.quoteCurrencyCode} at ${row.rate} for ${row.effectiveDate} will be removed.`, confirmLabel: 'Delete rate', destructive: true }))) return; await runAction(() => onDeleteRate(row.id)); }} className="min-h-10 rounded-lg px-2 text-xs text-secondary">Delete</button></span></div>)}</div>}
       <p className="mt-3 rounded-xl lifeos-raised p-3 text-xs leading-relaxed text-secondary">Each rate includes its effective date and optional source label. BusyDoo does not download rates or imply a conversion is current.</p>
     </section>}
     {detail && <AliveDetailDialog key={detail.id} title={detail.title} eyebrow="Scheduled commitment" onClose={() => setDetailId(null)}>
@@ -214,7 +214,7 @@ export default function MoneyPlanning({ commitments, transactions = [], rates, a
           <input required maxLength={80} className={inputClass} value={commitment.title}
             onChange={event => setCommitment(current => current && { ...current, title: event.target.value })} />
         </label>
-        <PreferenceChoice variant="quick" label="Type" icon={<ArrowLeftRight size={18} aria-hidden="true" />} value={commitment.type || 'expense'}
+        <PreferenceChoice variant="quick" label="Type" icon={<Layers size={18} aria-hidden="true" />} value={commitment.type || 'expense'}
           options={[['expense', 'Expense'], ['income', 'Income']]}
           onSelect={type => setCommitment(current => current && { ...current, type: type as 'income' | 'expense', categoryId: '' })} />
         <label className="block text-xs text-secondary">Amount

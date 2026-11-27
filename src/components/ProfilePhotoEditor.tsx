@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, RotateCcw, RotateCw } from 'lucide-react';
 import { clampPhotoCrop, encodeProfileCrop, INITIAL_PHOTO_CROP, photoCropGeometry, photoObjectUrl } from '../services/profilePhoto';
 
 export default function ProfilePhotoEditor({ source, onCancel, onSave }: {
@@ -58,9 +57,9 @@ export default function ProfilePhotoEditor({ source, onCancel, onSave }: {
     <header className="profile-crop-toolbar">
       <h2>Crop photo</h2>
       <button type="button" className="profile-crop-cancel" disabled={busy} onClick={onCancel}>Cancel</button>
-      <button type="button" className="feather-icon-button" aria-label="Reset crop" title="Reset crop" disabled={busy || !image} onClick={() => setCrop(INITIAL_PHOTO_CROP)}><RotateCcw size={19} aria-hidden="true" /></button>
-      <button type="button" className="feather-icon-button" aria-label="Rotate photo clockwise" title="Rotate photo clockwise" disabled={busy || !image}
-        onClick={() => image && setCrop(current => clampPhotoCrop(image, { ...current, x: 1 - current.y, y: current.x, turns: (current.turns + 1) % 4 }))}><RotateCw size={19} aria-hidden="true" /></button>
+      <button type="button" className="feather-back-text" aria-label="Reset crop" title="Reset crop" disabled={busy || !image} onClick={() => setCrop(INITIAL_PHOTO_CROP)}>Reset</button>
+      <button type="button" className="feather-back-text" aria-label="Rotate photo clockwise" title="Rotate photo clockwise" disabled={busy || !image}
+        onClick={() => image && setCrop(current => clampPhotoCrop(image, { ...current, x: 1 - current.y, y: current.x, turns: (current.turns + 1) % 4 }))}>Rotate</button>
       <button type="button" className="feather-primary" disabled={busy || !image} onClick={() => void confirm()}>{busy ? 'Saving…' : 'Done'}</button>
     </header>
     <div className="profile-crop-preview">
@@ -99,13 +98,13 @@ export default function ProfilePhotoEditor({ source, onCancel, onSave }: {
     </div>
     {error && <p role="alert" className="profile-crop-error">{error}</p>}
     <details className="profile-crop-adjust">
-      <summary>Fine adjustments <ChevronDown size={16} aria-hidden="true" /></summary>
+      <summary>Fine adjustments</summary>
       <div className="profile-crop-adjust-controls">
         <label>Zoom <input type="range" min="1" max="8" step=".05" value={crop.zoom} disabled={!image || busy}
           onChange={event => move(0, 0, Number(event.target.value) / crop.zoom, 1, 0, 0)} /></label>
-        <div role="group" aria-label="Move photo">{([['left', ArrowLeft, -1, 0], ['right', ArrowRight, 1, 0], ['up', ArrowUp, 0, -1], ['down', ArrowDown, 0, 1]] as const).map(([direction, Icon, x, y]) =>
-          <button type="button" className="feather-icon-button" aria-label={'Move photo ' + direction} key={direction} disabled={!image || busy}
-            onClick={() => move(x * .06, y * .06, 1, 1, 0, 0)}><Icon size={17} aria-hidden="true" /></button>)}</div>
+        <div role="group" aria-label="Move photo">{([['Left', -1, 0], ['Right', 1, 0], ['Up', 0, -1], ['Down', 0, 1]] as const).map(([direction, x, y]) =>
+          <button type="button" className="feather-back-text" aria-label={'Move photo ' + direction.toLowerCase()} key={direction} disabled={!image || busy}
+            onClick={() => move(x * .06, y * .06, 1, 1, 0, 0)}>{direction}</button>)}</div>
       </div>
     </details>
   </dialog>;

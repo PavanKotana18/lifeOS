@@ -1,5 +1,4 @@
 import { useId, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const periodPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
 const monthFormatter = new Intl.DateTimeFormat(undefined, { month: 'long', timeZone: 'UTC' });
@@ -29,9 +28,9 @@ export default function MoneyPeriod({ label, month, onChange }: {
       <section className="lifeos-info-dialog-content">
         <header className="flex items-center justify-between gap-2"><h2 id={id + '-title'} className="type-section-title">Reporting period</h2><button type="button" className="feather-secondary" onClick={() => dialog.current?.close()}>Close</button></header>
         <div className="period-year">
-          <button type="button" className="feather-icon-button" aria-label="Previous year" disabled={!validYear || yearNumber <= 1} onClick={() => setYear(String(yearNumber - 1))}><ChevronLeft size={20} aria-hidden="true" /></button>
+          <button type="button" className="feather-back-text" aria-label="Previous year" disabled={!validYear || yearNumber <= 1} onClick={() => setYear(String(yearNumber - 1))}>Previous</button>
           <label className="period-year-field">Year<input type="number" className="lifeos-input" min="1" max="9999" step="1" inputMode="numeric" value={year} onChange={event => setYear(event.target.value)} /></label>
-          <button type="button" className="feather-icon-button" aria-label="Next year" disabled={!validYear || yearNumber >= 9999} onClick={() => setYear(String(yearNumber + 1))}><ChevronRight size={20} aria-hidden="true" /></button>
+          <button type="button" className="feather-back-text" aria-label="Next year" disabled={!validYear || yearNumber >= 9999} onClick={() => setYear(String(yearNumber + 1))}>Next</button>
         </div>
         <div className="period-months" role="group" aria-label="Months">
           {monthLabels.map((monthLabel, index) => <button key={monthLabel} type="button" className="feather-secondary"

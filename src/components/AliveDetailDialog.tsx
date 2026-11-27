@@ -1,5 +1,5 @@
+import { X } from 'lucide-react';
 import { useLayoutEffect, useId, useRef, type ReactNode } from 'react';
-import { ChevronLeft } from 'lucide-react';
 import { animateRoute, readRoutePose } from '../services/aliveMotion';
 import { normalizeMotionPreset } from '../services/interfaceMotion';
 
@@ -64,8 +64,8 @@ export default function AliveDetailDialog({ title, eyebrow, onClose, children }:
   return <dialog ref={dialogRef} aria-labelledby={titleId} className="alive-detail-dialog lifeos-page"
     data-scheduled-details onClose={onClose} onCancel={event => { event.preventDefault(); returnToList(); }}>
     <header className="alive-detail-header">
-      <button type="button" onClick={returnToList} data-motion-back aria-label="Back to Schedule" className="profile-page-back lifeos-raised">
-        <ChevronLeft size={23} aria-hidden="true" />
+      <button type="button" onClick={returnToList} data-motion-back aria-label="Close scheduled item details" className="profile-page-back lifeos-raised">
+        <X size={20} aria-hidden="true" />
       </button>
       <div><p className="text-xs text-secondary">{eyebrow}</p><h2 className="type-page-title" id={titleId}>{title}</h2></div>
     </header>
