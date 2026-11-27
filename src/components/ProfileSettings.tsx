@@ -51,14 +51,14 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
       {onPhotoChange ? <button type="button" ref={avatar} aria-label="Profile photo options" aria-haspopup="dialog"
         className="profile-avatar profile-avatar-trigger lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl"
         disabled={photoBusy} onClick={() => showSheet(photoSheet.current)}>
-        <ProfileAvatar photo={photo} initial={initial} /><Camera size={20} className="profile-avatar-camera" aria-hidden="true" />
+        <span className="profile-avatar-picture"><ProfileAvatar photo={photo} initial={initial} /></span>
+        <span className="profile-avatar-camera" aria-hidden="true"><Camera size={15} strokeWidth={1.8} /></span>
       </button> : <div className="profile-avatar lifeos-tint lifeos-accent-text flex h-14 w-14 shrink-0 items-center justify-center rounded-xl" aria-hidden="true"><ProfileAvatar photo={photo} initial={initial} /></div>}
       <h2 id="profile-identity-title" className="min-w-0 flex-1 safe-wrap text-xl font-semibold">{name.trim() || 'Your profile'}</h2>
-      <button type="button" ref={pencil} aria-label="Edit name" aria-haspopup="dialog" className="feather-icon-button" onClick={() => {
+      <button type="button" ref={pencil} aria-label="Edit name" aria-haspopup="dialog" className="feather-icon-button profile-name-edit" onClick={() => {
         setDraft(name); setError(''); showSheet(nameSheet.current);
-      }}><PencilLine size={19} aria-hidden="true" /></button>
+      }}><PencilLine size={17} strokeWidth={1.8} aria-hidden="true" /></button>
     </div>
-    {photoBusy && <p role="status" className="text-secondary text-xs">Opening photo picker?</p>}
     {photoError && <p role="alert" className="text-xs text-[var(--danger)]">{photoError}</p>}
     {onPhotoChange && <dialog ref={photoSheet} data-polish-sheet data-profile-editor aria-label="Profile photo"
       className="profile-editor-sheet lifeos-page" onCancel={event => { event.preventDefault(); closeSheet(photoSheet.current); }}
@@ -68,7 +68,7 @@ export function ProfileIdentityCard({ name, initial, photo, photoBusy, photoErro
         if (remove.current) { remove.current = false; void onPhotoChange(true); }
       }}>
       <h3 className="type-section-title">Profile photo</h3>
-      <button type="button" className="profile-editor-action" onClick={() => { closeSheet(photoSheet.current); void onPhotoChange(); }}>
+      <button type="button" className="profile-editor-action" onClick={() => { photoSheet.current?.close(); void onPhotoChange(); }}>
         <ImagePlus size={19} aria-hidden="true" />{photo ? 'Replace photo' : 'Choose photo'}
       </button>
       {photo && <><button type="button" className="profile-editor-action" onClick={() => { photoSheet.current?.close(); onEditPhoto?.(); }}><Crop size={19} aria-hidden="true" />Edit photo</button>

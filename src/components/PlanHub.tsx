@@ -1,3 +1,4 @@
+import { PlanSectionHeader, PlanSectionEmpty } from './PlanSection';
 import LifeDoodle from './LifeDoodle';
 import { PreferenceChoice } from './PreferenceChoice';
 import { useRef, useState } from 'react';
@@ -77,10 +78,7 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
   const views: { id: PlanView; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'today', label: 'Today' }, { id: 'upcoming', label: 'Upcoming' }, { id: 'unscheduled', label: 'Unscheduled' }];
   const narrowed = Boolean(query.trim()) || count > 0 || view !== 'all';
   return <section aria-labelledby="plan-title" className="plan-hub plan-workspace">
-    <header className="plan-workspace-heading flex items-center justify-between gap-3">
-      <h2 id="plan-title" className="type-section-title">Tasks</h2>
-      {!onQuickCreate && <button type="button" className="feather-primary" onClick={onCreate}>Add task</button>}
-    </header>
+    <PlanSectionHeader id="plan-title" title="Tasks" topic="Tasks" action="Add task" onAdd={onCreate} />
     {onQuickCreate && <form className="plan-quick-task flex gap-2" aria-label="Quick task capture" onSubmit={event => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -90,11 +88,11 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
       form.reset();
     }}>
       <label className="sr-only" htmlFor="plan-quick-task-title">Quick task title</label>
-      <input id="plan-quick-task-title" name="title" maxLength={160} placeholder="Add a task to your list?" className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm" />
-      <button type="submit" className="feather-primary shrink-0">Add task</button>
+      <input id="plan-quick-task-title" name="title" maxLength={160} placeholder="Task title" className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 text-sm" />
+      <button type="submit" className="feather-secondary shrink-0">Continue</button>
     </form>}
     <div className="plan-view-controls" data-no-tab-swipe>
-      <div className="plan-view-switch" role="group" aria-label="Task views">{views.map(item => <button type="button" key={item.id} aria-pressed={view === item.id} onClick={() => setView(item.id)}>{item.label}</button>)}</div>
+      <div className="plan-view-switch feather-plan-segments" role="group" aria-label="Task views">{views.map(item => <button type="button" key={item.id} aria-pressed={view === item.id} onClick={() => setView(item.id)}>{item.label}</button>)}</div>
       <div className="plan-toolbar">
         <input type="search" aria-label="Search tasks" placeholder="Search tasks" value={query} onChange={event => setQuery(event.target.value)} className="lifeos-input" />
         <button type="button" className="lifeos-input" aria-haspopup="dialog" onClick={() => { setDraft({ ...filters, status }); dialog.current?.showModal(); }}><SlidersHorizontal size={16} aria-hidden="true" />Filters{count ? ' (' + count + ')' : ''}</button>
@@ -138,9 +136,9 @@ export default function PlanHub({ tasks, today, now, onOpenTask, onToggleTask, o
         const taskStatus = getTaskStatus(task, now);
         return <li key={task.id} className={`plan-hub-task ui-interactive-row${taskStatus === 'Overdue' ? ' is-overdue' : ''}${task.completed ? ' is-complete' : ''}`}>
           <label className="plan-hub-task-check"><input type="checkbox" checked={task.completed} onChange={() => onToggleTask(task)} aria-label={`Mark ${task.title} ${task.completed ? 'incomplete' : 'complete'}`} /><svg className="alive-task-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9" pathLength="1" /></svg></label>
-          <button type="button" onClick={event => onOpenTask(task, event.currentTarget)} className="plan-hub-task-open"><span className="plan-hub-row-title" data-priority={task.priority} title={`${task.priority} priority`}>{task.title}</span><span className="plan-hub-row-meta">{taskStatus === 'Overdue' ? 'Overdue \u00b7 ' : task.completed ? 'Completed \u00b7 ' : ''}{formatTaskDate(task.dueDate, today)}{task.dueTime ? ` \u00b7 ${task.dueTime}` : task.dueDate ? ' \u00b7 end of day' : ''}<span className="plan-schedule-indicators">{task.recurring && task.recurring !== 'None' && <span><Repeat2 size={12} aria-hidden="true" />Repeats {task.recurring.toLocaleLowerCase()}</span>}{(task.reminderAt || task.reminderLeadMinutes) && <span><Bell size={12} aria-hidden="true" />Reminder set</span>}</span></span></button>
+          <button type="button" onClick={event => onOpenTask(task, event.currentTarget)} className="plan-hub-task-open"><span className="plan-hub-row-title feather-plan-record-title" data-priority={task.priority} title={`${task.priority} priority`}>{task.title}</span><span className="plan-hub-row-meta feather-plan-record-meta">{taskStatus === 'Overdue' ? 'Overdue \u00b7 ' : task.completed ? 'Completed \u00b7 ' : ''}{formatTaskDate(task.dueDate, today)}{task.dueTime ? ` \u00b7 ${task.dueTime}` : task.dueDate ? ' \u00b7 end of day' : ''}<span className="plan-schedule-indicators">{task.recurring && task.recurring !== 'None' && <span><Repeat2 size={12} aria-hidden="true" />Repeats {task.recurring.toLocaleLowerCase()}</span>}{(task.reminderAt || task.reminderLeadMinutes) && <span><Bell size={12} aria-hidden="true" />Reminder set</span>}</span></span></button>
         </li>;
-      })}</ul></section>) : <div className="plan-hub-empty"><LifeDoodle kind={tasks.length && tasks.every(task => task.completed) ? "tasks-done" : "empty-tasks"} /><div><strong>{!tasks.length ? 'No tasks yet' : narrowed ? 'No tasks match this view' : 'You are all caught up'}</strong><span>{!tasks.length ? 'Start with one thing you want to remember.' : narrowed ? 'Try another view or status, or clear your search.' : 'Your completed tasks are available under All statuses.'}</span>{narrowed && tasks.length > 0 && <button type="button" onClick={() => { setView('all'); setStatus('all'); setFilters(emptyPlanFilters); setQuery(''); }}>Show every task</button>}</div></div>}
+      })}</ul></section>) : <PlanSectionEmpty illustration="empty-tasks" title={!tasks.length ? 'No tasks yet' : narrowed ? 'No tasks match this view' : 'You are all caught up'}><p>{!tasks.length ? 'Start with one thing you want to remember.' : narrowed ? 'Try another view or status, or clear your search.' : 'Your completed tasks are available under All statuses.'}</p>{narrowed && tasks.length > 0 && <button type="button" onClick={() => { setView('all'); setStatus('all'); setFilters(emptyPlanFilters); setQuery(''); }}>Show every task</button>}</PlanSectionEmpty>}
     </section>
   </section>;
 }

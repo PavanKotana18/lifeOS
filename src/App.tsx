@@ -1,5 +1,6 @@
 import { useTodayCardDrag } from './hooks/useTodayCardDrag';
-import { LifeOSBrand } from './components/LifeOSBrand';
+import { BusyDooBrand } from './components/BusyDooBrand';
+import { PlanSectionHeader, PlanSectionEmpty } from './components/PlanSection';
 import ProfilePhotoEditor from './components/ProfilePhotoEditor';
 import { closeSheet } from './components/sheetMotion';
 import { goalProgressPercent, isGoalComplete, validateGoalMeasure } from './services/goalModes';
@@ -25,7 +26,7 @@ import React, { Suspense, useState, useEffect, useLayoutEffect, useMemo, useRef 
 import { createPortal } from 'react-dom';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import packageInfo from '../package.json';
-import { Activity, Flag, Target, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Tag, CalendarDays, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
+import { Activity, Check, Flag, Target, ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Tag, CalendarDays, SlidersHorizontal, ChevronDown, ChevronLeft, ChevronRight, Home, Leaf, Search, Shield, ShieldCheck, WalletCards, UserRound } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 
 import { StorageService, sessionManager, activateEncryptedStorage, isEncryptedStorageActivated, validateBackupTables, getRecoveryChallenge, hasEncryptedRecords, hasPrivateRows } from './db';
@@ -2805,7 +2806,7 @@ export default function App() {
 
   if (backupPrompt) return <BackupPassphraseDialog purpose={backupPrompt} onComplete={value => backupPassphraseResolver.current?.(value)} />;
 
-  if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'BusyDoo could not start' : 'Loading BusyDoo'}>{startupError ? <div className="max-w-sm text-center"><h1 className="text-xl font-semibold">BusyDoo could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'BusyDoo could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button></div> : <div role="status" className="grid justify-items-center gap-4"><LifeOSBrand /><p className="text-sm text-secondary">Opening your secure workspace?</p></div>}</div>;
+  if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'BusyDoo could not start' : 'Loading BusyDoo'}>{startupError ? <div className="max-w-sm text-center"><div className="mb-4"><BusyDooBrand /></div><h1 className="text-xl font-semibold">BusyDoo could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'BusyDoo could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover access</button></div> : <div role="status" className="grid justify-items-center" aria-label="Opening BusyDoo"><BusyDooBrand /></div>}</div>;
 
   if (firstRecordSecurityOpen) return <FirstRecordSecurityDialog onDecision={choice => {
     void setSensitiveScreenshotState(profileAdmissionPending || profileOpen).catch(() => {});
@@ -2849,21 +2850,16 @@ export default function App() {
   if (isLocked) {
     return (
       <div className="lifeos-page fixed inset-0 z-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="lifeos-tint lifeos-border mb-6 flex h-20 w-20 items-center justify-center rounded-3xl border">
-          <svg className="h-10 w-10 lifeos-accent-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-          </svg>
-        </div>
-        <h2 className="text-2xl font-bold mb-2">BusyDoo is Locked</h2>
-        <p className="text-sm text-secondary mb-8 max-w-xs">Biometric authentication is required to protect your personal data.</p>
+        <BusyDooBrand className="mb-5" />
+        <h2 className="text-2xl font-bold mb-2">BusyDoo is locked</h2>
+        <p className="text-sm text-secondary mb-8 max-w-xs">Confirm your identity to open your records.</p>
         <button
           onClick={triggerBiometricAuth}
           className="lifeos-accent-button min-h-12 w-full max-w-xs rounded-xl px-6 py-3.5 font-semibold active:scale-95 transition"
         >
-          {biometricMessage ? 'Try again' : 'Verify Biometrics'}
+          {biometricMessage ? 'Try again' : 'Unlock'}
         </button>
-          <button className="lifeos-input mt-3 min-h-11 rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover encryption key</button>
+          <button className="lifeos-input mt-3 min-h-11 rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover access</button>
         {biometricMessage && <p role="status" className="lifeos-warning mt-4 max-w-xs text-sm">{biometricMessage}</p>}
       </div>
     );
@@ -2905,23 +2901,23 @@ export default function App() {
           <div className="today-sections command-centre" data-testid="today-dashboard" {...todayCards.handlers}>
             <div className="today-heading" style={{ order: 0 }}><div><p className="text-sm font-medium text-muted">{clockNow.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p><p className="today-greeting font-semibold tracking-tight">{greetingForHour(clockNow.getHours(), displayName)}</p></div><button type="button" onClick={() => setTodayCustomizationOpen(open => !open)} aria-expanded={todayCustomizationOpen} aria-haspopup="dialog" aria-controls="today-customization" aria-label="Today layout" className="feather-icon-button"><SlidersHorizontal size={19} aria-hidden="true" /></button></div>
 
-            {todayCustomizationOpen && createPortal(<div className="ui-sheet-backdrop" onMouseDown={dismissTodayCustomizationBackdrop}>
-            <section id="today-customization" role="dialog" aria-modal="true" aria-labelledby="today-customization-title" aria-describedby="today-customization-description" className="today-customization ui-sheet-motion ui-bottom-sheet lifeos-panel max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border p-4">
-              <div className="mb-3"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p id="today-customization-description" className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order. Changes save as you make them.</p></div>
-              <ul className="today-customization-list">{todayLayout.order.map((id, index) => <li key={id}>
+            {todayCustomizationOpen && createPortal(<div className="ui-sheet-backdrop today-customization-layer" onMouseDown={dismissTodayCustomizationBackdrop}>
+            <section id="today-customization" role="dialog" aria-modal="true" aria-labelledby="today-customization-title" aria-describedby="today-customization-description" className="today-customization ui-sheet-motion ui-bottom-sheet lifeos-panel">
+              <div className="today-customization-heading"><h3 id="today-customization-title" className="text-sm font-semibold">Make Today yours</h3><p id="today-customization-description" className="mt-1 text-xs text-secondary">Choose which sections appear and arrange their order. Changes save as you make them.</p></div>
+              <div className="today-customization-scroll"><ul className="today-customization-list">{todayLayout.order.map((id, index) => <li key={id}>
                 <label className="today-section-toggle"><input type="checkbox" checked={!todayLayout.hidden.includes(id)} disabled={id === 'focus'} onChange={event => persistTodayLayout(setTodaySectionVisible(todayLayoutRef.current, id, event.target.checked))} /><span>{TODAY_SECTION_LABELS[id]}</span></label>
                 <div className="today-order-actions"><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} up`} disabled={index === 0} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, -1))}>↑</button><button type="button" aria-label={`Move ${TODAY_SECTION_LABELS[id]} down`} disabled={index === todayLayout.order.length - 1} onClick={() => persistTodayLayout(moveTodaySection(todayLayoutRef.current, id, 1))}>↓</button></div>
-              </li>)}</ul>
-              <div className="ui-form-actions mt-3"><button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="min-h-11 flex-1 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button><button type="button" onClick={closeTodayCustomization} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold">Done</button></div>
+              </li>)}</ul></div>
+              <div className="ui-form-actions today-customization-actions"><button type="button" onClick={() => persistTodayLayout(DEFAULT_TODAY_LAYOUT)} className="min-h-11 flex-1 rounded-lg px-2 text-xs font-semibold lifeos-accent-text">Restore default layout</button><button type="button" onClick={closeTodayCustomization} className="lifeos-accent-button min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold">Done</button></div>
             </section></div>, document.body)}
 
             {/* Keep the first panel focused: one useful progress cue and fast ways to act. */}
             <section className="today-focus lifeos-panel rounded-2xl border p-4" data-today-card="focus" style={todaySectionStyle('focus')} aria-labelledby="today-overview-title" data-testid="today-overview">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 id="today-overview-title" className="mt-1 text-base font-semibold">Today’s priorities</h3>
-                  {todayOverview.tasksDue > 0 ? <p className="mt-1 text-sm text-secondary"><span className="font-medium">Tasks due today</span> · <strong className="font-semibold text-primary tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> complete</p>
-                    : <p className="mt-1 text-sm text-secondary">What matters most today?</p>}
+                  <h3 id="today-overview-title" className="today-summary-title">Due today</h3>
+                  {todayOverview.tasksDue > 0 ? <p className="today-summary-copy"><strong className="tabular-nums">{todayOverview.tasksCompleted} of {todayOverview.tasksDue}</strong> tasks complete</p>
+                    : <p className="today-summary-copy">Nothing due today.</p>}
                 </div>
                 <div className="today-quick-actions" aria-label="Quick add">
                   <button type="button" onClick={() => openCreateForm('task')} className="feather-primary">Add task</button>
@@ -2972,31 +2968,38 @@ export default function App() {
             </div>
 
             <section className="today-habit-summary" data-today-card="habits" style={todaySectionStyle("habits")} aria-labelledby="today-routines-title">
-              <header className="today-section-heading">
-              <div className="today-routines-heading"><h3 id="today-routines-title" className="type-section-title">Daily routines</h3>
-                {todayOverview.routinesDue > 0 && <p className="type-caption text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>}
-              </div>
-                <button type="button" className="money-text-action" onClick={() => navigateTo("habits")}>View habits</button>
-              </header>
+              <h3 id="today-routines-title" className="today-summary-title">Daily routines</h3>
+              {todayOverview.routinesDue > 0 && <>
+                <p className="today-summary-copy"><strong className="tabular-nums">{todayOverview.routinesCompleted} of {todayOverview.routinesDue}</strong> complete today</p>
+                <div className="today-focus-progress today-routine-progress" role="progressbar" aria-label="Daily routines complete"
+                  aria-valuemin={0} aria-valuemax={todayOverview.routinesDue} aria-valuenow={todayOverview.routinesCompleted}>
+                  <span style={{ width: Math.min(100, todayOverview.routinesCompleted / todayOverview.routinesDue * 100) + '%' }} />
+                </div>
+              </>}
               {habits.length === 0 ? <p className="today-routines-empty">Your habits will appear here.</p> :
                 <ul className="today-routine-list">{habits.filter(habit => routineDueToday(habit)).slice(0, 3).map(habit => {
                   const completed = getHabitStreaks(habit.id, todayKey).completedToday;
                   const quantity = habit.trackingMode === "quantity";
                   const log = quantity ? habitLogs.find(row => row.habitId === habit.id && row.date === todayKey && row.quantity !== undefined) : undefined;
-                  const status = quantity ? (log && log.quantityUnit !== habit.quantityUnit
-                    ? formatHabitQuantity(log.quantity || 0, log.quantityUnit)
-                    : new Intl.NumberFormat(userPrefs.locale === "system" ? undefined : userPrefs.locale).format(log?.quantity || 0) + " / " + formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit))
-                    : completed ? "Checked in" : "Ready to check in";
+                  const target = formatHabitQuantity(habit.targetPerDay || 0, habit.quantityUnit);
+                  const increment = formatHabitQuantity(1, habit.quantityUnit);
+                  const status = quantity ? log && log.quantityUnit !== habit.quantityUnit
+                    ? formatHabitQuantity(log.quantity || 0, log.quantityUnit) + ' · target ' + target
+                    : formatHabitQuantity(log?.quantity || 0) + ' / ' + target
+                    : completed ? 'Completed today' : 'Not done yet';
                   return <li key={habit.id} className="today-routine-row">
-                    <div><strong>{habit.name}</strong><small>{status}</small></div>
-                    {quantity ? <button type="button" className="feather-secondary" aria-label={"Add one " + habit.quantityUnit + " to " + habit.name}
-                      onClick={() => void handleHabitQuantity(habit, todayKey, 1)}>Record {formatHabitQuantity(1, habit.quantityUnit)}</button>
-                      : <button type="button" className="feather-secondary alive-habit-check" aria-pressed={completed}
-                        aria-label={completed ? "Undo check-in for " + habit.name : "Check in for " + habit.name}
-                        onClick={() => void handleHabitCompletion(habit.id, habit.name, todayKey, completed)}>{completed ? "Done" : "Check in"}</button>}
+                    {!quantity && <button type="button" className="today-routine-toggle" aria-pressed={completed}
+                      aria-label={completed ? 'Undo completion for ' + habit.name : 'Complete ' + habit.name}
+                      onClick={() => void handleHabitCompletion(habit.id, habit.name, todayKey, completed)}>
+                      <span>{completed && <Check size={15} aria-hidden="true" />}</span>
+                    </button>}
+                    <div className="today-routine-copy"><strong>{habit.name}</strong><small>{status}</small></div>
+                    {quantity && <button type="button" className="today-routine-add" aria-label={'Add ' + increment + ' to ' + habit.name}
+                      onClick={() => void handleHabitQuantity(habit, todayKey, 1)}>Add {increment}</button>}
                   </li>;
                 })}</ul>}
               {habits.length > 0 && !habits.some(habit => routineDueToday(habit)) && <p className="today-routines-empty">No routines scheduled for today.</p>}
+              <button type="button" className="today-summary-action" onClick={() => navigateTo('habits')}>View habits <ChevronRight size={16} aria-hidden="true" /></button>
             </section>
             <section className="today-upcoming-section lifeos-panel rounded-2xl border p-4" data-today-card="upcoming" style={todaySectionStyle('upcoming')} aria-labelledby="today-upcoming-title">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-secondary">NEXT</p><h3 id="today-upcoming-title" className="mt-1 text-sm font-semibold">Coming up</h3></div><button type="button" onClick={() => { setPlannerFilter('upcoming'); navigateTo('planner'); }} className="min-h-11 rounded-xl px-2 text-xs font-semibold lifeos-accent-text">View plan</button></div>
@@ -3005,18 +3008,18 @@ export default function App() {
 
             {/* Pending Tasks */}
             <section className="today-agenda lifeos-panel rounded-2xl border p-4" data-today-card="agenda" style={todaySectionStyle('agenda')} aria-labelledby="today-agenda-title">
-              <div className="flex justify-between items-center mb-3">
-                <div><p className="type-eyebrow">DUE TODAY</p><h3 id="today-agenda-title" className="text-sm font-semibold">Your tasks</h3></div>
-                <button onClick={() => navigateTo('plan')} className="min-h-11 rounded-lg px-2 text-xs lifeos-accent-text font-semibold">Open Plan</button>
+              <div className="today-summary-header">
+                <h3 id="today-agenda-title" className="today-summary-title">Your tasks</h3>
+                <button type="button" onClick={() => navigateTo('plan')} className="today-summary-action">Open Plan <ChevronRight size={16} aria-hidden="true" /></button>
               </div>
               {dashboardTasks.length === 0 ? (
-                <div className="today-inline-empty"><p>No tasks due today. Your day is open.</p></div>
+                <p className="today-summary-copy">No tasks to show.</p>
               ) : (
                 <div className="space-y-2">
                   {dashboardTasks.map(t => {
                     const status = getTaskStatus(t, clockNow);
                     return <div key={t.id} className={`today-task-row ui-interactive-row${status === 'Overdue' ? ' is-overdue' : ''}`}>
-                        <label className="today-task-check" aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}>
+                        <label className="today-task-check plan-hub-task-check" aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}>
                           <input
                             type="checkbox"
                             aria-label={`Mark ${t.title} ${t.completed ? 'incomplete' : 'complete'}`}
@@ -3028,13 +3031,17 @@ export default function App() {
                               await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones);
                               showToast('Task updated', 'success');
                             }}
-                            className="h-5 w-5 cursor-pointer rounded"
-                            style={{ accentColor: 'var(--accent)' }}
                           />
+                          <svg className="alive-task-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9" pathLength="1" /></svg>
                         </label>
                         <button type="button" onClick={event => { taskDetailReturnTabRef.current = 'dashboard'; taskDetailReturnFocusRef.current = event.currentTarget; setPlannerDetailTaskId(t.id); setPlannerSelectedDate(t.dueDate || todayKey); setPlannerFilter('all'); navigateTo('planner'); }} className="today-task-open" aria-label={`Open ${t.title} details`}>
                           <span className={`today-task-title${t.completed ? ' is-complete' : ''}`}>{t.title}</span>
-                          <span className="today-task-meta">{t.dueTime ? formatClockTime(t.dueTime) : 'Due today'} · {status} · {t.priority} priority</span>
+                          <span className="today-task-meta">
+                            {t.dueDate !== todayKey && <span>{formatDate(t.dueDate)}</span>}
+                            <span>{t.dueTime ? formatClockTime(t.dueTime) : 'End of day'}</span>
+                            {status === 'Overdue' && <strong className="today-task-overdue">Overdue</strong>}
+                            {t.priority && <span className="today-task-priority" data-priority={t.priority}>{t.priority} priority</span>}
+                          </span>
                         </button>
                     </div>
                   })}
@@ -3045,7 +3052,7 @@ export default function App() {
         )} />
 
         {/* VIEW 2: FINANCE */}
-        <RetainedScreen active={activeTab === 'plan'} retainInactive prepare={primaryPrepared} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><div className="space-y-4">{renderPlanNavigation('plan')}<PlanHub onCreate={() => openCreateForm('task')} onQuickCreate={title => openCreateForm('task', undefined, undefined, title)} tasks={tasks} today={todayKey} now={clockNow}
+        <RetainedScreen active={activeTab === 'plan'} retainInactive prepare={primaryPrepared} id="screen-plan" {...transitionPropsFor('plan')} render={() => <Suspense fallback={<ScreenLoading label="Loading your plan…" />}><div className="feather-plan-page">{renderPlanNavigation('plan')}<PlanHub onCreate={() => openCreateForm('task')} onQuickCreate={title => openCreateForm('task', undefined, undefined, title)} tasks={tasks} today={todayKey} now={clockNow}
           onOpenTask={(task, trigger) => { taskDetailReturnTabRef.current = 'plan'; taskDetailReturnFocusRef.current = trigger; setPlannerDetailTaskId(task.id); setPlannerSelectedDate(task.dueDate || todayKey); setPlannerFilter(task.dueDate ? 'all' : 'unscheduled'); navigateTo('planner'); }}
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
           /></div></Suspense>} />
@@ -3290,14 +3297,9 @@ export default function App() {
 
         {/* VIEW 3: HABITS */}
         <RetainedScreen active={activeTab === 'habits'} id="screen-habits" {...transitionPropsFor('habits')} render={() => (
-          <div className="space-y-4">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
-            {!lifeDetail && <div className="life-section-heading">
-              <div>
-                <div className="flex items-center gap-2"><h2 className="text-lg font-bold">Habits</h2><InfoTip label="Habit consistency" /></div>
-                <p className="text-xs text-secondary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>
-              </div>
-              <button onClick={() => openCreateForm('habit')} className="feather-primary">Add habit</button>
-            </div>}
+          <div className="feather-plan-page">{renderPlanNavigation('habits')}{lifeDetail?.kind === 'habit' && <button type="button" className="money-back-button" onClick={() => showLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
+            {!lifeDetail && <><PlanSectionHeader id="plan-habits-title" title="Habits" topic="Habit consistency" action="Add habit" onAdd={() => openCreateForm('habit')} />
+              {habits.length > 0 && <p className="feather-plan-summary">{todayOverview.routinesCompleted} of {todayOverview.routinesDue} done today</p>}</>}
             {lifeDetail?.kind === 'habit' && <label className="life-history block text-sm text-secondary">Completion date<input type="date" max={todayKey} value={habitsSelectedDate} onChange={e => { setHabitsSelectedDate(e.target.value); setHistoricalQuantityUnit(''); }} className="lifeos-input mt-1.5 min-h-11 w-full rounded-xl px-3 py-2.5 text-sm" /></label>}
 
             {lifeDetail?.kind === 'habit' && habits.find(item => item.id === lifeDetail.id) && (() => {
@@ -3333,7 +3335,7 @@ export default function App() {
 
             <div className="space-y-2">
               {habits.length === 0 ? (
-                <div className="alive-workspace-empty lifeos-panel"><LifeDoodle kind="first-habit" /><p>No habits yet.</p></div>
+                <PlanSectionEmpty illustration="first-habit" title="No habits yet"><p>Add a routine you want to build.</p></PlanSectionEmpty>
               ) : (
                 habits.filter(h => lifeDetail?.kind !== 'habit').map(h => {
                   const todayStr = todayKey;
@@ -3342,11 +3344,11 @@ export default function App() {
                   const weekly = calculateWeeklyHabitRate(habitLogs, h.id, clockNow, h.frequency, h);
                   const historyDays = Array.from({ length: 7 }, (_, index) => new Date(clockNow.getFullYear(), clockNow.getMonth(), clockNow.getDate() - 6 + index));
                   return (
-                      <div key={h.id} className="lifeos-panel rounded-2xl border p-4">
+                      <div key={h.id} className="lifeos-panel feather-plan-card">
                       <div className="flex items-center gap-3">
                         <button type="button" className="min-h-11 min-w-0 flex-1 text-left" onClick={() => { setHistoricalQuantityUnit(''); setHabitsSelectedDate(todayKey); showLifeDetail({ kind: 'habit', id: h.id }); }}>
-                          <span className="block safe-wrap text-sm font-semibold">{h.name}</span>
-                                                    <span className="block text-xs text-secondary">{h.trackingMode === 'quantity' ?
+                          <span className="feather-plan-record-title safe-wrap">{h.name}</span>
+                                                    <span className="feather-plan-record-meta">{h.trackingMode === 'quantity' ?
                             (logged?.quantityUnit && logged.quantityUnit !== h.quantityUnit ? formatHabitQuantity(logged.quantity || 0, logged.quantityUnit) :
                               logged && !logged.quantityUnit ? formatHabitQuantity(logged.quantity || 0) :
                               formatHabitQuantity(logged?.quantity || 0, h.quantityUnit) + ' / ' + formatHabitQuantity(h.targetPerDay || 0, h.quantityUnit))
@@ -3367,11 +3369,11 @@ export default function App() {
 
         {/* VIEW 4: GOALS */}
         <RetainedScreen active={activeTab === 'goals'} id="screen-goals" {...transitionPropsFor('goals')} render={() => (
-          <div className="space-y-4">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
-            <div className="plan-workspace-heading flex items-center justify-between gap-3"><div className="flex items-center gap-1"><h2 className="type-section-title">Goals</h2><InfoTip label="Goal progress" /></div><button onClick={() => openCreateForm('goal')} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-xs font-semibold">Add goal</button></div>
+          <div className="feather-plan-page">{renderPlanNavigation('goals')}{lifeDetail?.kind === 'goal' && <button type="button" className="money-back-button" onClick={() => setLifeDetail(null)}><ChevronLeft size={18} aria-hidden="true" />Back to list</button>}
+            <PlanSectionHeader id="plan-goals-title" title="Goals" topic="Goal progress" action="Add goal" onAdd={() => openCreateForm('goal')} />
             {!lifeDetail && goals.length > 0 && <button type="button" className="min-h-11 text-sm font-semibold lifeos-accent-text" onClick={() => navigateTo('insights')}>Progress insights</button>}
-            <div className="feather-goal-filters grid grid-cols-2 gap-2 sm:grid-cols-4">{(['active', 'paused', 'completed', 'archived'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className={`min-h-11 rounded-xl px-2 text-xs capitalize ${goalsSubtab === tab ? 'lifeos-tint lifeos-accent-text font-semibold' : 'lifeos-panel border text-secondary'}`}>{tab}</button>)}</div>
-            <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input min-h-11 w-full rounded-xl px-3 py-2.5 text-xs"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
+            <div className="feather-plan-segments" role="group" aria-label="Goal status">{(['active', 'paused', 'completed', 'archived'] as const).map(tab => <button key={tab} type="button" aria-pressed={goalsSubtab === tab} onClick={() => setGoalsSubtab(tab)} className="capitalize">{tab}</button>)}</div>
+            <select aria-label="Goal category" value={goalsCategoryFilter} onChange={e => setGoalsCategoryFilter(e.target.value)} className="lifeos-input feather-plan-filter"><option value="all">All categories</option>{['Financial', 'Fitness', 'Career', 'Education', 'Personal Development', 'Travel', 'Other'].map(category => <option key={category}>{category}</option>)}</select>
             {lifeDetail?.kind === 'goal' && goals.find(item => item.id === lifeDetail.id) && (() => { const goal = goals.find(item => item.id === lifeDetail.id)!; const pct = goalProgress(goal); const rows = milestones.filter(item => item.goalId === goal.id); return <section className="lifeos-panel space-y-4 rounded-2xl border p-5" aria-labelledby="goal-detail-title"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm text-secondary">{goal.category} &middot; {goal.status}</p><h3 id="goal-detail-title" className="type-page-title safe-wrap">{goal.title}</h3>{goal.description && <p className="mt-1 text-sm text-secondary">{goal.description}</p>}</div><span className="rounded-full lifeos-tint px-3 py-1 text-sm font-semibold lifeos-accent-text">{pct}%</span></div><div className="lifeos-progress-track h-3 overflow-hidden rounded-full" role="progressbar" aria-label={`${goal.title} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: `${pct}%` }} /></div><p className="text-sm font-medium">{goalProgressLabel(goal)}</p><div className="grid grid-cols-2 gap-3 text-xs"><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Target date</span><p className="mt-1 font-semibold">{goal.targetDate ? formatDate(goal.targetDate) : 'Open-ended'}</p><p className="text-secondary">{getDaysRemainingText(goal.targetDate)}</p></div><div className="lifeos-tint rounded-xl p-3"><span className="text-secondary">Milestones</span><p className="mt-1 font-semibold">{rows.filter(row => row.completed).length} of {rows.length} complete</p></div></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openEditGoal(goal)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Edit goal</button>{goal.mode !== 'milestone' && <button type="button" onClick={() => openGoalProgressForm(goal)} className="lifeos-accent-button min-h-11 rounded-xl px-4 text-sm font-semibold">Update progress</button>}<button type="button" onClick={() => openCreateForm('milestone', goal.id)} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm font-semibold">Add milestone</button>              {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, goal.status === 'Paused' ? 'In Progress' : 'Paused')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">{goal.status === 'Paused' ? 'Resume goal' : 'Pause goal'}</button>}
               {goal.status !== 'Completed' && <button type="button" onClick={() => void changeGoalStatus(goal, 'Completed')} className="lifeos-raised min-h-11 rounded-xl px-4 text-sm">Complete goal</button>}
               <button type="button" className="lifeos-raised min-h-11 rounded-xl px-4 text-sm" onClick={async () => {
@@ -3393,12 +3395,12 @@ export default function App() {
                 goalsSubtab === 'archived' ? goal.archived : !goal.archived &&
                   goal.status === (goalsSubtab === 'active' ? 'In Progress' : goalsSubtab === 'paused' ? 'Paused' : 'Completed')
               ) && (goalsCategoryFilter === 'all' || goal.category === goalsCategoryFilter));
-              if (!visibleGoals.length) return <p className="goal-empty-state text-sm text-secondary">{goalsCategoryFilter !== 'all' ? 'No goals in this category.' : goalsSubtab === 'completed' ? 'No completed goals yet.' : goalsSubtab === 'paused' ? 'No paused goals.' : goalsSubtab === 'archived' ? 'No archived goals.' : 'No active goals yet.'}</p>;
+              if (!visibleGoals.length) return <PlanSectionEmpty illustration="first-goal" title={goalsCategoryFilter !== 'all' ? 'No goals in this category' : goalsSubtab === 'completed' ? 'No completed goals yet' : goalsSubtab === 'paused' ? 'No paused goals' : goalsSubtab === 'archived' ? 'No archived goals' : 'No active goals yet'} />;
               return <div className="goal-list">{visibleGoals.map(g => {
                 const pct = goalProgress(g);
                 return <article key={g.id} className="lifeos-panel goal-journey-card" data-complete={g.status === 'Completed'}>
                   <button type="button" onClick={() => showLifeDetail({ kind: 'goal', id: g.id })} className="goal-card-open">
-                    <span className="min-w-0 safe-wrap"><strong>{g.title}</strong><small>{g.category}{g.targetDate && <> &middot; {formatDate(g.targetDate)}</>}</small></span>
+                    <span className="min-w-0 safe-wrap"><strong className="feather-plan-record-title">{g.title}</strong><small className="feather-plan-record-meta">{g.category}{g.targetDate && <> &middot; {formatDate(g.targetDate)}</>}</small></span>
                     <span className="goal-percent tabular-nums">{pct}%</span>
                   </button>
                   <div className="lifeos-progress-track h-2 overflow-hidden rounded-full" role="progressbar" aria-label={g.title + ' progress'} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><div className="lifeos-progress-fill h-full rounded-full" style={{ width: pct + '%' }} /></div>
@@ -3517,7 +3519,7 @@ export default function App() {
                 <ProfileSettingRow title="Recovery" value={recoveryProvisioned ? 'Ready' : 'Not set up'} onClick={() => navigateProfileSection('recovery')} /></div>
             </ProfileSubpage>}
             {profileSection === 'app-lock' && <ProfileSubpage embedded title="App lock" backLabel="Privacy & security" onBack={() => navigateProfileSection('privacy')}>
-              <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. LifeOS does not store your fingerprint.</InfoTip></div>
+              <div className="preference-group py-3"><div className="flex items-center gap-2 text-sm font-semibold">Device protection <InfoTip label="Device protection">Android verifies your device credential or biometrics. BusyDoo does not store your fingerprint.</InfoTip></div>
               <div className="lifeos-raised flex items-center justify-between gap-2 rounded-xl p-3"><div><p className="text-xs font-medium">Biometric lock</p><p className="mt-1 text-xs text-secondary">{deviceCredentialOnly ? 'Device screen lock available' : biometricAvailability}</p></div><button role="switch" aria-checked={biometricEnabled} onClick={async () => { if (biometricEnabled) { setBiometricEnabled(false); setBiometricVerified(false); setIsLocked(false); await StorageService.settings.set('biometricLockEnabled', false); showToast('Biometric lock disabled', 'success'); return; } const result = await handleEnableBiometric(); if (result.success) showToast('Biometric lock enabled', 'success'); else showToast(result.message || 'Could not enable biometric lock', 'danger'); }} className={`min-h-11 min-w-16 rounded-full px-3 text-xs font-bold ${biometricEnabled ? 'lifeos-accent-button' : 'lifeos-panel border text-secondary'}`}>{biometricEnabled ? 'On' : 'Off'}</button></div>
               {biometricEnabled && <p className="flex items-center gap-1 text-[11px]" style={{ color: biometricVerified ? 'var(--success)' : 'var(--warning)' }}>{biometricVerified ? <ShieldCheck size={14} /> : <Shield size={14} />}{biometricVerified ? 'Biometric verified for this session' : 'Protected; authenticate to unlock'}</p>}
 
@@ -3984,7 +3986,7 @@ export default function App() {
         </div>
       </nav>
 
-      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave LifeOS?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
+      {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave BusyDoo?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
 
       {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 
