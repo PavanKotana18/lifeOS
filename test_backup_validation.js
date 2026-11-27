@@ -341,4 +341,4 @@ test('Accepts demo-style Food budget with the seeded cat_food reference', () => 
   assert.strictEqual(validate(d).length, 17);
 });
 
-console.log(`\nBackup validation tests: ${passed}/23 passed`);
+console.log(`\nBackup validation tests: ${passed}/26 passed`);

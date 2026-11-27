@@ -3,7 +3,7 @@ import { StorageService, isEncryptedStorageActivated, sessionManager } from '../
 import { inboxEventKey, inboxSourceKey, nativeInboxEvent, type InboxChange, type InboxEvent, type InboxEvidence, type InboxInput } from '../services/notificationInbox';
 import { NotificationService } from '../services/notificationService';
 
-type Snapshot = Required<Pick<InboxChange, 'events' | 'sources'>> & { acceptsObservation: (event: InboxInput) => boolean };
+type Snapshot = Required<Pick<InboxChange, 'events' | 'sources'>> & Pick<InboxChange, 'notesPending'> & { acceptsObservation: (event: InboxInput) => boolean };
 const PENDING_LIMIT = 128;
 
 export function useNotificationInbox(available: boolean, snapshot: Snapshot, onError: () => void) {
@@ -16,13 +16,13 @@ export function useNotificationInbox(available: boolean, snapshot: Snapshot, onE
   const apply = useCallback(async (action?: InboxChange['action'], reportError = false) => {
     if (!current.current.available || !sessionManager.isUnlocked() || !isEncryptedStorageActivated()) return false;
     const generation = sessionManager.capture();
-    const { events, sources, acceptsObservation } = current.current.snapshot;
-    const drain = [...pending.current.entries()];
+    const { events, sources, acceptsObservation, notesPending } = current.current.snapshot;
+    const drain = [...pending.current.entries()].filter(([, event]) => !notesPending || event.source !== 'note');
     const native = drain.map(([, input]) => input);
     const activeNative = native.filter(acceptsObservation);
     try {
       const rows = await StorageService.settings.updateNotificationInbox({
-        sources, action, events: [...activeNative, ...events].slice(0, 250),
+        sources, notesPending, action, events: [...activeNative, ...events].slice(0, 250),
       });
       if (!sessionManager.isCurrent(generation) || !current.current.available) return false;
       for (const [key, input] of drain) if (pending.current.get(key) === input) pending.current.delete(key);

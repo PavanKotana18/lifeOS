@@ -3,6 +3,7 @@ import { buildTaskNotificationPlan, formatLocalDate, habitScheduleOnDate, isHabi
 import { buildFinanceAnalytics } from './financeAnalytics';
 import { decimalToMinorUnits } from './financeCore';
 import { isGoalComplete } from './goalModes';
+import type { NoteRecord } from './notesDomain';
 import { inboxSourceKey, type InboxInput, type InboxKind, type InboxSource } from './notificationInbox';
 
 export const INBOX_PREFERENCES_KEY = 'notificationInboxPreferences.v1';
@@ -14,6 +15,7 @@ type Snapshot = {
   now: Date; preferences: InboxPreferences; reminderPreferences: NotificationPreferences; dateOnlyAlertTime: string;
   tasks: Task[]; habits: Habit[]; habitLogs: HabitLog[]; goals: Goal[]; milestones: Milestone[];
   commitments: PlannedCommitment[]; savings: SavingsGoal[]; budgets: Budget[]; transactions: Transaction[];
+  notes?: NoteRecord[];
   categories: Category[]; recoveryPending: boolean; lastBackup: number;
 };
 const dayMs = 86_400_000;
@@ -84,6 +86,14 @@ export function buildInboxSnapshot(state: Snapshot) {
     if (reminderPreferences.milestoneReminders) add('milestoneReminder', 'milestone', row.id, local(row.targetDate));
   }
 
+  const reminders = new Map<string, NonNullable<NoteRecord['reminder']>>();
+  if (reminderPreferences.notesReminders) for (const note of state.notes ?? []) {
+    if (note.archived || note.trashedAt || !note.reminder) continue;
+    reminders.set(note.id, note.reminder);
+    source('note', note.id, [note.reminder.id, note.reminder.at], note.title || 'Untitled note');
+    add('notesReminder', 'note', note.id, new Date(note.reminder.at), note.reminder.id);
+  }
+
   if (preferences.commitments) for (const row of state.commitments) {
     if (row.status !== 'active' || sample(row.id) || row.nextDueDate < date) continue;
     const at = local(row.nextDueDate);
@@ -128,11 +138,15 @@ export function buildInboxSnapshot(state: Snapshot) {
   }
   const acceptsObservation = (event: InboxInput) => {
     if (sources[inboxSourceKey(event.source, event.sourceId)] === undefined) return false;
+    if (event.source === 'note') {
+      const reminder = reminders.get(event.sourceId);
+      return Boolean(reminder && reminder.id === event.occurrence && Date.parse(reminder.at) === event.at);
+    }
     if (event.source === 'task' && event.occurrence.includes('T')) {
       const task = tasks.get(event.sourceId);
       return Boolean(task && matchesTaskReminder(task, event.kind, event.at, dateOnlyAlertTime));
     }
     return true;
   };
-  return { events, sources, acceptsObservation, labels };
+  return { events, sources, acceptsObservation, labels, notesPending: state.notes === undefined };
 }

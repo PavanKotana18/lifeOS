@@ -14,12 +14,12 @@ export const MODULE_CATALOG = Object.freeze([
 
 export type PrimaryTab = typeof PRIMARY_NAVIGATION[number]['tab'];
 export type ModuleTab = typeof MODULE_CATALOG[number]['tab'];
-export type MainTab = PrimaryTab | ModuleTab | 'insights' | 'life';
+export type MainTab = PrimaryTab | ModuleTab | 'insights' | 'life' | 'notes';
 
 export function primaryDestinationForTab(tab: MainTab): PrimaryTab | null {
   if (tab === 'dashboard' || tab === 'finance' || tab === 'plan' || tab === 'settings') return tab;
   if (tab === 'planner' || tab === 'life') return 'plan';
-  if (tab === 'habits' || tab === 'goals' || tab === 'insights') return 'plan';
+  if (tab === 'habits' || tab === 'goals' || tab === 'insights' || tab === 'notes') return 'plan';
   return null;
 }
 
@@ -28,6 +28,7 @@ export function resolvePlanPath(path: string): MainTab | null {
   switch (path.replace(/^#?\/?/, '').replace(/\/$/, '').toLowerCase()) {
     case 'life': case 'plan': case 'tasks': case 'plan/tasks': return 'plan';
     case 'habits': case 'life/habits': case 'plan/habits': return 'habits';
+    case 'notes': case 'plan/notes': return 'notes';
     case 'goals': case 'life/goals': case 'plan/goals': return 'goals';
     case 'insights': case 'life/insights': case 'plan/insights': return 'insights';
     default: return null;

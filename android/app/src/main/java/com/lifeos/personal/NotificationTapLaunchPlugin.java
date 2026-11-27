@@ -43,7 +43,7 @@ public class NotificationTapLaunchPlugin extends Plugin {
         if (incoming == null) return null;
         JSONObject extra = new JSONObject();
         for (String field : new String[] {
-            "kind", "taskId", "habitId", "milestoneId", "goalId", "occurrenceAt", "originalReminderAt"
+            "kind", "taskId", "habitId", "milestoneId", "goalId", "occurrenceAt", "originalReminderAt", "noteId", "reminderId"
         }) {
             Object raw = incoming.opt(field);
             if (raw instanceof String && ((String) raw).length() <= 160) extra.put(field, raw);

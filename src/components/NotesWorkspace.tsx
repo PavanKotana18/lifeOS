@@ -94,7 +94,7 @@ export default function NotesWorkspace({ data, loading, onRetry, onClose, onCrea
     </section>;
   }
 
-  return <div className="notes-page">
+  return <div className="notes-page" data-notes-subscope={scope !== 'workspace' || undefined}>
     <FeatherHeader title={headings[scope]} heading="h1" back={{ label: 'Close', onClick: scope === 'workspace' ? onClose : () => changeScope('workspace') }}
       action={<button className="feather-icon-button" type="button" aria-label="Notes options" aria-expanded={menu}
         onClick={() => setMenu(!menu)}><MoreHorizontal size={22} aria-hidden /></button>} />

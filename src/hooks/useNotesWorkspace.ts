@@ -84,9 +84,9 @@ export function useNotesWorkspace() {
     return () => document.removeEventListener('visibilitychange', visibility);
   }, [flush]);
 
-  function open(record: NoteRecord | null, ensureAdmission: () => Promise<void>, notebookId?: string) {
+  function open(record: NoteRecord | null, ensureAdmission: () => Promise<void>, notebookId?: string, knownEpoch?: string) {
     close();
-    let epoch = snapshot.current.epoch;
+    let epoch = knownEpoch ?? snapshot.current.epoch;
     const active = (): boolean => isEncryptedStorageActivated() && sessionManager.isUnlocked();
     let token = active() ? sessionManager.capture() : null;
     const session: EditorSession = {

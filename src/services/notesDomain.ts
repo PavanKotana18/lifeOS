@@ -104,6 +104,7 @@ export function validateNoteRecord(value: unknown): asserts value is NoteRecord 
       throw new Error('Invalid note reminder.');
     }
     validateId(value.reminder.id);
+    if (value.reminder.id.length > 80) throw new Error('Invalid reminder identifier.');
     validateTimestamp(value.reminder.at);
   }
 }

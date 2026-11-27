@@ -9,7 +9,7 @@ import { ProfileButton, ProfileGroup, ProfileIcon, ProfileSettingRow, ProfileSta
 
 const labels: Record<keyof NotificationPreferences, string> = {
   taskReminders: 'Task reminders', upcomingDeadlines: 'Upcoming deadlines', overdueAlerts: 'Overdue alerts',
-  habitReminders: 'Habit reminders', milestoneReminders: 'Goal milestones',
+  habitReminders: 'Habit reminders', milestoneReminders: 'Goal milestones', notesReminders: 'Note reminders',
 };
 const formatStatus = (value: string) => value === 'granted' ? 'Allowed' : value === 'prompt' || value === 'prompt-with-rationale' ? 'Permission needed'
   : value === 'unsupported' ? 'Unavailable here' : value.charAt(0).toUpperCase() + value.slice(1);
@@ -36,7 +36,7 @@ export function ProfileNotifications({ master, categories, diagnostics, dateOnly
     </ProfileGroup>
     <ProfileGroup title="Reminder preferences" description="Saved categories apply to new inbox reminders and eligible Android alerts.">
       {(Object.keys(labels) as (keyof NotificationPreferences)[]).map(key => <ProfileToggle key={key} title={labels[key]}
-        checked={categories[key]} disabled={busy} onChange={() => onCategory(key)} />)}
+        checked={Boolean(categories[key])} disabled={busy} onChange={() => onCategory(key)} />)}
     </ProfileGroup>
     <ProfileGroup title="Reminder timing">
       <div className="profile-row"><label className="profile-row-copy" htmlFor={timingId}><strong>Date-only task alerts</strong>

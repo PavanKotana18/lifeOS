@@ -4,7 +4,7 @@ export const NOTIFICATION_INBOX_KEY = 'notificationInbox.v1';
 export const INBOX_MAX = 250;
 const RETENTION = 45 * 86_400_000;
 
-export type InboxKind = ReminderKind | 'commitment' | 'budget' | 'savings' | 'backup' | 'recovery' | 'notesReminder';
+export type InboxKind = ReminderKind | 'commitment' | 'budget' | 'savings' | 'backup' | 'recovery';
 export type InboxEvidence = 'in-app' | 'receiver' | 'delivered' | 'opened';
 export type InboxSource = 'task' | 'habit' | 'milestone' | 'commitment' | 'budget' | 'savings' | 'backup' | 'recovery' | 'note';
 export type InboxInput = { kind: InboxKind; source: InboxSource; sourceId: string; occurrence: string; at: number;
@@ -13,6 +13,7 @@ export type InboxEvent = InboxInput & { key: string; readAt?: number; dismissedA
 export type InboxChange = {
   events?: InboxInput[];
   sources?: Record<string, string>;
+  notesPending?: boolean;
   action?: { kind: 'read' | 'dismiss'; key: string } | { kind: 'readAll' | 'clear' };
 };
 
@@ -77,7 +78,7 @@ export function changeNotificationInbox(value: unknown, change: InboxChange, now
   }
   const rows = [...entries.values()];
   for (const event of rows) {
-    if (change.sources) {
+    if (change.sources && !(event.source === 'note' && change.notesPending)) {
       const current = change.sources[inboxSourceKey(event.source, event.sourceId)];
       if (current === undefined || (event.revision && event.revision !== current)) event.resolvedAt ||= now;
       else if (!event.revision) event.revision = current;
@@ -93,11 +94,17 @@ export function nativeInboxEvent(extra: Record<string, unknown> | undefined, evi
   const kind = extra?.kind as InboxKind;
   if (!extra || typeof kind !== 'string' || !Object.prototype.hasOwnProperty.call(eventSources, kind)) return;
   const source = eventSources[kind];
-  if (source !== 'task' && source !== 'habit' && source !== 'milestone') return;
+  if (source !== 'task' && source !== 'habit' && source !== 'milestone' && source !== 'note') return;
   const sourceId = extra[source + 'Id'];
   if (typeof sourceId !== 'string' || sourceId.startsWith('lifeos-demo-v2:')) return;
   const scheduled = extra.occurrenceAt || extra.originalReminderAt;
   const parsed = typeof scheduled === 'string' ? Date.parse(scheduled) : NaN;
+  if (source === 'note') {
+    const reminderId = extra.reminderId;
+    if (typeof reminderId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(reminderId) ||
+        !Number.isFinite(parsed) || parsed > observedAt + 60_000) return;
+    return { kind, source, sourceId, occurrence: reminderId, at: parsed, evidence, observedAt };
+  }
   const at = Number.isFinite(parsed) && parsed <= observedAt + 60_000 ? parsed : observedAt;
   const date = new Date(at);
   const day = localDay(date);

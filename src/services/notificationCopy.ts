@@ -1,8 +1,9 @@
 export const NOTIFICATION_TONES = ['clear', 'warm', 'playful'] as const;
 export type NotificationTone = typeof NOTIFICATION_TONES[number];
-export type ReminderKind = 'dueTime' | 'taskReminders' | 'upcomingDeadlines' | 'overdueAlerts' | 'habitReminder' | 'milestoneReminder' | 'taskSnooze';
+export type ReminderKind = 'dueTime' | 'taskReminders' | 'upcomingDeadlines' | 'overdueAlerts' | 'habitReminder' | 'milestoneReminder' | 'taskSnooze' | 'notesReminder';
 
 const english = {
+  notesReminder: { title: 'Note reminder', clear: ['Open BusyDoo to view your reminder.'], warm: ['It is time to check a saved note in BusyDoo.'], playful: ['A little nudge to check a note in BusyDoo.'] },
   dueTime: { title: 'Task due now', clear: ['A scheduled task is due.'], warm: ['It is time for your task.', 'Your task is ready when you are.'], playful: ['A little nudge. Your task is due now.', 'Right on cue. Your task is due.'] },
   taskReminders: { title: 'Task reminder', clear: ['A scheduled task is coming up.'], warm: ['A heads-up for your upcoming task.', 'A little time to get ready for your task.'], playful: ['A little nudge for the task ahead.', 'Your upcoming task is waving hello.'] },
   upcomingDeadlines: { title: 'Upcoming deadline', clear: ['A task deadline is approaching.'], warm: ['A heads-up that a deadline is approaching.'], playful: ['A deadline is on the horizon.'] },
