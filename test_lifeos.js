@@ -514,9 +514,20 @@ async function runTestSuite() {
   assert(resolveBackAction({ ...backRoute, locked: true }, true) === 'exit-app', 'Hardware Back exits the locked app without bypassing its next-launch authentication');
   assert(stableNotificationId('task:abc:taskReminders') === stableNotificationId('task:abc:taskReminders') && stableNotificationId('task:abc:taskReminders') !== stableNotificationId('task:def:taskReminders'), 'Notification IDs remain stable per task and distinct across tasks');
   const reminderPrefs = { taskReminders: true, upcomingDeadlines: false, overdueAlerts: false };
-  assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 6, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 1, 'An explicitly selected future task reminder is planned when its category is enabled');
-  assert(buildTaskNotificationPlan({ dueDate: '2026-07-06' }, reminderPrefs, new Date(2026, 6, 4)).length === 0, 'Tasks without a selected reminder do not create task reminder notifications');
-  assert(buildTaskNotificationPlan({ dueDate: '2026-07-06', reminderAt: new Date(2026, 6, 3, 9, 15).toISOString() }, reminderPrefs, new Date(2026, 6, 4)).length === 0, 'Past task reminders are skipped instead of scheduled');
+  const dateOnlyTask = { dueDate: '2026-07-06' };
+  const reminderNow = new Date(2026, 6, 4);
+  const defaultAlert = new Date(2026, 6, 6, 9);
+  const explicitAlert = new Date(2026, 6, 6, 9, 15);
+  const explicitPlan = buildTaskNotificationPlan({ ...dateOnlyTask, reminderAt: explicitAlert.toISOString() }, reminderPrefs, reminderNow);
+  assert(explicitPlan.length === 2 && explicitPlan.some(alert => alert.kind === 'taskReminders' && +alert.at === +explicitAlert) &&
+    explicitPlan.some(alert => alert.kind === 'dueTime' && +alert.at === +defaultAlert), 'A future explicit reminder and the distinct date-only default are both planned');
+  const defaultPlan = buildTaskNotificationPlan(dateOnlyTask, reminderPrefs, reminderNow);
+  assert(defaultPlan.length === 1 && defaultPlan[0].kind === 'dueTime' && +defaultPlan[0].at === +defaultAlert,
+    'A date-only task defaults to one due alert at 9 a.m. local time');
+  assert(buildTaskNotificationPlan(dateOnlyTask, reminderPrefs, reminderNow, '').length === 0, 'An explicit Off preference disables the date-only default');
+  const pastPlan = buildTaskNotificationPlan({ ...dateOnlyTask, reminderAt: new Date(2026, 6, 3, 9, 15).toISOString() }, reminderPrefs, reminderNow);
+  assert(pastPlan.length === 1 && pastPlan[0].kind === 'dueTime' && +pastPlan[0].at === +defaultAlert,
+    'Past explicit reminders are skipped while the future date-only alert is preserved');
 
   // --- 5. DASHBOARD TESTS ---
   console.log('\n--- 5. Testing Central Dashboard Integration ---');
