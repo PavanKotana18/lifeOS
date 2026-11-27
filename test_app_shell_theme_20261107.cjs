@@ -31,7 +31,7 @@ assert.match(shell, /onClick=\{\(\) => \{ void openRecovery\(\); \}\}/, 'lock re
 assert.match(fsSource, /const openRecovery = async \(\) => \{\s*try \{\s*await setSensitiveScreenshotState\(true\);\s*setRecoveryOpen\(true\);/, 'recovery secrets are not rendered before native screenshot protection is acknowledged');
 assert.doesNotMatch(shell, /theme-toggle-btn|onClick=\{toggleTheme\}/, 'header has no duplicate theme shortcut');
 assert.match(fsSource, /<ThemeStudio\b/, 'curated theme selection remains in Settings appearance');
-assert.match(fs.readFileSync('src/components/AppearanceStudio.tsx', 'utf8'), /role="group" aria-labelledby="appearance-palettes"/);
+assert.match(fs.readFileSync('src/components/AppearanceStudio.tsx', 'utf8'), /<ProfileGroup title="Theme palettes"/);
 assert.match(fsSource, /tab === 'settings' && profilePhoto/, 'Profile photo belongs in bottom navigation');
 assert.doesNotMatch(fsSource, /aria-label="Open profile and settings"/, 'the masthead has no duplicate Profile entry');
 assert.match(fsSource, /<AppHeader[\s\S]*?primarySection === 'dashboard' \? APP_NAME/, 'Today uses the shared wordmark header');
@@ -108,5 +108,6 @@ assert.match(recovery, /accept="application\/json,\.json"/);
 const backup = render(React.createElement(BackupPassphraseDialog, { purpose: 'export', onComplete: () => {} }));
 assert.match(backup, /role="dialog" aria-modal="true"/);
 assert.match(backup, /minLength="12"/);
-assert.match(backup, /lifeos-input/);
+assert.match(backup, /<label class="profile-field">Backup passphrase<input[^>]*type="password"/);
+assert.match(backup, /data-profile-protected-close[^>]*>Cancel<\/button>/);
 console.log('APP SHELL AND RECOVERY SCREEN: source, render, export, and clipboard safety assertions passed with synthetic recovery data.');
