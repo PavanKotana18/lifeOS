@@ -1,3 +1,4 @@
+import { MAX_PHOTO_LENGTH, PROFILE_PHOTO_SETTING } from './services/profilePhoto';
 import { isGoalComplete, validateGoalMeasure } from './services/goalModes';
 import type { ImportDuplicateOptions } from './services/smartImport';
 import Dexie, { Table } from 'dexie';
@@ -753,6 +754,7 @@ export function validateBackupTables(tablesData: any): string[] {
     optionalString(r, 'notes', 'tasks', i);
     if (r.dueTime !== undefined && !time(r.dueTime)) fail('tasks', i, 'dueTime');
     optionalInstant(r, 'reminderAt', 'tasks', i);
+    if (r.dateOnlyAlertAnchorAt !== undefined && (typeof r.dateOnlyAlertAnchorAt !== 'string' || !Number.isFinite(Date.parse(r.dateOnlyAlertAnchorAt)))) fail('tasks', i, 'invalid alert anchor');
     if (r.dueAlertDisabled !== undefined && typeof r.dueAlertDisabled !== 'boolean') fail('tasks', i, 'invalid due-time alert');
     if (r.reminderLeadMinutes !== undefined && (!r.dueDate || typeof r.reminderLeadMinutes !== 'number' || !Number.isInteger(r.reminderLeadMinutes) || r.reminderLeadMinutes < 1 || r.reminderLeadMinutes > 10080 || r.reminderAt)) fail('tasks', i, 'invalid early reminder');
     optionalInstant(r, 'completedAt', 'tasks', i);
@@ -780,6 +782,7 @@ export function validateBackupTables(tablesData: any): string[] {
   check('settings', (r, i) => {
     if (!str(r.key)) fail('settings', i, 'key');
     if (!Object.prototype.hasOwnProperty.call(r, 'value')) fail('settings', i, 'value');
+    if (r.key === PROFILE_PHOTO_SETTING && typeof r.value === 'string' && r.value.length > MAX_PHOTO_LENGTH) fail('settings', i, 'profile photo exceeds its encrypted storage limit');
   });
 
   return names;

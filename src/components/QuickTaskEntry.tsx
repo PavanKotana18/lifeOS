@@ -1,3 +1,4 @@
+import { formatLocalDate, parseLocalDateTime, taskScheduleError } from '../services/domainUtils';
 import InfoTip from './InfoTip';
 import { PreferenceChoice } from './PreferenceChoice';
 import { useId, useRef, useState } from 'react';
@@ -20,6 +21,7 @@ export default function QuickTaskEntry({ onAdd, label = 'Quick task' }: Props) {
   const [reminderAt, setReminderAt] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('Medium');
   const operation = useRef(false);
+  const invalidSchedule = taskScheduleError({ title, dueDate, dueTime, reminderAt });
 
   const submitQuickTask = async (event: FormEvent) => {
     event.preventDefault();
@@ -31,7 +33,8 @@ export default function QuickTaskEntry({ onAdd, label = 'Quick task' }: Props) {
     setSaving(true);
     setError('');
     try {
-      if (!dueDate && (dueTime || reminderAt)) throw new Error('Add a due date before choosing a time or reminder.');
+      const issue = taskScheduleError({ title: nextTitle, dueDate, dueTime, reminderAt });
+      if (issue) throw new Error(issue);
       await onAdd(nextTitle, { dueDate: dueDate || undefined, dueTime: dueTime || undefined, reminderAt: reminderAt || undefined, priority });
       setTitle('');
       setDueDate(''); setDueTime(''); setReminderAt(''); setPriority('Medium');
@@ -50,11 +53,18 @@ export default function QuickTaskEntry({ onAdd, label = 'Quick task' }: Props) {
         onChange={event => setTitle(event.target.value)} aria-invalid={error ? true : undefined}
         aria-describedby={`${hintId}${error ? ` ${errorId}` : ''}`} placeholder="What would you like to do?"
         className="lifeos-input min-h-11 min-w-0 flex-1 rounded-xl px-3 py-2 text-sm disabled:opacity-60" />
-      <button type="submit" disabled={saving || !title.trim()} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">{saving ? 'Adding...' : 'Add task'}</button>
+      <button type="submit" disabled={saving || Boolean(invalidSchedule)} className="lifeos-accent-button min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold disabled:opacity-50">{saving ? 'Adding...' : 'Add task'}</button>
     </div>
-    <p id={hintId} className="mt-2 text-xs text-secondary">Add a date when you are ready to schedule it.</p>
-    <details className="mt-2 rounded-xl border border-[var(--stroke)] px-3"><summary className="flex min-h-11 cursor-pointer items-center text-xs font-semibold text-secondary">Schedule, priority and reminder</summary><div className="grid grid-cols-2 gap-2 pb-3">
-      <label className="text-xs text-secondary">Due date<input type="date" value={dueDate} onChange={event => { setDueDate(event.target.value); if (!event.target.value) { setDueTime(''); setReminderAt(''); } }} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm" /></label>
+    <p id={hintId} className="mt-2 text-xs text-secondary">Choose a due date. A time and extra reminder are optional.</p>
+    <details open className="mt-2 rounded-xl border border-[var(--stroke)] px-3"><summary className="flex min-h-11 cursor-pointer items-center text-xs font-semibold text-secondary">Schedule, priority and reminder</summary><div className="grid grid-cols-2 gap-2 pb-3">
+      <label className="text-xs text-secondary">Due date<input type="date" required min={formatLocalDate(new Date())} value={dueDate} onChange={event => {
+        const date = event.target.value;
+        setDueDate(date);
+        if (!date) { setDueTime(''); setReminderAt(''); }
+        else if (dueTime && (parseLocalDateTime(date, dueTime) ?? new Date(0)) <= new Date()) {
+          setDueTime(''); setError('The previous time has passed on this date. Choose another time.');
+        } else setError('');
+      }} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm" /></label>
       <label className="text-xs text-secondary">Time<input type="time" disabled={!dueDate} value={dueTime} onChange={event => setDueTime(event.target.value)} className="lifeos-input mt-1 min-h-11 w-full rounded-lg px-2 text-sm disabled:opacity-50" /></label>
       <div className="text-xs text-secondary"><PreferenceChoice variant="field" label="Priority" value={priority}
         options={(['Low', 'Medium', 'High', 'Urgent'] as const).map(item => [item, item])} onSelect={value => setPriority(value as Task['priority'])} /></div>

@@ -13,6 +13,7 @@ type Props = {
   submitLabel: string;
   mode: 'page' | 'sheet';
   saving: boolean;
+  submitDisabled?: boolean;
   reduced: boolean;
   dismiss: () => void;
   onSubmit: FormEventHandler<HTMLFormElement>;
@@ -23,7 +24,7 @@ type Props = {
   children: ReactNode;
 };
 
-export default function ComposerShell({ id, title, accessibleName, descriptionId, submitLabel, mode, saving, reduced, dismiss, onSubmit, onChange, onChoiceChange, portal, footerDismissOnly, children }: Props) {
+export default function ComposerShell({ id, title, accessibleName, descriptionId, submitLabel, mode, saving, submitDisabled, reduced, dismiss, onSubmit, onChange, onChoiceChange, portal, footerDismissOnly, children }: Props) {
   const pressed = useRef<{ button: HTMLButtonElement; pointerId: number } | null>(null);
   const releasePress = (event: PointerEvent<HTMLFormElement>) => {
     if (pressed.current?.pointerId !== event.pointerId) return;
@@ -81,7 +82,7 @@ export default function ComposerShell({ id, title, accessibleName, descriptionId
       </div>
       <div className="ui-form-actions feather-composer-actions">
         <button type="button" disabled={saving} onClick={dismiss} className="feather-secondary">Cancel</button>
-        <button type="submit" disabled={saving} className="feather-primary">{saving ? 'Saving…' : submitLabel}</button>
+        <button type="submit" disabled={saving || submitDisabled} className="feather-primary">{saving ? 'Saving…' : submitLabel}</button>
       </div>
     </m.form>
   </div></LazyMotion>;

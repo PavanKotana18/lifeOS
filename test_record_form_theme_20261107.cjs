@@ -37,6 +37,6 @@ visit(sourceFile);
 assert.ok(controls.length + sheets.length >= 30, 'shared dialog retains its existing editable record fields');
 assert.ok(controls.every(className => className.includes('lifeos-input') && className.includes('min-h-11')), 'editable fields use semantic inputs and minimum touch sizing');
 assert.ok(/border border-\[var\(--danger\)\][^\"]*text-\[var\(--danger\)\]/.test(dialog), 'delete action remains visibly dangerous');
-assert.match(shell, /className="ui-form-actions feather-composer-actions"[\s\S]*type="submit" disabled=\{saving\} className="feather-primary"/);
+assert.match(shell, /className="ui-form-actions feather-composer-actions"[\s\S]*type="submit" disabled=\{saving \|\| submitDisabled\} className="feather-primary"/);
 assert.match(css, /\.feather-composer-actions \{[^}]*grid-template-columns:/, 'the save action stays in a separate rail while fields scroll');
 console.log(`RECORD FORM THEME: 11 source-level dialog checks passed; ${controls.length} editable JSX controls inspected.`);

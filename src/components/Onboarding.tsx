@@ -1,6 +1,6 @@
 import LifeDoodle from './LifeDoodle';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { LifeOSBrand } from './LifeOSBrand';
+import { BusyDooBrand } from './BusyDooBrand';
 import RecoveryProgress from './RecoveryProgress';
 import { ONBOARDING_NOTIFICATIONS_STEP } from '../services/onboardingJourney';
 import { Bell, ShieldCheck } from 'lucide-react';
@@ -58,7 +58,7 @@ export default function Onboarding(props: Props) {
 
   return <main className="onboarding-root lifeos-page initial-setup" aria-label="BusyDoo setup">
     <div className="initial-setup-inner">
-      <header className="initial-setup-header" data-launch-destination={step === 0 ? true : undefined}><LifeOSBrand className="lifeos-onboarding-brand" markClassName="lifeos-onboarding-mark" /></header>
+      <header className="initial-setup-header" data-launch-destination={step === 0 ? true : undefined}><BusyDooBrand className="lifeos-onboarding-brand" markClassName="lifeos-onboarding-mark" /></header>
       <section className="initial-setup-content" aria-busy={busy}>
         {step === 0 && <>
           <h1>What should we call you?</h1>

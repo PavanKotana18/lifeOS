@@ -341,14 +341,42 @@ export function buildFinanceEntry(localDateTime: string, savedAt = new Date()) {
   if (Number.isNaN(parsed.getTime())) throw new Error('Invalid local transaction date/time');
   return { date: formatLocalDate(parsed), occurredAt: parsed.toISOString(), createdAt: savedAt.toISOString() };
 }
+export const DEFAULT_DATE_ONLY_ALERT_TIME = '09:00';
+
+export function taskScheduleError(draft: { title?: string; dueDate?: string; dueTime?: string; reminderAt?: string },
+  previous?: Pick<Task, 'dueDate' | 'dueTime' | 'reminderAt'>, now = new Date()): string | undefined {
+  if (!draft.title?.trim()) return 'Enter a task title.';
+  const changed = !previous || (draft.dueDate || '') !== (previous.dueDate || '') || (draft.dueTime || '') !== (previous.dueTime || '');
+  if (changed) {
+    if (!draft.dueDate) return 'Choose a due date.';
+    const due = parseLocalDateTime(draft.dueDate, draft.dueTime || '00:00', !draft.dueTime);
+    if (!due) return 'Choose a valid due date and time.';
+    if (due <= now) return draft.dueTime && draft.dueDate === formatLocalDate(now) ? 'Choose a future time today.' : 'Choose a due date that is not in the past.';
+  }
+  if (draft.reminderAt && (changed || draft.reminderAt !== previous?.reminderAt)) {
+    const reminder = new Date(draft.reminderAt);
+    if (Number.isNaN(+reminder) || reminder <= now) return 'Choose a reminder time in the future.';
+  }
+}
+
+export function taskDateOnlyAlert(dueDate: string, time: string, anchor?: string) {
+  if (!time) return null;
+  const configured = parseLocalDateTime(dueDate, time);
+  if (!anchor || !configured) return configured;
+  const savedAt = new Date(anchor);
+  if (Number.isNaN(+savedAt) || formatLocalDate(savedAt) !== dueDate || savedAt < configured) return configured;
+  const fallback = new Date(+savedAt + 60_000);
+  return formatLocalDate(fallback) === dueDate ? fallback : null;
+}
+
 export type TaskAlertKind = 'dueTime' | 'taskReminders' | 'upcomingDeadlines' | 'overdueAlerts';
 
-export function buildTaskNotificationPlan(task: Task, preferences: NotificationPreferences, now = new Date(), dateOnlyAlertTime?: string) {
+export function buildTaskNotificationPlan(task: Task, preferences: NotificationPreferences, now = new Date(), dateOnlyAlertTime = DEFAULT_DATE_ONLY_ALERT_TIME) {
   const plan: { kind: TaskAlertKind; at: Date }[] = [];
   if (task.completed || !task.dueDate || task.id?.startsWith('lifeos-demo-v2:') || task.title?.startsWith('[PREVIEW SAMPLE]') || task.recurrenceRootId?.startsWith('lifeos-demo-v2:')) return plan;
   const deadline = getTaskDeadline(task);
-  const alertTime = task.dueTime || dateOnlyAlertTime;
-  const dueAt = alertTime ? parseLocalDateTime(task.dueDate, alertTime) : null;
+  const dueAt = task.dueTime ? parseLocalDateTime(task.dueDate, task.dueTime)
+    : taskDateOnlyAlert(task.dueDate, dateOnlyAlertTime, task.dateOnlyAlertAnchorAt);
   const add = (kind: TaskAlertKind, at: Date | null) => {
     if (at && at > now && !plan.some(item => +item.at === +at)) plan.push({ kind, at });
   };
@@ -358,7 +386,7 @@ export function buildTaskNotificationPlan(task: Task, preferences: NotificationP
     const reminder = lead && dueAt ? new Date(+dueAt - lead * 60_000) : task.reminderAt ? new Date(task.reminderAt) : null;
     if (!dueAt || !reminder || +reminder !== +dueAt) add('taskReminders', reminder);
   }
-  if (deadline && preferences.upcomingDeadlines) add('upcomingDeadlines', task.dueTime ? new Date(+deadline - 60 * 60_000) : parseLocalDateTime(task.dueDate, '09:00'));
+  if (deadline && preferences.upcomingDeadlines) add('upcomingDeadlines', task.dueTime ? new Date(+deadline - 60 * 60_000) : task.dueAlertDisabled ? null : dueAt);
   // Never create a new overdue alert for a task already overdue when reconciled.
   if (deadline && deadline > now && preferences.overdueAlerts) add('overdueAlerts', new Date(+deadline + 60_000));
   return plan;

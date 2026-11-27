@@ -47,7 +47,7 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
     <section role="dialog" aria-modal="true" aria-labelledby="secure-setup-locked-title" className="lifeos-panel mx-auto flex min-h-full max-w-md flex-col justify-center gap-4 rounded-3xl border p-5 shadow-xl sm:p-6">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--accent-tint)] text-[var(--accent)]" aria-hidden="true"><ShieldCheck size={24} strokeWidth={1.8} /></div>
       <h1 id="secure-setup-locked-title" className="text-center text-2xl font-semibold">Unlock to continue</h1>
-      <p className="text-center text-sm leading-6 text-secondary">{exportBusy ? 'Opening Android’s secure save picker. Your recovery code is hidden while the file is saved.' : 'BusyDoo locked your recovery setup while Android’s file picker was open. Your code stays hidden until secure unlock succeeds.'}</p>
+      <p className="text-center text-sm leading-6 text-secondary">{exportBusy ? 'Choose where to save your recovery file. Your recovery code stays hidden while you save it.' : 'Unlock BusyDoo to see your recovery code again.'}</p>
       {!exportBusy && onRetryRecoveryExportResume && <button type="button" onClick={onRetryRecoveryExportResume} className="lifeos-accent-button min-h-12 rounded-2xl px-4 py-3 font-semibold">Unlock and continue</button>}
       <button type="button" disabled={exportBusy} onClick={() => void finish(false)} className="lifeos-input min-h-12 rounded-2xl px-4 py-3 disabled:opacity-60">{cancelLabel || 'Cancel and keep data locked'}</button>
     </section>
@@ -88,7 +88,7 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
         announce('Android confirmed the file save. BusyDoo cannot verify its location.');
       } else {
         setKitExportState(current => current === 'saved' ? current : 'started');
-        announce('Download started, but BusyDoo cannot confirm it finished. Save the kit with Android’s file picker to continue.');
+        announce('Download started, but BusyDoo cannot confirm it finished. Save the recovery file through Android to continue.');
       }
     } catch {
       // Export errors can come from the file provider. Never log recovery material.
@@ -127,7 +127,7 @@ export default function SecureSetupDialog({ inline = false, cancelLabel, prepare
           <p className="text-sm text-secondary">Save your recovery file somewhere you can access if you lose this device.</p>
           <button type="button" data-testid="save-complete-recovery-kit" onClick={() => void saveKit()} disabled={exportBusy}
             className="lifeos-accent-button flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:opacity-60">
-            <Download size={18} aria-hidden="true" />{exportBusy ? 'Opening file picker' : 'Save recovery file'}
+            <Download size={18} aria-hidden="true" />{exportBusy ? 'Saving recovery file…' : 'Save recovery file'}
           </button>
         </div> : <div className="recovery-stage space-y-4">
         <p role="status" className="text-sm font-medium">Recovery file saved. Confirm its code to finish.</p>

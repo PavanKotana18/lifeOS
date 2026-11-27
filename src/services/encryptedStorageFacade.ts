@@ -939,6 +939,7 @@ export function createEncryptedStorageFacade(
                   subtasks: task.subtasks?.map(({ id, title }) => ({ id, title, completed: false, createdAt: now })),
                   recurrenceAnchorDay: task.recurrenceAnchorDay ?? Number((task.recurrenceScheduledDate || task.dueDate).slice(-2)),
                   recurrenceScheduledDate: nextDate,
+                  dateOnlyAlertAnchorAt: undefined,
                   recurrenceRootId: rootId,
                   completed: false,
                   completedAt: undefined,

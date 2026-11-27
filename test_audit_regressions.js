@@ -136,7 +136,9 @@ check(
 // Dashboard presents transparent per-domain counts and does not publish an opaque composite score.
 check(
   app.includes('getTodayOverview(tasks, habits, habitLogs, todayKey)') &&
-  app.includes('Tasks due today') && app.includes('Daily routines') && app.includes('todayOverview.routinesDue') &&
+  /id="today-overview-title"[^>]*>Due today</.test(app) && /id="today-routines-title"[^>]*>Daily routines</.test(app) &&
+  app.includes('todayOverview.tasksCompleted} of {todayOverview.tasksDue}') &&
+  app.includes('todayOverview.routinesCompleted} of {todayOverview.routinesDue}') &&
   !app.includes('productivityScore') && !app.includes('adherence today'),
   'Dashboard exposes separate task and routine counts without a composite score'
 );

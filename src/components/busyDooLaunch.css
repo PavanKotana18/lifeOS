@@ -49,20 +49,6 @@
 .busydoo-launch-tagline { margin-block-start: .65rem; color: #c2cec0; font-size: 14px; letter-spacing: .9px; }
 .busydoo-launch[data-phase="leaving"] { opacity: 0; transition: opacity 120ms ease-out; }
 
-.busydoo-launch-skip {
-  position: absolute;
-  right: max(1rem, env(safe-area-inset-right));
-  bottom: max(1rem, env(safe-area-inset-bottom));
-  min-height: 44px;
-  padding: .55rem .85rem;
-  border: 1px solid #415545;
-  border-radius: 10px;
-  background: #202c24;
-  color: #f7f5eb;
-  font: 14px Arial, Helvetica, sans-serif;
-}
-.busydoo-launch-skip:focus-visible { outline: 2px solid #acd08e; outline-offset: 3px; }
-
 @media (prefers-reduced-motion: reduce) {
   .busydoo-launch, .busydoo-launch * { transition: none !important; }
 }

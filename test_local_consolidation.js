@@ -88,7 +88,7 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   await assert.rejects(f.NotificationService.syncTasks([],f.DEFAULT_NOTIFICATION_PREFERENCES),/native plugin is not registered/i);
  }));
  await test('Task reminder diagnostic reports eligibility and pending ID without task content', async () => fixture(async f => {
-  const task = { id: 'safe-task-ref', title: 'SECRET TITLE MUST NOT APPEAR', dueDate: '2026-12-01', reminderAt: '2026-12-01T09:00:00.000Z', completed: false };
+  const task = { id: 'safe-task-ref', title: 'SECRET TITLE MUST NOT APPEAR', dueDate: '2030-01-02', reminderAt: new Date(2030, 0, 2, 9, 15).toISOString(), completed: false };
   const prefs = { ...f.DEFAULT_NOTIFICATION_PREFERENCES, taskReminders: true };
   await f.NotificationService.syncTasks([task], prefs);
   const report = await f.NotificationService.diagnoseTaskReminder(task, prefs);
@@ -97,9 +97,12 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   assert.equal(report.androidPermission, 'granted');
   assert.equal(report.schedulingResult, 'pending');
   assert.ok(report.pendingNotificationId);
-  assert.equal(report.plannedNotifications.length,1);
-  assert.equal(report.plannedNotifications[0].kind,'taskReminders');
-  assert.equal(report.plannedNotifications[0].inAndroidPendingQueue,true);
+  assert.deepEqual(report.plannedNotifications.map(alert => ({
+    kind: alert.kind, at: alert.scheduledUtcTime, queued: alert.inAndroidPendingQueue,
+  })), [
+    { kind: 'dueTime', at: new Date(2030, 0, 2, 9).toISOString(), queued: true },
+    { kind: 'taskReminders', at: task.reminderAt, queued: true },
+  ]);
   assert.equal(JSON.stringify(report).includes(task.title), false);
  }));
  await test('Persisted task reminder is queued at its saved local-time instant and survives failed reschedule', async () => fixture(async f => {

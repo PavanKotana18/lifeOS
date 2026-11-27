@@ -3,7 +3,7 @@ import { PreferenceChoice } from './PreferenceChoice';
 import { AnimatePresence } from 'motion/react';
 import ComposerShell from './ComposerShell';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeftRight, Archive, Landmark, Plus, Wallet } from 'lucide-react';
+import { ArrowLeftRight, Archive, Landmark, Wallet } from 'lucide-react';
 import type { AccountTransfer, FinancialAccount, FinancialAccountType, Transaction } from '../types';
 import { accountActivitySign, calculateAccountBalances } from '../services/financialAccounting';
 import { decimalToMinorUnits, formatCurrencyChoice, formatMinorUnits, minorUnitsToDecimal } from '../services/financeCore';
@@ -165,7 +165,7 @@ export default function MoneyAccounts(props: Props) {
   ));
 
   return <main className="space-y-5" data-testid="money-accounts">
-    <header className="flex flex-wrap items-end justify-between gap-3"><div className="flex min-w-0 w-full flex-wrap items-end gap-2 sm:w-auto"><button type="button" onClick={() => beginAccount()} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-sm font-semibold"><Plus size={16} className="mr-1 inline" />Add account</button><button type="button" disabled={active.length < 2} aria-describedby={active.length < 2 ? 'account-transfer-help' : undefined} onClick={() => beginTransfer()} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-sm font-semibold disabled:opacity-50"><ArrowLeftRight size={16} className="mr-1 inline" />Transfer</button>{active.length < 2 && <span id="account-transfer-help" className="basis-full text-sm leading-relaxed text-secondary">Add two active accounts to move money between them.</span>}</div></header>
+    <header className="flex flex-wrap items-end justify-between gap-3"><div className="flex min-w-0 w-full flex-wrap items-end gap-2 sm:w-auto"><button type="button" onClick={() => beginAccount()} className="lifeos-accent-button min-h-11 rounded-xl px-3 text-sm font-semibold">Add account</button><button type="button" disabled={active.length < 2} aria-describedby={active.length < 2 ? 'account-transfer-help' : undefined} onClick={() => beginTransfer()} className="lifeos-raised lifeos-border min-h-11 rounded-xl border px-3 text-sm font-semibold disabled:opacity-50"><ArrowLeftRight size={16} className="mr-1 inline" />Transfer</button>{active.length < 2 && <span id="account-transfer-help" className="basis-full text-sm leading-relaxed text-secondary">Add two active accounts to move money between them.</span>}</div></header>
     {error && !accountDraft && !transferDraft && <p role="alert" className="lifeos-danger rounded-xl border p-3 text-sm">{error}</p>}
     {!accounts.length ? <section className="account-empty-state lifeos-panel rounded-2xl border" data-testid="account-empty-state"><span className="lifeos-tint" aria-hidden="true"><Wallet size={20} /></span><div><h3 className="font-semibold">No accounts yet</h3><p className="mt-1 text-sm text-secondary">Add an account to track its balance and transfers.</p></div></section> : <section className="grid gap-3 sm:grid-cols-2">{accounts.map(account => {
       const history = transactions.filter(row => row.accountId === account.id).map(row => ({ id: row.id, date: row.date, label: row.description || row.category, amount: row.amountMinor ? BigInt(row.amountMinor) : decimalToMinorUnits(row.amount, row.currencyCode || account.currencyCode), currency: row.currencyCode || account.currencyCode, sign: accountActivitySign(account, row.type === 'income' ? 'income' : 'expense'), tx: row }));

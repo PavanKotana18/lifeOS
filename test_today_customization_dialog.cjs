@@ -36,7 +36,7 @@ assert.match(markup, />Done<\/button>/);
 assert.match(markup, /Restore default layout/);
 assert.match(markup, /Move .* up/); assert.match(markup, /Move .* down/);
 assert.match(text, /useRecordDialog\(todayCustomizationOpen[\s\S]*?closeTodayCustomization, 'today-customization'\)/);
-assert.match(text, /todayCustomizationOpen && createPortal\(<div className="ui-sheet-backdrop"/);
+assert.match(text, /todayCustomizationOpen && createPortal\(<div className="ui-sheet-backdrop today-customization-layer"/);
 assert.match(text, /<\/section><\/div>, document\.body\)/, 'The modal escapes transformed/clipped retained screen ancestors');
 
 let closes = 0;

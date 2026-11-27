@@ -1,3 +1,4 @@
+import { BusyDooBrand } from './BusyDooBrand';
 import { useState, useRef, useEffect } from 'react';
 
 export default function RecoveryDialog({ onRecover, onClose }: {
@@ -11,8 +12,9 @@ export default function RecoveryDialog({ onRecover, onClose }: {
   useEffect(() => () => { fileGeneration.current++; }, []);
   return <main className="lifeos-page fixed inset-0 z-[100] flex items-center justify-center p-6">
     <section role="dialog" aria-modal="true" aria-labelledby="recovery-dialog-title" className="lifeos-panel w-full max-w-md space-y-4 rounded-2xl border p-5 shadow-xl">
-      <h1 id="recovery-dialog-title" className="text-xl font-semibold">Recover the existing encryption key</h1>
-      <p className="text-sm text-secondary">Select your complete private recovery kit. BusyDoo verifies it against an existing encrypted record before biometric re-binding. Database records are never replaced.</p>
+      <BusyDooBrand />
+      <h1 id="recovery-dialog-title" className="text-xl font-semibold">Recover access</h1>
+      <p className="text-sm text-secondary">Choose your private recovery file, then confirm your identity to unlock your existing records.</p>
       <label className="block text-sm">Private recovery kit<input type="file" accept="application/json,.json" disabled={busy}
         onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; setMessage(''); setKit('');
           const generation = ++fileGeneration.current;
@@ -23,7 +25,7 @@ export default function RecoveryDialog({ onRecover, onClose }: {
       {message && <p role="status" className="lifeos-warning text-sm">{message}</p>}
       <button disabled={busy || !kit} className="lifeos-accent-button min-h-11 rounded-xl px-4 py-3 font-semibold disabled:opacity-40"
         onClick={() => { if (inFlight.current) return; inFlight.current = true; setBusy(true); setMessage(''); void onRecover(kit).then(() => {
-          setMessage('The existing key was verified and re-bound. Your encrypted records can now reopen after authentication.');
+          setMessage('Recovery verified. Unlock BusyDoo to open your records.');
         }, error => setMessage(error instanceof Error ? error.message : 'Recovery failed; data remains locked.'))
           .finally(() => { setKit(''); setBusy(false); inFlight.current = false; }); }}> {busy ? 'Verifying recovery…' : 'Verify kit and authenticate'}</button>
       <button disabled={busy} onClick={() => { setKit(''); onClose(); }} className="lifeos-input ml-3 min-h-11 rounded-xl px-4 py-3">Close</button>

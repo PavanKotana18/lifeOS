@@ -24,7 +24,6 @@ export default function BusyDooLaunch({ cinematic, releaseNativeSplash, onFinish
   const [phase, setPhase] = useState<'native' | 'cinematic' | 'regular' | 'leaving'>('native');
   const stage = useRef<HTMLDivElement>(null);
   const mark = useRef<HTMLImageElement>(null);
-  const skip = useRef<HTMLButtonElement>(null);
   const complete = useRef(onFinish);
   complete.current = onFinish;
 
@@ -98,13 +97,9 @@ export default function BusyDooLaunch({ cinematic, releaseNativeSplash, onFinish
     };
   }, [cinematic, reduced, releaseNativeSplash]);
 
-  useEffect(() => {
-    if (phase === 'cinematic') skip.current?.focus({ preventScroll: true });
-  }, [phase]);
-
   const cinematicVisible = cinematic && !reduced && (phase === 'cinematic' || phase === 'leaving');
   return <div className="busydoo-launch" data-phase={phase} data-cinematic={cinematicVisible}
-    data-reduced={reduced} role={cinematicVisible ? 'dialog' : 'status'} aria-modal={cinematicVisible || undefined}
+    data-reduced={reduced} role="status"
     aria-label={cinematicVisible ? 'BusyDoo ? A Life in Harmony. Planning, habits, goals and finances come together.' : 'BusyDoo is opening'}>
     <div ref={stage} className="busydoo-launch-stage">
       {cinematic && !reduced && <BusyDooLaunchArtwork />}
@@ -114,10 +109,6 @@ export default function BusyDooLaunch({ cinematic, releaseNativeSplash, onFinish
       <div className="busydoo-launch-word">BusyD<span>oo</span></div>
       <div className="busydoo-launch-tagline">Life, in one place.</div>
     </div>
-    {cinematicVisible && <button ref={skip} type="button" className="busydoo-launch-skip" onClick={onFinish}
-      onKeyDown={event => {
-        if (event.key === 'Escape') onFinish();
-        if (event.key === 'Tab') event.preventDefault();
-      }}>Skip intro</button>}
+
   </div>;
 }
