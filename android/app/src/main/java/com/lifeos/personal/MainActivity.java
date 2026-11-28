@@ -32,10 +32,15 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        setIntent(SmartImportSharePlugin.consumeShareIntent(getIntent()));
-        // Save notification taps before Capacitor or React initialize. The native
-        // plugin keeps this action until the authenticated JS router acknowledges it.
-        NotificationTapLaunchPlugin.captureAction(this, getIntent());
+        Intent incoming = getIntent();
+        Intent trusted = NotificationEntryActivity.take(incoming);
+        if (trusted != null) {
+            // Persist before WebView startup; never retain a notification in the Activity intent.
+            NotificationTapLaunchPlugin.captureAction(this, trusted);
+        } else {
+            SmartImportSharePlugin.consumeShareIntent(incoming);
+        }
+        setIntent(new Intent(Intent.ACTION_MAIN));
         coldLaunch = savedInstanceState == null;
         keepLaunchSplash = coldLaunch;
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
@@ -76,12 +81,18 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onNewIntent(android.content.Intent intent) {
-        boolean sharedAlert = Intent.ACTION_SEND.equals(intent.getAction());
-        intent = SmartImportSharePlugin.consumeShareIntent(intent);
-        setIntent(intent);
-        android.content.Intent notificationAction = new android.content.Intent(intent);
-        NotificationTapLaunchPlugin.captureAction(this, notificationAction);
-        super.onNewIntent(intent);
+        boolean sharedAlert = intent != null && Intent.ACTION_SEND.equals(intent.getAction());
+        Intent trusted = NotificationEntryActivity.take(intent);
+        Intent safe = new Intent(Intent.ACTION_MAIN);
+        if (trusted != null) {
+            // Only the private relay may supply action data to the durable queue
+            // or the upstream warm Capacitor listener. Reject replays in both.
+            if (NotificationTapLaunchPlugin.captureAction(this, new Intent(trusted))) safe = trusted;
+        } else {
+            SmartImportSharePlugin.consumeShareIntent(intent);
+        }
+        setIntent(new Intent(Intent.ACTION_MAIN));
+        super.onNewIntent(safe);
         if (sharedAlert && bridge != null && bridge.getPlugin("SmartImportShare") != null) {
             SmartImportSharePlugin plugin = (SmartImportSharePlugin) bridge.getPlugin("SmartImportShare").getInstance();
             if (plugin != null) plugin.signalAvailable();

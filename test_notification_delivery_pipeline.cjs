@@ -50,8 +50,15 @@ assert.match(bootstrap, /'notificationPreferences'[\s\S]*?'notificationsEnabled'
 assert.match(notificationService, /localNotificationActionPerformed/);
 assert.match(notificationService, /getInitialTapAction/);
 assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationTapLaunchPlugin.java', 'utf8'), /LocalNotficationObject[\s\S]*?getInitialAction[\s\S]*?acknowledgeInitialAction/, 'cold-start tap actions are held until JS routes them');
-assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/MainActivity.java', 'utf8'), /captureAction\(this, getIntent\(\)\);[\s\S]*?super\.onCreate/, 'cold-start tap is persisted before Capacitor/WebView startup');
-assert.match(fs.readFileSync('android/app/src/main/java/com/lifeos/personal/MainActivity.java', 'utf8'), /void onNewIntent[\s\S]*?captureAction\(this, notificationAction\)[\s\S]*?super\.onNewIntent\(intent\)/, 'capture the durable copy before handing the original warm tap to Capacitor');
+const mainActivity = fs.readFileSync('android/app/src/main/java/com/lifeos/personal/MainActivity.java', 'utf8');
+const privateEntry = fs.readFileSync('android/app/src/main/java/com/lifeos/personal/NotificationEntryActivity.java', 'utf8');
+assert.match(manifest, /android:name="\.NotificationEntryActivity"[\s\S]*?android:exported="false"/);
+assert.match(privateEntry, /handoffs\.remove\(token\)/);
+assert.match(mainActivity, /NotificationEntryActivity\.take\(incoming\)[\s\S]*?captureAction\(this, trusted\)[\s\S]*?super\.onCreate/);
+assert.match(mainActivity, /void onNewIntent[\s\S]*?NotificationEntryActivity\.take\(intent\)[\s\S]*?if \(NotificationTapLaunchPlugin\.captureAction\(this, new Intent\(trusted\)\)\) safe = trusted;[\s\S]*?super\.onNewIntent\(safe\)/);
+assert.match(nativeScheduler, /PendingIntent\.FLAG_CANCEL_CURRENT \| PendingIntent\.FLAG_IMMUTABLE;\s*PendingIntent pendingIntent = PendingIntent\.getActivity/);
+assert.match(nativeScheduler, /actionFlags \|= PendingIntent\.FLAG_ONE_SHOT/);
+assert.match(nativeScheduler, /setClassName\(context\.getPackageName\(\), "com\.lifeos\.personal\.NotificationEntryActivity"\)/);
 assert.match(app, /addActionListener/);
 assert.match(app, /isEncryptedStorageActivated\(\)[\s\S]*?processPendingTaskNotification/, 'notification taps wait for the encrypted session before reading task details');
 assert.match(app, /getPendingTapActions[\s\S]*?rows\.forEach\(row => handleNotificationTapRef\.current\(row\)\)/, 'cold-start taps are processed after action listener registration');

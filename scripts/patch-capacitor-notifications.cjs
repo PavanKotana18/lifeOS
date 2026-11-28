@@ -119,3 +119,26 @@ if (!inboxManager.includes('LifeOS: expose only opaque reminder references in An
     marker,
   ].join('\n')));
 }
+
+
+// BusyDoo: notification clicks must target the non-exported relay. Alarm identities
+// intentionally remain unchanged; changing their mutability requires migration.
+const trustSource = fs.readFileSync(manager, 'utf8').replace(/\r\n/g, '\n');
+if (!trustSource.includes('LifeOS: private notification entry')) {
+  const anchors = [
+    ['        int flags = PendingIntent.FLAG_CANCEL_CURRENT;\n        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {\n            flags = flags | PendingIntent.FLAG_MUTABLE;\n        }\n        PendingIntent pendingIntent = PendingIntent.getActivity',
+     '        int flags = PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE;\n        PendingIntent pendingIntent = PendingIntent.getActivity'],
+    ['                // TODO Add custom icons to actions\n                Intent actionIntent = buildIntent(localNotification, notificationAction.getId());',
+     '                // BusyDoo does not support inline remote-input actions.\n                if (notificationAction.isInput()) continue;\n                Intent actionIntent = buildIntent(localNotification, notificationAction.getId());\n                int actionFlags = flags;\n                if ("lifeos-task-done".equals(notificationAction.getId()) || "lifeos-task-snooze".equals(notificationAction.getId())) actionFlags |= PendingIntent.FLAG_ONE_SHOT;'],
+    ['                    actionIntent,\n                    flags\n', '                    actionIntent,\n                    actionFlags\n'],
+    ['        flags = 0;\n        if (android.os.Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {\n            flags = PendingIntent.FLAG_MUTABLE;\n        }\n        PendingIntent deleteIntent', '        flags = PendingIntent.FLAG_IMMUTABLE;\n        PendingIntent deleteIntent'],
+    ['        Intent intent;\n        if (activity != null) {\n            intent = new Intent(context, activity.getClass());\n        } else {\n            String packageName = context.getPackageName();\n            intent = context.getPackageManager().getLaunchIntentForPackage(packageName);\n        }',
+     '        // LifeOS: private notification entry (works with either application or Activity context).\n        Intent intent = new Intent().setClassName(context.getPackageName(), "com.lifeos.personal.NotificationEntryActivity");']
+  ];
+  let next = trustSource;
+  for (const [before, after] of anchors) {
+    if (next.split(before).length !== 2) throw new Error('Capacitor notification trust anchor changed');
+    next = next.replace(before, () => after);
+  }
+  fs.writeFileSync(manager, next);
+}

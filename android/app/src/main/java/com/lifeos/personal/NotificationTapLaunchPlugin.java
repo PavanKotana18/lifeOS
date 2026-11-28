@@ -23,15 +23,13 @@ public class NotificationTapLaunchPlugin extends Plugin {
     private static final String NOTIFICATION_JSON = "LocalNotficationObject";
     private static final String PREFS = "lifeos_notification_taps";
     private static final String PENDING_ACTION = "pending_action";
-    private static final String QUEUE = "pending_actions_v2";
+    // Pre-hardening queue entries have no trusted-origin evidence. Never replay them.
+    private static final String OLD_QUEUE = "pending_actions_v2";
+    private static final String QUEUE = "pending_actions_v3";
+    private static final String CONSUMED = "consumed_mutations_v3";
+    private static final int MAX_CONSUMED = 256;
     private static final int MAX_ACTIONS = 64;
     private static final long MAX_AGE = 24 * 60 * 60 * 1000L;
-
-    @Override
-    public void load() {
-        super.load();
-        captureAction(getContext(), getActivity().getIntent());
-    }
 
     private static SharedPreferences preferences(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -70,47 +68,61 @@ public class NotificationTapLaunchPlugin extends Plugin {
                 JSONObject entry = existing.optJSONObject(i);
                 if (entry != null && entry.optLong("capturedAt") > now - MAX_AGE) queue.put(entry);
             }
-            String legacy = prefs.getString(PENDING_ACTION, null);
-            if (legacy != null) {
-                JSONObject entry = sanitize(new JSONObject(legacy), now);
-                if (entry != null) queue.put(entry);
-            }
         } catch (JSONException ignored) {
             // Corrupt routing metadata does not block app launch.
         }
         return queue;
     }
 
-    private static void save(SharedPreferences prefs, JSONArray queue) {
-        prefs.edit().remove(PENDING_ACTION).putString(QUEUE, queue.toString()).apply();
+    private static boolean mutation(JSONObject action) {
+        String verb = action.optString("actionId");
+        return "lifeos-task-done".equals(verb) || "lifeos-task-snooze".equals(verb);
     }
 
-    static synchronized void captureAction(Context context, Intent intent) {
-        if (intent == null || !Intent.ACTION_MAIN.equals(intent.getAction()) || !intent.hasExtra(NOTIFICATION_ID)) return;
-        int id = intent.getIntExtra(NOTIFICATION_ID, Integer.MIN_VALUE);
-        String serialized = intent.getStringExtra(NOTIFICATION_JSON);
-        if (id == Integer.MIN_VALUE || serialized == null) return;
+    private static JSONObject readConsumed(SharedPreferences prefs) throws JSONException {
+        JSONObject prior = new JSONObject(prefs.getString(CONSUMED, "{}"));
+        JSONObject current = new JSONObject();
+        long cutoff = System.currentTimeMillis() - MAX_AGE;
+        java.util.Iterator<String> keys = prior.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            long at = prior.optLong(key, 0L);
+            if (at > cutoff) current.put(key, at);
+        }
+        return current;
+    }
+
+    private static boolean save(SharedPreferences prefs, JSONArray queue, JSONObject consumed) {
+        return prefs.edit().remove(PENDING_ACTION).remove(OLD_QUEUE)
+            .putString(QUEUE, queue.toString()).putString(CONSUMED, consumed.toString()).commit();
+    }
+
+    static synchronized boolean captureAction(Context context, Intent intent) {
+        // Called only with validated data from the private notification relay.
         try {
+            if (intent == null || !Intent.ACTION_MAIN.equals(intent.getAction())) return false;
+            int id = intent.getIntExtra(NOTIFICATION_ID, Integer.MIN_VALUE);
+            String serialized = intent.getStringExtra(NOTIFICATION_JSON);
+            if (id < 0 || serialized == null || serialized.length() > 32768) return false;
             JSONObject original = new JSONObject(serialized);
             original.put("id", id);
             JSONObject action = sanitize(new JSONObject().put("notification", original)
                 .put("actionId", intent.getStringExtra(ACTION_ID)), System.currentTimeMillis());
-            if (action == null) return;
+            if (action == null) return false;
             SharedPreferences prefs = preferences(context);
+            JSONObject consumed = readConsumed(prefs);
+            String key = action.getString("tapKey");
+            if (mutation(action) && consumed.has(key)) return false;
             JSONArray current = readQueue(prefs);
-            JSONArray next = new JSONArray();
-            for (int i = Math.max(0, current.length() - MAX_ACTIONS + 1); i < current.length(); i++) {
-                JSONObject entry = current.getJSONObject(i);
-                if (!action.getString("tapKey").equals(entry.optString("tapKey"))) next.put(entry);
+            for (int i = 0; i < current.length(); i++) {
+                if (key.equals(current.getJSONObject(i).optString("tapKey"))) return false;
             }
-            next.put(action);
-            save(prefs, next);
-        } catch (JSONException ignored) {
-            // Invalid native payload is ignored.
-        } finally {
-            intent.removeExtra(NOTIFICATION_ID);
-            intent.removeExtra(ACTION_ID);
-            intent.removeExtra(NOTIFICATION_JSON);
+            // Do not evict an unacknowledged action to admit a new one.
+            if (current.length() >= MAX_ACTIONS) return false;
+            current.put(action);
+            return save(prefs, current, consumed);
+        } catch (JSONException | RuntimeException malformed) {
+            return false;
         }
     }
 
@@ -130,7 +142,9 @@ public class NotificationTapLaunchPlugin extends Plugin {
         synchronized (NotificationTapLaunchPlugin.class) {
             SharedPreferences prefs = preferences(getContext());
             JSONArray queue = readQueue(prefs);
-            save(prefs, queue);
+            try {
+                if (!save(prefs, queue, readConsumed(prefs))) { call.reject("Notification queue unavailable"); return; }
+            } catch (JSONException | RuntimeException invalid) { call.reject("Notification queue unavailable"); return; }
             result.put("actions", queue);
         }
         call.resolve(result);
@@ -145,15 +159,33 @@ public class NotificationTapLaunchPlugin extends Plugin {
             JSONArray current = readQueue(prefs);
             JSONArray next = new JSONArray();
             boolean removed = false;
+            try {
+            JSONObject consumed = readConsumed(prefs);
             for (int i = 0; i < current.length(); i++) {
                 JSONObject entry = current.optJSONObject(i);
                 JSONObject notification = entry.optJSONObject("notification");
                 boolean matches = key == null ? notification != null && notification.optInt("id") == id
                     : key.equals(entry.optString("tapKey"));
-                if (matches && !removed) removed = true;
-                else next.put(entry);
+                if (matches && !removed) {
+                    removed = true;
+                    if (mutation(entry)) {
+                        // Retain a bounded, expiring receipt across process restarts.
+                        while (consumed.length() >= MAX_CONSUMED) {
+                            String oldest = null;
+                            java.util.Iterator<String> keys = consumed.keys();
+                            while (keys.hasNext()) {
+                                String candidate = keys.next();
+                                if (oldest == null || consumed.optLong(candidate) < consumed.optLong(oldest)) oldest = candidate;
+                            }
+                            if (oldest == null) break;
+                            consumed.remove(oldest);
+                        }
+                        consumed.put(entry.getString("tapKey"), System.currentTimeMillis());
+                    }
+                } else next.put(entry);
             }
-            save(prefs, next);
+            if (!save(prefs, next, consumed)) { call.reject("Notification acknowledgement unavailable"); return; }
+            } catch (JSONException | RuntimeException invalid) { call.reject("Notification acknowledgement unavailable"); return; }
         }
         call.resolve();
     }
@@ -161,7 +193,9 @@ public class NotificationTapLaunchPlugin extends Plugin {
     @PluginMethod
     public void clearPendingActions(PluginCall call) {
         synchronized (NotificationTapLaunchPlugin.class) {
-            save(preferences(getContext()), new JSONArray());
+            if (!save(preferences(getContext()), new JSONArray(), new JSONObject())) {
+                call.reject("Notification queue could not be cleared"); return;
+            }
         }
         call.resolve();
     }

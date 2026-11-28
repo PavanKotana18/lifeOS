@@ -51,6 +51,13 @@
 
         </activity>
 
+        <!-- Notification PendingIntents enter only through this private Activity. -->
+        <activity
+            android:name=".NotificationEntryActivity"
+            android:exported="false"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
