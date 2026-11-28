@@ -1,29 +1,19 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, Bold, CheckSquare, Heading2, Italic, List, ListOrdered, Redo2, Underline, Undo2 } from 'lucide-react';
-import { baseKeymap, chainCommands, setBlockType, splitBlockAs, toggleMark } from 'prosemirror-commands';
+import { baseKeymap, chainCommands, setBlockType, toggleMark } from 'prosemirror-commands';
 import { history, redo, undo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { Fragment, Slice } from 'prosemirror-model';
 import { EditorState, Plugin, type Command } from 'prosemirror-state';
-import { liftListItem, splitListItem, wrapInList } from 'prosemirror-schema-list';
+import { splitListItem } from 'prosemirror-schema-list';
 import { EditorView } from 'prosemirror-view';
 import { notesSchema, noteDocument, parseNoteDocument, type NoteDocument } from '../services/notesDocument';
+import { formatNoteList, splitChecklist } from '../services/noteFormatting';
 import 'prosemirror-view/style/prosemirror.css';
 
 const { nodes, marks } = notesSchema;
-const checklist: Command = (state, dispatch) => {
-  const { $from } = state.selection;
-  if ($from.parent.type === nodes.checklist_item) return setBlockType(nodes.paragraph)(state, dispatch);
-  return setBlockType(nodes.checklist_item, { id: crypto.randomUUID(), checked: false })(state, dispatch);
-};
-
-const splitChecklist: Command = (state, dispatch) => {
-  const { $from } = state.selection;
-  if ($from.parent.type !== nodes.checklist_item) return false;
-  if (!$from.parent.content.size) return setBlockType(nodes.paragraph)(state, dispatch);
-  return splitBlockAs(() => ({ type: nodes.checklist_item, attrs: { id: crypto.randomUUID(), checked: false } }))(state, dispatch);
-};
+const checklist = formatNoteList(nodes.checklist_item);
 
 const stableChecklistIds = new Plugin({
   appendTransaction(transactions, _old, state) {
@@ -45,16 +35,6 @@ const stableChecklistIds = new Plugin({
   }
 });
 
-function listCommand(node: typeof nodes.bullet_list): Command {
-  return (state, dispatch) => {
-    const { $from } = state.selection;
-    for (let depth = $from.depth; depth > 0; depth--) {
-      if ($from.node(depth).type === node) return liftListItem(nodes.list_item)(state, dispatch);
-    }
-    return wrapInList(node)(state, dispatch);
-  };
-}
-
 const tools = [
   { label: 'Bold', icon: Bold, command: toggleMark(marks.strong) },
   { label: 'Italic', icon: Italic, command: toggleMark(marks.em) },
@@ -62,8 +42,8 @@ const tools = [
   { label: 'Heading', icon: Heading2, command: (state, dispatch) => setBlockType(
     state.selection.$from.parent.type === nodes.heading ? nodes.paragraph : nodes.heading
   )(state, dispatch) },
-  { label: 'Bulleted list', icon: List, command: listCommand(nodes.bullet_list) },
-  { label: 'Numbered list', icon: ListOrdered, command: listCommand(nodes.ordered_list) },
+  { label: 'Bulleted list', icon: List, command: formatNoteList(nodes.bullet_list) },
+  { label: 'Numbered list', icon: ListOrdered, command: formatNoteList(nodes.ordered_list) },
   { label: 'Checklist', icon: CheckSquare, command: checklist },
   { label: 'Undo', icon: Undo2, command: undo },
   { label: 'Redo', icon: Redo2, command: redo },
@@ -130,6 +110,14 @@ export default function NoteWritingSurface({ initial, autoFocus, readOnly, onCha
         if (!state.doc.eq(previous)) inputs.current.onChange(noteDocument(state.doc));
       },
       handleDOMEvents: {
+        beforeinput(editorView, event) {
+          // Android IMEs may emit beforeinput instead of a normal Enter keydown.
+          if (inputs.current.readOnly || event.isComposing || !event.cancelable ||
+              !['insertParagraph', 'insertLineBreak'].includes(event.inputType)) return false;
+          if (!splitChecklist(editorView.state, editorView.dispatch)) return false;
+          event.preventDefault();
+          return true;
+        },
         mousedown(_view, event) {
           if (!(event.target instanceof HTMLButtonElement) || !event.target.closest('.note-check-item')) return false;
           event.preventDefault();

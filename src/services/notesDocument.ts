@@ -39,6 +39,13 @@ const base = new Schema({
     checklist_item: {
       group: 'block', content: 'inline*', defining: true,
       attrs: { id: {}, checked: { default: false } },
+      // Preserve checklist identity when Android/WebView reparses edited DOM.
+      parseDOM: [{ tag: 'div.note-check-item[data-check-id]', contentElement: 'span', getAttrs: dom => {
+        const element = dom as HTMLElement;
+        const id = element.getAttribute('data-check-id');
+        if (!id || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) return false;
+        return { id, checked: element.querySelector('button')?.getAttribute('aria-pressed') === 'true' };
+      } }],
       toDOM: node => [
         'div', { class: 'note-check-item', 'data-check-id': node.attrs.id },
         ['button', {

@@ -3209,13 +3209,13 @@ export default function App() {
     }
   }, [activeTab, appReady, onboardingComplete, activityResumeGuard, isLocked, refreshNoteWorkspace, invalidateNotes, notes.load]);
 
-  function openNoteEditor(note: NoteRecord | null, notebookId?: string) {
+  function openNoteEditor(note: NoteRecord | null, notebookId?: string, showOptions = false) {
     if (isLocked || activityResumeGuard) return;
     if (!note && isEncryptedStorageActivated() && notes.load !== 'loaded') {
       void refreshNoteWorkspace().then(() => notes.open(null, ensurePrivateStorageBeforeWrite, notebookId)).catch(() => {});
       return;
     }
-    notes.open(note, ensurePrivateStorageBeforeWrite, notebookId);
+    notes.open(note, ensurePrivateStorageBeforeWrite, notebookId, undefined, showOptions);
   }
 
   useEffect(() => {
@@ -3714,7 +3714,7 @@ export default function App() {
           <Suspense fallback={<ScreenLoading label="Opening Notes…" />}>
             {renderPlanNavigation('notes')}
             <NotesWorkspace data={notes.data} loading={notes.load === 'loading'} onRetry={notes.load === 'failed' ? refreshNotes : undefined}
-              onClose={navigateBack} onCreate={notebookId => openNoteEditor(null, notebookId)} onOpen={note => openNoteEditor(note)}
+              onClose={navigateBack} onCreate={notebookId => openNoteEditor(null, notebookId)} onOpen={(note, showOptions) => openNoteEditor(note, undefined, showOptions)}
               onView={next => void (async () => {
                 try { await ensurePrivateStorageBeforeWrite(); await StorageService.notes.setView((await notes.refresh()).epoch, next); await notes.refresh(); }
                 catch { showToast('Could not save the Notes layout.', 'danger'); }
@@ -4536,7 +4536,7 @@ export default function App() {
       {notes.editor && <Suspense fallback={<ScreenLoading label="Opening editor…" />}>
         <NotesEditor key={notes.editor.draft.id} draft={notes.editor.draft} status={notes.editor.status}
           trashed={Boolean(notes.editor.record?.trashedAt)} notebooks={notes.data.notebooks}
-          options={noteLinkOptions} hidden={activeTab !== 'notes' || Boolean(createKind)}
+          options={noteLinkOptions} initialOptions={notes.editor.initialOptions} hidden={activeTab !== 'notes' || Boolean(createKind)}
           onChange={notes.change} onClose={() => void closeNotesEditor()} onRetry={() => void notes.flush()}
           onDiscard={() => void discardNoteChanges()} onConvert={text => void convertNoteText(text)}
           onDispose={async action => {

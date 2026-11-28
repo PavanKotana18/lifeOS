@@ -1,6 +1,6 @@
 
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Archive, Bell, BookOpen, Download, Link2, MoreHorizontal, Pin, RotateCcw, Trash2 } from 'lucide-react';
+import { Archive, Bell, BookOpen, Download, Link2, MoreHorizontal, Pin, RotateCcw, SquarePen, Trash2 } from 'lucide-react';
 import { FeatherHeader } from './FeatherHeader';
 import InfoTip from './InfoTip';
 import { useRecordDialog } from '../hooks/useRecordDialog';
@@ -19,7 +19,7 @@ function localTime(value: string | undefined) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-export default function NotesEditor({ draft, status, trashed, notebooks, options, hidden,
+export default function NotesEditor({ draft, status, trashed, notebooks, options, hidden, initialOptions = false,
   onChange, onClose, onDispose, onRetry, onConvert, onOpenLink, onExport, onDiscard }: {
   draft: NoteDraft;
   status: NoteSaveState;
@@ -27,6 +27,7 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
   notebooks: Notebook[];
   options: NoteLinkOption[];
   hidden: boolean;
+  initialOptions?: boolean;
   onChange(next: NoteDraft): void;
   onClose(): void;
   onDispose(action: NoteDisposition): Promise<void>;
@@ -36,7 +37,9 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
   onExport(markdown: boolean): Promise<void>;
   onDiscard(): void;
 }) {
-  const [panel, setPanel] = useState<Panel | null>(null);
+  const [panel, setPanel] = useState<Panel | null>(initialOptions ? 'menu' : null);
+  const [quickMenu, setQuickMenu] = useState(initialOptions);
+  const dismissPanel = () => { if (quickMenu && panel === 'menu') onClose(); else setPanel(null); };
   const [tags, setTags] = useState('');
   const [remindAt, setRemindAt] = useState('');
   const [link, setLink] = useState('');
@@ -44,7 +47,7 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
   const [working, setWorking] = useState(false);
   const [inset, setInset] = useState(0);
   const [notebook, setNotebook] = useState('');
-  useRecordDialog(!hidden, () => panel ? setPanel(null) : onClose(), 'busydoo-note-editor');
+  useRecordDialog(!hidden, () => panel ? dismissPanel() : onClose(), 'busydoo-note-editor');
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!viewport) return;
@@ -59,7 +62,7 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
   }, []);
   const announce = status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved' : status === 'failed' ? 'Save failed' : '';
   const update = (change: Partial<NoteDraft>) => { if (!trashed) onChange({ ...draft, ...change }); };
-  const open = (next: Panel) => { setError(''); setPanel(next); };
+  const open = (next: Panel) => { setError(''); if (next !== 'menu') setQuickMenu(false); setPanel(next); };
 
   async function perform(action: () => Promise<void>) {
     if (working) return;
@@ -98,7 +101,7 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
           }} />
       </div>
       <Suspense fallback={<div className="notes-status" role="status">Opening editor…</div>}>
-        <WritingSurface initial={draft.document} autoFocus={!trashed} readOnly={trashed}
+        <WritingSurface initial={draft.document} autoFocus={!trashed && !initialOptions} readOnly={trashed}
           onChange={value => update({ document: value })} onConvert={onConvert} />
       </Suspense>
     </div>
@@ -106,16 +109,17 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
     {panel && <section className="notes-sheet-backdrop" role="dialog" aria-modal="true" aria-label="Note options" data-notes-sheet>
       <div className="notes-sheet">
         <FeatherHeader title={{ menu: 'Note options', organize: 'Organize', reminder: 'Reminder', links: 'Linked records', export: 'Export note' }[panel]}
-          back={{ label: 'Close', onClick: () => setPanel(null) }} />
+          back={{ label: 'Close', onClick: dismissPanel }} />
         {error && <p role="alert" className="notes-save-error">{error}</p>}
         {panel === 'menu' && <div className="notes-menu">
           {!trashed ? <>
-            <button type="button" onClick={() => { update({ pinned: !draft.pinned }); setPanel(null); }}><Pin size={19} aria-hidden />{draft.pinned ? 'Unpin note' : 'Pin note'}</button>
+            {quickMenu && <button type="button" onClick={() => { setQuickMenu(false); setPanel(null); }}><SquarePen size={19} aria-hidden />Edit note</button>}
+            <button type="button" onClick={() => { update({ pinned: !draft.pinned }); if (quickMenu) onClose(); else setPanel(null); }}><Pin size={19} aria-hidden />{draft.pinned ? 'Unpin note' : 'Pin note'}</button>
             <button type="button" onClick={() => { setTags(draft.tags.join(', ')); setNotebook(draft.notebookId || ''); open('organize'); }}><BookOpen size={19} aria-hidden />Organize</button>
             {!draft.archived && <button type="button" onClick={() => { setRemindAt(localTime(draft.reminder?.at)); open('reminder'); }}><Bell size={19} aria-hidden />{draft.reminder ? 'Edit reminder' : 'Set reminder'}</button>}
             <button type="button" onClick={() => open('links')}><Link2 size={19} aria-hidden />Linked records</button>
             <button type="button" onClick={() => open('export')}><Download size={19} aria-hidden />Export note</button>
-            <button type="button" onClick={() => { update({ archived: !draft.archived, reminder: undefined }); setPanel(null); }}><Archive size={19} aria-hidden />{alternative}</button>
+            <button type="button" onClick={() => { update({ archived: !draft.archived, reminder: undefined }); if (quickMenu) onClose(); else setPanel(null); }}><Archive size={19} aria-hidden />{alternative}</button>
             <button type="button" className="notes-danger" disabled={working} onClick={() => void perform(() => onDispose('trash'))}><Trash2 size={19} aria-hidden />Move to Trash</button>
           </> : <>
             <button type="button" disabled={working} onClick={() => void perform(() => onDispose('restore'))}><RotateCcw size={19} aria-hidden />Restore note</button>

@@ -130,7 +130,11 @@ async function main() {
     if (await editor.getByRole('button', { name: 'Heading', exact: true }).getAttribute('aria-pressed') === 'true') await click('Heading', editor);
     await click('Checklist', editor);
     await page.keyboard.insertText('Water the garden');
-    await body.press('Enter');
+    // Exercise the Android-style cancellable beforeinput path, not only desktop Enter.
+    await body.evaluate(node => node.dispatchEvent(new InputEvent('beforeinput', {
+      inputType: 'insertParagraph', bubbles: true, cancelable: true,
+    })));
+    assert.equal(await body.locator('.note-check-item').count(), 2);
     await page.keyboard.insertText('Pick up fruit');
     await body.press('Enter');
     if (await editor.getByRole('button', { name: 'Checklist', exact: true }).getAttribute('aria-pressed') === 'true') await click('Checklist', editor);
@@ -174,10 +178,15 @@ async function main() {
     await capture('05-notebook-management-light-393');
     await click('Close', manager);
     const weekend = notes.getByRole('button', { name: /A weekend to remember/ });
-    await weekend.click();
-    await editMenu('Organize');
+    await weekend.hover();
+    await page.mouse.down();
+    await page.waitForTimeout(650);
+    await page.mouse.up();
+    await editor.getByRole('dialog', { name: 'Note options' }).waitFor();
+    await click('Organize', editor);
     await editor.getByRole('combobox', { name: 'Notebook', exact: true }).selectOption({ label: 'A long notebook name for weekend planning and all other errands' });
     await editor.getByRole('textbox', { name: 'Tags', exact: true }).fill('Garden, list, GARDEN');
+    assert.equal(await editor.getByRole('textbox', { name: 'Tags', exact: true }).evaluate(node => getComputedStyle(node).outlineStyle), 'none');
     await capture('06-notebook-tags-light-393');
     await click('Done', editor.getByRole('dialog', { name: 'Note options' }));
     await saved();
@@ -212,6 +221,7 @@ async function main() {
     const search = notes.getByRole('searchbox', { name: 'Search notes' });
     await search.fill('water garden');
     await weekend.waitFor();
+    assert.equal(await search.evaluate(node => getComputedStyle(node).outlineStyle), 'none');
     await capture('10-search-light-393');
     await search.fill('no such note');
     await notes.getByText('No matching notes').waitFor();

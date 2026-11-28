@@ -12,6 +12,7 @@ interface EditorSession {
   draft: NoteDraft;
   record: NoteRecord | null;
   status: NoteSaveState;
+  initialOptions: boolean;
   autosave: ReturnType<typeof createNoteAutosave>;
 }
 
@@ -59,7 +60,7 @@ export function useNotesWorkspace() {
 
   function update(next: EditorSession) {
     if (current.current !== next) return;
-    setEditor({ draft: next.draft, record: next.record, status: next.status });
+    setEditor({ draft: next.draft, record: next.record, status: next.status, initialOptions: next.initialOptions });
   }
 
   function close() {
@@ -84,7 +85,7 @@ export function useNotesWorkspace() {
     return () => document.removeEventListener('visibilitychange', visibility);
   }, [flush]);
 
-  function open(record: NoteRecord | null, ensureAdmission: () => Promise<void>, notebookId?: string, knownEpoch?: string) {
+  function open(record: NoteRecord | null, ensureAdmission: () => Promise<void>, notebookId?: string, knownEpoch?: string, initialOptions = false) {
     close();
     let epoch = knownEpoch ?? snapshot.current.epoch;
     const active = (): boolean => isEncryptedStorageActivated() && sessionManager.isUnlocked();
@@ -93,6 +94,7 @@ export function useNotesWorkspace() {
       draft: record ? { ...record } : blank(notebookId),
       record,
       status: record ? 'saved' : 'idle',
+      initialOptions: Boolean(record && initialOptions),
       autosave: createNoteAutosave({
         revision: record?.revision ?? null,
         async save(draft, revision) {

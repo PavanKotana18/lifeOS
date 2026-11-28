@@ -1,5 +1,5 @@
 
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRecordDialog } from '../hooks/useRecordDialog';
 import { Archive, BookOpen, Check, FileText, LayoutGrid, List, MoreHorizontal, Pin, Search, SquarePen, Trash2 } from 'lucide-react';
@@ -18,10 +18,29 @@ function checklistPreview(node: NoteNode): NoteNode[] {
   return node.type === 'checklist_item' ? [node] : (node.content ?? []).flatMap(checklistPreview);
 }
 
-function NoteCard({ note, notebook, onOpen }: { note: NoteRecord; notebook?: string; onOpen(): void }) {
+function NoteCard({ note, notebook, onOpen }: { note: NoteRecord; notebook?: string; onOpen(showOptions?: boolean): void }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const origin = useRef({ x: 0, y: 0 });
+  const fired = useRef(false);
+  const cancel = () => { if (timer.current !== null) clearTimeout(timer.current); timer.current = null; };
+  useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current); }, []);
+  const openOptions = () => { cancel(); if (!fired.current) { fired.current = true; onOpen(true); } };
   const excerpt = notePreview(note.document);
   const checks = checklistPreview(note.document.content);
-  return <button type="button" className="notes-card" onClick={onOpen}>
+  return <button type="button" className="notes-card" aria-haspopup="dialog" aria-keyshortcuts="Shift+F10"
+    onPointerDown={event => {
+      cancel(); fired.current = false;
+      if (!event.isPrimary || event.button !== 0) return;
+      origin.current = { x: event.clientX, y: event.clientY };
+      timer.current = setTimeout(openOptions, 500);
+    }}
+    onPointerMove={event => { if (Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 10) cancel(); }}
+    onPointerUp={cancel} onPointerCancel={cancel} onPointerLeave={cancel}
+    onContextMenu={event => { event.preventDefault(); openOptions(); }}
+    onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') fired.current = false; if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') {
+      event.preventDefault(); fired.current = false; openOptions();
+    } }}
+    onClick={() => { if (fired.current) { fired.current = false; return; } fired.current = false; onOpen(); }}>
     <span className="notes-card-heading">
       <strong>{note.title || excerpt || 'Checklist'}</strong>
       {note.pinned && <Pin size={16} aria-label="Pinned" />}
@@ -38,7 +57,7 @@ export default function NotesWorkspace({ data, loading, onRetry, onClose, onCrea
   onRetry?: () => void;
   onClose(): void;
   onCreate(notebookId?: string): void;
-  onOpen(note: NoteRecord): void;
+  onOpen(note: NoteRecord, showOptions?: boolean): void;
   onView(view: NotesView): void;
   onSaveNotebook(notebook: Notebook | null, name: string): Promise<void>;
   onDeleteNotebook(notebook: Notebook): Promise<void>;
@@ -93,7 +112,7 @@ export default function NotesWorkspace({ data, loading, onRetry, onClose, onCrea
     return <section className="notes-group" aria-label={title}>
       {showHeading && <h3>{title}</h3>}
       <div className="notes-grid" data-view={data.view}>
-        {notes.slice(0, count).map(note => <NoteCard key={note.id} note={note} notebook={notebookNames.get(note.notebookId || '')} onOpen={() => onOpen(note)} />)}
+        {notes.slice(0, count).map(note => <NoteCard key={note.id} note={note} notebook={notebookNames.get(note.notebookId || '')} onOpen={showOptions => onOpen(note, showOptions)} />)}
       </div>
     </section>;
   }

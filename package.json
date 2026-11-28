@@ -27,7 +27,7 @@
     "qa": "node scripts/qa-local.cjs",
     "qa:avd:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-lifeos-qa-avd.ps1",
     "qa:avd:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-lifeos-qa-emulator.ps1",
-    "test:notes": "node test_notes_v1.cjs && node test_notes_notification_scheduling.cjs",
+    "test:notes": "node test_notes_v1.cjs && node test_notes_notification_scheduling.cjs && node test_notes_formatting.cjs",
     "test:browser:notes": "node tests/browser/notes-v1.cjs",
     "test:browser:full": "node tests/browser/full-app-acceptance.cjs"
   },
