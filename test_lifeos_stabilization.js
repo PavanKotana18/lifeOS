@@ -100,6 +100,7 @@ function financeRows(rows, sort = 'date-desc', filters = {}) {
   await test('Returning from Android permission settings restores protected users without replaying onboarding', () => fixture(async f => {
     const biometricAuthenticated = { current: false };
     const callback = h.bind(h.lifecycleCallback(), {
+      ...f.appDeps(),
       ...h.noopSetters(h.lifecycleCallback()),
       disposed: false,
       backupPassphraseResolver: { current: null },

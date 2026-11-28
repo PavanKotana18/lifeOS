@@ -297,6 +297,14 @@ async function fixture({ activate = true } = {}) {
       // The lifecycle fixture covers secure admission and reload. Notification
       // routing has its own production callback and delivery contract tests.
       drainNotificationTapsRef: { current: async () => {} },
+      // Synthetic Notes UI dependencies for extracted App handlers.
+      notes: {
+        async flush() { return true; },
+        invalidate() {},
+      },
+      captureFromToday: { current: false },
+      noteCaptureRequest: { current: false },
+      refreshNoteWorkspace: () => db.StorageService.notes.workspace(),
       backupOperation: { current: false },
       ...load('src/services/profilePhoto.ts'),
       profilePhotoVersion: { current: 0 },
