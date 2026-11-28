@@ -946,7 +946,7 @@ export default function App() {
     }
     if (confirmationResolver.current) { settleConfirmation(false); return; }
     const notesPanelClose = document.querySelector<HTMLButtonElement>('[data-notes-sheet] button[aria-label="Close"]');
-    if (notesPanelClose) { notesPanelClose.click(); return; }
+    if (notesPanelClose && !notesPanelClose.closest('[hidden], [inert]')) { notesPanelClose.click(); return; }
     if (!state.isLocked && state.activeTab === 'notes' && !state.createKind && notes.editor) {
       void closeNotesEditor(); return;
     }
@@ -4531,6 +4531,7 @@ export default function App() {
 
       {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave BusyDoo?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
 
+      <div id="busydoo-notes-workspace-sheets" />
       {notes.editor && <Suspense fallback={<ScreenLoading label="Opening editor…" />}>
         <NotesEditor key={notes.editor.draft.id} draft={notes.editor.draft} status={notes.editor.status}
           trashed={Boolean(notes.editor.record?.trashedAt)} notebooks={notes.data.notebooks}

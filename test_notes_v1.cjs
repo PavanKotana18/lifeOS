@@ -20,7 +20,7 @@ async function main() {
     { type: 'ordered_list', attrs: { order: 2 }, content: [{ type: 'list_item', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Leave early' }] }] }] }
   ] } };
   const draft = id => ({ id, title: '', document: content, tags: [], pinned: false, archived: false, links: [] });
-  const now = Date.now();
+  const now = performance.now();
   let disposed = false;
   try {
     const empty = await storage.notes.workspace();
@@ -172,7 +172,7 @@ async function main() {
       console.log(JSON.stringify({ fixture: 'Node AES-GCM / fake-indexeddb', records: 1000, documentBytes: Buffer.byteLength(JSON.stringify(large)),
         largeSaveMs: largeMs.toFixed(1), workspaceReadMs: loadMs.toFixed(1), decryptedSearchMs: searchMs.toFixed(1) }));
     } finally { await perf.dispose(); }
-    console.log('Notes V1 encrypted domain, lifecycles, backup, reminder identities and autosave passed in ' + (Date.now() - now) + ' ms.');
+    console.log('Notes V1 encrypted domain, lifecycles, backup, reminder identities and autosave passed in ' + Math.round(performance.now() - now) + ' ms.');
   } finally { if (!disposed) await f.dispose(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

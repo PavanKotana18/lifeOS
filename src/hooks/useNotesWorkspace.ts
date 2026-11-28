@@ -41,7 +41,7 @@ export function useNotesWorkspace() {
     if (loading.current) return loading.current;
     const request = ++serial.current;
     const session = sessionManager.capture();
-    setLoad('loading');
+    setLoad(state => state === 'loaded' ? state : 'loading');
     loading.current = StorageService.notes.workspace().then(next => {
       if (request === serial.current && sessionManager.isCurrent(session)) {
         publish(next);

@@ -1,7 +1,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, Bold, CheckSquare, Heading2, Italic, List, ListOrdered, Redo2, Underline, Undo2 } from 'lucide-react';
-import { baseKeymap, setBlockType, toggleMark } from 'prosemirror-commands';
+import { baseKeymap, chainCommands, setBlockType, splitBlockAs, toggleMark } from 'prosemirror-commands';
 import { history, redo, undo } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { Fragment, Slice } from 'prosemirror-model';
@@ -16,6 +16,13 @@ const checklist: Command = (state, dispatch) => {
   const { $from } = state.selection;
   if ($from.parent.type === nodes.checklist_item) return setBlockType(nodes.paragraph)(state, dispatch);
   return setBlockType(nodes.checklist_item, { id: crypto.randomUUID(), checked: false })(state, dispatch);
+};
+
+const splitChecklist: Command = (state, dispatch) => {
+  const { $from } = state.selection;
+  if ($from.parent.type !== nodes.checklist_item) return false;
+  if (!$from.parent.content.size) return setBlockType(nodes.paragraph)(state, dispatch);
+  return splitBlockAs(() => ({ type: nodes.checklist_item, attrs: { id: crypto.randomUUID(), checked: false } }))(state, dispatch);
 };
 
 const stableChecklistIds = new Plugin({
@@ -105,7 +112,7 @@ export default function NoteWritingSurface({ initial, autoFocus, readOnly, onCha
           keymap({
             'Mod-z': undo, 'Mod-y': redo, 'Mod-Shift-z': redo,
             'Mod-b': toggleMark(marks.strong), 'Mod-i': toggleMark(marks.em), 'Mod-u': toggleMark(marks.underline),
-            Enter: splitListItem(nodes.list_item),
+            Enter: chainCommands(splitChecklist, splitListItem(nodes.list_item)),
           }),
           keymap(baseKeymap),
         ],
@@ -123,6 +130,26 @@ export default function NoteWritingSurface({ initial, autoFocus, readOnly, onCha
         if (!state.doc.eq(previous)) inputs.current.onChange(noteDocument(state.doc));
       },
       handleDOMEvents: {
+        mousedown(_view, event) {
+          if (!(event.target instanceof HTMLButtonElement) || !event.target.closest('.note-check-item')) return false;
+          event.preventDefault();
+          return true;
+        },
+        click(editorView, event) {
+          if (!(event.target instanceof HTMLElement)) return false;
+          const button = event.target.closest('button');
+          const item = button?.closest('.note-check-item');
+          const content = item?.querySelector('span');
+          if (!content) return false;
+          event.preventDefault();
+          if (inputs.current.readOnly) return true;
+          const position = editorView.state.doc.resolve(editorView.posAtDOM(content, 0));
+          if (position.parent.type !== nodes.checklist_item) return true;
+          editorView.dispatch(editorView.state.tr.setNodeMarkup(position.before(), undefined, {
+            ...position.parent.attrs, checked: !position.parent.attrs.checked,
+          }));
+          return true;
+        },
         focus: () => { setActive(true); return false; },
         blur: () => { setActive(false); return false; },
         paste(editorView, event) {
@@ -141,15 +168,7 @@ export default function NoteWritingSurface({ initial, autoFocus, readOnly, onCha
           return true;
         },
       },
-      handleClickOn(editorView, _pos, node, nodePos, event) {
-        if (node.type !== nodes.checklist_item || !(event.target instanceof HTMLButtonElement)) return false;
-        if (!inputs.current.readOnly) {
-          editorView.dispatch(editorView.state.tr.setNodeMarkup(nodePos, undefined, {
-            ...node.attrs, checked: !node.attrs.checked,
-          }));
-        }
-        return true;
-      },
+
     });
     view.current = editor;
     if (inputs.current.autoFocus && !inputs.current.readOnly) editor.focus();

@@ -1,5 +1,7 @@
 
 import { useDeferredValue, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useRecordDialog } from '../hooks/useRecordDialog';
 import { Archive, BookOpen, Check, FileText, LayoutGrid, List, MoreHorizontal, Pin, Search, SquarePen, Trash2 } from 'lucide-react';
 import { FeatherHeader } from './FeatherHeader';
 import InfoTip from './InfoTip';
@@ -26,7 +28,7 @@ function NoteCard({ note, notebook, onOpen }: { note: NoteRecord; notebook?: str
     </span>
     {note.title && excerpt && <span className="notes-card-preview">{excerpt}</span>}
     {checks.length > 0 && <span className="notes-card-check"><Check size={14} aria-hidden /> {checks.filter(item => item.attrs?.checked).length} of {checks.length} checked</span>}
-    <span className="notes-card-meta"><span>{notebook || note.tags[0]}</span><time dateTime={note.updatedAt}>{date.format(new Date(note.updatedAt))}</time></span>
+    <span className="notes-card-meta"><span title={notebook || note.tags[0]}>{notebook || note.tags[0]}</span><time dateTime={note.updatedAt}>{date.format(new Date(note.updatedAt))}</time></span>
   </button>;
 }
 
@@ -53,6 +55,8 @@ export default function NotesWorkspace({ data, loading, onRetry, onClose, onCrea
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const [limit, setLimit] = useState(60);
+  const sheetHost = document.getElementById('busydoo-notes-workspace-sheets');
+  useRecordDialog(managing && Boolean(sheetHost), () => setManaging(false), 'busydoo-notebook-manager');
   const notebookNames = useMemo(() => new Map(data.notebooks.map(row => [row.id, row.name])), [data.notebooks]);
   const selectedNotebook = notebookNames.has(notebookId) ? notebookId : '';
   const searchable = useMemo(() => data.notes.map(note => ({
@@ -84,10 +88,10 @@ export default function NotesWorkspace({ data, loading, onRetry, onClose, onCrea
     finally { setWorking(false); }
   }
 
-  function group(title: string, notes: NoteRecord[], count: number) {
+  function group(title: string, notes: NoteRecord[], count: number, showHeading = true) {
     if (!notes.length || count <= 0) return null;
     return <section className="notes-group" aria-label={title}>
-      <h3>{title}</h3>
+      {showHeading && <h3>{title}</h3>}
       <div className="notes-grid" data-view={data.view}>
         {notes.slice(0, count).map(note => <NoteCard key={note.id} note={note} notebook={notebookNames.get(note.notebookId || '')} onOpen={() => onOpen(note)} />)}
       </div>
@@ -130,11 +134,11 @@ export default function NotesWorkspace({ data, loading, onRetry, onClose, onCrea
       <div className="notes-empty"><h2>Couldn’t open Notes</h2><button type="button" className="notes-secondary" onClick={onRetry}>Retry</button></div> :
       rows.length ? <>
         {group('Pinned', pinned, limit)}
-        {group(scope === 'workspace' ? 'Recent' : headings[scope], recent, limit - pinned.length)}
+        {group(scope === 'workspace' ? 'Recent' : headings[scope], recent, limit - pinned.length, scope === 'workspace')}
         {rows.length > limit && <button type="button" className="notes-secondary" onClick={() => setLimit(limit + 60)}>Show more notes</button>}
       </> : <div className="notes-empty"><span className="notes-emblem"><BookOpen size={26} strokeWidth={1.6} aria-hidden /></span>
         <h2>{empty[0]}</h2><p>{empty[1]}</p></div>}
-    {managing && <section role="dialog" aria-modal="true" aria-label="Manage notebooks" className="notes-sheet-backdrop" data-notes-sheet>
+    {managing && sheetHost && createPortal(<section id="busydoo-notebook-manager" role="dialog" aria-modal="true" aria-label="Manage notebooks" className="notes-sheet-backdrop" data-notes-sheet>
       <div className="notes-sheet">
         <FeatherHeader title="Notebooks" back={{ label: 'Close', onClick: () => setManaging(false) }} />
         <InfoTip label="Notebooks and tags" triggerText="Organizing notes" />
@@ -151,6 +155,6 @@ export default function NotesWorkspace({ data, loading, onRetry, onClose, onCrea
           {error && <p role="alert">{error}</p>}
         </form>
       </div>
-    </section>}
+    </section>, sheetHost)}
   </div>;
 }

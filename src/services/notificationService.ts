@@ -239,6 +239,8 @@ export const NotificationService = {
       const permission = enabled ? await LocalNotifications.checkPermissions() : null;
       const all = await LocalNotifications.getPending();
       if (!isCurrent()) return;
+      if (permission?.display === 'granted' && alarms.length) await this.ensureChannel();
+      if (!isCurrent()) return;
       const now = Date.now();
       const scheduled = new Map<number, LocalNotificationSchema>();
       const reserved = new Set(all.notifications.filter(item => item.extra?.kind !== 'notesReminder').map(item => item.id));
@@ -846,7 +848,7 @@ export const NotificationService = {
 
   async ensureChannel() {
     if (!requireNativeNotifications()) return;
-    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'BusyDoo reminders', description: 'Local task, habit and goal reminders', importance: 4, visibility: 0, vibration: true })
+    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'BusyDoo reminders', description: 'Local task, habit, goal and note reminders', importance: 4, visibility: 0, vibration: true })
       .catch(error => { ensureChannelPromise = null; writeLastError(safeErrorCode(error)); console.warn('BusyDoo notification channel creation failed.'); throw error; });
     const pending = ensureChannelPromise;
     try { await pending; }

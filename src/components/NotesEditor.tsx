@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { Archive, Bell, BookOpen, Download, Link2, MoreHorizontal, Pin, RotateCcw, Trash2 } from 'lucide-react';
 import { FeatherHeader } from './FeatherHeader';
 import InfoTip from './InfoTip';
+import { useRecordDialog } from '../hooks/useRecordDialog';
 import { normalizeNoteTags, type NoteDraft, type NoteLink, type Notebook } from '../services/notesDomain';
 import type { NoteSaveState } from '../services/noteAutosave';
 import type { NoteDisposition } from '../services/encryptedNotes';
@@ -42,6 +43,8 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
   const [error, setError] = useState('');
   const [working, setWorking] = useState(false);
   const [inset, setInset] = useState(0);
+  const [notebook, setNotebook] = useState('');
+  useRecordDialog(!hidden, () => panel ? setPanel(null) : onClose(), 'busydoo-note-editor');
   useEffect(() => {
     const viewport = window.visualViewport;
     if (!viewport) return;
@@ -67,8 +70,8 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
   }
 
   const alternative = draft.archived ? 'Restore to Notes' : 'Archive note';
-  return <section className="notes-editor" aria-label="Note editor" hidden={hidden} style={{ bottom: inset }}
-    data-swipe-navigation="off" data-notes-editor>
+  return <section id="busydoo-note-editor" className="notes-editor" role="dialog" aria-modal="true" aria-label="Note editor" hidden={hidden} style={{ bottom: inset }}
+    data-no-tab-swipe data-notes-editor>
     <div className="notes-editor-bar">
       <span className="notes-save-state" role="status">{announce}</span>
       <div className="notes-editor-controls">
@@ -84,8 +87,16 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
     </div>}
     <div className="notes-editor-page">
       <label className="sr-only" htmlFor="busydoo-note-title">Note title</label>
-      <input id="busydoo-note-title" className="notes-title" placeholder="Title" maxLength={240} value={draft.title}
-        disabled={trashed} onChange={event => update({ title: event.target.value })} />
+      <div className="notes-title-field" data-value={draft.title + ' '}>
+        <textarea id="busydoo-note-title" rows={1} className="notes-title" placeholder="Title" maxLength={240}
+          value={draft.title} disabled={trashed} onChange={event => update({ title: event.target.value.replace(/[\r\n]+/g, ' ') })}
+          onKeyDown={event => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              event.currentTarget.parentElement?.nextElementSibling?.querySelector<HTMLElement>('[contenteditable=true]')?.focus();
+            }
+          }} />
+      </div>
       <Suspense fallback={<div className="notes-status" role="status">Opening editor…</div>}>
         <WritingSurface initial={draft.document} autoFocus={!trashed} readOnly={trashed}
           onChange={value => update({ document: value })} onConvert={onConvert} />
@@ -100,7 +111,7 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
         {panel === 'menu' && <div className="notes-menu">
           {!trashed ? <>
             <button type="button" onClick={() => { update({ pinned: !draft.pinned }); setPanel(null); }}><Pin size={19} aria-hidden />{draft.pinned ? 'Unpin note' : 'Pin note'}</button>
-            <button type="button" onClick={() => { setTags(draft.tags.join(', ')); open('organize'); }}><BookOpen size={19} aria-hidden />Organize</button>
+            <button type="button" onClick={() => { setTags(draft.tags.join(', ')); setNotebook(draft.notebookId || ''); open('organize'); }}><BookOpen size={19} aria-hidden />Organize</button>
             {!draft.archived && <button type="button" onClick={() => { setRemindAt(localTime(draft.reminder?.at)); open('reminder'); }}><Bell size={19} aria-hidden />{draft.reminder ? 'Edit reminder' : 'Set reminder'}</button>}
             <button type="button" onClick={() => open('links')}><Link2 size={19} aria-hidden />Linked records</button>
             <button type="button" onClick={() => open('export')}><Download size={19} aria-hidden />Export note</button>
@@ -119,10 +130,10 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
           if (normalized.length > 20 || normalized.some(value => value.length > 48)) {
             setError('Use up to 20 tags, each 48 characters or fewer.'); return;
           }
-          update({ tags: normalized }); setPanel(null);
+          update({ tags: normalized, notebookId: notebook || undefined }); setPanel(null);
         }}>
           <InfoTip label="Notebooks and tags" triggerText="Organizing notes" />
-          <label>Notebook<select value={draft.notebookId || ''} onChange={event => update({ notebookId: event.target.value || undefined })}>
+          <label>Notebook<select aria-label="Notebook" value={notebook} onChange={event => setNotebook(event.target.value)}>
             <option value="">No notebook</option>
             {notebooks.map(notebook => <option key={notebook.id} value={notebook.id}>{notebook.name}</option>)}
           </select></label>
@@ -162,7 +173,7 @@ export default function NotesEditor({ draft, status, trashed, notebooks, options
             const option = options.find(item => item.kind + ':' + item.id === link);
             if (option) { update({ links: [...draft.links, { kind: option.kind, id: option.id }] }); setLink(''); }
           }}>
-            <label>Link a record<select value={link} onChange={event => setLink(event.target.value)}>
+            <label>Link a record<select aria-label="Link a record" value={link} onChange={event => setLink(event.target.value)}>
               <option value="">Choose a record</option>
               {options.filter(option => !draft.links.some(ref => option.id === ref.id && option.kind === ref.kind)).map(option =>
                 <option key={option.kind + ':' + option.id} value={option.kind + ':' + option.id}>{option.label}</option>)}
