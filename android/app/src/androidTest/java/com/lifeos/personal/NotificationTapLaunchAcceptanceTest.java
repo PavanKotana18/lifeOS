@@ -1,6 +1,10 @@
 package com.lifeos.personal;
 
 import android.app.PendingIntent;
+import android.app.ActivityOptions;
+import android.os.Build;
+import android.os.SystemClock;
+import org.json.JSONArray;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ComponentName;
@@ -23,6 +27,34 @@ public class NotificationTapLaunchAcceptanceTest {
             .putExtra("LocalNotificationUserAction", "lifeos-task-done")
             .putExtra("LocalNotficationObject", "{\"id\":2147000012,\"extra\":{\"kind\":\"taskReminders\",\"taskId\":\"synthetic-tap-task\",\"occurrenceAt\":\"2026-11-28T00:00:00.000Z\"}}");
     }
+    private static void sendFromHarness(Context context, PendingIntent token)
+            throws Exception {
+        if (Build.VERSION.SDK_INT >= 34) {
+            ActivityOptions options = ActivityOptions.makeBasic();
+            options.setPendingIntentBackgroundActivityStartMode(
+                ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+            token.send(context, 0, null, null, null, null, options.toBundle());
+        } else {
+            token.send();
+        }
+    }
+
+    private static void awaitNativeQueue(Context context) throws Exception {
+        long deadline = SystemClock.elapsedRealtime() + 10000L;
+        while (SystemClock.elapsedRealtime() < deadline) {
+            JSONArray queue = new JSONArray(context
+                .getSharedPreferences("lifeos_notification_taps", Context.MODE_PRIVATE)
+                .getString("pending_actions_v3", "[]"));
+            for (int i = 0; i < queue.length(); i++) {
+                JSONObject notification = queue.getJSONObject(i)
+                    .optJSONObject("notification");
+                if (notification != null && notification.optInt("id") == ID) return;
+            }
+            Thread.sleep(100L);
+        }
+        fail("Trusted notification did not reach the durable native queue");
+    }
+
     private static String matching(ActivityScenario<MainActivity> scenario) throws Exception {
         return WebViewTestSupport.evaluateAsync(scenario,
             "(async()=>{const p=window.Capacitor.Plugins.NotificationTapLaunch;" +
@@ -41,7 +73,8 @@ public class NotificationTapLaunchAcceptanceTest {
         }
         PendingIntent token = PendingIntent.getActivity(context, ID, action(context, NotificationEntryActivity.class),
             PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT);
-        token.send();
+        sendFromHarness(context, token);
+        awaitNativeQueue(context);
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
         try { token.send(); fail("Mutating PendingIntent must be single-use"); }
         catch (PendingIntent.CanceledException expected) { /* expected */ }
@@ -60,7 +93,7 @@ public class NotificationTapLaunchAcceptanceTest {
             // A second trusted token for the same consumed occurrence cannot requeue a mutation.
             PendingIntent replay = PendingIntent.getActivity(context, ID, action(context, NotificationEntryActivity.class),
                 PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_ONE_SHOT);
-            replay.send();
+            sendFromHarness(context, replay);
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             assertEquals("[]", matching(scenario));
         }
