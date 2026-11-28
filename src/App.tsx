@@ -3251,7 +3251,8 @@ export default function App() {
 
   async function convertNoteText(text: string) {
     if (await notes.flush() && activeTabRef.current === 'notes') {
-      openCreateForm('task', undefined, undefined, text.replace(/\s+/gu, ' ').trim());
+      const title = text.replace(/\s+/gu, ' ').trim().slice(0, 120).replace(/[\uD800-\uDBFF]$/, '');
+      if (title) openCreateForm('task', undefined, undefined, title);
     }
   }
 

@@ -35,6 +35,11 @@ async function main() {
     const back = () => page.evaluate(() => window.dispatchEvent(new CustomEvent('qa-app-backButton', { detail: { canGoBack: true } })));
     const capture = async name => {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, name + ' horizontal page overflow');
+      const overflows = await page.locator('.notes-card:visible').evaluateAll(cards => cards.some(card => {
+        const frame = card.getBoundingClientRect();
+        return Array.from(card.children).some(child => child.getBoundingClientRect().right > frame.right);
+      }));
+      assert.equal(overflows, false, name + ' note content overflows its card');
       await page.screenshot({ path: join(evidence, name + '.png'), animations: 'disabled' });
     };
     const archived = () => notes.getByRole('heading', { name: 'Archive', exact: true, level: 1 });
@@ -51,6 +56,16 @@ async function main() {
         await click('Do this later');
         await page.getByTestId('today-dashboard').waitFor();
       }
+      await workspace();
+      await click('New note', notes);
+      await body.fill('Synthetic first protected draft');
+      const admission = page.getByRole('dialog', { name: 'Protect your personal data' });
+      await admission.getByRole('button', { name: /Cancel saving/ }).click();
+      await editor.getByRole('alert').waitFor();
+      assert.equal(await body.innerText(), 'Synthetic first protected draft');
+      await click('Retry', editor);
+      await click('Protect this device and save', admission);
+      await saved(); await done();
       await page.evaluate(async () => {
         const db = await import('/src/db.ts');
         const { CryptoService } = await import('/src/services/cryptoService.ts');
@@ -61,6 +76,11 @@ async function main() {
         db.sessionManager.unlock();
         await db.activateEncryptedStorage();
         await db.StorageService.settings.set('onboardingCompleted', true);
+        const { notes, epoch } = await db.StorageService.notes.workspace();
+        const first = notes.find(note => note.document.content.content[0].content[0].text === 'Synthetic first protected draft');
+        if (!first) throw new Error('First private draft was not encrypted.');
+        await db.StorageService.notes.dispose(epoch, first.id, first.revision, 'trash');
+        await db.StorageService.notes.dispose(epoch, first.id, first.revision + 1, 'delete');
         await db.StorageService.settings.set('notificationPreferences', { notesReminders: true });
         await db.StorageService.tasks.add({ title: 'Synthetic follow-up', priority: 'Medium', completed: false, recurring: 'None' });
       });
@@ -204,7 +224,9 @@ async function main() {
       document.dispatchEvent(new Event('selectionchange'));
     });
     await click('Create task from selection', editor);
-    await page.getByRole('dialog', { name: /task/i }).waitFor();
+    const task = page.getByRole('dialog', { name: 'Add task', exact: true });
+    await task.waitFor();
+    assert.equal(await task.getByRole('textbox', { name: 'Task title' }).inputValue(), 'Water the garden');
     await capture('11-task-conversion-light-393');
     await back();
     const discardTask = page.getByRole('alertdialog', { name: 'Discard unsaved changes?' });
@@ -215,6 +237,20 @@ async function main() {
     });
     if (await discardTask.isVisible()) await click('Discard changes', discardTask);
     await editor.waitFor();
+    await body.evaluate(node => {
+      const child = node.querySelector('.note-check-item span');
+      const range = document.createRange(); range.selectNodeContents(child);
+      const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+      document.dispatchEvent(new Event('selectionchange'));
+    });
+    await click('Create task from selection', editor);
+    const due = new Date(Date.now() + 86400000);
+    await task.getByLabel('Due date', { exact: true }).fill([
+      due.getFullYear(), String(due.getMonth() + 1).padStart(2, '0'), String(due.getDate()).padStart(2, '0'),
+    ].join('-'));
+    await click('Save task', task);
+    await editor.waitFor();
+    assert.equal(await title.inputValue(), 'A weekend to remember');
     await editMenu('Archive note');
     await saved();
     await done();

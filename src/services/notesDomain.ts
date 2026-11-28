@@ -89,7 +89,9 @@ export function validateNoteRecord(value: unknown): asserts value is NoteRecord 
   for (const link of value.links) {
     if (!isNoteObject(link) || Object.keys(link).length !== 2 || typeof link.kind !== 'string' ||
         !Object.prototype.hasOwnProperty.call(noteLinkTables, link.kind)) throw new Error('Invalid note link.');
-    validateId(link.id);
+    if (typeof link.id !== 'string' || !link.id.trim() || link.id.length > 256 || /[\u0000-\u001f\u007f-\u009f]/.test(link.id)) {
+      throw new Error('Invalid linked record identifier.');
+    }
     const key = link.kind + ':' + link.id;
     if (linkIds.has(key)) throw new Error('Duplicate note link.');
     linkIds.add(key);

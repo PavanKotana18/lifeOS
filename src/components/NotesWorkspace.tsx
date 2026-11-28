@@ -120,7 +120,7 @@ export default function NotesWorkspace({ data, loading, onRetry, onClose, onCrea
     </div>
     <div className="notes-filters">
       {data.notebooks.length > 0 && <select aria-label="Filter by notebook" value={selectedNotebook} onChange={event => { setNotebookId(event.target.value); setLimit(60); }}>
-        <option value="">All notebooks</option>
+        <option value="">Notebooks</option>
         {data.notebooks.map(notebook => <option key={notebook.id} value={notebook.id}>{notebook.name}</option>)}
       </select>}
       {tags.length > 0 && <select aria-label="Filter by tag" value={selectedTag} onChange={event => { setTag(event.target.value); setLimit(60); }}>
