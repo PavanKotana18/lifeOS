@@ -119,13 +119,13 @@ export async function hasEncryptedRecords(): Promise<boolean> {
 
 /** Counts private rows without returning record contents during fresh-install admission. */
 export async function hasPrivateRows(): Promise<boolean> {
-  const tableCounts = await Promise.all([
-    db.transactions.count(), db.categories.count(), db.budgets.count(),
-    db.savingsGoals.count(), db.savingsContributions.count(), db.financialAccounts.count(),
-    db.accountTransfers.count(), db.manualExchangeRates.count(), db.plannedCommitments.count(), db.habits.count(),
-    db.habitLogs.count(), db.goals.count(), db.milestones.count(), db.tasks.count(),
-    db.settings.where('key').noneOf([...BOOTSTRAP_SETTING_KEYS]).count(),
-  ]);
+  // Inspect every registered table so newly introduced private stores
+  // cannot be accidentally omitted from first-run admission.
+  const tableCounts = await Promise.all(
+    db.tables.map(table => table.name === 'settings'
+      ? db.settings.where('key').noneOf([...BOOTSTRAP_SETTING_KEYS]).count()
+      : table.count())
+  );
   return tableCounts.some(count => count > 0);
 }
 

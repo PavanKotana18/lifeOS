@@ -30,6 +30,31 @@ async function test(name, run) {
     await f.StorageService.settings.set('onboardingNameDraft','Synthetic profile');
     assert.equal(await f.StorageService.settings.get('onboardingNameDraft',''),'Synthetic profile');
   });
+  await test('Private row detection covers every registered table', async f => {
+    const { hasPrivateRows } = f.load('src/db.ts');
+    const database = f.lifeOSDatabase;
+    assert.equal(await hasPrivateRows(), false);
+
+    await database.settings.put({ key: 'theme', value: 'light' });
+    assert.equal(await hasPrivateRows(), false,
+      'Bootstrap settings must not count as private records');
+
+    assert.ok(database.tables.some(table => table.name === 'notes'));
+    assert.ok(database.tables.some(table => table.name === 'notebooks'));
+
+    for (const table of database.tables) {
+      const row = table.name === 'settings'
+        ? { key: 'synthetic-private', value: 'fixture' }
+        : { id: 'synthetic-private' };
+
+      await table.put(row);
+      assert.equal(await hasPrivateRows(), true,
+        'Private row not detected in ' + table.name);
+      await table.delete('synthetic-private');
+      assert.equal(await hasPrivateRows(), false,
+        'Unexpected private records after removing fixture');
+    }
+  });
   await test('Actual startup activates encrypted storage before private hydration',async f=>{
     const init=h.appFunction('initApp');
     await h.bind(init,{...f.appDeps(),...h.noopSetters(init)})();
@@ -79,5 +104,5 @@ async function test(name, run) {
     f.sessionManager.unlock();await assert.rejects(f.activateEncryptedStorage(),/Keystore/);
     await assert.rejects(f.StorageService.categories.getAll(),/Encrypted storage is not ready/);
   });
-  console.log(`ENCRYPTION ADMISSION: ${passed}/6 passed; native interface simulated, real production facade/Dexie/migration.`);
+  console.log(`ENCRYPTION ADMISSION: ${passed}/7 passed; native interface simulated, real production facade/Dexie/migration.`);
 })().catch(error=>{console.error(error);process.exitCode=1;});
