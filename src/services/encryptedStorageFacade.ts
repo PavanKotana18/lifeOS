@@ -20,9 +20,13 @@ import type {
   Task,
 } from '../types';
 
-import type {
-  EncryptedTable,
-} from './encryptedRecordCodec';
+import { ENCRYPTABLE_TABLES, type EncryptedTable } from './encryptedRecordCodec';
+import { createEncryptedNotes } from './encryptedNotes';
+import { NOTES_EPOCH_KEY } from './notesDomain';
+
+function portableSetting(row: { key?: string }): boolean {
+  return row.key !== NOTIFICATION_INBOX_KEY && row.key !== NOTES_EPOCH_KEY;
+}
 
 import type {
   EncryptedRepositories,
@@ -80,23 +84,7 @@ export interface EncryptedStorageHelpers {
   shiftRecurringTaskReminder(task: Task, nextDate: string): string | undefined;
 }
 
-const TABLES: EncryptedTable[] = [
-  'transactions',
-  'categories',
-  'budgets',
-  'savingsGoals',
-  'savingsContributions',
-  'financialAccounts',
-  'accountTransfers',
-  'manualExchangeRates',
-  'plannedCommitments',
-  'habits',
-  'habitLogs',
-  'goals',
-  'milestones',
-  'tasks',
-  'settings',
-];
+const TABLES = ENCRYPTABLE_TABLES;
 
 const DEFAULT_CATEGORIES: Category[] = [
   { id: 'cat_sal', name: 'Salary', type: 'income', color: '#10b981', isDefault: true },
@@ -969,6 +957,8 @@ export function createEncryptedStorageFacade(
         }),
     },
 
+    notes: createEncryptedNotes(coordinator),
+
     settings: {
       setNotificationSelection: async (preferences, enabled) => coordinator.run(async ctx => {
         ctx.put('settings', { key: 'notificationPreferences', value: preferences });
@@ -1003,7 +993,7 @@ export function createEncryptedStorageFacade(
     backup: {
       hasData: async () => {
         const rows = await Promise.all(TABLES.map(table => readAll<any>(table)));
-        return rows.some(tableRows => tableRows.length > 0);
+        return rows.some((tableRows, index) => tableRows.some(row => TABLES[index] !== 'settings' || row.key !== NOTES_EPOCH_KEY));
       },
 
       // Share the write queue so compound writes cannot interleave table reads.
@@ -1012,7 +1002,7 @@ export function createEncryptedStorageFacade(
         const entries = await Promise.all(
           TABLES.map(async table => {
             const rows = await ctx.getAll<any>(table);
-            return [table, table === 'settings' ? rows.filter(row => row.key !== NOTIFICATION_INBOX_KEY) : rows] as const;
+            return [table, table === 'settings' ? rows.filter(portableSetting) : rows] as const;
           })
         );
         return JSON.stringify({
@@ -1035,17 +1025,18 @@ export function createEncryptedStorageFacade(
         const counts: Record<string, number> = {};
         await coordinator.run(async ctx => {
           const current = await Promise.all(TABLES.map(table => ctx.getAll<any>(table)));
-          if (current.some(rows => rows.length) && !options?.replaceExisting) {
+          if (current.some((rows, index) => rows.some(row => TABLES[index] !== 'settings' || row.key !== NOTES_EPOCH_KEY)) && !options?.replaceExisting) {
             throw new Error('Existing data found. Enable replaceExisting to restore this backup.');
           }
 
           for (const table of TABLES) {
             ctx.clear(table);
             const rows = (tables[table] ?? []).filter((row: { key?: string }) =>
-              table !== 'settings' || row.key !== NOTIFICATION_INBOX_KEY);
+              table !== 'settings' || portableSetting(row));
             for (const row of rows) ctx.add(table, row);
             counts[table] = rows.length;
           }
+          ctx.add('settings', { key: NOTES_EPOCH_KEY, value: globalThis.crypto.randomUUID() });
         });
 
         return { success: true, counts };
@@ -1055,6 +1046,7 @@ export function createEncryptedStorageFacade(
         const lock = options?.preserveAppLock ? await ctx.get<{ key: string; value: unknown }>('settings', 'biometricLockEnabled') : undefined;
         for (const table of TABLES) ctx.clear(table);
         if (lock) ctx.add('settings', lock);
+        ctx.add('settings', { key: NOTES_EPOCH_KEY, value: globalThis.crypto.randomUUID() });
         for (const category of DEFAULT_CATEGORIES) ctx.add('categories', category);
       }),
 

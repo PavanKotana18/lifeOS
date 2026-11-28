@@ -25,6 +25,18 @@ export const FIRST_CONSENT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
 
 const notificationId = stableNotificationId;
 
+export interface NoteAlarm {
+  noteId: string;
+  reminderId: string;
+  occurrenceAt: string;
+}
+let noteSyncTail: Promise<unknown> = Promise.resolve();
+function queueNoteSync<T>(operation: () => Promise<T>): Promise<T> {
+  const next = noteSyncTail.then(operation, operation);
+  noteSyncTail = next.catch(() => {});
+  return next;
+}
+
 const taskNotificationId = (task: Task, kind: string) => notificationId(`task:${task.id}:${kind}`);
 const testId = notificationId('lifeos:test-notification');
 const immediateTestId = notificationId('lifeos:immediate-notification');
@@ -214,19 +226,57 @@ async function cancelPendingKinds(kinds: string[]) {
 
 const deliveredReminderReference = (row: { data?: Record<string, unknown>; extra?: Record<string, unknown> }) => {
   if (!row.data) return row.extra;
-  return Object.fromEntries(['kind', 'taskId', 'habitId', 'milestoneId', 'occurrenceAt', 'originalReminderAt']
+  return Object.fromEntries(['kind', 'taskId', 'habitId', 'milestoneId', 'occurrenceAt', 'originalReminderAt', 'noteId', 'reminderId']
     .map(key => [key, row.data?.['busydoo.reminder.' + key]]));
 };
 
 export const NotificationService = {
   isSupported: isNative,
 
+  syncNotes(alarms: NoteAlarm[], enabled: boolean, tone: NotificationTone, isCurrent: () => boolean) {
+    return queueNoteSync(async () => {
+      if (!requireNativeNotifications() || !isCurrent()) return;
+      const permission = enabled ? await LocalNotifications.checkPermissions() : null;
+      const all = await LocalNotifications.getPending();
+      if (!isCurrent()) return;
+      if (permission?.display === 'granted' && alarms.length) await this.ensureChannel();
+      if (!isCurrent()) return;
+      const now = Date.now();
+      const scheduled = new Map<number, LocalNotificationSchema>();
+      const reserved = new Set(all.notifications.filter(item => item.extra?.kind !== 'notesReminder').map(item => item.id));
+      if (permission?.display === 'granted') for (const alarm of alarms) {
+        const at = new Date(alarm.occurrenceAt);
+        if (+at <= now) continue;
+        let id = notificationId('note:' + alarm.noteId + ':' + alarm.reminderId);
+        while (reserved.has(id) || scheduled.has(id)) id = id === 2147483647 ? 1 : id + 1;
+        scheduled.set(id, {
+          id, ...reminderCopy('notesReminder', tone, id),
+          schedule: { at, allowWhileIdle: true }, channelId: 'lifeos-reminders', smallIcon: 'ic_lifeos_notification',
+          extra: { kind: 'notesReminder', ...alarm },
+        });
+      }
+      const remove: number[] = [];
+      for (const item of all.notifications) {
+        if (item.extra?.kind !== 'notesReminder') continue;
+        const desired = scheduled.get(item.id);
+        if (desired && item.extra?.reminderId === desired.extra?.reminderId &&
+            item.extra?.occurrenceAt === desired.extra?.occurrenceAt && item.body === desired.body) {
+          scheduled.delete(item.id);
+        } else remove.push(item.id);
+      }
+      if (!isCurrent()) return;
+      await cancelIds(remove);
+      if (isCurrent()) await schedule([...scheduled.values()].filter(item => +(item.schedule?.at ?? 0) > Date.now()));
+    });
+  },
+
   async cancelAllRecordReminders() {
     if (!requireNativeNotifications()) return;
+    await queueNoteSync(() => cancelPendingKinds(['notesReminder']));
     const kinds = ['dueTime', 'taskReminders', 'upcomingDeadlines', 'overdueAlerts', 'taskSnooze', 'habitReminder', 'milestoneReminder'];
     await cancelPendingKinds(kinds);
     const delivered = await LocalNotifications.getDeliveredNotifications();
-    const notifications = delivered.notifications.filter(row => kinds.includes(String(deliveredReminderReference(row)?.kind)));
+    const notifications = delivered.notifications.filter(row => [...kinds, 'notesReminder'].includes(String(deliveredReminderReference(row)?.kind)));
     if (notifications.length) await LocalNotifications.removeDeliveredNotifications({ notifications });
   },
 
@@ -798,7 +848,7 @@ export const NotificationService = {
 
   async ensureChannel() {
     if (!requireNativeNotifications()) return;
-    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'BusyDoo reminders', description: 'Local task, habit and goal reminders', importance: 4, visibility: 0, vibration: true })
+    if (!ensureChannelPromise) ensureChannelPromise = LocalNotifications.createChannel({ id: 'lifeos-reminders', name: 'BusyDoo reminders', description: 'Local task, habit, goal and note reminders', importance: 4, visibility: 0, vibration: true })
       .catch(error => { ensureChannelPromise = null; writeLastError(safeErrorCode(error)); console.warn('BusyDoo notification channel creation failed.'); throw error; });
     const pending = ensureChannelPromise;
     try { await pending; }

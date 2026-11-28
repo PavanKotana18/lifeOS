@@ -73,7 +73,7 @@ export function NotificationCentre({ rows, loading, failed, enabled, settings, o
                   onClick={() => void onApply({ kind: 'dismiss', key: row.key })}><X size={17} aria-hidden="true" /></button>
               </div>
               <div className="notification-item-actions">
-                {!row.resolvedAt && row.source !== 'note' && <button type="button" className="feather-secondary" aria-label={subject ? "Open " + subject : undefined} onClick={() => onOpen(row)}>Open</button>}
+                {!row.resolvedAt && <button type="button" className="feather-secondary" aria-label={subject ? "Open " + subject : undefined} onClick={() => onOpen(row)}>Open</button>}
                 {!row.resolvedAt && row.source === 'task' && <>
                   <button type="button" className="feather-secondary" aria-label={'Mark done' + context} onClick={() => onTaskAction(row, 'lifeos-task-done')}>Mark done</button>
                   {actions.snooze && <button type="button" className="feather-secondary" aria-label={'Snooze 10 min' + context} onClick={() => onTaskAction(row, 'lifeos-task-snooze')}>Snooze 10 min</button>}

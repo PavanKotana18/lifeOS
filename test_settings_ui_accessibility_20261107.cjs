@@ -21,7 +21,7 @@ assert.match(styles, /--profile-target: max\(48px, 3rem\)/);
 assert.match(styles, /min-block-size: var\(--profile-target\)/);
 assert.match(component('ProfileWorkspace'), /<ProfileToggle title="App lock" checked=\{enabled\}/);
 assert.match(component('ProfileNotifications'), /<ProfileToggle title="Android reminders"[\s\S]*?checked=\{master\}/);
-assert.match(component('ProfileNotifications'), /checked=\{categories\[key\]\}/);
+assert.match(component('ProfileNotifications'), /checked=\{Boolean\(categories\[key\]\)\}/);
 assert.match(profile, /role="switch" aria-label=\{title\} aria-checked=\{checked\}/);
 assert.match(preferences, /currencyOptions = useMemo\(\(\) => CURRENCY_CODES\.map/);
 assert.match(component('PreferenceChoice'), /type="search"/);

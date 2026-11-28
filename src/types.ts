@@ -248,6 +248,7 @@ export interface Task {
 
 export interface NotificationPreferences {
   taskReminders: boolean;
+  notesReminders?: boolean;
   upcomingDeadlines: boolean;
   overdueAlerts: boolean;
   habitReminders: boolean;

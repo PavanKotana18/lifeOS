@@ -12,7 +12,7 @@ const { IDBFactory } = require('fake-indexeddb');
 const ROOT = path.resolve(__dirname, '../..');
 const TABLES = ['transactions', 'categories', 'budgets', 'savingsGoals',
   'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings',
-  'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments'];
+  'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'notes', 'notebooks'];
 let checks = 0;
 function check(value, message) { checks++; assert.ok(value, message); }
 function equal(actual, expected, message) { checks++; assert.deepEqual(actual, expected, message); }
@@ -297,6 +297,14 @@ async function fixture({ activate = true } = {}) {
       // The lifecycle fixture covers secure admission and reload. Notification
       // routing has its own production callback and delivery contract tests.
       drainNotificationTapsRef: { current: async () => {} },
+      // Synthetic Notes UI dependencies for extracted App handlers.
+      notes: {
+        async flush() { return true; },
+        invalidate() {},
+      },
+      captureFromToday: { current: false },
+      noteCaptureRequest: { current: false },
+      refreshNoteWorkspace: () => db.StorageService.notes.workspace(),
       backupOperation: { current: false },
       ...load('src/services/profilePhoto.ts'),
       profilePhotoVersion: { current: 0 },

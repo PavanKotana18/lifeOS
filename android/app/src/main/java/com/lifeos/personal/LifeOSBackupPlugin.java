@@ -33,12 +33,16 @@ public class LifeOSBackupPlugin extends Plugin {
             return;
         }
 
+        boolean readableNote = "text/plain".equals(mimeType)
+            && fileName.matches("busydoo-note-[0-9]{4}-[0-9]{2}-[0-9]{2}[.](txt|md)")
+            && contents.length() <= 1048576;
         if (fileName.trim().isEmpty()
             || fileName.length() > 128
             || fileName.contains("/")
             || fileName.contains("\\")
             || !("application/json".equals(mimeType)
-                || "text/csv".equals(mimeType))) {
+                || "text/csv".equals(mimeType)
+                || readableNote)) {
             call.reject("Invalid backup filename or file type.");
             return;
         }

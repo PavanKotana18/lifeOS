@@ -5,17 +5,18 @@ require('./scripts/register-ts-test-loader.cjs');
 const { DEFAULT_TODAY_LAYOUT, normalizeTodayLayout, setTodaySectionVisible, moveTodaySection } = require('./src/services/todayLayout.ts');
 const app = fs.readFileSync('src/App.tsx', 'utf8');
 
-assert.deepEqual(DEFAULT_TODAY_LAYOUT.order, ['focus', 'agenda', 'money', 'habits', 'upcoming', 'goals']);
-assert.deepEqual(DEFAULT_TODAY_LAYOUT.hidden, ['upcoming', 'goals'], 'the compact Money snapshot is available on the default Today screen');
+assert.deepEqual(DEFAULT_TODAY_LAYOUT.order, ['focus', 'agenda', 'money', 'habits', 'upcoming', 'goals', 'notes']);
+assert.deepEqual(DEFAULT_TODAY_LAYOUT.hidden, ['upcoming', 'goals', 'notes'], 'the compact Money snapshot is available on the default Today screen');
 assert.deepEqual(normalizeTodayLayout({ order: ['money', 'money', 'unknown'], hidden: ['focus', 'goals', 'goals', 'bad'] }), {
-  order: ['money', 'focus', 'agenda', 'habits', 'upcoming', 'goals'], hidden: ['goals'],
+  order: ['money', 'focus', 'agenda', 'habits', 'upcoming', 'goals', 'notes'], hidden: ['goals', 'notes'],
 }, 'saved order is deduplicated, validated and completed with missing sections; focus remains visible');
+assert.deepEqual(normalizeTodayLayout(setTodaySectionVisible(DEFAULT_TODAY_LAYOUT, 'notes', true)).hidden, ['upcoming', 'goals']);
 const visibleGoals = setTodaySectionVisible(DEFAULT_TODAY_LAYOUT, 'goals', true);
-assert.deepEqual(visibleGoals.hidden, ['upcoming'], 'showing goals preserves unrelated first-use section choices');
+assert.deepEqual(visibleGoals.hidden, ['upcoming', 'notes'], 'showing goals preserves unrelated first-use section choices');
 assert.equal(setTodaySectionVisible(DEFAULT_TODAY_LAYOUT, 'focus', false), DEFAULT_TODAY_LAYOUT, 'required focus section cannot be hidden');
-assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'agenda', -1).order, ['agenda', 'focus', 'money', 'habits', 'upcoming', 'goals']);
+assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'agenda', -1).order, ['agenda', 'focus', 'money', 'habits', 'upcoming', 'goals', 'notes']);
 assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'focus', -1), DEFAULT_TODAY_LAYOUT, 'move at first boundary is a no-op');
-assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'goals', 1), DEFAULT_TODAY_LAYOUT, 'move at last boundary is a no-op');
+assert.deepEqual(moveTodaySection(DEFAULT_TODAY_LAYOUT, 'notes', 1), DEFAULT_TODAY_LAYOUT, 'move at last boundary is a no-op');
 const protectedOpen = app.indexOf('await encryptedSession.open()');
 const layoutRead = app.indexOf("get<unknown>('todayLayout'");
 assert.ok(protectedOpen >= 0 && layoutRead > protectedOpen, 'private Today layout loads only after encrypted session startup');

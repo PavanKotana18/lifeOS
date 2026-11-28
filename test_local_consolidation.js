@@ -290,5 +290,5 @@ async function fixture(action) { const f = await h.fixture(); try { await action
   const reset = h.bind(expression, { ...f.appDeps(), ...h.noopSetters(expression), showToast: (...args) => messages.push(args) });
   await reset();assert.equal(await f.lifeOSDatabase.tasks.count(),1);assert.equal(messages.at(-1)[1],'danger');
  }));
- console.log(`LOCAL CONSOLIDATION: ${passed}/16 passed (native simulated)`);
+ console.log(`LOCAL CONSOLIDATION: ${passed}/18 passed (native simulated)`);
 })().catch(e=>{console.error(e);process.exitCode=1;});

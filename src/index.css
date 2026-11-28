@@ -1149,3 +1149,19 @@ body { -webkit-user-select: none; user-select: none; }
 }
 summary { list-style: none; }
 summary::-webkit-details-marker { display: none; }
+
+/* BusyDoo focus refinement: no coloured field rectangles; preserve keyboard focus. */
+:root { --busydoo-focus-neutral: #4b4b4b; --focus-color: var(--busydoo-focus-neutral) !important; }
+:root.dark { --busydoo-focus-neutral: #d2d2d2; }
+:focus-visible { outline-color: var(--busydoo-focus-neutral) !important; }
+:is(input:not([type]), input:is([type="text"], [type="search"], [type="number"], [type="email"], [type="password"], [type="tel"], [type="url"], [type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]), textarea, select):focus {
+  outline: none !important;
+  box-shadow: inset 0 -1.5px 0 var(--busydoo-focus-neutral) !important;
+}
+:is(input:not([type]), input:is([type="text"], [type="search"], [type="number"], [type="email"], [type="password"], [type="tel"], [type="url"], [type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]), textarea, select):focus:not([aria-invalid="true"]):not(:invalid) {
+  border-color: var(--stroke) !important;
+}
+.notes-page .notes-card { touch-action: pan-y; -webkit-touch-callout: none; }
+@media (forced-colors: active) {
+  :is(input, textarea, select):focus-visible { outline: 2px solid Highlight !important; outline-offset: 2px; }
+}

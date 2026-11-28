@@ -114,6 +114,13 @@ if (new URLSearchParams(location.search).has('onboarding-auth')) {
     window.addEventListener('qa-notification-tap', receive);
     return { remove: async () => { window.removeEventListener('qa-notification-tap', receive); } };
   };
+  NotificationService.getPendingTapActions = async () => {
+    const json = sessionStorage.getItem('qa-pending-note-tap');
+    return json ? [JSON.parse(json)] : [];
+  };
+  NotificationService.acknowledgeInitialTapAction = async () => {
+    sessionStorage.removeItem('qa-pending-note-tap');
+  };
   const runtimeDiagnostics = NotificationService.getDiagnostics.bind(NotificationService);
   NotificationService.getDiagnostics = async () => ({
     ...await runtimeDiagnostics(), permission: await NotificationService.checkPermission(),

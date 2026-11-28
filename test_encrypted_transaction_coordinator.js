@@ -60,7 +60,7 @@ const cryptoMock = {
 const tables = [
   'transactions', 'categories', 'budgets', 'savingsGoals',
   'savingsContributions', 'financialAccounts', 'accountTransfers', 'manualExchangeRates', 'plannedCommitments', 'habits', 'habitLogs', 'goals',
-  'milestones', 'tasks', 'settings'
+  'milestones', 'tasks', 'settings', 'notes', 'notebooks'
 ];
 
 async function fixture() {

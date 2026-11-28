@@ -881,7 +881,7 @@ async function main() {
     legacyDb.close();
     const upgradedDb = new LifeOSDatabase(migrationName);
     await upgradedDb.open();
-    check(upgradedDb.verno === 2 && JSON.stringify(await upgradedDb.transactions.get('legacy-tx')) === JSON.stringify(legacyRecord),
+    check(upgradedDb.verno === 3 && JSON.stringify(await upgradedDb.transactions.get('legacy-tx')) === JSON.stringify(legacyRecord),
       'Version 1 upgrade adds finance stores without rewriting existing transactions');
     check(['transactions', 'categories', 'budgets', 'savingsGoals', 'savingsContributions', 'habits', 'habitLogs', 'goals', 'milestones', 'tasks', 'settings'].every(name => upgradedDb.tables.some(table => table.name === name)),
       'Version 2 schema retains every pre-existing Dexie table and relationship store');

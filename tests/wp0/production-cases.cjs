@@ -18,6 +18,48 @@ async function seed(f) {
   await f.StorageService.accounts.addTransfer({ fromAccountId: cash.id, toAccountId: bank.id, fromAmountMinor: '100', toAmountMinor: '8300', fromCurrencyCode: 'USD', toCurrencyCode: 'INR', exchangeRate: '83', date: '2026-11-08' });
   await f.StorageService.exchangeRates.add({ baseCurrencyCode: 'USD', quoteCurrencyCode: 'INR', rate: '83', effectiveDate: '2026-11-08', sourceLabel: 'synthetic fixture' });
   await f.StorageService.commitments.add({ title: 'Synthetic monthly bill', amount: 12, amountMinor: '1200', currencyCode: 'USD', frequency: 'monthly', nextDueDate: '2026-12-01', status: 'active' });
+  // Seed Notes through the real encrypted storage API.
+  const workspace = await f.StorageService.notes.workspace();
+
+  const notebook = await f.StorageService.notes.saveNotebook(
+    workspace.epoch, null, 'WP0 synthetic notebook'
+  );
+
+  const note = await f.StorageService.notes.save(
+    workspace.epoch, null, {
+      id: 'wp0-synthetic-note',
+      title: 'WP0 synthetic note',
+      document: {
+        version: 1,
+        content: {
+          type: 'doc',
+          content: [{
+            type: 'paragraph',
+            content: [{
+              type: 'text',
+              text: 'Synthetic private note content'
+            }]
+          }]
+        }
+      },
+      notebookId: notebook.id,
+      tags: ['synthetic'],
+      pinned: false,
+      archived: false,
+      links: []
+    }
+  );
+
+  h.equal(
+    (await f.lifeOSDatabase.notes.get(note.id)).__lifeosEncrypted,
+    1, 'Synthetic note is encrypted at rest'
+  );
+
+  h.equal(
+    (await f.lifeOSDatabase.notebooks.get(notebook.id)).__lifeosEncrypted,
+    1, 'Synthetic notebook is encrypted at rest'
+  );
+
   const json = await f.StorageService.backup.exportData();
   const parsed = JSON.parse(json);
   h.equal(f.validateBackupTables(parsed.tables), h.TABLES, 'Actual validator contract');

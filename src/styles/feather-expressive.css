@@ -757,3 +757,11 @@ dialog[data-polish-sheet][data-sheet-closing]::backdrop { animation: feather-she
 @media (prefers-reduced-motion: reduce) {
   .feather-expressive .today-sections > [data-today-card] { scale: 1; transition: none; }
 }
+
+.feather-expressive .today-notes-card { background: var(--feather-highlight, var(--accent-tint)); }
+.today-notes-heading, .today-notes-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.today-notes-heading h3 { font-size: 1.125rem; font-weight: 650; }
+.today-notes-actions .today-summary-action { display: inline-flex; align-items: center; gap: .4rem; min-height: 48px; }
+
+.feather-expressive .plan-destinations { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.feather-expressive .plan-destinations button { min-height: 48px; padding-inline: .2rem; }

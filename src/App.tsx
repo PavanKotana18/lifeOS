@@ -50,6 +50,11 @@ import SecureSetupDialog from './components/SecureSetupDialog';
 import FirstRecordSecurityDialog from './components/FirstRecordSecurityDialog';
 import { createRecoveryController } from './services/recoveryService';
 import { quoteCsvCell } from './services/csvExportService.ts';
+import { useNotesWorkspace } from './hooks/useNotesWorkspace';
+import { exportNoteText } from './services/notesDocument';
+import type { NoteLink, NoteRecord } from './services/notesDomain';
+import type { NoteLinkOption } from './components/NotesEditor';
+import { BookOpen, SquarePen } from 'lucide-react';
 import { exportBackupFile } from './services/backupExportService';
 import { confirmScreenshotResume, isSensitiveScreenshotState, setSensitiveScreenshotState } from './services/screenshotProtection';
 import { BiometricService } from './services/biometricService';
@@ -148,7 +153,14 @@ function keyboardOwnsViewport() {
     || (window.visualViewport != null && window.innerHeight - window.visualViewport.height > 120 && window.visualViewport.scale === 1);
 }
 
+const NotesWorkspace = React.lazy(() => import('./components/NotesWorkspace'));
+const NotesEditor = React.lazy(() => import('./components/NotesEditor'));
+
 export default function App() {
+  const notes = useNotesWorkspace();
+  const { refresh: refreshNoteWorkspace, invalidate: invalidateNotes } = notes;
+  const captureFromToday = useRef(false);
+  const noteCaptureRequest = useRef(false);
   const interfaceMotion = useInterfaceMotion();
   // Navigation & Theme State
   const navigationMotion = useAliveNavigation(interfaceMotion.preset, interfaceMotion.reducedMotion);
@@ -180,7 +192,7 @@ export default function App() {
       if (tab === 'settings') setProfileSection('home');
       navigationMotion.jumpTo(tab, direction, velocity, routeScrollOffset(tab), onCommit);
     };
-    if (tab !== 'settings' || Capacitor.getPlatform() !== 'android' || activeTabRef.current === 'settings') {
+    if ((tab !== 'settings' && tab !== 'notes') || Capacitor.getPlatform() !== 'android' || activeTabRef.current === tab) {
       enter();
       return;
     }
@@ -460,7 +472,7 @@ export default function App() {
 
   const [smartImportOpen, setSmartImportOpen] = useState(false);
   const [protectedImportComposer, setProtectedImportComposer] = useState(false);
-  const sensitiveScreenshot = notificationCentreOpen || activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === 'settings' || isSensitiveScreenshotState({
+  const sensitiveScreenshot = activeTab === 'notes' || tabTransition?.from === 'notes' || notificationCentreOpen || activityResumeGuard || smartImportOpen || protectedImportComposer || profileAdmissionPending || profileOpen || tabTransition?.from === 'settings' || isSensitiveScreenshotState({
     appReady,
     onboardingRequired,
     onboardingComplete,
@@ -610,10 +622,10 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handlePath);
   }, [appReady, onboardingComplete, isLocked]);
 
-  const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals' | 'insights') => (
+  const renderPlanNavigation = (selected: 'plan' | 'habits' | 'goals' | 'insights' | 'notes') => (
     <header className="plan-destination-header">
       <nav aria-label="Plan destinations" className="plan-destinations feather-segments">
-        {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }] as const).map(({ tab, label }) =>
+        {([{ tab: 'plan', label: 'Tasks' }, { tab: 'habits', label: 'Habits' }, { tab: 'goals', label: 'Goals' }, { tab: 'notes', label: 'Notes' }] as const).map(({ tab, label }) =>
           <button key={tab} type="button" aria-current={selected === tab ? 'page' : undefined} onClick={() => {
             if (tab === selected) return;
             todayOrigin.current = null;
@@ -747,7 +759,7 @@ export default function App() {
       settingsScreen: primaryDestinationForTab(activeTab) === null ||
         Boolean((activeTab === 'planner' && plannerDetailTaskId) || ((activeTab === 'habits' || activeTab === 'goals') && lifeDetail)) ||
         (profileOpen && (profileSection !== 'home' || Boolean(document.querySelector('#screen-settings form[data-no-tab-swipe]')))),
-      modalOpen: Boolean(createKind || modalContent || confirmation || firstRecordSecurityOpen || secureSetup || showExitConfirmation
+      modalOpen: Boolean((activeTab === 'notes' && notes.editor) || document.querySelector('[data-notes-sheet]') || createKind || modalContent || confirmation || firstRecordSecurityOpen || secureSetup || showExitConfirmation
         || todayCustomizationOpen || smartImportOpen || profileAdmissionPending || financeDialogOpen || notificationCentreOpen
         || document.querySelector('dialog[open]') || keyboardOwnsViewport()),
       multiplePointers: activeTouchPointers.current.size > 1,
@@ -933,8 +945,13 @@ export default function App() {
       if (filterSheet) { filterSheet.close(); return; }
     }
     if (confirmationResolver.current) { settleConfirmation(false); return; }
+    const notesPanelClose = document.querySelector<HTMLButtonElement>('[data-notes-sheet] button[aria-label="Close"]');
+    if (notesPanelClose && !notesPanelClose.closest('[hidden], [inert]')) { notesPanelClose.click(); return; }
+    if (!state.isLocked && state.activeTab === 'notes' && !state.createKind && notes.editor) {
+      void closeNotesEditor(); return;
+    }
     if (notificationCentreDialog.current) { closeNotificationCentre(); return; }
-    if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(state.activeTab === 'settings').catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
+    if (firstRecordSecurityResolver.current) { void setSensitiveScreenshotState(state.activeTab === 'settings' || state.activeTab === 'notes').catch(() => undefined); firstRecordSecurityResolver.current(null); return; }
     if (!state.isLocked && state.appReady && state.activeTab === 'finance' && ((state.financeSubtab === 'accounts' && (state.accountFormDraft || state.transferFormDraft)) || (state.financeSubtab === 'planning' && (state.planningDrafts.commitment || state.planningDrafts.rate)))) {
       void requestCloseFinanceDraft(); return;
     }
@@ -948,6 +965,10 @@ export default function App() {
     if (action === 'dismiss-dialog') { requestCloseForm(); setModalContent(null); return; }
     if (action === 'dismiss-exit-dialog') { setShowExitConfirmation(false); return; }
     if (action === 'close-task-details') { closeTaskDetail(); return; }
+    if (state.activeTab === 'notes') {
+      const scopedNotesClose = document.querySelector<HTMLButtonElement>('[data-notes-subscope] .feather-header button[aria-label="Close"]');
+      if (scopedNotesClose) { scopedNotesClose.click(); return; }
+    }
     const origin = todayOrigin.current;
     if (origin?.destination === state.activeTab &&
       (state.activeTab !== 'finance' || (state.financeSubtab === 'monthly' && financeSubtabHistory.current.length === 0))) {
@@ -1018,6 +1039,10 @@ export default function App() {
     void CapacitorApp.addListener('appStateChange', async state => {
       if (disposed) return;
       if (!state.isActive) {
+        void notes.flush();
+        notes.invalidate();
+        captureFromToday.current = false;
+        noteCaptureRequest.current = false;
         setActivityResumeGuard(true);
         backupPassphraseResolver.current?.(null);
         const recoveryPicker = secureSetupResolver.current
@@ -1276,7 +1301,7 @@ export default function App() {
   const [showTodayReorderHint, setShowTodayReorderHint] = useState(() => {
     try { return localStorage.getItem('busydoo-today-reordered') !== 'yes'; } catch { return true; }
   });
-  const openFromToday = (destination: 'finance' | 'plan' | 'habits' | 'goals' | 'planner', trigger?: HTMLElement) => {
+  const openFromToday = (destination: 'finance' | 'plan' | 'habits' | 'goals' | 'planner' | 'notes', trigger?: HTMLElement) => {
     todayOrigin.current = { destination, history: navigationHistory.current, trigger };
     if (destination === 'finance') {
       financeSubtabHistory.current = [];
@@ -1308,7 +1333,8 @@ export default function App() {
       setShowTodayReorderHint(false);
       try { localStorage.setItem('busydoo-today-reordered', 'yes'); } catch { /* Hint still closes for this session. */ }
     }, (section, trigger) => {
-      if (section === 'money') openFromToday('finance', trigger);
+      if (section === 'notes') openFromToday('notes', trigger);
+      else if (section === 'money') openFromToday('finance', trigger);
       else if (section === 'habits' || section === 'goals') openFromToday(section, trigger);
       else if (section === 'upcoming') { setPlannerFilter('upcoming'); openFromToday('planner', trigger); }
       else openFromToday('plan', trigger);
@@ -1354,10 +1380,11 @@ export default function App() {
   const inboxAvailable = sharedReviewAvailable && isEncryptedStorageActivated();
   const inboxSnapshot = useMemo(() => buildInboxSnapshot({
     now: clockNow, preferences: inboxPreferences, reminderPreferences: notificationPreferences, dateOnlyAlertTime,
+    notes: notes.load === 'loaded' ? notes.data.notes : undefined,
     tasks, habits, habitLogs, goals, milestones, commitments: plannedCommitments, savings: savingsGoals,
     budgets, transactions, categories, recoveryPending: recoveryDeferred && !recoveryProvisioned, lastBackup: lastBackupAt,
   }), [clockNow, inboxPreferences, notificationPreferences, dateOnlyAlertTime, tasks, habits, habitLogs, goals, milestones,
-    plannedCommitments, savingsGoals, budgets, transactions, categories, recoveryDeferred, recoveryProvisioned, lastBackupAt]);
+    plannedCommitments, savingsGoals, budgets, transactions, categories, recoveryDeferred, recoveryProvisioned, lastBackupAt, notes.load, notes.data.notes]);
   const inbox = useNotificationInbox(inboxAvailable && inboxSettingsLoaded, inboxSnapshot,
     () => showToast('Could not update notification history.', 'danger'));
   const notificationCentreDialog = useRef(false);
@@ -1369,6 +1396,7 @@ export default function App() {
   useRecordDialog(notificationCentreDialog.current, closeNotificationCentre, 'notification-centre');
   useEffect(() => {
     if (inboxAvailable) {
+      void refreshNoteWorkspace().catch(() => {});
       void refreshInboxSettings().catch(() => showToast('Could not load notification settings.', 'danger'));
       void drainNotificationTapsRef.current();
     } else setInboxSettingsLoaded(false);
@@ -1780,7 +1808,7 @@ export default function App() {
 
   const toggleNotificationCategory = async (key: keyof NotificationPreferences) => {
     const enabled = !notificationPreferences[key];
-    if (enabled && notificationsEnabled) {
+    if (enabled && notificationsEnabled && key !== 'notesReminders') {
       const permission = await askNotificationPermission();
       if (!permission.granted) { showToast(permission.message || `Notification permission: ${permission.status}`, 'danger'); return; }
     }
@@ -2051,6 +2079,19 @@ export default function App() {
         navigateTo('settings');
         navigateProfileSection('notifications');
         opened = true;
+      } else if (extra.kind === 'notesReminder') {
+        const event = nativeInboxEvent(extra, 'opened');
+        const state = await refreshNoteWorkspace();
+        sessionManager.assertCurrent(token);
+        const note = event && state.notes.find(row => row.id === event.sourceId && !row.archived && !row.trashedAt &&
+          row.reminder?.id === event.occurrence && Date.parse(row.reminder.at) === event.at);
+        if (notificationPreferences.notesReminders && note) {
+          if (!await notes.flush()) return;
+          sessionManager.assertCurrent(token);
+          navigateTo('notes');
+          notes.open(note, ensurePrivateStorageBeforeWrite, undefined, state.epoch);
+          opened = true;
+        }
       } else if (typeof extra.taskId === 'string') {
         const task = (await StorageService.tasks.getAll()).find(item => item.id === extra.taskId);
         sessionManager.assertCurrent(token);
@@ -2358,7 +2399,9 @@ export default function App() {
       setProfileDataStage('Erasing encrypted records…');
       await NotificationService.cancelAllRecordReminders();
       await clearNotificationRouting();
+      notes.invalidate();
       await StorageService.backup.clearAll({ preserveAppLock: true });
+      await refreshNoteWorkspace().catch(() => {});
       erased = true;
       await reloadAllData();
       await refreshProfileIdentity();
@@ -2392,7 +2435,9 @@ export default function App() {
       await NotificationService.cancelAllRecordReminders();
       await clearNotificationRouting();
       setProfileDataStage('Replacing local records…');
+      notes.invalidate();
       await StorageService.backup.importData(text, { replaceExisting: hasRecords });
+      await refreshNoteWorkspace().catch(() => {});
       restored = true;
       const records = await reloadAllData();
       await refreshProfileIdentity();
@@ -3153,6 +3198,119 @@ export default function App() {
     [transactions, financeMonth]
   );
 
+  const refreshNotes = () => { void refreshNoteWorkspace().catch(() => {}); };
+  useEffect(() => {
+    if (isLocked) {
+      invalidateNotes();
+      return;
+    }
+    if (activeTab === 'notes' && notes.load === 'idle' && appReady && onboardingComplete && !activityResumeGuard) {
+      void refreshNoteWorkspace().catch(() => {});
+    }
+  }, [activeTab, appReady, onboardingComplete, activityResumeGuard, isLocked, refreshNoteWorkspace, invalidateNotes, notes.load]);
+
+  function openNoteEditor(note: NoteRecord | null, notebookId?: string, showOptions = false) {
+    if (isLocked || activityResumeGuard) return;
+    if (!note && isEncryptedStorageActivated() && notes.load !== 'loaded') {
+      void refreshNoteWorkspace().then(() => notes.open(null, ensurePrivateStorageBeforeWrite, notebookId)).catch(() => {});
+      return;
+    }
+    notes.open(note, ensurePrivateStorageBeforeWrite, notebookId, undefined, showOptions);
+  }
+
+  useEffect(() => {
+    if (activeTab !== 'notes' || !noteCaptureRequest.current || isLocked || activityResumeGuard) return;
+    noteCaptureRequest.current = false;
+    captureFromToday.current = true;
+    openNoteEditor(null);
+  }, [activeTab, isLocked, activityResumeGuard]);
+
+  const returnAfterNote = () => {
+    notes.close();
+    if (!captureFromToday.current) return;
+    captureFromToday.current = false;
+    const origin = todayOrigin.current;
+    if (origin?.destination !== 'notes') return;
+    todayOrigin.current = null;
+    todayReturnFocus.current = origin.trigger ?? null;
+    rememberActiveScroll();
+    navigationHistory.current = origin.history;
+    transitionToTab('dashboard');
+  };
+
+  async function closeNotesEditor() {
+    if (await notes.flush()) returnAfterNote();
+  }
+
+  async function discardNoteChanges() {
+    if (await confirmAction({
+      title: 'Discard unsaved changes?', message: 'Your last saved version will stay in Notes.',
+      confirmLabel: 'Discard changes', destructive: true,
+    })) returnAfterNote();
+  }
+
+  async function convertNoteText(text: string) {
+    if (await notes.flush() && activeTabRef.current === 'notes') {
+      const title = text.replace(/\s+/gu, ' ').trim().slice(0, 120).replace(/[\uD800-\uDBFF]$/, '');
+      if (title) openCreateForm('task', undefined, undefined, title);
+    }
+  }
+
+  const noteLinkOptions = useMemo<NoteLinkOption[]>(() => [
+    ...tasks.map(task => ({ kind: 'task' as const, id: task.id, label: 'Task · ' + task.title })),
+    ...habits.map(habit => ({ kind: 'habit' as const, id: habit.id, label: 'Habit · ' + habit.name })),
+    ...goals.map(goal => ({ kind: 'goal' as const, id: goal.id, label: 'Goal · ' + goal.title })),
+    ...transactions.map(tx => ({ kind: 'transaction' as const, id: tx.id, label: 'Transaction · ' + (tx.description || tx.category) })),
+  ], [tasks, habits, goals, transactions]);
+
+  async function openNoteLink(link: NoteLink) {
+    if (!await notes.flush() || !sessionManager.isUnlocked()) return;
+    if (link.kind === 'transaction') {
+      if (!transactions.some(row => row.id === link.id)) return;
+      setTransactionDetailId(link.id);
+    } else if (link.kind === 'task') {
+      const task = tasks.find(row => row.id === link.id);
+      if (!task) return;
+      taskDetailReturnTabRef.current = 'notes';
+      setPlannerDetailTaskId(task.id);
+      setPlannerSelectedDate(task.dueDate || todayKey);
+      setPlannerFilter(task.dueDate ? 'all' : 'unscheduled');
+      navigateTo('planner');
+    } else {
+      const rows = link.kind === 'habit' ? habits : goals;
+      if (!rows.some(row => row.id === link.id)) return;
+      navigateTo(link.kind === 'habit' ? 'habits' : 'goals');
+      showLifeDetail({ kind: link.kind, id: link.id });
+    }
+  }
+
+  async function exportSingleNote(markdown: boolean) {
+    const draft = notes.editor?.draft;
+    if (!draft || !await notes.flush() || !sessionManager.isUnlocked()) throw new Error('Save and unlock this note before exporting.');
+    await setSensitiveScreenshotState(true);
+    const token = sessionManager.capture();
+    const contents = exportNoteText(draft.document, draft.title.trim(), markdown);
+    sessionManager.assertCurrent(token);
+    const result = await exportBackupFile({ contents, fileName: 'busydoo-note-' + formatLocalDate(new Date()) + (markdown ? '.md' : '.txt'), mimeType: 'text/plain' });
+    if (result.status !== 'cancelled') showToast(result.status === 'saved' ? 'Note exported' : 'Note download started', 'success');
+  }
+
+  const alarmsJson = JSON.stringify(notes.data.notes.flatMap(note => !note.archived && !note.trashedAt && note.reminder
+    ? [{ noteId: note.id, reminderId: note.reminder.id, occurrenceAt: note.reminder.at }] : [])
+    .sort((a, b) => a.noteId.localeCompare(b.noteId)));
+  useEffect(() => {
+    if (!inboxAvailable || notes.load !== 'loaded' || !sessionManager.isUnlocked()) return;
+    const session = sessionManager.capture();
+    let stale = false;
+    void NotificationService.syncNotes(JSON.parse(alarmsJson), notificationsEnabled && Boolean(notificationPreferences.notesReminders),
+      notificationTone, () => !stale && sessionManager.isCurrent(session))
+      .catch(() => {
+        if (!stale && sessionManager.isCurrent(session)) showToast('Android could not update note reminders.', 'danger');
+      });
+    return () => { stale = true; };
+  }, [alarmsJson, inboxAvailable, notes.load, notificationsEnabled, notificationPreferences.notesReminders,
+    notificationTone, notificationDiagnostics.permission, notificationDiagnostics.exactAlarm, notificationDiagnostics.appNotifications]);
+
   const recoveryInline = onboardingRequired && !onboardingComplete && onboardingStep === 2 && Boolean(secureSetup?.prepared);
   const recoverySetup = secureSetup && <SecureSetupDialog prepared={secureSetup.prepared} inline={recoveryInline} premium={profileOpen && !recoveryInline}
     onRecoveryExportStart={beginRecoveryExportActivity}
@@ -3179,7 +3337,7 @@ export default function App() {
   if (!appReady) return <div className="lifeos-page fixed inset-0 flex items-center justify-center px-6" aria-label={startupError ? 'BusyDoo could not start' : 'Loading BusyDoo'}>{startupError ? <div className="max-w-sm text-center"><div className="mb-4"><BusyDooBrand /></div><h1 className="text-xl font-semibold">BusyDoo could not open</h1><p className="mt-2 text-sm text-secondary">{startupError}</p><button className="lifeos-accent-button mt-5 min-h-11 rounded-xl px-5 text-sm font-semibold" onClick={() => { setStartupError(''); void initApp().catch(error => setStartupError(error instanceof Error ? error.message : 'BusyDoo could not open local data.')); }}>Try again</button><button className="lifeos-input mt-3 block min-h-11 w-full rounded-xl px-4" onClick={() => { void openRecovery(); }}>Recover access</button></div> : <div role="status" className="grid justify-items-center" aria-label="Opening BusyDoo"><BusyDooBrand /></div>}</div>;
 
   if (firstRecordSecurityOpen) return <FirstRecordSecurityDialog onDecision={choice => {
-    void setSensitiveScreenshotState(profileAdmissionPending || profileOpen).catch(() => {});
+    void setSensitiveScreenshotState(activeTab === 'notes' || profileAdmissionPending || profileOpen).catch(() => {});
     firstRecordSecurityResolver.current?.(choice);
   }} />;
 
@@ -3288,7 +3446,10 @@ export default function App() {
     } else if (event.source === 'backup' || event.source === 'recovery') {
       navigateTo('settings');
       navigateProfileSection(event.source === 'backup' ? 'data' : 'recovery');
-    } else if (event.source !== 'note') {
+    } else if (event.source === 'note') {
+      const note = notes.data.notes.find(row => row.id === event.sourceId && row.reminder?.id === event.occurrence);
+      if (note) { navigateTo('notes'); openNoteEditor(note); }
+    } else {
       navigateTo('finance');
       navigateFinanceSubtab(event.source === 'commitment' ? 'planning' : event.source === 'budget' ? 'budgets' : 'savings');
     }
@@ -3489,6 +3650,16 @@ export default function App() {
             </section>
 
             {/* Pending Tasks */}
+            <section className="today-notes-card today-habit-summary" data-today-card="notes" tabIndex={-1} style={todaySectionStyle('notes')} aria-labelledby="today-notes-title">
+              <div className="today-notes-heading"><BookOpen size={21} strokeWidth={1.7} aria-hidden /><h3 id="today-notes-title">Notes</h3></div>
+              <div className="today-notes-actions">
+                <button type="button" className="today-summary-action" onClick={event => {
+                  noteCaptureRequest.current = true;
+                  openFromToday('notes', event.currentTarget);
+                }}><SquarePen size={16} aria-hidden /> Write a note</button>
+                <button type="button" className="today-summary-action" onClick={event => openFromToday('notes', event.currentTarget)}>Open Notes</button>
+              </div>
+            </section>
             <section className="today-agenda lifeos-panel rounded-2xl border p-4" data-today-card="agenda" tabIndex={-1} style={todaySectionStyle('agenda')} aria-labelledby="today-agenda-title">
               <div className="today-summary-header">
                 <h3 id="today-agenda-title" className="today-summary-title">Your tasks</h3>
@@ -3539,6 +3710,27 @@ export default function App() {
           onToggleTask={async task => { await StorageService.tasks.toggleCompleted(task.id, !task.completed); if (!task.completed) await NotificationService.cancelTask(task); const records = await reloadAllData(); await syncNotificationSchedules(records.tasks, records.habits, records.goals, records.milestones); showToast('Task updated', 'success'); }}
           /></div></Suspense>} />
 
+        <RetainedScreen active={activeTab === 'notes'} retainInactive id="screen-notes" {...transitionPropsFor('notes')} render={() => (
+          <Suspense fallback={<ScreenLoading label="Opening Notes…" />}>
+            {renderPlanNavigation('notes')}
+            <NotesWorkspace data={notes.data} loading={notes.load === 'loading'} onRetry={notes.load === 'failed' ? refreshNotes : undefined}
+              onClose={navigateBack} onCreate={notebookId => openNoteEditor(null, notebookId)} onOpen={(note, showOptions) => openNoteEditor(note, undefined, showOptions)}
+              onView={next => void (async () => {
+                try { await ensurePrivateStorageBeforeWrite(); await StorageService.notes.setView((await notes.refresh()).epoch, next); await notes.refresh(); }
+                catch { showToast('Could not save the Notes layout.', 'danger'); }
+              })()}
+              onSaveNotebook={async (key, name) => {
+                await ensurePrivateStorageBeforeWrite();
+                await StorageService.notes.saveNotebook((await notes.refresh()).epoch, key, name);
+                await notes.refresh();
+              }}
+              onDeleteNotebook={async notebook => {
+                if (!await confirmAction({ title: 'Remove notebook?', message: 'Its notes will stay in your workspace without a notebook.', confirmLabel: 'Remove notebook', destructive: true })) return;
+                await StorageService.notes.removeNotebook(notes.data.epoch, notebook.id, notebook.revision);
+                await notes.refresh();
+              }} />
+          </Suspense>
+        )} />
         <RetainedScreen active={activeTab === 'insights'} id="screen-insights" {...transitionPropsFor('insights')} render={() => <Suspense fallback={<ScreenLoading label="Loading your insights…" />}><div className="space-y-4">{renderPlanNavigation('insights')}<InsightsHub
           month={financeMonth}
           exactCashFlow={[financeAnalytics.totalIncomeMinor, financeAnalytics.totalExpensesMinor, financeAnalytics.netSavingsMinor]} currency={userPrefs.currency} locale={userPrefs.locale === 'system' ? undefined : userPrefs.locale}
@@ -4340,6 +4532,20 @@ export default function App() {
 
       {showExitConfirmation && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-5" role="presentation"><section className="lifeos-panel w-full max-w-sm rounded-2xl border p-5 shadow-2xl" role="alertdialog" aria-modal="true" aria-labelledby="exit-lifeos-title"><h2 id="exit-lifeos-title" className="text-lg font-semibold">Leave BusyDoo?</h2><p className="mt-2 text-sm text-secondary">Your changes are saved on this device. You can return anytime.</p><div className="mt-5 flex gap-2"><button autoFocus onClick={() => setShowExitConfirmation(false)} className="lifeos-input min-h-11 flex-1 rounded-xl text-sm font-medium">Stay</button><button onClick={() => void CapacitorApp.exitApp()} className="lifeos-accent-button min-h-11 flex-1 rounded-xl text-sm font-semibold">Exit app</button></div></section></div>}
 
+      <div id="busydoo-notes-workspace-sheets" />
+      {notes.editor && <Suspense fallback={<ScreenLoading label="Opening editor…" />}>
+        <NotesEditor key={notes.editor.draft.id} draft={notes.editor.draft} status={notes.editor.status}
+          trashed={Boolean(notes.editor.record?.trashedAt)} notebooks={notes.data.notebooks}
+          options={noteLinkOptions} initialOptions={notes.editor.initialOptions} hidden={activeTab !== 'notes' || Boolean(createKind)}
+          onChange={notes.change} onClose={() => void closeNotesEditor()} onRetry={() => void notes.flush()}
+          onDiscard={() => void discardNoteChanges()} onConvert={text => void convertNoteText(text)}
+          onDispose={async action => {
+            if (action === 'delete' && !await confirmAction({
+              title: 'Delete this note permanently?', message: 'You won’t be able to restore it from Trash.', confirmLabel: 'Delete note', destructive: true,
+            })) return;
+            await notes.dispose(action);
+          }} onOpenLink={link => void openNoteLink(link)} onExport={exportSingleNote} />
+      </Suspense>}
       {confirmation && <ConfirmationDialog {...confirmation} onCancel={() => settleConfirmation(false)} onConfirm={() => settleConfirmation(true)} />}
 
       {centerVisible && <NotificationCentre rows={inbox.rows} loading={inbox.loading} failed={inbox.failed}

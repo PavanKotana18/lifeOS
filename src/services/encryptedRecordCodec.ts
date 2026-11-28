@@ -17,7 +17,9 @@ export const ENCRYPTABLE_TABLES = [
   'goals',
   'milestones',
   'tasks',
-  'settings'
+  'settings',
+  'notes',
+  'notebooks'
 ] as const;
 
 export type EncryptedTable = typeof ENCRYPTABLE_TABLES[number];

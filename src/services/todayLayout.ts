@@ -1,10 +1,10 @@
-export const TODAY_SECTION_ORDER = Object.freeze(['focus', 'agenda', 'money', 'habits', 'upcoming', 'goals'] as const);
+export const TODAY_SECTION_ORDER = Object.freeze(['focus', 'agenda', 'money', 'habits', 'upcoming', 'goals', 'notes'] as const);
 export type TodaySectionId = typeof TODAY_SECTION_ORDER[number];
 export type TodayLayout = { order: TodaySectionId[]; hidden: TodaySectionId[] };
 
 export const DEFAULT_TODAY_LAYOUT: TodayLayout = {
   order: [...TODAY_SECTION_ORDER],
-  hidden: ['upcoming', 'goals'],
+  hidden: ['upcoming', 'goals', 'notes'],
 };
 
 export const TODAY_SECTION_LABELS: Record<TodaySectionId, string> = {
@@ -14,6 +14,7 @@ export const TODAY_SECTION_LABELS: Record<TodaySectionId, string> = {
   habits: 'Daily routines',
   upcoming: 'Coming up',
   goals: 'Goals',
+  notes: 'Notes',
 };
 
 export function normalizeTodayLayout(value: unknown): TodayLayout {
@@ -23,10 +24,12 @@ export function normalizeTodayLayout(value: unknown): TodayLayout {
   const order = Array.isArray(candidate.order)
     ? [...new Set(candidate.order.filter((id): id is TodaySectionId => typeof id === 'string' && allowed.has(id)))]
     : [];
+  const legacy = !order.includes('notes');
   for (const id of TODAY_SECTION_ORDER) if (!order.includes(id)) order.push(id);
   const hidden = Array.isArray(candidate.hidden)
     ? [...new Set(candidate.hidden.filter((id): id is TodaySectionId => typeof id === 'string' && allowed.has(id)))]
     : [...DEFAULT_TODAY_LAYOUT.hidden];
+  if (legacy && !hidden.includes('notes')) hidden.push('notes');
   // The command-center summary is always present to avoid an empty home screen.
   return { order, hidden: hidden.filter(id => id !== 'focus') };
 }

@@ -9,7 +9,7 @@ interface NativeBackupPlugin {
   saveFile(options: {
     contents: string;
     fileName: string;
-    mimeType: 'application/json' | 'text/csv';
+    mimeType: 'application/json' | 'text/csv' | 'text/plain';
     preservePendingRecovery?: boolean;
   }): Promise<{
     saved: boolean;
@@ -19,7 +19,7 @@ interface NativeBackupPlugin {
 }
 
 const nativeBackup = registerPlugin<NativeBackupPlugin>('LifeOSBackup');
-type BackupOptions = { contents: string; fileName: string; mimeType: 'application/json' | 'text/csv'; preservePendingRecovery?: boolean };
+type BackupOptions = { contents: string; fileName: string; mimeType: 'application/json' | 'text/csv' | 'text/plain'; preservePendingRecovery?: boolean };
 let developmentRecoveryExportAdapter: ((options: BackupOptions) => Promise<BackupExportResult>) | null = null;
 
 /** Explicit synthetic file-provider used only by the browser acceptance entry. */
@@ -35,7 +35,7 @@ export function installDevelopmentRecoveryExportAdapter(
 export async function exportBackupFile(options: {
   contents: string;
   fileName: string;
-  mimeType: 'application/json' | 'text/csv';
+  mimeType: 'application/json' | 'text/csv' | 'text/plain';
   /** Only the recovery confirmation flow may preserve its volatile native envelope through SAF. */
   preservePendingRecovery?: boolean;
 }): Promise<BackupExportResult> {
