@@ -35,4 +35,22 @@ assert.doesNotMatch(gradle, /LIFEOS_PREVIEW_KEYSTORE|LIFEOS_DEBUG_KEYSTORE/,
   'old signing secrets are not required by either standard build type');
 assert.doesNotMatch(fs.readdirSync('android/app').join('\n'), /\.(?:keystore|jks|p12|pfx)$/i,
   'signing material is not added to the Android project');
+
+const providerPaths = fs.readFileSync(
+  'android/app/src/main/res/xml/file_paths.xml', 'utf8'
+);
+const providerMappings = providerPaths.match(
+  /<[a-z-]+-path\b[^>]*\/>/g
+) || [];
+assert.equal(providerMappings.length, 1);
+assert.match(providerMappings[0],
+  /^<external-files-path name="camera_images" path="Pictures\/" \/>$/);
+assert.doesNotMatch(providerPaths, /path="[.\/]"/);
+
+const providerManifest = fs.readFileSync(
+  'android/app/src/main/AndroidManifest.xml', 'utf8'
+);
+assert.match(providerManifest,
+  /android:name="androidx\.core\.content\.FileProvider"[^>]*android:exported="false"[^>]*android:grantUriPermissions="true"/);
+
 console.log('ANDROID BUILD CONTRACT: isolated BusyDoo Debug package; production-only, manually approved Release; no Preview build path.');
