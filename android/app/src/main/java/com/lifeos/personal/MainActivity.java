@@ -40,7 +40,14 @@ public class MainActivity extends BridgeActivity {
         } else {
             SmartImportSharePlugin.consumeShareIntent(incoming);
         }
-        setIntent(new Intent(Intent.ACTION_MAIN));
+        // Preserve ordinary launch identity without retaining extras.
+        if (incoming != null &&
+            (incoming.getAction() == null || Intent.ACTION_MAIN.equals(incoming.getAction())) &&
+            incoming.getData() == null && incoming.getType() == null) {
+            setIntent(incoming.cloneFilter());
+        } else {
+            setIntent(new Intent(this, MainActivity.class).setAction(Intent.ACTION_MAIN));
+        }
         coldLaunch = savedInstanceState == null;
         keepLaunchSplash = coldLaunch;
         SplashScreen splashScreen = SplashScreen.installSplashScreen(this);
@@ -91,7 +98,7 @@ public class MainActivity extends BridgeActivity {
         } else {
             SmartImportSharePlugin.consumeShareIntent(intent);
         }
-        setIntent(new Intent(Intent.ACTION_MAIN));
+        // Keep the sanitized original launch identity across warm intents.
         super.onNewIntent(safe);
         if (sharedAlert && bridge != null && bridge.getPlugin("SmartImportShare") != null) {
             SmartImportSharePlugin plugin = (SmartImportSharePlugin) bridge.getPlugin("SmartImportShare").getInstance();
