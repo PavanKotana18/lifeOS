@@ -104,7 +104,7 @@ function findJava() {
 
 function findGradle() {
   if (process.platform === 'win32') {
-    const local = path.join(toolsDir, 'gradle-8.2.1', 'bin', 'gradle.bat');
+    const local = path.join(toolsDir, 'gradle-8.13', 'bin', 'gradle.bat');
     if (fs.existsSync(local)) return local;
   }
   const pathGradle = findOnPath(process.platform === 'win32' ? ['gradle.bat', 'gradle.exe', 'gradle'] : ['gradle']);
@@ -174,7 +174,7 @@ async function main() {
   const adb = path.join(sdk, 'platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb');
   const emulator = path.join(sdk, 'emulator', process.platform === 'win32' ? 'emulator.exe' : 'emulator');
   const androidImage = path.join(sdk, 'system-images', 'android-34', 'google_apis', 'x86_64', 'package.xml');
-  const androidPlatform = path.join(sdk, 'platforms', 'android-34');
+  const androidPlatform = path.join(sdk, 'platforms', 'android-36');
   const avdHome = process.env.ANDROID_AVD_HOME || defaultAvdHome;
   const androidToolsEnv = environmentForAndroid(sdk, java || { home: '' }, gradle, aapt ? path.dirname(aapt) : '', avdHome);
 
@@ -182,10 +182,10 @@ async function main() {
   if (gradle) {
     const result = await run('Gradle version probe', gradle, ['--version'], 'gradle-version.log', 60000, { env: androidToolsEnv });
     const output = fs.readFileSync(result.logPath, 'utf8');
-    gradleReady = result.status === 'PASS' && /Gradle 8\.2\.1\b/.test(output);
-    add('Gradle 8.2.1 discovery', gradleReady ? 'PASS' : 'FAIL', gradleReady ? 'Found the installed Gradle 8.2.1 distribution; no global PATH change used.' : 'Gradle executable ran but did not report the required 8.2.1 version.', path.basename(result.logPath));
+    gradleReady = result.status === 'PASS' && /Gradle 8\.13\b/.test(output);
+    add('Gradle 8.13 discovery', gradleReady ? 'PASS' : 'FAIL', gradleReady ? 'Found the installed Gradle 8.13 distribution; no global PATH change used.' : 'Gradle executable ran but did not report the required 8.13 version.', path.basename(result.logPath));
   } else {
-    add('Gradle 8.2.1 discovery', 'BLOCKED', `Not found at ${path.join(toolsDir, 'gradle-8.2.1', 'bin', 'gradle.bat')} or on PATH.`, '');
+    add('Gradle 8.13 discovery', 'BLOCKED', `Not found at ${path.join(toolsDir, 'gradle-8.13', 'bin', 'gradle.bat')} or on PATH.`, '');
   }
 
   let javaReady = false;
@@ -199,7 +199,7 @@ async function main() {
   }
 
   const sdkReady = fs.existsSync(adb) && Boolean(aapt) && fs.existsSync(androidPlatform) && fs.existsSync(emulator) && fs.existsSync(androidImage);
-  add('Android SDK 34 readiness', sdkReady ? 'PASS' : 'BLOCKED', sdkReady ? 'Platform-tools, build-tools/aapt, platform 34, Emulator, and API 34 Google APIs x86_64 image are present.' : 'A required platform-tools, build-tools/aapt, platform 34, Emulator, or API 34 Google APIs x86_64 image component is missing.', '');
+  add('Android SDK 36 readiness', sdkReady ? 'PASS' : 'BLOCKED', sdkReady ? 'Platform-tools, build-tools/aapt, platform 36, Emulator, and API 34 Google APIs x86_64 image are present.' : 'A required platform-tools, build-tools/aapt, platform 36, Emulator, or API 34 Google APIs x86_64 image component is missing.', '');
 
   const deviceMode = process.env.LIFEOS_QA_DEVICE_MODE || 'emulator';
   const requestedSerial = process.env.ANDROID_SERIAL?.trim() || '';
@@ -236,9 +236,9 @@ async function main() {
 
   const preBuildBlockers = [];
   if (capacitorSync?.status !== 'PASS') preBuildBlockers.push('fresh Capacitor Android assets unavailable');
-  if (!gradleReady) preBuildBlockers.push('Gradle 8.2.1 unavailable or failed version validation');
+  if (!gradleReady) preBuildBlockers.push('Gradle 8.13 unavailable or failed version validation');
   if (!javaReady) preBuildBlockers.push('Java 17 unavailable or failed version validation');
-  if (!sdkReady) preBuildBlockers.push('Android SDK 34 incomplete');
+  if (!sdkReady) preBuildBlockers.push('Android SDK 36 incomplete');
   if (preBuildBlockers.length) {
     const reason = preBuildBlockers.join('; ');
     add('Android Debug APK build', 'BLOCKED', reason, '');
@@ -247,7 +247,7 @@ async function main() {
     console.log(`BLOCKED: Android build/instrumentation (${reason})`);
   } else {
     const gradleCommand = gradle;
-    const gradleArgs = ['-p', path.join(root, 'android'), '--no-daemon', ':app:assembleDebug', ':app:assembleDebugAndroidTest'];
+    const gradleArgs = ['-p', path.join(root, 'android'), '--no-daemon', '--max-workers=1', ':app:assembleDebug', ':app:assembleDebugAndroidTest'];
     const build = await run('Android Debug APK build', gradleCommand, gradleArgs, 'android-build.log', 45 * 60 * 1000, {
       env: androidToolsEnv,
     });
