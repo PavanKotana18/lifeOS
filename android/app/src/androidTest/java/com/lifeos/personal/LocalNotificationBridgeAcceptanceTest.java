@@ -120,6 +120,16 @@ public class LocalNotificationBridgeAcceptanceTest {
                 JSONObject extra = notification.optJSONObject("extra");
                 assertNotNull("Content action must retain its destination payload", extra);
                 assertEquals(syntheticTaskId, extra.optString("taskId"));
+                // A synthetic tap must not contaminate another acceptance test.
+                String cleanup = WebViewTestSupport.evaluateAsync(scenario,
+                    "(async()=>{const p=window.Capacitor.Plugins.NotificationTapLaunch;" +
+                    "const matches=a=>a.notification?.id===" + id +
+                    "&&a.notification?.extra?.taskId===\'" + syntheticTaskId + "\'&&a.actionId===\'tap\';" +
+                    "const pending=await p.getPendingActions();" +
+                    "for(const action of pending.actions.filter(matches)){" +
+                    "await p.acknowledgeInitialAction({tapKey:action.tapKey});}" +
+                    "return !(await p.getPendingActions()).actions.some(matches);})()");
+                assertEquals("Synthetic routing action must be acknowledged", "true", cleanup);
             } finally {
                 manager.cancel(id);
                 if (scheduledAlarm != null) {
