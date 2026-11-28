@@ -361,6 +361,14 @@ jobs:
             expected-tests: 26
             required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
             exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
+          - id: large-api36
+            api-level: 36
+            profile: pixel_7_pro
+            ram-size: 4096M
+            heap-size: 512M
+            expected-tests: 26
+            required-test: LifeOSLaunchSmokeTest#activityCreatesLocalCapacitorWebView
+            exclusion-file: android/qa/instrumentation-exclusions-api34-35.txt
     steps:
       - uses: actions/checkout@v4
         with:
